@@ -1,0 +1,69 @@
+# Phase 3 local/offline pipeline.
+# Uses CREST and xTB backends, but subprocess execution is opt-in. By default,
+# CREST falls back to RDKit and xTB falls back to deterministic dummy energies,
+# while preserving production-compatible Artifact contracts.
+run_root: runs
+input:
+  sdf: examples/candidates.sdf
+
+global:
+  temperature_K: [298.15, 423.15]
+  standard_pressure_bar: 1.0
+  partial_pressures:
+    HF: 0.01
+    candidate: 0.001
+  max_conformers_per_molecule: 4
+  max_sites_per_molecule: 5
+
+stages:
+  - name: ingest
+    enabled: true
+  - name: enrich
+    enabled: true
+    providers: [dummy]
+  - name: detect-sites
+    enabled: true
+    max_sites_per_molecule: 5
+  - name: conformers
+    enabled: true
+    engine: crest
+    allow_subprocess: false
+    fallback_to_rdkit: true
+    max_conformers: 8
+    selected_max: 3
+    energy_window_kcal_mol: 8.0
+    prune_rms_thresh: 0.5
+  - name: build-hf
+    enabled: true
+    hf_n: [1, 2]
+  - name: preopt
+    enabled: true
+    engine: xtb
+    method: gfn2-xtb
+    allow_subprocess: false
+    settings:
+      gfn: 2
+      opt_level: normal
+  - name: dft-minima
+    enabled: true
+    engine: dummy
+    method: r2scan3c-dummy
+  - name: ts-search
+    enabled: true
+    engine: dummy
+  - name: irc
+    enabled: true
+    engine: dummy
+  - name: sp
+    enabled: true
+    engine: dummy
+    method: wb97xd4-def2tzvppd-dummy
+  - name: thermo
+    enabled: true
+  - name: descriptors
+    enabled: true
+  - name: kinetics
+    enabled: true
+    engine: dummy
+  - name: rank
+    enabled: true

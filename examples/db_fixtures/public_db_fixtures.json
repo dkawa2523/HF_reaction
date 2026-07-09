@@ -1,0 +1,118 @@
+{
+  "schema_version": "hfauto.public_db_fixture.v1",
+  "scientific_note": "Offline demonstration fixture. Use live providers or reviewed internal snapshots for production candidate decisions.",
+  "pubchem": {
+    "by_name": {
+      "ammonia": {
+        "matched": true,
+        "cid": 222,
+        "properties": {
+          "MolecularFormula": "H3N",
+          "MolecularWeight": 17.031,
+          "CanonicalSMILES": "N",
+          "IsomericSMILES": "N",
+          "InChIKey": "QGZKDVFQNNGYKY-UHFFFAOYSA-N",
+          "IUPACName": "azane",
+          "XLogP": -0.7,
+          "TPSA": 1.0,
+          "HBondDonorCount": 1,
+          "HBondAcceptorCount": 1,
+          "HeavyAtomCount": 1,
+          "RotatableBondCount": 0
+        },
+        "source": "offline_fixture"
+      },
+      "trimethylamine": {
+        "matched": true,
+        "cid": 1146,
+        "properties": {
+          "MolecularFormula": "C3H9N",
+          "MolecularWeight": 59.112,
+          "CanonicalSMILES": "CN(C)C",
+          "IsomericSMILES": "CN(C)C",
+          "InChIKey": "GETQZCLCWQTVFV-UHFFFAOYSA-N",
+          "IUPACName": "N,N-dimethylmethanamine",
+          "XLogP": 0.2,
+          "TPSA": 3.2,
+          "HBondDonorCount": 0,
+          "HBondAcceptorCount": 1,
+          "HeavyAtomCount": 4,
+          "RotatableBondCount": 0
+        },
+        "source": "offline_fixture"
+      },
+      "pyridine": {
+        "matched": true,
+        "cid": 1049,
+        "properties": {
+          "MolecularFormula": "C5H5N",
+          "MolecularWeight": 79.102,
+          "CanonicalSMILES": "C1=CC=NC=C1",
+          "IsomericSMILES": "C1=CC=NC=C1",
+          "InChIKey": "JUJWROOIHBZHMG-UHFFFAOYSA-N",
+          "IUPACName": "pyridine",
+          "XLogP": 0.7,
+          "TPSA": 12.9,
+          "HBondDonorCount": 0,
+          "HBondAcceptorCount": 1,
+          "HeavyAtomCount": 6,
+          "RotatableBondCount": 0
+        },
+        "source": "offline_fixture"
+      },
+      "dimethyl_ether": {
+        "matched": true,
+        "cid": 8254,
+        "properties": {
+          "MolecularFormula": "C2H6O",
+          "MolecularWeight": 46.069,
+          "CanonicalSMILES": "COC",
+          "IsomericSMILES": "COC",
+          "InChIKey": "LCGLNKUTAGEVQW-UHFFFAOYSA-N",
+          "IUPACName": "methoxymethane",
+          "XLogP": 0.1,
+          "TPSA": 9.2,
+          "HBondDonorCount": 0,
+          "HBondAcceptorCount": 1,
+          "HeavyAtomCount": 3,
+          "RotatableBondCount": 0
+        },
+        "source": "offline_fixture"
+      }
+    }
+  },
+  "nist_webbook": {
+    "by_name": {
+      "ammonia": {"matched": true, "proton_affinity_kj_mol": 853.6, "gas_basicity_kj_mol": 819.0, "has_ir": true, "source": "offline_fixture_demo"},
+      "trimethylamine": {"matched": true, "proton_affinity_kj_mol": 948.9, "gas_basicity_kj_mol": 918.0, "has_ir": true, "source": "offline_fixture_demo"},
+      "pyridine": {"matched": true, "proton_affinity_kj_mol": 930.0, "gas_basicity_kj_mol": 898.0, "has_ir": true, "source": "offline_fixture_demo"},
+      "dimethyl_ether": {"matched": true, "proton_affinity_kj_mol": 792.0, "gas_basicity_kj_mol": 760.0, "has_ir": true, "source": "offline_fixture_demo"}
+    }
+  },
+  "atct": {
+    "by_name": {
+      "hydrogen fluoride": {"matched": true, "formula": "HF", "delta_f_H_298_kj_mol": -273.3, "source": "offline_fixture_demo"},
+      "ammonia": {"matched": true, "formula": "NH3", "delta_f_H_298_kj_mol": -45.9, "source": "offline_fixture_demo"}
+    }
+  },
+  "cccbdb": {
+    "by_name": {
+      "hydrogen fluoride": {"matched": true, "formula": "HF", "hf_stretch_cm1": 4138.0, "dipole_D": 1.826, "source": "offline_fixture_demo"},
+      "ammonia": {"matched": true, "formula": "NH3", "dipole_D": 1.47, "source": "offline_fixture_demo"}
+    }
+  },
+  "comptox": {
+    "by_name": {
+      "ammonia": {"matched": true, "dsstox_substance_id": "DTXSID8023894", "vapor_pressure_Pa_25C": 1000000.0, "boiling_point_C": -33.3, "gas_process_feasibility": "volatile_reference_gas", "ehs_review_flag": "manual_review_required", "source": "offline_fixture_demo"},
+      "trimethylamine": {"matched": true, "dsstox_substance_id": "DTXSID9021345", "vapor_pressure_Pa_25C": 185000.0, "boiling_point_C": 2.9, "gas_process_feasibility": "likely_gas_process_compatible", "ehs_review_flag": "manual_review_required", "source": "offline_fixture_demo"},
+      "pyridine": {"matched": true, "dsstox_substance_id": "DTXSID3021380", "vapor_pressure_Pa_25C": 2700.0, "boiling_point_C": 115.2, "gas_process_feasibility": "process_condition_dependent", "ehs_review_flag": "manual_review_required", "source": "offline_fixture_demo"},
+      "dimethyl_ether": {"matched": true, "dsstox_substance_id": "DTXSID4020521", "vapor_pressure_Pa_25C": 530000.0, "boiling_point_C": -24.8, "gas_process_feasibility": "likely_gas_process_compatible", "ehs_review_flag": "manual_review_required", "source": "offline_fixture_demo"}
+    }
+  },
+  "niosh": {
+    "by_name": {
+      "ammonia": {"matched": true, "manual_ehs_review_required": true, "hazard_summary": "corrosive/toxic gas reference", "source": "offline_fixture_demo"},
+      "pyridine": {"matched": true, "manual_ehs_review_required": true, "hazard_summary": "flammable/toxic solvent reference", "source": "offline_fixture_demo"}
+    }
+  }
+}

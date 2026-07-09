@@ -1,0 +1,13 @@
+{
+  "schema_version": "hfauto.reference_set.v1",
+  "reference_set_id": "hf_amine_gas_phase_demo",
+  "name": "HF/amine gas-phase demonstration reference set",
+  "scientific_note": "Small offline demonstration set for workflow validation. Replace with reviewed NIST/ATcT/CCCBDB snapshots before making research or process decisions.",
+  "entries": [
+    {"ref_id": "NH3", "name": "ammonia", "formula": "NH3", "class": "amine", "expected_basicity_rank_group": 3, "proton_affinity_kj_mol": 853.6, "gas_basicity_kj_mol": 819.0, "source": "offline_fixture_demo"},
+    {"ref_id": "TMA", "name": "trimethylamine", "formula": "C3H9N", "class": "tertiary_amine", "expected_basicity_rank_group": 1, "proton_affinity_kj_mol": 948.9, "gas_basicity_kj_mol": 918.0, "source": "offline_fixture_demo"},
+    {"ref_id": "PYR", "name": "pyridine", "formula": "C5H5N", "class": "aromatic_n", "expected_basicity_rank_group": 2, "proton_affinity_kj_mol": 930.0, "gas_basicity_kj_mol": 898.0, "source": "offline_fixture_demo"},
+    {"ref_id": "DME", "name": "dimethyl_ether", "formula": "C2H6O", "class": "ether", "expected_basicity_rank_group": 4, "proton_affinity_kj_mol": 792.0, "gas_basicity_kj_mol": 760.0, "source": "offline_fixture_demo"},
+    {"ref_id": "HF", "name": "hydrogen fluoride", "formula": "HF", "class": "reference_small_molecule", "hf_stretch_cm1": 4138.0, "dipole_D": 1.826, "source": "offline_fixture_demo"}
+  ]
+}

@@ -1,0 +1,6 @@
+scheduler: pbs
+submit_command: qsub
+status_command: qstat
+cancel_command: qdel
+notes:
+  - Review queue and resource syntax for your PBS/Torque environment.

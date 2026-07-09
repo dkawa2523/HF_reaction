@@ -1,0 +1,14 @@
+providers:
+  - dummy
+  - name: pubchem
+    network_enabled: false
+    fetch_3d: true
+  - name: nist_webbook
+    network_enabled: false
+    use_builtin_references: true
+  - name: atct
+  - name: cccbdb
+  - name: comptox
+    network_enabled: false
+  - name: niosh
+  - name: cas_common_chemistry

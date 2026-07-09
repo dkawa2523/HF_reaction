@@ -1,0 +1,4 @@
+engine: phase6_internal
+quasi_rrho: true
+qrrho:
+  cutoff_cm1: 100.0

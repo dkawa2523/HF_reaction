@@ -1,0 +1,7 @@
+engine: goodvibes
+settings:
+  apply_quasi_rrho: true
+  frequency_scale_factor: 0.985
+  low_freq_cutoff_cm1: 100.0
+  quasi_rrho_alpha: 0.50
+  thermo_model: internal_goodvibes_compatible_quasi_rrho

@@ -1,0 +1,82 @@
+pipeline_id: production_template
+input:
+  sdf: examples/candidates.sdf
+run_root: runs
+global:
+  mode: production
+  temperature_K: [298.15, 423.15]
+  standard_pressure_bar: 1.0
+  partial_pressures:
+    HF: 0.01
+    candidate: 0.001
+stages:
+  - name: ingest
+    enabled: true
+  - name: enrich
+    enabled: true
+    providers:
+      - name: pubchem
+        network_enabled: false
+      - name: nist_webbook
+        network_enabled: false
+  - name: detect-sites
+    enabled: true
+  - name: conformers
+    enabled: true
+    engine: crest
+  - name: build-hf
+    enabled: true
+    hf_n: [1, 2, 3]
+  - name: preopt
+    enabled: true
+    engine: xtb
+  - name: dft-minima
+    enabled: true
+    engine: orca
+    method: r2scan3c_orca
+    allow_subprocess: false
+    fallback_to_dummy: false
+  - name: ts-search
+    enabled: true
+    engine_order:
+      - engine: orca_nebts
+        allow_subprocess: false
+        fallback_to_dummy: false
+  - name: irc
+    enabled: true
+    engine: orca
+    allow_subprocess: false
+    fallback_to_dummy: false
+  - name: sp
+    enabled: true
+    engine: orca
+    method: wb97xd4_def2_tzvppd_orca
+    allow_subprocess: false
+    fallback_to_dummy: false
+  - name: thermo
+    enabled: true
+    engine: goodvibes
+    settings:
+      use_external_goodvibes: true
+      allow_subprocess: false
+      apply_internal_quasi_rrho: true
+  - name: kinetics
+    enabled: true
+    engine: tst
+    tunneling_model: wigner
+  - name: calibrate
+    enabled: true
+    reference_set: examples/reference_sets/hf_amine_gas_phase_demo.json
+  - name: connector-audit
+    enabled: true
+  - name: rank
+    enabled: true
+  - name: viz
+    enabled: true
+    settings:
+      library_mode: local
+      asset_mode: local
+  - name: ops
+    enabled: true
+    pipeline_config: configs/pipelines/production_template.yaml
+    ops_config: configs/ops/phase12_production.yaml

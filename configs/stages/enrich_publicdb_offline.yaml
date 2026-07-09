@@ -1,0 +1,12 @@
+providers:
+  - name: pubchem
+    allow_network: false
+    fetch_3d: true
+  - name: nist_webbook
+    allow_network: false
+  - name: atct
+  - name: cccbdb
+  - name: comptox
+    allow_network: false
+  - name: niosh
+  - name: cas_common_chemistry

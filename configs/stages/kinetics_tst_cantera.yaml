@@ -1,0 +1,5 @@
+engine: cantera
+tunneling_model: wigner
+export_arkane: true
+settings:
+  residence_times_s: [0.001, 0.01, 0.1, 1.0]

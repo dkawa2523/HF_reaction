@@ -1,0 +1,15 @@
+scheduler: slurm
+resources:
+  ingest: {ncores: 1, memory_gb: 1, walltime: "00:10:00"}
+  enrich: {ncores: 1, memory_gb: 1, walltime: "00:30:00"}
+  detect-sites: {ncores: 1, memory_gb: 1, walltime: "00:10:00"}
+  conformers: {ncores: 4, memory_gb: 8, walltime: "04:00:00"}
+  preopt: {ncores: 4, memory_gb: 8, walltime: "02:00:00"}
+  dft-minima: {ncores: 16, memory_gb: 32, walltime: "24:00:00"}
+  ts-search: {ncores: 32, memory_gb: 64, walltime: "48:00:00"}
+  irc: {ncores: 16, memory_gb: 32, walltime: "24:00:00"}
+  sp: {ncores: 16, memory_gb: 32, walltime: "12:00:00"}
+  thermo: {ncores: 1, memory_gb: 2, walltime: "00:30:00"}
+  kinetics: {ncores: 1, memory_gb: 2, walltime: "00:30:00"}
+  rank: {ncores: 1, memory_gb: 2, walltime: "00:10:00"}
+  viz: {ncores: 1, memory_gb: 4, walltime: "00:30:00"}

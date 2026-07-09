@@ -1,0 +1,7 @@
+engine: goodvibes
+settings:
+  apply_internal_quasi_rrho: true
+  quasi_rrho_cutoff_cm1: 100.0
+  max_lowfreq_correction_per_mode_kcal_mol: 0.20
+  allow_linear_temperature_scaling: false
+  allow_subprocess: false

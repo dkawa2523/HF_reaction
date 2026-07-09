@@ -1,0 +1,8 @@
+engine: crest
+allow_subprocess: false
+executable: crest
+gfn: 2
+max_conformers: 12
+selected_max: 4
+energy_window_kcal_mol: 8.0
+prune_rms_thresh: 0.5

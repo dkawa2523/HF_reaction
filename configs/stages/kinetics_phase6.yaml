@@ -1,0 +1,4 @@
+engine: tst
+settings:
+  tunneling_model: wigner
+write_arkane_skeleton: true

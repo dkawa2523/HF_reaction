@@ -1,0 +1,125 @@
+pipeline_id: phase9_hpc_ops_offline
+input:
+  sdf: examples/candidates.sdf
+run_root: runs
+global:
+  temperature_K: [298.15, 423.15]
+  partial_pressures:
+    HF: 0.01
+    candidate: 0.001
+stages:
+  - name: ingest
+    enabled: true
+  - name: enrich
+    enabled: true
+    providers:
+      - name: dummy
+  - name: detect-sites
+    enabled: true
+  - name: conformers
+    enabled: true
+    engine: rdkit
+    max_conformers_per_molecule: 1
+  - name: build-hf
+    enabled: true
+    hf_n: [1, 2]
+  - name: preopt
+    enabled: true
+    engine: dummy
+  - name: dft-minima
+    enabled: true
+    engine: dummy
+  - name: ts-search
+    enabled: true
+    engine_order:
+      - engine: dummy
+  - name: irc
+    enabled: true
+    engine: dummy
+  - name: sp
+    enabled: true
+    engine: dummy
+  - name: thermo
+    enabled: true
+    backend: internal
+  - name: kinetics
+    enabled: true
+    backend: tst
+    tunneling_model: wigner
+  - name: calibrate
+    enabled: true
+    reference_set: examples/reference_sets/hf_amine_gas_phase_demo.json
+  - name: rank
+    enabled: true
+  - name: viz
+    enabled: true
+    settings:
+      max_molecule_dossiers: 2
+      max_reaction_dossiers: 2
+      top_energy_profiles: 2
+      max_network_reactions: 4
+      library_mode: local
+
+  - name: hpc-plan
+    enabled: true
+    scheduler: slurm
+    planned_stages:
+      - name: ingest
+        enabled: true
+      - name: enrich
+        enabled: true
+      - name: detect-sites
+        enabled: true
+      - name: conformers
+        enabled: true
+      - name: build-hf
+        enabled: true
+      - name: preopt
+        enabled: true
+      - name: dft-minima
+        enabled: true
+      - name: ts-search
+        enabled: true
+      - name: irc
+        enabled: true
+      - name: sp
+        enabled: true
+      - name: thermo
+        enabled: true
+      - name: kinetics
+        enabled: true
+      - name: calibrate
+        enabled: true
+      - name: rank
+        enabled: true
+      - name: viz
+        enabled: true
+  - name: ops
+    enabled: true
+    pipeline_config: configs/pipelines/phase9_hpc_ops_offline.yaml
+    settings:
+      scheduler: slurm
+      project_root: "$PWD"
+      resource_profile:
+        array_chunk: 1
+        stages:
+          dft-minima:
+            ncores: 16
+            memory_gb: 32
+            time_min: 1440
+            queue: long
+          ts-search:
+            ncores: 16
+            memory_gb: 48
+            time_min: 2880
+            queue: long
+          irc:
+            ncores: 16
+            memory_gb: 48
+            time_min: 1440
+            queue: long
+          sp:
+            ncores: 16
+            memory_gb: 64
+            time_min: 720
+            queue: long

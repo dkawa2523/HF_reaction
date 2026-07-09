@@ -1,0 +1,47 @@
+[project]
+name = "hfauto"
+version = "0.13.0"
+description = "Modular workflow for gas-phase HF reactivity screening with visualization and production operations companions"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "HF Auto Project"}]
+dependencies = [
+  "pydantic>=2.0",
+  "typer>=0.12",
+  "PyYAML>=6.0",
+  "rich>=13.0",
+  "pandas>=2.0",
+  "numpy>=1.24"
+]
+
+[project.optional-dependencies]
+chem = ["rdkit"]
+web = ["requests", "beautifulsoup4"]
+viz = ["jinja2", "plotly", "graphviz", "networkx", "rdkit"]
+viz-prod = ["jinja2", "plotly", "graphviz", "networkx", "rdkit", "chemiscope", "ase"]
+hpc = ["snakemake"]
+chemiscope = ["chemiscope", "ase"]
+dev = ["pytest", "ruff", "mypy"]
+
+[project.scripts]
+hfauto = "hfauto.cli.main:app"
+hfauto-viz = "hfauto_viz.cli.main:app"
+hfauto-ops = "hfauto_ops.cli.main:app"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hfauto*", "hfauto_viz*", "hfauto_ops*"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+hfauto = ["data/*.yaml"]
+hfauto_viz = ["static/*", "reports/templates/*"]

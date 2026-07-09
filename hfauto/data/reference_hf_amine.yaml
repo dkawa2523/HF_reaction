@@ -1,0 +1,78 @@
+schema_version: hfauto.reference_set.v1
+name: hf_amine_gas_phase_core
+source_note: >-
+  Lightweight bundled reference set for offline workflow validation and method-calibration
+  scaffolding.  Values are intended as seed references for software QA and should be
+  replaced or augmented by project-curated NIST WebBook, ATcT, CCCBDB, or internal
+  benchmark tables for final scientific reporting.
+references:
+  - ref_id: HF
+    name: hydrogen fluoride
+    aliases: [HF, hydrogen fluoride, hydrofluoric acid]
+    formula: HF
+    inchikey: KRHYYFGTRYWZRS-UHFFFAOYSA-N
+    properties:
+      hf_stretch_cm1: 4138.0
+      dipole_D: 1.82
+    sources: [nist_webbook, cccbdb, atct]
+  - ref_id: NH3
+    name: ammonia
+    aliases: [ammonia, NH3]
+    formula: H3N
+    inchikey: QGZKDVFQNNGYKY-UHFFFAOYSA-N
+    properties:
+      proton_affinity_kj_mol: 853.6
+      gas_basicity_kj_mol: 819.0
+      dipole_D: 1.47
+    sources: [nist_webbook, cccbdb]
+    process_flags:
+      ehs_review_flag: manual_review_recommended
+  - ref_id: methylamine
+    name: methylamine
+    aliases: [methylamine, methanamine]
+    formula: CH5N
+    inchikey: BAVYZALUXZFZLV-UHFFFAOYSA-N
+    properties:
+      proton_affinity_kj_mol: 899.0
+      gas_basicity_kj_mol: 864.0
+    sources: [nist_webbook]
+  - ref_id: trimethylamine
+    name: trimethylamine
+    aliases: [trimethylamine, N,N-dimethylmethanamine]
+    formula: C3H9N
+    inchikey: GETQZCLCWQTVFV-UHFFFAOYSA-N
+    properties:
+      proton_affinity_kj_mol: 948.9
+      gas_basicity_kj_mol: 913.6
+    sources: [nist_webbook]
+    process_flags:
+      ehs_review_flag: manual_review_recommended
+  - ref_id: pyridine
+    name: pyridine
+    aliases: [pyridine, azabenzene]
+    formula: C5H5N
+    inchikey: JUJWROOIHBZHMG-UHFFFAOYSA-N
+    properties:
+      proton_affinity_kj_mol: 930.0
+      gas_basicity_kj_mol: 898.0
+      dipole_D: 2.22
+    sources: [nist_webbook, cccbdb]
+  - ref_id: aniline
+    name: aniline
+    aliases: [aniline, aminobenzene]
+    formula: C6H7N
+    inchikey: PAYRUJLWNCNPSJ-UHFFFAOYSA-N
+    properties:
+      proton_affinity_kj_mol: 882.5
+      gas_basicity_kj_mol: 850.0
+    sources: [nist_webbook]
+  - ref_id: water
+    name: water
+    aliases: [water, H2O]
+    formula: H2O
+    inchikey: XLYOFNOQVPJJNP-UHFFFAOYSA-N
+    properties:
+      proton_affinity_kj_mol: 691.0
+      gas_basicity_kj_mol: 660.0
+      dipole_D: 1.85
+    sources: [nist_webbook, cccbdb, atct]

@@ -1,0 +1,3 @@
+engine: simple
+tunneling_model: wigner
+export_arkane_stubs: true

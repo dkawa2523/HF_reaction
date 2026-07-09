@@ -1,0 +1,38 @@
+methods:
+  r2scan3c_orca:
+    category: dft_composite
+    engine: orca
+    task_defaults: {opt: true, freq: true}
+    orca_keywords: ["r2SCAN-3c", "TightSCF", "TightOpt"]
+
+  wb97xd4_def2_tzvppd_orca:
+    category: dft_hybrid_sp
+    engine: orca
+    functional: "wB97X-D4"
+    basis: "def2-TZVPPD"
+    orca_keywords: ["wB97X-D4", "def2-TZVPPD", "TightSCF", "Grid5", "FinalGrid6"]
+
+  dummy:
+    category: dummy
+    engine: dummy
+
+
+  revdsd_pbe86_d4_def2_qzvpp_orca:
+    category: double_hybrid_sp
+    engine: orca
+    functional: "revDSD-PBEP86-D4"
+    basis: "def2-QZVPP"
+    orca_keywords: ["revDSD-PBEP86-D4", "def2-QZVPP", "TightSCF", "Grid5", "FinalGrid6"]
+
+  orca_nebts_r2scan3c:
+    category: ts_search
+    engine: orca_nebts
+    base_keywords: ["r2SCAN-3c"]
+    neb_job: "NEB-TS"
+    optts_keywords: ["r2SCAN-3c", "OptTS", "Freq", "TightSCF"]
+
+  orca_irc_r2scan3c:
+    category: irc
+    engine: orca_nebts
+    base_keywords: ["r2SCAN-3c"]
+    irc_keywords: ["r2SCAN-3c", "IRC", "TightSCF"]
