@@ -15,6 +15,7 @@ class SiteRule:
 
 
 SITE_RULES = [
+    SiteRule("aniline_like", "[NX3;!$([N+]);$([N][c]);!$(NC=O);!$(NS(=O)=O);!$(N=O)]", 1, 0.84),
     SiteRule("aliphatic_amine", "[NX3;!$([N+]);!$(NC=O);!$(NS(=O)=O);!$(N=O);!$([nH])]", 1, 0.95),
     SiteRule("pyridine_like", "[n;H0;!$([n+]);!$([nH])]", 1, 0.92),
     SiteRule("imine", "[NX2;!$([N+])]=[CX3]", 2, 0.82),

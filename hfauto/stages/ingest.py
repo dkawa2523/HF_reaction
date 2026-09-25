@@ -9,7 +9,7 @@ from hfauto.core.ids import mol_id_from_index
 from hfauto.core.io import ensure_dir, write_jsonl
 from hfauto.core.schemas.artifact import Artifact
 from hfauto.core.schemas.manifest import Manifest
-from hfauto.core.schemas.records import MoleculeRecord
+from hfauto.core.schemas.molecule import MoleculeRecord
 from hfauto.stages.base import Stage, StageContext
 
 

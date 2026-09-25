@@ -8,13 +8,13 @@ an internal fallback model with explicit provenance so the workflow remains
 reviewable when external tools are unavailable.
 """
 
-from dataclasses import dataclass, asdict
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
 from math import exp, log
-from typing import Any, Iterable
+from typing import Any
 
-from hfauto.core.constants import HARTREE_TO_KCAL_MOL, KB_OVER_H_PER_K_S, R_KCAL_MOL_K
-from hfauto.core.units import kcal_mol_to_hartree, pressure_correction_hartree
-
+from hfauto.core.constants import KB_OVER_H_PER_K_S, R_KCAL_MOL_K
+from hfauto.core.units import kcal_mol_to_hartree
 
 CM1_TO_K = 1.438776877  # h*c/kB in K cm
 

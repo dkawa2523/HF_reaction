@@ -1,8 +1,12 @@
 from __future__ import annotations
-from pathlib import Path
+
 from collections import Counter
+from pathlib import Path
+
 import pandas as pd
-from hfauto_viz.core.html import write_html, esc
+
+from hfauto_viz.core.html import esc, write_html
+
 
 def write_scatter(df: pd.DataFrame, out_path: str | Path, title: str, x: str, y: str, color: str | None=None, size: str | None=None) -> Path:
     if df is None or df.empty or x not in df.columns or y not in df.columns:

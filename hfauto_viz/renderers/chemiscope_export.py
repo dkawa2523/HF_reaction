@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import gzip
+import json
 from pathlib import Path
-import gzip, json
 
 import pandas as pd
 
@@ -41,12 +42,12 @@ def write_chemiscope_like(df: pd.DataFrame, structures: dict[str, Frame], out_pa
     props = {}
     if rows:
         limit = len(struct_list)
-        for k in rows[0].keys():
+        for k in rows[0]:
             props[k] = {'target': 'structure', 'values': [_safe_json_value(r.get(k)) for r in rows[:limit]]}
     payload = {
         'meta': {
             'name': 'HF reactivity screening',
-            'description': 'hfauto Phase 8.5 Chemiscope-compatible fallback export. Native Chemiscope can be used to consume the same structures/properties when installed.',
+            'description': 'hfauto Chemiscope-compatible fallback export. Native Chemiscope can consume the same structures and properties when installed.',
         },
         'structures': struct_list,
         'properties': props,
@@ -66,7 +67,7 @@ def write_chemiscope_index(bundle_path: str | Path, out_path: str | Path | None 
 <div class='card'>
   <h2>Chemiscope export</h2>
   <p>Structure-property bundle: <a href='{esc(bundle.name)}'>{esc(bundle.name)}</a></p>
-  <p class='muted'>This Phase 8.5 export is intentionally viewer-independent. If the optional <code>chemiscope</code> Python package is available, the JSON bundle can be converted to a native Chemiscope HTML viewer in a production deployment.</p>
+  <p class='muted'>This export is intentionally viewer-independent. If the optional <code>chemiscope</code> Python package is available, the JSON bundle can be converted to a native Chemiscope HTML viewer in a production deployment.</p>
   <pre>chemiscope view {esc(bundle.name)}</pre>
 </div>
 """

@@ -23,7 +23,7 @@ def write_operations_report(out_dir: str | Path, title: str = "hfauto operations
     sections = [
         ("Stage index", out / "stage_index.csv"),
         ("Resource plan", out / "resource_plan.csv"),
-        ("Artifact-level job plan", out / "artifact_job_plan.csv"),
+        ("Artifact-level array plan", out / "array_job_plan.csv"),
         ("Scheduler status dry run", out / "scheduler_status.csv"),
         ("Retry plan", out / "retry_plan.csv"),
         ("Reuse plan", out / "reuse_plan.csv"),
@@ -40,7 +40,7 @@ def write_operations_report(out_dir: str | Path, title: str = "hfauto operations
     ]
     body.append(f"<h1>{title}</h1>")
     body.append("<p class='warn'>Operations planning artifacts are read-only. They schedule, retry, deduplicate, and compare workflow runs but do not modify scientific results.</p>")
-    body.append("<p class='ok'>Phase 12 adds production-style submit/status/cancel dry-run commands, artifact-level job arrays, calculation reuse planning, QCArchive payload export, backend comparison, and resource auto-tuning proposals.</p>")
+    body.append("<p class='ok'>The operations layer provides scheduler dry runs, artifact-level job arrays, calculation reuse planning, QCArchive payload export, backend comparison, and resource auto-tuning proposals.</p>")
     for label, path in sections:
         body.append(f"<h2>{label}</h2>")
         body.append(f"<p><a href='{path.relative_to(out) if path.exists() else path.name}'>{path.name}</a></p>")

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 import typer
@@ -37,19 +36,19 @@ def index_cmd(run_dir: Path, out: Path = typer.Option(..., help="Output ops dire
 
 
 @app.command("plan")
-def plan_cmd(run_dir: Path, pipeline_config: Path = typer.Option(..., "--pipeline-config"), out: Path = typer.Option(...), ops_config: Optional[Path] = None):
+def plan_cmd(run_dir: Path, pipeline_config: Path = typer.Option(..., "--pipeline-config"), out: Path = typer.Option(...), ops_config: Path | None = None):
     cfg = load_yaml(ops_config)
     _print_paths(write_resource_plan(build_resource_plan(pipeline_config, run_dir=run_dir, ops_config=cfg), out))
 
 
 @app.command("artifact-plan")
-def artifact_plan_cmd(run_dir: Path, out: Path = typer.Option(...), pipeline_config: Optional[Path] = typer.Option(None, "--pipeline-config"), ops_config: Optional[Path] = None):
+def artifact_plan_cmd(run_dir: Path, out: Path = typer.Option(...), pipeline_config: Path | None = typer.Option(None, "--pipeline-config"), ops_config: Path | None = None):
     cfg = load_yaml(ops_config)
     _print_paths(write_artifact_job_plan(run_dir, out, pipeline_config=pipeline_config, ops_config=cfg))
 
 
 @app.command("scheduler-bundle")
-def scheduler_bundle_cmd(run_dir: Path, pipeline_config: Path = typer.Option(..., "--pipeline-config"), out: Path = typer.Option(...), scheduler: str = "slurm", run_id: Optional[str] = None, ops_config: Optional[Path] = None, artifact_level: bool = False):
+def scheduler_bundle_cmd(run_dir: Path, pipeline_config: Path = typer.Option(..., "--pipeline-config"), out: Path = typer.Option(...), scheduler: str = "slurm", run_id: str | None = None, ops_config: Path | None = None, artifact_level: bool = False):
     cfg = load_yaml(ops_config)
     if artifact_level:
         ap = write_artifact_job_plan(run_dir, out, pipeline_config=pipeline_config, ops_config=cfg)
@@ -65,7 +64,7 @@ def scheduler_bundle_cmd(run_dir: Path, pipeline_config: Path = typer.Option(...
 
 
 @app.command("slurm")
-def slurm_cmd(run_dir: Path, pipeline_config: Path = typer.Option(..., "--pipeline-config"), out: Path = typer.Option(...), run_id: Optional[str] = None, ops_config: Optional[Path] = None):
+def slurm_cmd(run_dir: Path, pipeline_config: Path = typer.Option(..., "--pipeline-config"), out: Path = typer.Option(...), run_id: str | None = None, ops_config: Path | None = None):
     cfg = load_yaml(ops_config)
     plan = build_resource_plan(pipeline_config, run_dir=run_dir, ops_config=cfg)
     write_resource_plan(plan, out)
@@ -78,17 +77,17 @@ def slurm_artifact_array_cmd(artifact_job_plan_csv: Path, out: Path = typer.Opti
 
 
 @app.command("submit")
-def submit_cmd(ops_dir: Path, scheduler: str = "slurm", dry_run: bool = True, allow_execute: bool = False, limit: Optional[int] = None):
+def submit_cmd(ops_dir: Path, scheduler: str = "slurm", dry_run: bool = True, allow_execute: bool = False, limit: int | None = None):
     _print_paths(submit_scripts(ops_dir, scheduler=scheduler, dry_run=dry_run, allow_execute=allow_execute, limit=limit))
 
 
 @app.command("scheduler-status")
-def scheduler_status_cmd(ops_dir: Path, scheduler: str = "slurm", job_id: Optional[str] = None, user: Optional[str] = None, dry_run: bool = True, allow_execute: bool = False):
+def scheduler_status_cmd(ops_dir: Path, scheduler: str = "slurm", job_id: str | None = None, user: str | None = None, dry_run: bool = True, allow_execute: bool = False):
     _print_paths(scheduler_status(ops_dir, scheduler=scheduler, job_id=job_id, user=user, dry_run=dry_run, allow_execute=allow_execute))
 
 
 @app.command("scheduler-cancel")
-def scheduler_cancel_cmd(ops_dir: Path, scheduler: str = "slurm", job_id: Optional[str] = None, job_file: Optional[Path] = None, dry_run: bool = True, allow_execute: bool = False):
+def scheduler_cancel_cmd(ops_dir: Path, scheduler: str = "slurm", job_id: str | None = None, job_file: Path | None = None, dry_run: bool = True, allow_execute: bool = False):
     _print_paths(scheduler_cancel(ops_dir, scheduler=scheduler, job_id=job_id, job_file=job_file, dry_run=dry_run, allow_execute=allow_execute))
 
 
@@ -98,7 +97,7 @@ def status_snapshot_cmd(plan_csv: Path = typer.Option(...), out: Path = typer.Op
 
 
 @app.command("retry")
-def retry_cmd(run_dir: Path, out: Path = typer.Option(...), pipeline_config: Optional[Path] = typer.Option(None, "--pipeline-config")):
+def retry_cmd(run_dir: Path, out: Path = typer.Option(...), pipeline_config: Path | None = typer.Option(None, "--pipeline-config")):
     _print_paths(write_retry_plan(run_dir, out, pipeline_config))
 
 
@@ -118,7 +117,7 @@ def backend_compare_cmd(run_dir: Path, out: Path = typer.Option(...)):
 
 
 @app.command("autotune")
-def autotune_cmd(run_dir: Path, out: Path = typer.Option(...), pipeline_config: Optional[Path] = typer.Option(None, "--pipeline-config"), ops_config: Optional[Path] = None):
+def autotune_cmd(run_dir: Path, out: Path = typer.Option(...), pipeline_config: Path | None = typer.Option(None, "--pipeline-config"), ops_config: Path | None = None):
     cfg = load_yaml(ops_config)
     df = build_resource_autotune_suggestions(run_dir, pipeline_config, cfg)
     _print_paths(write_resource_autotune(df, out))
@@ -130,7 +129,7 @@ def compare_runs_cmd(run_a: Path, run_b: Path, out: Path = typer.Option(...)):
 
 
 @app.command("bundle")
-def bundle_cmd(run_dir: Path, out: Path = typer.Option(...), pipeline_config: Optional[Path] = typer.Option(None, "--pipeline-config"), ops_config: Optional[Path] = None):
+def bundle_cmd(run_dir: Path, out: Path = typer.Option(...), pipeline_config: Path | None = typer.Option(None, "--pipeline-config"), ops_config: Path | None = None):
     cfg = load_yaml(ops_config)
     _print_paths(build_operations_bundle(run_dir, out, pipeline_config=pipeline_config, ops_config=cfg))
 

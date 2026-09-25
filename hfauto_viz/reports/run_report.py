@@ -1,17 +1,23 @@
 from __future__ import annotations
 
-from collections import Counter
 from pathlib import Path
 
 from hfauto_viz.core.assets import write_placeholder_assets
-from hfauto_viz.core.html import esc, write_html
+from hfauto_viz.core.html import dataframe_to_html, esc, write_html
 from hfauto_viz.core.viz_manifest import VizManifest, VizRecord
-from hfauto_viz.data.loaders import RunData, dataframe_to_html
+from hfauto_viz.data.loaders import RunData
 from hfauto_viz.renderers.chemiscope_export import write_chemiscope_bundle
-from hfauto_viz.renderers.cytoscape_network import write_cytoscape_network, write_cytoscape_network_linked
+from hfauto_viz.renderers.cytoscape_network import (
+    write_cytoscape_network,
+    write_cytoscape_network_linked,
+)
 from hfauto_viz.renderers.graphviz_network import build_reaction_network
 from hfauto_viz.renderers.plotly_energy import write_energy_comparison
-from hfauto_viz.renderers.plotly_screening import write_failure_heatmap, write_quality_funnel, write_scatter
+from hfauto_viz.renderers.plotly_screening import (
+    write_failure_heatmap,
+    write_quality_funnel,
+    write_scatter,
+)
 from hfauto_viz.renderers.ranking_table import write_candidate_thumbnail_table
 from hfauto_viz.reports.molecule_dossier import render_molecule_dossier
 from hfauto_viz.reports.reaction_dossier import render_reaction_dossier
@@ -80,7 +86,7 @@ def generate_visualizations(run_dir: str | Path, out_dir: str | Path | None = No
     viz = VizManifest(run.run_id, out)
 
     library_mode = str(config.get('library_mode') or config.get('asset_mode') or 'cdn')
-    asset_mode = str(config.get('asset_mode') or ('local' if library_mode in {'local', 'auto', 'offline', 'bundle'} else 'local'))
+    asset_mode = str(config.get('asset_mode') or 'local')
     assets_dir = write_placeholder_assets(out)
     viz.add(VizRecord('viz_assets_bundle', 'asset_bundle', str(assets_dir), renderer='hfauto_viz_assets', data={'asset_mode': asset_mode, 'library_mode': library_mode}))
 
@@ -160,12 +166,12 @@ def generate_visualizations(run_dir: str | Path, out_dir: str | Path | None = No
     rows = candidate_df.head(20) if not candidate_df.empty else reaction_df.head(20)
     body = (
         f"{warning}"
-        f"<div class='card'><h2>Phase 11 production visualization report</h2><p class='muted'>Compatibility label: Phase 8 visualization report / Phase 8.5 hardened report.</p><p><b>run_id:</b> {esc(run.run_id)}</p><p><b>latest stage:</b> {esc(run.manifest.stage)}</p><p><b>library_mode:</b> {esc(library_mode)}</p><p class='muted'>Includes linked reaction-network/3D viewer, annotated bond-change structure views, imaginary-mode arrows, path-source tracking, and publication figure bundles.</p></div>"
+        f"<div class='card'><h2>Production visualization report</h2><p><b>run_id:</b> {esc(run.run_id)}</p><p><b>latest stage:</b> {esc(run.manifest.stage)}</p><p><b>library_mode:</b> {esc(library_mode)}</p><p class='muted'>Includes linked reaction-network/3D viewer, annotated bond-change structure views, imaginary-mode arrows, path-source tracking, and publication figure bundles.</p></div>"
         f"<div class='grid'><div class='card'><h2>Visualizations</h2><ul>{links}</ul></div><div class='card'><h2>Key review pages</h2><ul><li><a href='screening/candidate_ranking_thumbnails.html'>Ranking with thumbnails</a></li><li><a href='networks/reaction_network_interactive.html'>Interactive network</a></li><li><a href='chemiscope/hf_screening.html'>Chemiscope export</a></li><li><a href='assets/asset_status.html'>Asset status</a></li></ul></div></div>"
         f"<div class='card'><h2>Preview</h2>{dataframe_to_html(rows)}</div>"
         f"<div class='card'><iframe src='networks/reaction_network_linked.html' style='width:100%;height:760px;border:1px solid #ddd'></iframe></div>"
     )
-    report_path = write_html(out / 'report.html', f'Phase 11 production visualization report / Phase 8 visualization report: {run.run_id}', body)
+    report_path = write_html(out / 'report.html', f'Production visualization report: {run.run_id}', body)
     viz.add(VizRecord('viz_run_report', 'run_report', str(report_path), renderer='html'))
     viz.write()
     return report_path, viz

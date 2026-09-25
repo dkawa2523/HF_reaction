@@ -9,14 +9,22 @@ worker.
 """
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import pandas as pd
 
 from hfauto.core.config import load_yaml
 from hfauto.core.hashing import fingerprint_dict
-from hfauto.core.io import ensure_dir, read_jsonl, read_manifest, write_json, write_jsonl, write_manifest
+from hfauto.core.io import (
+    ensure_dir,
+    read_jsonl,
+    read_manifest,
+    write_json,
+    write_jsonl,
+    write_manifest,
+)
 from hfauto.core.schemas.artifact import Artifact
 from hfauto.core.schemas.manifest import Manifest
 from hfauto.reporting.html_report import latest_manifest_path
@@ -232,7 +240,7 @@ def write_array_plan(
     df.to_csv(csv, index=False)
     write_jsonl(df.to_dict(orient="records"), jsonl)
     by_stage = df.groupby("stage").size().to_dict() if not df.empty else {}
-    write_json(summary, {"schema_version": "hfauto.array_plan.v1", "n_array_items": int(len(df)), "by_stage": {str(k): int(v) for k, v in by_stage.items()}, "pipeline_config": str(pipeline_config) if pipeline_config else None})
+    write_json(summary, {"schema_version": "hfauto.array_plan.v1", "n_array_items": len(df), "by_stage": {str(k): int(v) for k, v in by_stage.items()}, "pipeline_config": str(pipeline_config) if pipeline_config else None})
     worker = out / "run_array_task.py"
     worker.write_text(
         "#!/usr/bin/env python\n"

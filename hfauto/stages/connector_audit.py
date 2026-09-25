@@ -103,7 +103,7 @@ class ConnectorAuditStage(Stage):
             for connector, sub in df.groupby("connector"):
                 summary_rows.append({
                     "connector": connector,
-                    "n_records": int(len(sub)),
+                    "n_records": len(sub),
                     "n_executed": int(sub["executed"].fillna(False).astype(bool).sum()),
                     "n_production_ready": int(sub["production_ready"].fillna(False).astype(bool).sum()),
                     "statuses": ";".join(f"{k}:{v}" for k, v in Counter(sub["status"].fillna("unknown")).items()),
@@ -112,7 +112,7 @@ class ConnectorAuditStage(Stage):
         summary_csv = out_dir / "production_connector_summary.csv"
         summary_df.to_csv(summary_csv, index=False)
         summary = {
-            "n_rows": int(len(df)),
+            "n_rows": len(df),
             "n_connectors": int(summary_df["connector"].nunique()) if not summary_df.empty else 0,
             "n_production_ready": int(df["production_ready"].fillna(False).astype(bool).sum()) if not df.empty else 0,
             "all_production_ready": bool((not df.empty) and df["production_ready"].fillna(False).astype(bool).all()),
@@ -132,7 +132,7 @@ class ConnectorAuditStage(Stage):
             artifact_id="production_connector_audit_table",
             artifact_type="table",
             paths={"csv": str(csv_path), "summary_csv": str(summary_csv)},
-            data={"n_rows": int(len(df)), "table_type": "production_connector_audit"},
+            data={"n_rows": len(df), "table_type": "production_connector_audit"},
         ))
         return out
 

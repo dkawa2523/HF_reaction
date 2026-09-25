@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
@@ -35,7 +34,7 @@ def write_candidate_thumbnail_table(run, candidate_df: pd.DataFrame, out_path: s
             'activation_score': esc(row.get('activation_score','')),
             'recommended_next_action': esc(row.get('recommended_next_action','')),
         })
-    header=''.join(f'<th>{esc(k)}</th>' for k in rows[0].keys()) if rows else ''
+    header=''.join(f'<th>{esc(k)}</th>' for k in rows[0]) if rows else ''
     body=''.join('<tr>'+''.join(f'<td>{v}</td>' for v in r.values())+'</tr>' for r in rows)
     html=f"<div class='card'><h2>Candidate ranking with thumbnails</h2><table class='data-table'><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table></div>"
     return write_html(out,'Candidate ranking with thumbnails',html)

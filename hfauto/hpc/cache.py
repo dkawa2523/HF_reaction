@@ -69,7 +69,7 @@ def write_cache_index(manifest: Manifest, out_dir: str | Path, run_dir: str | Pa
     csv_path = out / "calculation_cache_index.csv"
     json_path = out / "calculation_cache_index.json"
     df.to_csv(csv_path, index=False)
-    write_json(json_path, {"schema_version": "hfauto.cache_index.v1", "n_rows": int(len(df)), "rows": df.to_dict(orient="records")})
+    write_json(json_path, {"schema_version": "hfauto.cache_index.v1", "n_rows": len(df), "rows": df.to_dict(orient="records")})
     return {"csv": csv_path, "json": json_path}
 
 

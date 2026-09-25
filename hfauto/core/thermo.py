@@ -8,11 +8,12 @@ metadata-rich rather than a replacement for GoodVibes/Arkane/Cantera production
 calculations.
 """
 
-from dataclasses import dataclass
 import math
-from typing import Iterable, Any
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Any
 
-from hfauto.core.constants import HARTREE_TO_KCAL_MOL, KB_OVER_H_PER_K_S, R_KCAL_MOL_K
+from hfauto.core.constants import KB_OVER_H_PER_K_S, R_KCAL_MOL_K
 from hfauto.core.units import kcal_mol_to_hartree
 
 HC_OVER_KB_CM_K = 1.438776877
@@ -267,30 +268,6 @@ def arrhenius_fit(records: list[dict[str, Any]], k_field: str = "k_corrected_s-1
     ss_res = sum((y - (intercept + slope * x)) ** 2 for x, y in zip(xs, ys))
     r2 = None if ss_tot < 1e-30 else 1.0 - ss_res / ss_tot
     return {"fit_status": "success", "A_s-1": A, "Ea_kcal_mol": Ea, "arrhenius_b": 0.0, "r2": r2, "n_points": n}
-
-# Phase 6 compatibility aliases used by stage/backends that need a structured fit object.
-@dataclass(frozen=True)
-class ArrheniusFit:
-    A: float
-    b: float
-    Ea_kcal_mol: float
-    n_points: int
-    r2: float | None
-
-
-def fit_modified_arrhenius(points: list[tuple[float, float]]) -> ArrheniusFit | None:
-    records = [{"T_K": T, "k_corrected_s-1": k} for T, k in points]
-    fit = arrhenius_fit(records, k_field="k_corrected_s-1")
-    if fit.get("fit_status") != "success":
-        return None
-    return ArrheniusFit(
-        A=float(fit["A_s-1"]),
-        b=float(fit.get("arrhenius_b", 0.0) or 0.0),
-        Ea_kcal_mol=float(fit["Ea_kcal_mol"]),
-        n_points=int(fit.get("n_points", len(points))),
-        r2=fit.get("r2"),
-    )
-
 
 def equilibrium_constant(delta_G_kcal_mol: float | None, T_K: float) -> float | None:
     return equilibrium_constant_from_delta_g(delta_G_kcal_mol, T_K)

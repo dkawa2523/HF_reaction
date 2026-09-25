@@ -1,53 +1,95 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from hfauto.core.artifact_types import STAGE_CONTRACTS
 from hfauto.core.hashing import fingerprint_dict
 from hfauto.core.schemas.artifact import Artifact
 from hfauto.core.schemas.manifest import Manifest
 
-
 DEFAULT_RESOURCE_PROFILES: dict[str, dict[str, Any]] = {
-    "conformers": {"backend": "crest", "threads": 8, "memory_gb": 8, "walltime": "04:00:00", "queue": "short"},
-    "preopt": {"backend": "xtb", "threads": 4, "memory_gb": 4, "walltime": "01:00:00", "queue": "short"},
-    "dft-minima": {"backend": "orca", "threads": 16, "memory_gb": 32, "walltime": "12:00:00", "queue": "medium"},
-    "sp": {"backend": "orca", "threads": 24, "memory_gb": 48, "walltime": "08:00:00", "queue": "medium"},
-    "ts-search": {"backend": "orca_nebts", "threads": 24, "memory_gb": 64, "walltime": "24:00:00", "queue": "long"},
-    "irc": {"backend": "orca", "threads": 16, "memory_gb": 32, "walltime": "12:00:00", "queue": "medium"},
-    "thermo": {"backend": "goodvibes", "threads": 1, "memory_gb": 2, "walltime": "00:30:00", "queue": "short"},
-    "kinetics": {"backend": "arkane_cantera", "threads": 2, "memory_gb": 4, "walltime": "01:00:00", "queue": "short"},
-    "calibrate": {"backend": "publicdb", "threads": 1, "memory_gb": 2, "walltime": "01:00:00", "queue": "short"},
-    "viz": {"backend": "hfauto_viz", "threads": 1, "memory_gb": 4, "walltime": "00:30:00", "queue": "short"},
+    "conformers": {
+        "backend": "crest",
+        "threads": 8,
+        "memory_gb": 8,
+        "walltime": "04:00:00",
+        "queue": "short",
+    },
+    "build-complexes": {
+        "backend": "crest",
+        "threads": 8,
+        "memory_gb": 8,
+        "walltime": "04:00:00",
+        "queue": "short",
+    },
+    "explore-reactions": {
+        "backend": "readuct",
+        "threads": 8,
+        "memory_gb": 16,
+        "walltime": "12:00:00",
+        "queue": "medium",
+    },
+    "preopt": {
+        "backend": "xtb",
+        "threads": 4,
+        "memory_gb": 4,
+        "walltime": "01:00:00",
+        "queue": "short",
+    },
+    "relaxation-discovery": {
+        "backend": "internal-connectivity",
+        "threads": 1,
+        "memory_gb": 2,
+        "walltime": "00:30:00",
+        "queue": "short",
+    },
+    "dft-minima": {
+        "backend": "configured-qm",
+        "threads": 16,
+        "memory_gb": 32,
+        "walltime": "12:00:00",
+        "queue": "medium",
+    },
+    "sp": {
+        "backend": "configured-qm",
+        "threads": 24,
+        "memory_gb": 48,
+        "walltime": "08:00:00",
+        "queue": "medium",
+    },
+    "ts-search": {
+        "backend": "configured-path",
+        "threads": 24,
+        "memory_gb": 64,
+        "walltime": "24:00:00",
+        "queue": "long",
+    },
+    "irc": {
+        "backend": "configured-irc",
+        "threads": 16,
+        "memory_gb": 32,
+        "walltime": "12:00:00",
+        "queue": "medium",
+    },
+    "thermo": {
+        "backend": "goodvibes",
+        "threads": 1,
+        "memory_gb": 2,
+        "walltime": "00:30:00",
+        "queue": "short",
+    },
 }
 
 STAGE_INPUT_TYPES: dict[str, list[str]] = {
-    "conformers": ["molecule", "molecule_enriched"],
-    "preopt": ["species"],
-    "dft-minima": ["species_preopt", "species"],
-    "sp": ["species_optimized", "species_preopt", "species"],
-    "ts-search": ["reaction"],
-    "irc": ["reaction_validated"],
-    "thermo": ["calculation", "reaction_path_validated"],
-    "kinetics": ["thermo"],
-    "calibrate": ["molecule_enriched", "molecule", "thermo"],
-    "viz": ["ranking", "table", "thermo", "kinetics"],
+    name: list(contract["in"]) for name, contract in STAGE_CONTRACTS.items()
 }
 
 STAGE_EXPECTED_OUTPUT_TYPES: dict[str, list[str]] = {
-    "conformers": ["conformer"],
-    "preopt": ["species_preopt", "preopt_geometry"],
-    "dft-minima": ["species_optimized", "calculation"],
-    "sp": ["calculation"],
-    "ts-search": ["ts_path", "reaction_validated"],
-    "irc": ["irc", "reaction_path_validated"],
-    "thermo": ["thermo"],
-    "kinetics": ["kinetics"],
-    "calibrate": ["calibration", "method_validation"],
-    "viz": ["visualization_bundle"],
+    name: list(contract["out"]) for name, contract in STAGE_CONTRACTS.items()
 }
 
 
@@ -113,6 +155,9 @@ def make_stage_job_plan(
     """
     cfg = config or {}
     profiles = cfg.get("resource_profiles", {}) or {}
+    pipeline_config = str(
+        cfg.get("pipeline_config") or "$HFAUTO_PIPELINE_CONFIG"
+    )
     max_jobs_per_stage = cfg.get("max_jobs_per_stage")
     run_dir = Path(run_dir)
     jobs: list[JobSpec] = []
@@ -132,7 +177,7 @@ def make_stage_job_plan(
             fp = fingerprint_dict(payload)
             job_id = f"job_{stage.replace('-', '_')}_{fp}"
             command = (
-                f"hfauto pipeline --config configs/pipelines/phase9_hpc_template.yaml "
+                f"hfauto pipeline --config {pipeline_config} "
                 f"--run-id {manifest.run_id} --from {stage} --to {stage} "
                 f"--start-manifest $(cat {run_dir / 'manifest.path'})"
             )

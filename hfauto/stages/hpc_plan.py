@@ -1,15 +1,23 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from hfauto.core.io import ensure_dir
 from hfauto.core.schemas.artifact import Artifact
 from hfauto.core.schemas.manifest import Manifest
-from hfauto.hpc.cache import write_cache_index, duplicate_cache_keys, build_cache_index
+from hfauto.hpc.cache import build_cache_index, duplicate_cache_keys, write_cache_index
 from hfauto.hpc.dashboard import render_hpc_dashboard
-from hfauto.hpc.job_plan import planned_stage_jobs, retry_jobs_from_manifest, write_job_plan, job_artifact
-from hfauto.hpc.schedulers import write_submit_scripts, write_snakemake_profile, write_snakefile_from_job_plan
+from hfauto.hpc.job_plan import (
+    job_artifact,
+    planned_stage_jobs,
+    retry_jobs_from_manifest,
+    write_job_plan,
+)
+from hfauto.hpc.schedulers import (
+    write_snakefile_from_job_plan,
+    write_snakemake_profile,
+    write_submit_scripts,
+)
 from hfauto.stages.base import Stage, StageContext
 
 
@@ -52,7 +60,7 @@ class HPCPlanStage(Stage):
             artifact_id="calculation_cache_index",
             artifact_type="cache_index",
             paths={"csv": str(cache_paths["csv"]), "json": str(cache_paths["json"]), "duplicates_csv": str(duplicate_path)},
-            data={"n_rows": int(len(cache_df)), "n_duplicate_rows": int(len(duplicate_df))},
+            data={"n_rows": len(cache_df), "n_duplicate_rows": len(duplicate_df)},
         ))
 
         snakefile = write_snakefile_from_job_plan(job_paths["csv"], out_dir / "snakemake")

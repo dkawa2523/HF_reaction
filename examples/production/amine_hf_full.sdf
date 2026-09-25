@@ -1,0 +1,584 @@
+ammonia
+     RDKit          3D
+
+  4  3  0  0  0  0  0  0  0  0999 V2000
+    0.0007   -0.0011    0.2956 N   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.5786   -0.7402   -0.0999 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.3524    0.8716   -0.0945 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.9303   -0.1303   -0.1011 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  1  3  1  0
+  1  4  1  0
+M  END
+>  <candidate_id>  (1) 
+NH3
+
+>  <class>  (1) 
+reference_base
+
+>  <problem_axis>  (1) 
+small-molecule anchor
+
+>  <hypothesis>  (1) 
+Weakest nitrogen-base anchor; additional HF should most clearly expose cluster cooperativity.
+
+>  <reference_source>  (1) 
+NIST Chemistry WebBook reviewed value
+
+>  <canonical_smiles>  (1) 
+N
+
+>  <panel_id>  (1) 
+amine_hf_gas_phase_2026
+
+>  <panel_subset>  (1) 
+full
+
+>  <proton_affinity_kj_mol>  (1) 
+853.6
+
+>  <gas_basicity_kj_mol>  (1) 
+819.0
+
+$$$$
+methylamine
+     RDKit          3D
+
+  7  6  0  0  0  0  0  0  0  0999 V2000
+   -0.5719    0.0520    0.0184 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.8214   -0.0095   -0.3854 N   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.1553   -0.6986   -0.5220 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.9872    1.0383   -0.2064 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.6700   -0.1335    1.0918 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.3588    0.6736    0.1468 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.2043   -0.9224   -0.1432 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  1  3  1  0
+  1  4  1  0
+  1  5  1  0
+  2  6  1  0
+  2  7  1  0
+M  END
+>  <candidate_id>  (2) 
+MA
+
+>  <class>  (2) 
+primary_aliphatic_amine
+
+>  <problem_axis>  (2) 
+alkyl substitution
+
+>  <hypothesis>  (2) 
+One methyl group should strengthen proton acceptance relative to ammonia while retaining low steric shielding.
+
+>  <reference_source>  (2) 
+NIST Chemistry WebBook reviewed value
+
+>  <canonical_smiles>  (2) 
+CN
+
+>  <panel_id>  (2) 
+amine_hf_gas_phase_2026
+
+>  <panel_subset>  (2) 
+full
+
+>  <proton_affinity_kj_mol>  (2) 
+899.0
+
+>  <gas_basicity_kj_mol>  (2) 
+864.5
+
+$$$$
+dimethylamine
+     RDKit          3D
+
+ 10  9  0  0  0  0  0  0  0  0999 V2000
+    1.1272    0.3574    0.2418 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.0002    0.2734   -0.6773 N   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.1783   -0.2610   -0.0086 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.9053    1.0257    1.0802 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.9962    0.7657   -0.2834 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.4017   -0.6282    0.6319 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.2481   -0.3347   -1.4573 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.0099   -0.3089   -0.7185 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.4896    0.3833    0.8201 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.0008   -1.2726    0.3710 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  2  3  1  0
+  1  4  1  0
+  1  5  1  0
+  1  6  1  0
+  2  7  1  0
+  3  8  1  0
+  3  9  1  0
+  3 10  1  0
+M  END
+>  <candidate_id>  (3) 
+DMA
+
+>  <class>  (3) 
+secondary_aliphatic_amine
+
+>  <problem_axis>  (3) 
+alkyl substitution
+
+>  <hypothesis>  (3) 
+Higher intrinsic basicity than methylamine should compete with increasing methyl crowding.
+
+>  <reference_source>  (3) 
+NIST Chemistry WebBook reviewed value
+
+>  <canonical_smiles>  (3) 
+CNC
+
+>  <panel_id>  (3) 
+amine_hf_gas_phase_2026
+
+>  <panel_subset>  (3) 
+full
+
+>  <proton_affinity_kj_mol>  (3) 
+929.5
+
+$$$$
+trimethylamine
+     RDKit          3D
+
+ 13 12  0  0  0  0  0  0  0  0999 V2000
+    0.1828    1.3540   -0.2431 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.0521   -0.0669   -0.4972 N   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.2816   -0.5073    0.1609 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.0860   -0.8630   -0.0392 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.0812    1.6953   -0.7694 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.6506    1.9555   -0.6230 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.3055    1.5700    0.8245 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.1417    0.0602   -0.2116 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.2352   -0.3883    1.2496 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.4810   -1.5614   -0.0625 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.9298   -1.9235   -0.2663 H   0  0  0  0  0  0  0  0  0  0  0  0
+    2.0009   -0.5620   -0.5618 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.2558   -0.7625    1.0390 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  2  3  1  0
+  2  4  1  0
+  1  5  1  0
+  1  6  1  0
+  1  7  1  0
+  3  8  1  0
+  3  9  1  0
+  3 10  1  0
+  4 11  1  0
+  4 12  1  0
+  4 13  1  0
+M  END
+>  <candidate_id>  (4) 
+TMA
+
+>  <class>  (4) 
+tertiary_aliphatic_amine
+
+>  <problem_axis>  (4) 
+strong compact base
+
+>  <hypothesis>  (4) 
+High gas-phase basicity should favor the ion-pair endpoint, while three methyl groups may alter the approach geometry.
+
+>  <reference_source>  (4) 
+NIST Chemistry WebBook reviewed value
+
+>  <canonical_smiles>  (4) 
+CN(C)C
+
+>  <panel_id>  (4) 
+amine_hf_gas_phase_2026
+
+>  <panel_subset>  (4) 
+full
+
+>  <proton_affinity_kj_mol>  (4) 
+948.9
+
+>  <gas_basicity_kj_mol>  (4) 
+918.0
+
+$$$$
+triethylamine
+     RDKit          3D
+
+ 22 21  0  0  0  0  0  0  0  0999 V2000
+   -1.6899    2.0129   -0.5376 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.5679    1.5296    0.3768 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.0179    0.2390   -0.0337 N   0  0  0  0  0  0  0  0  0  0  0  0
+    1.2612   -0.0132    0.7202 C   0  0  0  0  0  0  0  0  0  0  0  0
+    2.3919   -0.3767   -0.2344 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.9514   -0.8638    0.1103 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.4599   -2.1977   -0.4450 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.5971    1.4117   -0.4297 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.3799    1.9940   -1.5876 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.9541    3.0457   -0.2861 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.9245    1.4880    1.4137 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.2110    2.3022    0.3351 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.5840    0.8773    1.2753 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.1351   -0.7957    1.4784 H   0  0  0  0  0  0  0  0  0  0  0  0
+    2.1814   -1.2919   -0.7946 H   0  0  0  0  0  0  0  0  0  0  0  0
+    2.5719    0.4296   -0.9538 H   0  0  0  0  0  0  0  0  0  0  0  0
+    3.3183   -0.5359    0.3271 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.2421   -0.9911    1.1609 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.8648   -0.6284   -0.4458 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.1411   -2.0972   -1.4877 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.2706   -2.9336   -0.4144 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.3708   -2.6046    0.1389 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  2  3  1  0
+  3  4  1  0
+  4  5  1  0
+  3  6  1  0
+  6  7  1  0
+  1  8  1  0
+  1  9  1  0
+  1 10  1  0
+  2 11  1  0
+  2 12  1  0
+  4 13  1  0
+  4 14  1  0
+  5 15  1  0
+  5 16  1  0
+  5 17  1  0
+  6 18  1  0
+  6 19  1  0
+  7 20  1  0
+  7 21  1  0
+  7 22  1  0
+M  END
+>  <candidate_id>  (5) 
+TEA
+
+>  <class>  (5) 
+sterically_screened_tertiary_amine
+
+>  <problem_axis>  (5) 
+steric accessibility
+
+>  <hypothesis>  (5) 
+A strong but more shielded site tests whether HF capture and barrier height depart from proton-affinity ordering.
+
+>  <reference_source>  (5) 
+NIST Chemistry WebBook reviewed value
+
+>  <canonical_smiles>  (5) 
+CCN(CC)CC
+
+>  <panel_id>  (5) 
+amine_hf_gas_phase_2026
+
+>  <panel_subset>  (5) 
+full
+
+>  <proton_affinity_kj_mol>  (5) 
+981.8
+
+>  <gas_basicity_kj_mol>  (5) 
+951.0
+
+$$$$
+aniline
+     RDKit          3D
+
+ 14 14  0  0  0  0  0  0  0  0999 V2000
+    2.2962   -0.0926   -0.0937 N   0  0  0  0  0  0  0  0  0  0  0  0
+    0.9163   -0.0409   -0.0196 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.2627    1.1641    0.2481 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.1329    1.2265    0.2911 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.8892    0.0813    0.0542 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.2489   -1.1224   -0.2300 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.1469   -1.1791   -0.2718 C   0  0  0  0  0  0  0  0  0  0  0  0
+    2.8502    0.7154    0.1529 H   0  0  0  0  0  0  0  0  0  0  0  0
+    2.7666   -0.9773   -0.2226 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.8367    2.0690    0.4269 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.6265    2.1703    0.5058 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.9743    0.1279    0.0857 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.8333   -2.0178   -0.4234 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.6295   -2.1244   -0.5035 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  2  3  2  0
+  3  4  1  0
+  4  5  2  0
+  5  6  1  0
+  6  7  2  0
+  7  2  1  0
+  1  8  1  0
+  1  9  1  0
+  3 10  1  0
+  4 11  1  0
+  5 12  1  0
+  6 13  1  0
+  7 14  1  0
+M  END
+>  <candidate_id>  (6) 
+ANL
+
+>  <class>  (6) 
+resonance_delocalized_amine
+
+>  <problem_axis>  (6) 
+lone-pair delocalization
+
+>  <hypothesis>  (6) 
+Resonance lowers intrinsic basicity and should weaken proton transfer despite an accessible nitrogen.
+
+>  <reference_source>  (6) 
+NIST Chemistry WebBook reviewed value
+
+>  <canonical_smiles>  (6) 
+Nc1ccccc1
+
+>  <panel_id>  (6) 
+amine_hf_gas_phase_2026
+
+>  <panel_subset>  (6) 
+full
+
+>  <proton_affinity_kj_mol>  (6) 
+882.5
+
+>  <gas_basicity_kj_mol>  (6) 
+850.6
+
+$$$$
+pyridine
+     RDKit          3D
+
+ 11 11  0  0  0  0  0  0  0  0999 V2000
+   -0.1661   -1.5752   -0.3062 N   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.2358   -0.7734   -0.1121 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.1439    0.5836    0.1534 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.1219    1.1560    0.2247 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.2430    0.3561    0.0293 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.0497   -0.9913   -0.2310 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.2013   -1.2666   -0.1776 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.0372    1.1796    0.3010 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.2337    2.2165    0.4309 H   0  0  0  0  0  0  0  0  0  0  0  0
+    2.2430    0.7716    0.0783 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.8930   -1.6569   -0.3907 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  2  0
+  2  3  1  0
+  3  4  2  0
+  4  5  1  0
+  5  6  2  0
+  6  1  1  0
+  2  7  1  0
+  3  8  1  0
+  4  9  1  0
+  5 10  1  0
+  6 11  1  0
+M  END
+>  <candidate_id>  (7) 
+PYR
+
+>  <class>  (7) 
+aromatic_pyridine_like_base
+
+>  <problem_axis>  (7) 
+aromatic accessible nitrogen
+
+>  <hypothesis>  (7) 
+An accessible aromatic lone pair provides a contrast to resonance-delocalized aniline at similar molecular size.
+
+>  <reference_source>  (7) 
+NIST Chemistry WebBook reviewed value
+
+>  <canonical_smiles>  (7) 
+c1ccncc1
+
+>  <panel_id>  (7) 
+amine_hf_gas_phase_2026
+
+>  <panel_subset>  (7) 
+full
+
+>  <proton_affinity_kj_mol>  (7) 
+930.0
+
+>  <gas_basicity_kj_mol>  (7) 
+898.0
+
+$$$$
+imidazole
+     RDKit          3D
+
+  9  9  0  0  0  0  0  0  0  0999 V2000
+   -0.7326   -0.9762   -0.0225 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.5137   -1.2934   -0.2877 N   0  0  0  0  0  0  0  0  0  0  0  0
+    1.2083   -0.1131   -0.2273 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.3678    0.9308    0.0789 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.8697    0.3633    0.2068 N   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.5676   -1.6629    0.0172 H   0  0  0  0  0  0  0  0  0  0  0  0
+    2.2751   -0.0787   -0.4073 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.5372    1.9895    0.2119 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.7321    0.8407    0.4299 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  2  0
+  2  3  1  0
+  3  4  2  0
+  4  5  1  0
+  5  1  1  0
+  1  6  1  0
+  3  7  1  0
+  4  8  1  0
+  5  9  1  0
+M  END
+>  <candidate_id>  (8) 
+IMD
+
+>  <class>  (8) 
+heteroaromatic_multinitrogen_base
+
+>  <problem_axis>  (8) 
+site selectivity
+
+>  <hypothesis>  (8) 
+The pyridine-like nitrogen should be active while the pyrrolic nitrogen must remain excluded.
+
+>  <reference_source>  (8) 
+NIST Chemistry WebBook reviewed value
+
+>  <canonical_smiles>  (8) 
+c1c[nH]cn1
+
+>  <panel_id>  (8) 
+amine_hf_gas_phase_2026
+
+>  <panel_subset>  (8) 
+full
+
+>  <proton_affinity_kj_mol>  (8) 
+942.8
+
+>  <gas_basicity_kj_mol>  (8) 
+909.2
+
+$$$$
+1,4-diazabicyclo[2.2.2]octane
+     RDKit          3D
+
+ 20 21  0  0  0  0  0  0  0  0999 V2000
+   -0.1780   -1.3463   -0.8139 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.3220   -0.8628    0.1209 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.9875    0.4174    0.8069 N   0  0  0  0  0  0  0  0  0  0  0  0
+    0.2849    0.1826    1.5466 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.4289   -0.3009    0.6119 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.9875   -0.4174   -0.8069 N   0  0  0  0  0  0  0  0  0  0  0  0
+    0.4651    0.9220   -1.2001 C   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.6789    1.4055   -0.2654 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.1546   -2.3462   -0.5084 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.5535   -1.4477   -1.8397 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.2452   -0.7327   -0.4575 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.5371   -1.6312    0.8738 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.5847    1.1083    2.0535 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.1122   -0.5583    2.3372 H   0  0  0  0  0  0  0  0  0  0  0  0
+    2.2763    0.3933    0.6712 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.8039   -1.2732    0.9549 H   0  0  0  0  0  0  0  0  0  0  0  0
+    0.1065    0.8804   -2.2362 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.2871    1.6484   -1.1887 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.4045    2.3634    0.1937 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.5851    1.5954   -0.8538 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  2  3  1  0
+  3  4  1  0
+  4  5  1  0
+  5  6  1  0
+  6  7  1  0
+  7  8  1  0
+  6  1  1  0
+  8  3  1  0
+  1  9  1  0
+  1 10  1  0
+  2 11  1  0
+  2 12  1  0
+  4 13  1  0
+  4 14  1  0
+  5 15  1  0
+  5 16  1  0
+  7 17  1  0
+  7 18  1  0
+  8 19  1  0
+  8 20  1  0
+M  END
+>  <candidate_id>  (9) 
+DABCO
+
+>  <class>  (9) 
+rigid_diamine
+
+>  <problem_axis>  (9) 
+multiple basic sites
+
+>  <hypothesis>  (9) 
+Two symmetry-related nitrogens test site deduplication and possible second-site stabilization by larger HF clusters.
+
+>  <reference_source>  (9) 
+reference value requires reviewed snapshot
+
+>  <canonical_smiles>  (9) 
+C1CN2CCN1CC2
+
+>  <panel_id>  (9) 
+amine_hf_gas_phase_2026
+
+>  <panel_subset>  (9) 
+full
+
+$$$$
+dimethyl_ether
+     RDKit          3D
+
+  9  8  0  0  0  0  0  0  0  0999 V2000
+    1.1747   -0.0411   -0.1976 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.0447    0.7269    0.1936 O   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.1703    0.1130   -0.2146 C   0  0  0  0  0  0  0  0  0  0  0  0
+    2.0767    0.4759    0.1406 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.2143   -0.1368   -1.2870 H   0  0  0  0  0  0  0  0  0  0  0  0
+    1.1443   -1.0315    0.2669 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -2.0017    0.7438    0.1111 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.2764   -0.8724    0.2494 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -1.2063    0.0223   -1.3046 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+  2  3  1  0
+  1  4  1  0
+  1  5  1  0
+  1  6  1  0
+  3  7  1  0
+  3  8  1  0
+  3  9  1  0
+M  END
+>  <candidate_id>  (10) 
+DME
+
+>  <class>  (10) 
+non_amine_control
+
+>  <problem_axis>  (10) 
+negative control
+
+>  <hypothesis>  (10) 
+A weaker oxygen base should remain dominated by molecular HF association and calibrate false activation claims.
+
+>  <reference_source>  (10) 
+NIST Chemistry WebBook reviewed value
+
+>  <canonical_smiles>  (10) 
+COC
+
+>  <panel_id>  (10) 
+amine_hf_gas_phase_2026
+
+>  <panel_subset>  (10) 
+full
+
+>  <proton_affinity_kj_mol>  (10) 
+792.0
+
+>  <gas_basicity_kj_mol>  (10) 
+760.0
+
+$$$$

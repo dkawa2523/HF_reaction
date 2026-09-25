@@ -42,7 +42,7 @@ def detect_pt_atoms(frame: Frame) -> dict[str, int | None]:
         for i,a in enumerate(frame):
             if i in {best_h,best_f} or a.symbol.upper() in {'H','F'}:
                 continue
-            d=distance(frame[i],frame[best_h])
+            d=distance(a,frame[best_h])
             if d<best_b:
                 best_b=d; base=i
     return {"base_atom": base, "transfer_h": best_h, "leaving_f": best_f}
@@ -71,5 +71,10 @@ def coordinate_values(frame: Frame, atoms: dict[str, int | None]) -> dict[str, f
     f=safe_atom(frame, atoms.get('leaving_f'))
     r_bh=distance(b,h) if b and h else None
     r_hf=distance(h,f) if h and f else None
-    q=(r_bh-r_hf) if r_bh is not None and r_hf is not None else None
-    return {'r_BH_A': r_bh, 'r_HF_A': r_hf, 'q_BH_minus_HF_A': q}
+    q=(r_hf-r_bh) if r_bh is not None and r_hf is not None else None
+    return {
+        'r_BH_A': r_bh,
+        'r_HF_A': r_hf,
+        'q_HF_minus_BH_A': q,
+        'q_BH_minus_HF_A': (-q if q is not None else None),
+    }

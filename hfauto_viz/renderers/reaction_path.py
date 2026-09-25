@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from pathlib import Path
-from hfauto_viz.structure.xyz import parse_xyz_frames, frames_to_xyz, reaction_path_frames
+
+from hfauto_viz.structure.xyz import frames_to_xyz, parse_xyz_frames, reaction_path_frames
 
 
 def build_reactant_ts_product_path(reactant_xyz: str, ts_xyz: str, product_xyz: str, out_path: str | Path, n_each: int = 8) -> Path:

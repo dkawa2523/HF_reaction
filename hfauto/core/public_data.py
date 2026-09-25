@@ -156,36 +156,8 @@ STATIC_PUBCHEM = {
 
 
 def _norm_static_key(value: Any) -> str:
-    return "".join(ch.lower() for ch in str(value or "") if ch.isalnum() or ch == "_").replace(" ", "_")
-
-
-def first_static_match(data: dict[str, Any], table: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
-    keys = []
-    for key in [data.get("name"), data.get("canonical_smiles"), data.get("inchikey")]:
-        if key:
-            keys.append(str(key).strip().lower())
-            keys.append(_norm_static_key(key))
-    for key in keys:
-        if key in table:
-            return key, table[key]
-    # Match by InChIKey stored inside properties.
-    inchikey = data.get("inchikey")
-    if inchikey:
-        for key, rec in table.items():
-            if (rec.get("properties") or {}).get("InChIKey") == inchikey:
-                return key, rec
-    return None, None
-
-STATIC_PUBCHEM = {
-    "ammonia": {"cid": 222, "cas_rn": "7664-41-7", "properties": {"MolecularFormula": "H3N", "MolecularWeight": 17.031, "CanonicalSMILES": "N", "InChIKey": "QGZKDVFQNNGYKY-UHFFFAOYSA-N"}},
-    "trimethylamine": {"cid": 1146, "properties": {"MolecularFormula": "C3H9N", "MolecularWeight": 59.112, "CanonicalSMILES": "CN(C)C", "InChIKey": "GETQZCLCWQTVFV-UHFFFAOYSA-N"}},
-    "pyridine": {"cid": 1049, "properties": {"MolecularFormula": "C5H5N", "MolecularWeight": 79.102, "CanonicalSMILES": "C1=CC=NC=C1", "InChIKey": "JUJWROOIHBZHMG-UHFFFAOYSA-N"}},
-    "dimethyl_ether": {"cid": 8254, "properties": {"MolecularFormula": "C2H6O", "MolecularWeight": 46.069, "CanonicalSMILES": "COC", "InChIKey": "LCGLNKUTAGEVQW-UHFFFAOYSA-N"}},
-}
-
-
-def _norm_static_key(value: Any) -> str:
     import re
+
     return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
 
 
@@ -198,31 +170,6 @@ def first_static_match(data: dict[str, Any], table: dict[str, dict[str, Any]]) -
         if any(k and k in candidates for k in keys):
             return raw_key, rec
     return None, None
-
-
-def process_penalty_from_public_data(public_data: dict[str, Any] | None) -> float:
-    flags = gas_process_flags(public_data)
-    penalty = 0.0
-    if flags.get("manual_ehs_review_required"):
-        penalty += 0.5
-    feasibility = str(flags.get("gas_process_feasibility", "")).lower()
-    if any(x in feasibility for x in ["low_volatility", "manual_review", "unknown"]):
-        penalty += 0.2
-    return min(1.5, penalty)
-
-
-def process_penalty_from_public_data(public_data: dict[str, Any] | None) -> float:
-    public_data = public_data or {}
-    flags = gas_process_flags(public_data)
-    penalty = 0.0
-    if flags.get("manual_ehs_review_required"):
-        penalty += 0.5
-    feasibility = str(flags.get("gas_process_feasibility", "")).lower()
-    if any(token in feasibility for token in ["poor", "borderline", "low_vapor", "manual_review", "unknown"]):
-        penalty += 0.2
-    if public_data.get("niosh", {}).get("matched") and public_data.get("niosh", {}).get("manual_ehs_review_required", True):
-        penalty += 0.3
-    return min(1.5, penalty)
 
 
 def process_penalty_from_public_data(public_data: dict[str, Any] | None) -> float:
@@ -239,4 +186,4 @@ def process_penalty_from_public_data(public_data: dict[str, Any] | None) -> floa
         penalty += 0.35
     if public_data.get("niosh", {}).get("manual_ehs_review_required"):
         penalty += 0.20
-    return penalty
+    return min(1.5, penalty)

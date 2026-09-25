@@ -2,16 +2,77 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from hfauto.core.hashing import sha256_text
-from hfauto.core.io import read_jsonl, read_manifest, write_json, write_jsonl
+from hfauto.core.io import read_manifest, write_json, write_jsonl
 from hfauto.core.schemas.artifact import Artifact
 from hfauto.reporting.html_report import latest_manifest_path
+
+
+def load_latest_manifest(run_dir: str | Path):
+    """Compatibility API returning the latest manifest and its path."""
+    path = latest_manifest_path(Path(run_dir))
+    return read_manifest(path), path
+
+
+def latest_table_path(
+    manifest,
+    artifact_id: str,
+    preferred: tuple[str, ...] = ("parquet", "csv", "json", "jsonl"),
+) -> Path | None:
+    """Resolve a table path from the latest revision of an artifact."""
+    artifact = manifest.find(artifact_id)
+    if artifact is None:
+        return None
+    for key in preferred:
+        raw = artifact.paths.get(key)
+        if raw:
+            return Path(raw)
+    return Path(next(iter(artifact.paths.values()))) if artifact.paths else None
+
+
+def read_table(path: str | Path | None) -> pd.DataFrame:
+    """Read a supported table, returning an empty frame for missing outputs."""
+    if path is None or not Path(path).exists():
+        return pd.DataFrame()
+    p = Path(path)
+    if p.suffix.lower() == ".parquet":
+        return pd.read_parquet(p)
+    if p.suffix.lower() in {".json", ".jsonl"}:
+        return pd.read_json(p, lines=p.suffix.lower() == ".jsonl")
+    return pd.read_csv(p)
+
+
+def failure_rows(manifest) -> list[dict[str, Any]]:
+    """Return only unresolved failures from the latest artifact revisions."""
+    return [
+        {
+            "artifact_id": artifact.artifact_id,
+            "artifact_type": artifact.artifact_type,
+            "category": artifact.status.category,
+            "reason": artifact.status.reason,
+            "recoverable": artifact.status.recoverable,
+            "recommended_fallback": artifact.status.recommended_fallback,
+            "stage": (artifact.method or {}).get("stage") or artifact.data.get("stage"),
+        }
+        for artifact in manifest.latest_artifacts()
+        if artifact.status.status == "failed"
+    ]
+
+
+def run_summary(manifest) -> dict[str, Any]:
+    latest = manifest.latest_artifacts()
+    return {
+        "run_id": manifest.run_id,
+        "latest_stage": manifest.stage,
+        "n_artifacts": len(latest),
+        "n_failures": sum(a.status.status == "failed" for a in latest),
+        "n_fallback_dummy": sum(bool(a.qc.get("fallback_dummy") or a.data.get("fallback_dummy")) for a in latest),
+    }
 
 
 def _safe_get(d: dict[str, Any] | None, *keys: str, default: Any = None) -> Any:
@@ -65,10 +126,7 @@ def build_artifact_dataframe(manifest_path: str | Path) -> pd.DataFrame:
 
 def stage_manifests(run_dir: str | Path) -> list[Path]:
     run = Path(run_dir)
-    out: list[Path] = []
-    for p in sorted(run.glob("[0-9][0-9]_*/*manifest.json")):
-        out.append(p)
-    return out
+    return sorted(run.glob("[0-9][0-9]_*/*manifest.json"))
 
 
 def build_stage_dataframe(run_dir: str | Path) -> pd.DataFrame:
@@ -174,11 +232,11 @@ def write_index_bundle(run_dir: str | Path, out_dir: str | Path) -> dict[str, Pa
     summary = {
         "run_dir": str(run),
         "latest_manifest": str(manifest_path),
-        "n_artifacts": int(len(artifacts)),
-        "n_stage_manifests": int(len(stages)),
+        "n_artifacts": len(artifacts),
+        "n_stage_manifests": len(stages),
         "n_failures": int((artifacts.get("status") == "failed").sum()) if not artifacts.empty else 0,
         "n_fallback_dummy": int(artifacts.get("fallback_dummy", pd.Series(dtype=bool)).fillna(False).sum()) if not artifacts.empty else 0,
-        "n_duplicate_candidate_rows": int(len(duplicates)),
+        "n_duplicate_candidate_rows": len(duplicates),
     }
     summary_path = write_json(out / "ops_index_summary.json", summary)
     return {

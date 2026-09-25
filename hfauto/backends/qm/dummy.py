@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 from hfauto.chemistry.descriptors import hf_descriptors_from_species
+from hfauto.core.artifacts import canonical_species_id
 from hfauto.core.hashing import fingerprint_dict
 from hfauto.core.schemas.artifact import Artifact
 from hfauto.core.units import kcal_mol_to_hartree
@@ -18,7 +20,7 @@ class DummyQMEngine:
 
     name = "dummy"
 
-    SITE_STRENGTH = {
+    SITE_STRENGTH: ClassVar[dict[str, float]] = {
         "amidine_like": 1.15,
         "aliphatic_amine": 1.00,
         "pyridine_like": 0.78,
@@ -30,9 +32,6 @@ class DummyQMEngine:
 
     def __init__(self, **kwargs):
         self.config = kwargs
-
-    def _canonical_species_id(self, species: Artifact) -> str:
-        return str(species.data.get("species_id") or species.data.get("source_species_id") or species.artifact_id)
 
     def _strength(self, species: Artifact) -> float:
         return float(self.SITE_STRENGTH.get(species.data.get("site_type"), 0.5))
@@ -97,7 +96,7 @@ class DummyQMEngine:
             method={"engine": self.name, "method_id": method.get("method_id", "dummy"), "task": task},
             data={
                 "calc_id": calc_id,
-                "species_id": self._canonical_species_id(species),
+                "species_id": canonical_species_id(species),
                 "task": task,
                 "engine": self.name,
                 "method_id": method.get("method_id", "dummy"),
@@ -132,7 +131,7 @@ class DummyQMEngine:
             method={"engine": self.name, "method_id": method.get("method_id", "dummy"), "task": task},
             data={
                 "calc_id": calc_id,
-                "species_id": self._canonical_species_id(species),
+                "species_id": canonical_species_id(species),
                 "task": task,
                 "engine": self.name,
                 "method_id": method.get("method_id", "dummy"),

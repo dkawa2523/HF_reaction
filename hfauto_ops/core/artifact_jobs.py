@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +10,6 @@ from hfauto.core.io import ensure_dir, read_manifest, write_json
 from hfauto.hpc.resources import estimate_artifact_resources
 from hfauto.reporting.html_report import latest_manifest_path
 from hfauto_ops.core.run_index import artifact_record
-
 
 ARTIFACT_STAGE_HINTS: dict[str, str] = {
     "species": "preopt",
@@ -28,7 +26,7 @@ ARTIFACT_STAGE_HINTS: dict[str, str] = {
     "kinetics": "kinetics",
     "molecule_enriched": "detect-sites",
     "site": "conformers",
-    "conformer": "build-hf",
+    "conformer": "build-complexes",
 }
 
 HEAVY_ARTIFACT_TYPES = {
@@ -57,9 +55,15 @@ def infer_artifact_target_stage(artifact: Any) -> str:
     method = artifact.method or {}
     data = artifact.data or {}
     stage = method.get("stage") or data.get("stage")
-    if stage in {"dft-minima", "ts-search", "irc", "sp", "thermo", "kinetics", "preopt"}:
-        if artifact.status.status == "failed" or artifact.qc.get("fallback_dummy") or data.get("fallback_dummy"):
-            return str(stage)
+    if (
+        stage in {"dft-minima", "ts-search", "irc", "sp", "thermo", "kinetics", "preopt"}
+        and (
+            artifact.status.status == "failed"
+            or artifact.qc.get("fallback_dummy")
+            or data.get("fallback_dummy")
+        )
+    ):
+        return str(stage)
     # Calculation artifacts can represent SP or opt/freq depending on task.
     if artifact.artifact_type == "calculation":
         task = str(method.get("task") or data.get("task") or "").lower()
@@ -86,9 +90,7 @@ def _should_plan_artifact(artifact: Any, include_successful: bool = False, inclu
         return True
     if include_successful and artifact.artifact_type in HEAVY_ARTIFACT_TYPES:
         return True
-    if include_lightweight and artifact.artifact_type in ARTIFACT_STAGE_HINTS:
-        return True
-    return False
+    return bool(include_lightweight and artifact.artifact_type in ARTIFACT_STAGE_HINTS)
 
 
 def artifact_job_fingerprint(artifact: Any, target_stage: str, method_config: dict[str, Any] | None = None) -> str:
@@ -182,7 +184,7 @@ def build_artifact_job_plan(
         )
     df = pd.DataFrame(rows)
     if not df.empty:
-        # Phase 12 public contract aliases used by scheduler/reporting code.
+        # Scheduler/reporting columns are normalized here once.
         df["stage"] = df["target_stage"]
         df["job_id"] = df["artifact_job_id"]
         df["target_artifact_type"] = df["artifact_type"]
@@ -249,17 +251,21 @@ def write_artifact_job_plan(
     arrays.to_csv(arrays_csv, index=False)
     jobs_json.write_text(jobs.to_json(orient="records", indent=2), encoding="utf-8")
     arrays_json.write_text(arrays.to_json(orient="records", indent=2), encoding="utf-8")
-    lines = ["#!/usr/bin/env bash", "set -euo pipefail", "", "# Artifact-level rerun commands. Review before production use."]
-    for cmd in jobs.get("command", pd.Series(dtype=str)).dropna().astype(str).tolist():
-        lines.append(cmd)
+    lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+        "# Artifact-level rerun commands. Review before production use.",
+        *jobs.get("command", pd.Series(dtype=str)).dropna().astype(str).tolist(),
+    ]
     commands.write_text("\n".join(lines) + "\n", encoding="utf-8")
     commands.chmod(0o755)
     manifest = write_json(
         out / "artifact_job_plan_manifest.json",
         {
             "schema_version": "hfauto.ops.artifact_job_plan.v1",
-            "n_artifact_jobs": int(len(jobs)),
-            "n_array_groups": int(len(arrays)),
+            "n_artifact_jobs": len(jobs),
+            "n_array_groups": len(arrays),
             "pipeline_config": str(pipeline_config) if pipeline_config else None,
             "outputs": {
                 "jobs_csv": str(jobs_csv),
@@ -280,6 +286,5 @@ def write_artifact_job_plan(
         "artifact_arrays_json": arrays_json,
         "artifact_commands": commands,
         "artifact_plan_manifest": manifest,
-        "artifact_job_plan_manifest": manifest,
         "artifact_job_plan_manifest": manifest,
     }

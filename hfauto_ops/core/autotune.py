@@ -107,27 +107,8 @@ def write_autotune_report(run_dirs_or_out_dir, out_dir: str | Path | None = None
     return {"history_csv": hist_csv, "autotune_csv": csv, "proposal_yaml": prop_yaml, "proposal_json": prop_json, "autotune_html": html, "report_html": html}
 
 
-def write_autotune_recommendations(ops_dirs: list[str | Path], out_dir: str | Path, safety_factor: float = 1.25) -> dict[str, Path]:
-    return write_autotune_report(ops_dirs, out_dir, safety_factor=safety_factor)
-
-
-def build_resource_autotune_suggestions(run_dir: str | Path, pipeline_config: str | Path | None = None, ops_config: dict[str, Any] | None = None) -> pd.DataFrame:
-    hist = collect_history([run_dir])
-    prop = propose_resources(hist, safety_factor=float((ops_config or {}).get("autotune_safety_factor", 1.25)))
-    return pd.DataFrame([{"stage": k, **v} for k, v in prop.get("resource_profile", {}).get("stages", {}).items()])
-
-
-def write_resource_autotune(df: pd.DataFrame, out_dir: str | Path) -> dict[str, Path]:
-    out = ensure_dir(out_dir)
-    csv = out / "resource_autotune_recommendations.csv"
-    html = out / "resource_autotune_report.html"
-    df.to_csv(csv, index=False)
-    html.write_text("<html><body><h1>Resource autotune recommendations</h1>" + (df.to_html(index=False) if not df.empty else "<p>No recommendations.</p>") + "</body></html>", encoding="utf-8")
-    return {"autotune_csv": csv, "autotune_html": html}
-
-# Phase 12 bundle compatibility: build suggestions directly from a pipeline plan.
 def build_resource_autotune_suggestions(run_dir: str | Path, pipeline_config: str | Path | None = None, ops_config: dict | None = None) -> pd.DataFrame:
-    from hfauto_ops.core.resource import build_resource_plan, DEFAULT_STAGE_RESOURCES
+    from hfauto_ops.core.resource import DEFAULT_STAGE_RESOURCES, build_resource_plan
     rows = []
     plan = build_resource_plan(pipeline_config, run_dir=run_dir, ops_config=ops_config or {}) if pipeline_config else pd.DataFrame()
     if plan.empty:
@@ -179,6 +160,6 @@ def write_resource_autotune(df: pd.DataFrame, out_dir: str | Path) -> dict[str, 
     html = out / "resource_autotune_report.html"
     json_path = out / "resource_autotune_suggestions.json"
     df.to_csv(csv, index=False)
-    write_json(json_path, {"schema_version": "hfauto.resource_autotune.suggestions.v1", "n_rows": int(len(df)), "rows": df.to_dict(orient="records")})
+    write_json(json_path, {"schema_version": "hfauto.resource_autotune.suggestions.v1", "n_rows": len(df), "rows": df.to_dict(orient="records")})
     html.write_text("<html><body><h1>Resource auto-tune suggestions</h1>" + (df.to_html(index=False) if not df.empty else "<p>No suggestions.</p>") + "</body></html>", encoding="utf-8")
     return {"resource_autotune_csv": csv, "resource_autotune_json": json_path, "resource_autotune_html": html}

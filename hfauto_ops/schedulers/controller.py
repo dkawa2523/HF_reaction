@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
 from hfauto.core.io import ensure_dir, write_json
-from hfauto_ops.schedulers.base import SchedulerAdapter, SchedulerResult
-from hfauto_ops.schedulers.slurm import SlurmAdapter
-from hfauto_ops.schedulers.pbs import PBSAdapter
+from hfauto_ops.schedulers.base import SchedulerAdapter
 from hfauto_ops.schedulers.lsf import LSFAdapter
+from hfauto_ops.schedulers.pbs import PBSAdapter
+from hfauto_ops.schedulers.slurm import SlurmAdapter
 
 
 def get_scheduler(name: str) -> SchedulerAdapter:

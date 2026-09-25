@@ -1,4 +1,4 @@
-# Phase 8 visualization defaults
+# Visualization defaults
 max_molecule_dossiers: 8
 max_reaction_dossiers: 8
 top_energy_profiles: 12

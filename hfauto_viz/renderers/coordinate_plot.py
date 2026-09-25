@@ -38,14 +38,17 @@ def write_reaction_coordinate_plot(
         html=write_html(out,'Reaction coordinate','<div class="warn">No frames for reaction coordinate.</div>')
         return {'html':html,'csv':csv_path}
     try:
-        import plotly.graph_objects as go, plotly.io as pio
+        import plotly.graph_objects as go
+        import plotly.io as pio
         fig=go.Figure()
         if 'r_BH_A' in df:
             fig.add_trace(go.Scatter(x=df['frame'], y=df['r_BH_A'], mode='lines+markers', name='r(B-H) / Å'))
         if 'r_HF_A' in df:
             fig.add_trace(go.Scatter(x=df['frame'], y=df['r_HF_A'], mode='lines+markers', name='r(H-F) / Å'))
-        if 'q_BH_minus_HF_A' in df:
-            fig.add_trace(go.Scatter(x=df['frame'], y=df['q_BH_minus_HF_A'], mode='lines+markers', name='q=r(B-H)-r(H-F) / Å'))
+        if 'q_HF_minus_BH_A' in df:
+            fig.add_trace(go.Scatter(x=df['frame'], y=df['q_HF_minus_BH_A'], mode='lines+markers', name='q=r(H-F)-r(B-H) / Å'))
+        elif 'q_BH_minus_HF_A' in df:
+            fig.add_trace(go.Scatter(x=df['frame'], y=-df['q_BH_minus_HF_A'], mode='lines+markers', name='q=r(H-F)-r(B-H) / Å'))
         fig.update_layout(title='Reaction coordinate along path frames', xaxis_title='Frame', yaxis_title='Distance / Å', template='plotly_white')
         div = script_tag('plotly', library_mode, prefix=asset_prefix) + pio.to_html(fig, include_plotlyjs=False, full_html=False)
     except Exception as exc:

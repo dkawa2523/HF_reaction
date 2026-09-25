@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
+
+from hfauto.core.frequency_qc import (
+    DEFAULT_IMAGINARY_FREQUENCY_CUTOFF_CM1,
+    is_significant_imaginary_frequency,
+    resolve_imaginary_frequency_cutoff,
+)
 
 
 def quality_tier(has_dft: bool, has_ts: bool, has_irc: bool, has_high_level_sp: bool) -> str:
@@ -114,13 +120,74 @@ def minimum_qc_from_freq(n_imag: int | None, state: str | None = None) -> dict:
     return out
 
 
-def ts_qc(n_imag: int | None, imag_freq_cm1: float | None, mode_overlap: float | None) -> dict:
-    valid = n_imag == 1 and (imag_freq_cm1 is not None and imag_freq_cm1 < -100.0) and (mode_overlap or 0.0) >= 0.7
+def minimum_promotion_gate(calc, require_real_qm: bool = False) -> tuple[bool, list[str]]:
+    """Decide whether a completed optimization is safe to expose as a minimum.
+
+    Backend execution status and scientific interpretation intentionally remain
+    separate: a normally completed frequency job with an imaginary mode is a
+    valid calculation, but it is not a minimum.
+    """
+    reasons: list[str] = []
+    if getattr(getattr(calc, "status", None), "status", None) != "success":
+        reasons.append("calculation_not_successful")
+    qc = getattr(calc, "qc", {}) or {}
+    data = getattr(calc, "data", {}) or {}
+    if qc.get("scf_converged") is not True:
+        reasons.append("scf_not_converged")
+    if qc.get("geometry_converged") is not True:
+        reasons.append("geometry_not_converged")
+    n_imag = data.get("n_imag", qc.get("n_imag"))
+    if n_imag is None:
+        reasons.append("frequency_missing")
+    elif int(n_imag) != 0:
+        reasons.append("imaginary_frequency")
+    if qc.get("geometry_sane") is False:
+        reasons.append("geometry_not_sane")
+    if require_real_qm:
+        if qc.get("fallback_dummy") or qc.get("engine_is_dummy"):
+            reasons.append("dummy_or_fallback_result")
+        if qc.get("real_qm_executed", qc.get("real_orca_executed")) is not True:
+            reasons.append("real_qm_not_executed")
+    return not reasons, reasons
+
+
+def ts_qc(
+    n_imag: int | None,
+    imag_freq_cm1: float | None,
+    mode_overlap: float | None,
+    *,
+    mode_overlap_threshold: float = 0.50,
+    imaginary_frequency_cutoff_cm1: float = (
+        DEFAULT_IMAGINARY_FREQUENCY_CUTOFF_CM1
+    ),
+) -> dict:
+    """Validate TS frequencies and target-mode projection.
+
+    ``n_imag`` must have been counted with the same numerical-noise cutoff.
+    IRC connectivity remains a separate, mandatory production path gate.
+    """
+
+    cutoff = resolve_imaginary_frequency_cutoff(
+        imaginary_frequency_cutoff_cm1
+    )
+    frequency_valid = bool(
+        n_imag == 1
+        and is_significant_imaginary_frequency(imag_freq_cm1, cutoff)
+    )
+    threshold = float(mode_overlap_threshold)
+    if not 0.0 < threshold <= 1.0:
+        raise ValueError("mode_overlap_threshold must be in (0, 1]")
+    projection_valid = bool((mode_overlap or 0.0) >= threshold)
+    valid = frequency_valid and projection_valid
     return {
         "ts_validated_by_frequency": bool(valid),
+        "ts_imaginary_frequency_gate_passed": frequency_valid,
+        "ts_target_mode_projection_gate_passed": projection_valid,
         "n_imag": n_imag,
         "imag_freq_cm1": imag_freq_cm1,
+        "imaginary_frequency_cutoff_cm1": cutoff,
         "mode_overlap_score": mode_overlap,
+        "mode_overlap_threshold": threshold,
     }
 
 

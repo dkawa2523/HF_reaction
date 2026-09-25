@@ -5,8 +5,6 @@ from typing import Any
 
 import pandas as pd
 
-from hfauto.backends.db.common import load_fixture, lookup_fixture
-
 from hfauto.core.reference_data import load_reference_set, match_reference
 
 

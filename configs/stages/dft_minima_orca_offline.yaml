@@ -1,8 +1,0 @@
-engine: orca
-method: r2scan3c_orca
-settings:
-  allow_subprocess: false
-  fallback_to_dummy: true
-  ncores: 4
-  memory_mb: 2000
-  orca_keywords: ["r2SCAN-3c", "TightSCF", "TightOpt"]

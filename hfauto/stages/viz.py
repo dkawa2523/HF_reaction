@@ -9,7 +9,7 @@ from hfauto.stages.base import Stage, StageContext
 
 
 class VizStage(Stage):
-    """Generate Phase 8 visualization artifacts as an optional post-processing stage.
+    """Generate visualization artifacts as an optional post-processing stage.
 
     The visualization code lives in the separate ``hfauto_viz`` package and is a
     read-only consumer of the run directory. This stage only bridges the normal
@@ -56,7 +56,7 @@ class VizStage(Stage):
             report_path, viz_manifest = generate_visualizations(run_dir, out_dir=context.out_dir, config=settings)
             out.add_artifact(
                 Artifact(
-                    artifact_id="viz_phase8_bundle",
+                    artifact_id="visualization_bundle",
                     artifact_type="visualization_bundle",
                     parents=[manifest.manifest_id],
                     paths={
@@ -65,7 +65,6 @@ class VizStage(Stage):
                         "directory": str(context.out_dir),
                     },
                     data={
-                        "phase": "phase11",
                         "visualization_package": "hfauto_viz",
                         "n_visualizations": len(getattr(viz_manifest, "records", [])),
                         "warnings": list(getattr(viz_manifest, "warnings", [])),

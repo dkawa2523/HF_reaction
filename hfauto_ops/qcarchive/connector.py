@@ -15,7 +15,7 @@ import pandas as pd
 
 from hfauto.core.io import read_manifest
 from hfauto.reporting.html_report import latest_manifest_path
-from hfauto_ops.core.run_index import artifact_record, calculation_signature
+from hfauto_ops.core.run_index import calculation_signature
 
 QCARCHIVE_TYPES = {"calculation", "species", "species_preopt", "species_optimized"}
 

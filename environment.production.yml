@@ -1,0 +1,14 @@
+name: hfauto-production
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - rdkit
+  - xtb
+  - crest
+  - graphviz
+  - openmpi
+  - nwchem=7.2.3
+  - pip:
+      - -e .[production,dev]

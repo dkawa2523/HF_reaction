@@ -14,7 +14,7 @@ import pandas as pd
 
 from hfauto.core.io import ensure_dir, read_manifest, write_json
 from hfauto.reporting.html_report import latest_manifest_path
-from hfauto_ops.core.run_index import calculation_signature, artifact_record
+from hfauto_ops.core.run_index import artifact_record, calculation_signature
 
 
 def _safe_read_csv(path: str | Path) -> pd.DataFrame:
@@ -82,7 +82,7 @@ def write_reuse_plan(target_run: str | Path, out_dir: str | Path, cache_roots: l
     json_path = out / "reuse_plan.json"
     policy = out / "reuse_decisions_template.yaml"
     df.to_csv(csv, index=False)
-    write_json(json_path, {"schema_version": "hfauto.reuse_plan.v1", "n_candidates": int(len(df)), "rows": df.to_dict(orient="records")})
+    write_json(json_path, {"schema_version": "hfauto.reuse_plan.v1", "n_candidates": len(df), "rows": df.to_dict(orient="records")})
     policy.write_text("# Review and edit decisions before applying reuse.\n# decision: accept | reject | defer\nreuse_decisions: []\n", encoding="utf-8")
     return {"reuse_csv": csv, "reuse_json": json_path, "reuse_policy_template": policy}
 
@@ -91,16 +91,11 @@ def write_reuse_plan(target_run: str | Path, out_dir: str | Path, cache_roots: l
 def write_reuse_bundle(
     target_run: str | Path,
     out_dir: str | Path,
-    artifact_job_plan_csv: str | Path | None = None,
+    job_plan_csv: str | Path | None = None,
     registry_db: str | Path | None = None,
     cache_runs: list[str | Path] | None = None,
 ) -> dict[str, Path]:
-    """Phase 12 compatibility wrapper.
-
-    Writes the conservative reuse plan plus a lightweight registry/review file.
-    `artifact_job_plan_csv` and `registry_db` are accepted so production callers
-    can keep a stable API; the current implementation does not mutate either.
-    """
+    """Write conservative reuse candidates plus a registry review file."""
     out = ensure_dir(out_dir)
     paths = write_reuse_plan(target_run, out, cache_roots=cache_runs)
     review = out / "calculation_reuse_review.csv"
@@ -108,9 +103,9 @@ def write_reuse_bundle(
         df = pd.read_csv(paths["reuse_csv"]) if Path(paths["reuse_csv"]).exists() else pd.DataFrame()
     except pd.errors.EmptyDataError:
         df = pd.DataFrame()
-    if artifact_job_plan_csv and Path(artifact_job_plan_csv).exists():
+    if job_plan_csv and Path(job_plan_csv).exists():
         try:
-            jobs = pd.read_csv(artifact_job_plan_csv)
+            jobs = pd.read_csv(job_plan_csv)
         except pd.errors.EmptyDataError:
             jobs = pd.DataFrame()
         except Exception:
@@ -127,8 +122,8 @@ def write_reuse_bundle(
     write_json(registry, {
         "schema_version": "hfauto.reuse_registry_plan.v1",
         "registry_db": str(registry_db) if registry_db else None,
-        "artifact_job_plan_csv": str(artifact_job_plan_csv) if artifact_job_plan_csv else None,
-        "n_review_rows": int(len(df)),
+        "job_plan_csv": str(job_plan_csv) if job_plan_csv else None,
+        "n_review_rows": len(df),
         "note": "Review-only reuse planning; no scientific artifact substitution performed.",
     })
     paths.update({"reuse_plan": paths["reuse_csv"], "reuse_review_csv": review, "registry_plan": registry})

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,6 @@ class SiteRecord(BaseModel):
     priority: int = 1
     site_confidence: float = 0.0
     excluded: bool = False
-    exclude_reason: Optional[str] = None
+    exclude_reason: str | None = None
     local_environment: dict[str, Any] = Field(default_factory=dict)
     basicity_proxy: dict[str, Any] = Field(default_factory=dict)

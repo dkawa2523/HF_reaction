@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 
@@ -11,7 +10,7 @@ def _norm(text: str | None) -> str:
 # Compact offline reference fixture for CI/offline review.  Production runs should
 # enrich these records from NIST/ATcT/CCCBDB directly; the fixture is versioned and
 # marked as such in every provider result.
-LOCAL_REFERENCE_VERSION = "phase7_offline_reference_v1"
+LOCAL_REFERENCE_VERSION = "local_reference_v1"
 
 LOCAL_COMPOUND_REFERENCES: dict[str, dict[str, Any]] = {
     "ammonia": {

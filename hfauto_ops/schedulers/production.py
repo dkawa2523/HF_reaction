@@ -71,7 +71,6 @@ def render_array_script(array_items: str | Path, out_dir: str | Path, scheduler:
     out = ensure_dir(out_dir)
     items_path = Path(array_items)
     try:
-        import json
         n_items = sum(1 for line in items_path.read_text(encoding="utf-8").splitlines() if line.strip())
     except Exception:
         n_items = 0

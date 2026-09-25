@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from hfauto.core.io import read_manifest, write_manifest
+from hfauto.core.io import read_manifest, write_manifest, write_text_atomic
 from hfauto.reporting.html_report import latest_manifest_path
 from hfauto.stages.base import StageContext
 from hfauto.stages.registry import get_stage
@@ -17,8 +17,14 @@ def stage_dir(run_dir: Path, index: int, name: str) -> Path:
 def _slice_stages(stages: list[dict[str, Any]], from_stage: str | None, to_stage: str | None) -> list[dict[str, Any]]:
     enabled = [s for s in stages if s.get("enabled", True)]
     names = [s["name"] for s in enabled]
-    start = names.index(from_stage) if from_stage in names else 0
-    end = names.index(to_stage) + 1 if to_stage in names else len(enabled)
+    if from_stage is not None and from_stage not in names:
+        raise ValueError(f"Unknown --from stage {from_stage!r}; enabled stages: {', '.join(names)}")
+    if to_stage is not None and to_stage not in names:
+        raise ValueError(f"Unknown --to stage {to_stage!r}; enabled stages: {', '.join(names)}")
+    start = names.index(from_stage) if from_stage is not None else 0
+    end = names.index(to_stage) + 1 if to_stage is not None else len(enabled)
+    if start > end - 1:
+        raise ValueError(f"--from stage {from_stage!r} occurs after --to stage {to_stage!r}")
     return enabled[start:end]
 
 
@@ -39,7 +45,15 @@ def run_pipeline(
     current_manifest_path = Path(start_manifest) if start_manifest else None
 
     selected = _slice_stages(config.get("stages", []), from_stage, to_stage)
-    if selected and selected[0]["name"] != "ingest" and current_manifest is None:
+    first_stage_accepts_empty = bool(
+        selected and getattr(get_stage(selected[0]["name"]), "accepts_empty_manifest", False)
+    )
+    if (
+        selected
+        and selected[0]["name"] != "ingest"
+        and not first_stage_accepts_empty
+        and current_manifest is None
+    ):
         try:
             current_manifest_path = latest_manifest_path(run_dir)
             current_manifest = read_manifest(current_manifest_path)
@@ -64,12 +78,17 @@ def run_pipeline(
             if current_manifest is None and current_manifest_path is not None:
                 current_manifest = read_manifest(current_manifest_path)
             manifest = stage.run(current_manifest, cfg, context)
-        manifest.metadata.setdefault("global_config", global_config)
-        manifest.metadata.setdefault("pipeline_id", config.get("pipeline_id"))
-        manifest.metadata.setdefault("run_mode", global_config.get("mode", config.get("mode", "development")))
+        if manifest.run_id != run_id:
+            manifest.metadata.setdefault("source_run_id", manifest.run_id)
+            manifest.run_id = run_id
+        manifest.metadata["global_config"] = global_config
+        manifest.metadata["pipeline_id"] = config.get("pipeline_id")
+        manifest.metadata["run_mode"] = global_config.get(
+            "mode", config.get("mode", "development")
+        )
         current_manifest = manifest
         current_manifest_path = write_manifest(manifest, out_dir)
 
     if current_manifest_path:
-        (run_dir / "manifest.path").write_text(str(current_manifest_path), encoding="utf-8")
+        write_text_atomic(run_dir / "manifest.path", str(current_manifest_path))
     return run_dir

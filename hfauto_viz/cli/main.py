@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
 
 from hfauto_viz.core.assets import write_placeholder_assets
 from hfauto_viz.data.loaders import RunData
-from hfauto_viz.renderers.chemiscope_export import write_chemiscope_bundle, write_chemiscope_like
+from hfauto_viz.renderers.chemiscope_export import write_chemiscope_bundle
 from hfauto_viz.renderers.cytoscape_network import write_cytoscape_network
 from hfauto_viz.renderers.graphviz_network import build_reaction_network
 from hfauto_viz.reports.molecule_dossier import render_molecule_dossier
@@ -22,7 +21,7 @@ console = Console()
 @app.command()
 def report(
     run_dir: Path,
-    out_dir: Optional[Path] = typer.Option(None, '--out'),
+    out_dir: Path | None = typer.Option(None, '--out'),
     top_n: int = 8,
     library_mode: str = typer.Option('cdn', help='cdn, local, auto, or none'),
 ):
@@ -38,21 +37,21 @@ def bundle_assets(out_dir: Path):
 
 
 @app.command()
-def molecule(run_dir: Path, mol_id: str, out_dir: Optional[Path] = typer.Option(None, '--out'), library_mode: str = 'cdn'):
+def molecule(run_dir: Path, mol_id: str, out_dir: Path | None = typer.Option(None, '--out'), library_mode: str = 'cdn'):
     run = RunData(run_dir)
     paths = render_molecule_dossier(run, mol_id, out_dir or Path(run_dir) / '14_viz' / 'molecules' / mol_id, library_mode=library_mode)
     console.print_json(data={k: str(v) for k, v in paths.items()})
 
 
 @app.command()
-def reaction(run_dir: Path, reaction_id: str, out_dir: Optional[Path] = typer.Option(None, '--out'), library_mode: str = 'cdn'):
+def reaction(run_dir: Path, reaction_id: str, out_dir: Path | None = typer.Option(None, '--out'), library_mode: str = 'cdn'):
     run = RunData(run_dir)
     paths = render_reaction_dossier(run, reaction_id, out_dir or Path(run_dir) / '14_viz' / 'reactions' / reaction_id, library_mode=library_mode)
     console.print_json(data={k: str(v) for k, v in paths.items()})
 
 
 @app.command()
-def network(run_dir: Path, out_dir: Optional[Path] = typer.Option(None, '--out'), library_mode: str = 'cdn'):
+def network(run_dir: Path, out_dir: Path | None = typer.Option(None, '--out'), library_mode: str = 'cdn'):
     run = RunData(run_dir)
     out = out_dir or Path(run_dir) / '14_viz' / 'networks'
     paths = build_reaction_network(run.read_table('reaction_results'), {mid: a.data for mid, a in run.molecule_index().items()}, out)

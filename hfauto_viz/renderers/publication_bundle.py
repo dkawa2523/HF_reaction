@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import csv
 import json
+from pathlib import Path
 
 from hfauto_viz.core.html import esc, write_html
 

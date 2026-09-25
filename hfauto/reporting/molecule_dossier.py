@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 class MoleculeDossierBuilder:
     """Placeholder for per-candidate HTML/Markdown dossiers."""
 

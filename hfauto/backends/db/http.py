@@ -2,8 +2,8 @@ from __future__ import annotations
 
 """Small, reviewable HTTP/cache utilities for public-data providers.
 
-This module is intentionally tiny and backward compatible with earlier provider
-implementations.  Network access is opt-in through either ``allow_network`` or
+This module is intentionally tiny. Network access is opt-in through either
+``allow_network`` or
 ``network_enabled``; otherwise cache misses are returned as data instead of
 exceptions so offline pipelines remain reproducible.
 """
@@ -42,7 +42,7 @@ class CachedHTTPClient:
         allow_network: bool | None = None,
         rate_limit_per_sec: float = 2.0,
         timeout_s: float = 30.0,
-        user_agent: str = "hfauto/phase7 public-data-provider",
+        user_agent: str = "hfauto/0.14 public-data-provider",
         network_enabled: bool | None = None,
         **_: Any,
     ) -> None:
@@ -74,7 +74,7 @@ class CachedHTTPClient:
         self._last_request = time.time()
         try:
             req = Request(full_url, headers={"User-Agent": self.user_agent})
-            with urlopen(req, timeout=self.timeout_s) as resp:  # noqa: S310 - explicit opt-in public DB access
+            with urlopen(req, timeout=self.timeout_s) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
                 status = getattr(resp, "status", 200)
             self.cache.put(self.provider, key, {"status_code": status, "text": raw, "json": None, "url": full_url})

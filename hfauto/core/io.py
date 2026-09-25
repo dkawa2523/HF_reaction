@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Any
+from typing import Any
 
 from hfauto.core.schemas.manifest import Manifest
 
@@ -19,14 +22,49 @@ def read_manifest(path: str | Path) -> Manifest:
 
 def write_manifest(manifest: Manifest, out_dir: str | Path) -> Path:
     out = ensure_dir(out_dir) / "manifest.json"
-    out.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    write_text_atomic(out, manifest.model_dump_json(indent=2) + "\n")
     return out
+
+
+def write_text_atomic(path: str | Path, text: str) -> Path:
+    """Atomically replace a UTF-8 text file beside its final destination."""
+    p = Path(path)
+    ensure_dir(p.parent)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{p.name}.", suffix=".tmp", dir=p.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        Path(tmp_name).replace(p)
+    except Exception:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+    return p
 
 
 def write_json(path: str | Path, data: Any) -> Path:
     p = Path(path)
     ensure_dir(p.parent)
     p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return p
+
+
+def write_json_atomic(path: str | Path, data: Any) -> Path:
+    """Write JSON through a sibling temporary file, then replace atomically."""
+    p = Path(path)
+    ensure_dir(p.parent)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{p.name}.", suffix=".tmp", dir=p.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        Path(tmp_name).replace(p)
+    except Exception:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
     return p
 
 

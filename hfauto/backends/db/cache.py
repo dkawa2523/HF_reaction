@@ -4,7 +4,7 @@ import json
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class SQLiteJSONCache:
@@ -23,7 +23,7 @@ class SQLiteJSONCache:
                     "CREATE TABLE IF NOT EXISTS cache (provider TEXT, key TEXT, value TEXT, created_at REAL, PRIMARY KEY(provider, key))"
                 )
 
-    def get(self, provider: str, key: str) -> Optional[dict[str, Any]]:
+    def get(self, provider: str, key: str) -> dict[str, Any] | None:
         if not self.path:
             return None
         with sqlite3.connect(self.path) as con:

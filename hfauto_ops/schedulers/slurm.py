@@ -131,7 +131,7 @@ def render_slurm_artifact_array(
     else:
         cols = ["array_index", "job_id", "command"]
         plan[cols].to_csv(items, index=False, sep="\t")
-        n_tasks = int(math.ceil(len(plan) / max(1, int(chunk_size))))
+        n_tasks = math.ceil(len(plan) / max(1, int(chunk_size)))
         ncores = int(plan.get("ncores", pd.Series([1])).max())
         mem = int(plan.get("memory_gb", pd.Series([4])).max())
         time_slurm = str(plan.get("time_slurm", pd.Series(["01:00:00"])).iloc[0])

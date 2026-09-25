@@ -168,9 +168,9 @@ class CalibrateStage(Stage):
         else:
             metrics.append({"metric": "basicity_rank_spearman_proxy", "value": None, "n": 0, "note": "No matched PA/thermo records"})
         metrics.extend([
-            {"metric": "public_db_mean_support", "value": float(coverage_df["public_db_support_score"].mean()) if not coverage_df.empty else 0.0, "n": int(len(coverage_df)), "note": "Average candidate public DB support score"},
-            {"metric": "identity_conflict_count", "value": int(coverage_df["identity_conflict"].fillna(False).astype(bool).sum()) if not coverage_df.empty and "identity_conflict" in coverage_df else 0, "n": int(len(coverage_df)), "note": "Identity conflicts should be reviewed before production ranking"},
-            {"metric": "manual_ehs_review_count", "value": int(coverage_df["manual_ehs_review_required"].fillna(False).astype(bool).sum()) if not coverage_df.empty and "manual_ehs_review_required" in coverage_df else 0, "n": int(len(coverage_df)), "note": "Candidates requiring process/EHS review"},
+            {"metric": "public_db_mean_support", "value": float(coverage_df["public_db_support_score"].mean()) if not coverage_df.empty else 0.0, "n": len(coverage_df), "note": "Average candidate public DB support score"},
+            {"metric": "identity_conflict_count", "value": int(coverage_df["identity_conflict"].fillna(False).astype(bool).sum()) if not coverage_df.empty and "identity_conflict" in coverage_df else 0, "n": len(coverage_df), "note": "Identity conflicts should be reviewed before production ranking"},
+            {"metric": "manual_ehs_review_count", "value": int(coverage_df["manual_ehs_review_required"].fillna(False).astype(bool).sum()) if not coverage_df.empty and "manual_ehs_review_required" in coverage_df else 0, "n": len(coverage_df), "note": "Candidates requiring process/EHS review"},
         ])
         metrics_df = pd.DataFrame(metrics)
         metrics_path = out_dir / "method_validation_metrics.csv"
@@ -202,8 +202,8 @@ class CalibrateStage(Stage):
         support_notes = {str(r["mol_id"]): str(r.get("support_notes") or "").split(";") if r.get("support_notes") else [] for r in coverage_rows}
         calibration_summary = {
             "status": "reference_values_available" if len(ref_rows) else "no_public_reference_values",
-            "n_molecules": int(len(mols)),
-            "n_reference_values": int(len(ref_rows)),
+            "n_molecules": len(mols),
+            "n_reference_values": len(ref_rows),
             "calibration_support_score": float(coverage_df["public_db_support_score"].mean()) if not coverage_df.empty else 0.0,
             "db_calibration_support_by_mol": support_by_mol,
             "support_notes_by_mol": support_notes,
@@ -213,11 +213,11 @@ class CalibrateStage(Stage):
         report_path = self._write_report(out_dir / "method_validation_report.html", calibration_summary, coverage_df, refs_df, metrics_df)
         dashboard_path = self._write_dashboard(out_dir / "method_calibration_dashboard.html", calibration_summary, coverage_df, refs_df, metrics_df, residuals_df)
 
-        out.add_artifact(Artifact(artifact_id="public_data_coverage", artifact_type="table", paths={"csv": str(coverage_path)}, data={"n_rows": int(len(coverage_df)), "table_type": "public_data_coverage"}))
-        out.add_artifact(Artifact(artifact_id="public_db_audit", artifact_type="table", paths={"csv": str(audit_path)}, data={"n_rows": int(len(coverage_df)), "table_type": "public_db_audit"}))
-        out.add_artifact(Artifact(artifact_id="calibration_reference_records", artifact_type="table", paths={"csv": str(refs_path), "jsonl": str(refs_jsonl)}, data={"n_rows": int(len(refs_df)), "table_type": "calibration_reference_records"}))
-        out.add_artifact(Artifact(artifact_id="method_validation_metrics", artifact_type="table", paths={"csv": str(metrics_path)}, data={"n_rows": int(len(metrics_df)), "table_type": "method_validation_metrics"}))
-        out.add_artifact(Artifact(artifact_id="reference_residuals", artifact_type="table", paths={"csv": str(residuals_path)}, data={"n_rows": int(len(residuals_df)), "table_type": "reference_residuals"}))
+        out.add_artifact(Artifact(artifact_id="public_data_coverage", artifact_type="table", paths={"csv": str(coverage_path)}, data={"n_rows": len(coverage_df), "table_type": "public_data_coverage"}))
+        out.add_artifact(Artifact(artifact_id="public_db_audit", artifact_type="table", paths={"csv": str(audit_path)}, data={"n_rows": len(coverage_df), "table_type": "public_db_audit"}))
+        out.add_artifact(Artifact(artifact_id="calibration_reference_records", artifact_type="table", paths={"csv": str(refs_path), "jsonl": str(refs_jsonl)}, data={"n_rows": len(refs_df), "table_type": "calibration_reference_records"}))
+        out.add_artifact(Artifact(artifact_id="method_validation_metrics", artifact_type="table", paths={"csv": str(metrics_path)}, data={"n_rows": len(metrics_df), "table_type": "method_validation_metrics"}))
+        out.add_artifact(Artifact(artifact_id="reference_residuals", artifact_type="table", paths={"csv": str(residuals_path)}, data={"n_rows": len(residuals_df), "table_type": "reference_residuals"}))
         out.add_artifact(Artifact(artifact_id="method_validation_report", artifact_type="report", paths={"html": str(report_path), "dashboard_html": str(dashboard_path)}, data=calibration_summary))
         out.add_artifact(Artifact(artifact_id="calibration_summary", artifact_type="calibration", paths={"jsonl": str(out_dir / "calibration_summary.jsonl")}, data=calibration_summary, qc={"calibration_support_score": calibration_summary["calibration_support_score"]}))
         out.add_artifact(Artifact(artifact_id="method_validation", artifact_type="method_validation", paths={"html": str(report_path), "dashboard_html": str(dashboard_path), "metrics_csv": str(metrics_path), "coverage_csv": str(coverage_path), "residuals_csv": str(residuals_path)}, data=calibration_summary, qc={"calibration_support_score": calibration_summary["calibration_support_score"]}))

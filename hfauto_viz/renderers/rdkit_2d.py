@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from html import escape
 from pathlib import Path
+
 
 def fallback_svg(label: str, width: int = 300, height: int = 220) -> str:
     safe=escape(label or 'molecule')

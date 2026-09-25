@@ -1,5 +1,0 @@
-engine: internal_tst
-tunneling_model: wigner
-wigner_cap: 20.0
-export_arkane: true
-residence_times_s: [0.001, 0.01, 0.1, 1.0]

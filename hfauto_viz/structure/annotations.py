@@ -1,6 +1,8 @@
 
 from __future__ import annotations
+
 from typing import Any
+
 
 def atom_highlights_for_reaction(reaction_data: dict[str, Any] | None) -> dict[str,int]:
     if not reaction_data: return {}

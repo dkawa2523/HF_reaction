@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Small, auditable thermochemistry helpers for Phase 6.
+"""Small, auditable thermochemistry helpers.
 
 These helpers do not try to replace full-featured thermochemistry packages such
 as GoodVibes or Arkane.  They provide deterministic in-package behavior so the
@@ -9,9 +9,10 @@ optional tools.  External backends can replace these calculations while keeping
 record shapes stable.
 """
 
-from dataclasses import dataclass, asdict
 import math
-from typing import Any, Iterable
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
+from typing import Any
 
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL, KB_OVER_H_PER_K_S, R_KCAL_MOL_K
 from hfauto.core.units import kcal_mol_to_hartree, pressure_correction_hartree

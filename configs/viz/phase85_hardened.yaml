@@ -1,8 +1,0 @@
-library_mode: local
-asset_mode: local
-max_molecule_dossiers: 8
-max_reaction_dossiers: 8
-top_energy_profiles: 12
-max_network_reactions: 50
-ranking_thumbnail_rows: 50
-max_chemiscope_structures: 500

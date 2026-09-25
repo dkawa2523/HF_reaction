@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import csv
+import json
 from dataclasses import dataclass
 from math import sqrt
 from pathlib import Path
 from typing import Any
-import csv
-import json
 
+from hfauto_viz.structure.bond_changes import (
+    infer_bhf_atoms,
+    reaction_coordinate_atoms,
+)
 from hfauto_viz.structure.xyz import Atom, Frame
-from hfauto_viz.structure.bond_changes import reaction_coordinate_atoms, infer_bhf_atoms, atom_position
 
 
 @dataclass

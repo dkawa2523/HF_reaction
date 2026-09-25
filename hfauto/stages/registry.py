@@ -1,66 +1,78 @@
+"""Lazy stage registry.
+
+The generic workflow no longer imports every optional or domain-specific stage
+at process start.  A stage is imported only when it is executed.
+"""
+
 from __future__ import annotations
 
-from hfauto.stages.build_hf import BuildHFStage
-from hfauto.stages.calibrate import CalibrateStage
-from hfauto.stages.conformers import ConformersStage
-from hfauto.stages.connector_audit import ConnectorAuditStage
-from hfauto.stages.descriptors import DescriptorsStage
-from hfauto.stages.detect_sites import DetectSitesStage
-from hfauto.stages.dft_minima import DFTMinimaStage
-from hfauto.stages.enrich import EnrichStage
-from hfauto.stages.ingest import IngestStage
-from hfauto.stages.irc import IRCStage
-from hfauto.stages.ops import OpsStage
-from hfauto.stages.hpc_plan import HPCPlanStage
-from hfauto.stages.kinetics import KineticsStage
-from hfauto.stages.preopt import PreoptStage
-from hfauto.stages.rank import RankStage
-from hfauto.stages.sp import SinglePointStage
-from hfauto.stages.thermo import ThermoStage
-from hfauto.stages.ts_search import TSSearchStage
-from hfauto.stages.viz import VizStage
-
-STAGES = {
-    "ingest": IngestStage,
-    "enrich": EnrichStage,
-    "detect-sites": DetectSitesStage,
-    "detect_sites": DetectSitesStage,
-    "conformers": ConformersStage,
-    "build-hf": BuildHFStage,
-    "build_hf": BuildHFStage,
-    "preopt": PreoptStage,
-    "dft-minima": DFTMinimaStage,
-    "dft_minima": DFTMinimaStage,
-    "ts-search": TSSearchStage,
-    "ts_search": TSSearchStage,
-    "irc": IRCStage,
-    "sp": SinglePointStage,
-    "thermo": ThermoStage,
-    "descriptors": DescriptorsStage,
-    "kinetics": KineticsStage,
-    "calibrate": CalibrateStage,
-    "connector-audit": ConnectorAuditStage,
-    "connector_audit": ConnectorAuditStage,
-    "production-audit": ConnectorAuditStage,
-    "production_audit": ConnectorAuditStage,
-    "method-calibration": CalibrateStage,
-    "method_calibration": CalibrateStage,
-    "method-validation": CalibrateStage,
-    "method_validation": CalibrateStage,
-    "rank": RankStage,
-    "viz": VizStage,
-    "hpc-plan": HPCPlanStage,
-    "hpc_plan": HPCPlanStage,
-    "ops-plan": HPCPlanStage,
-    "ops_plan": HPCPlanStage,
-    "ops": OpsStage,
-    "operations": OpsStage,
-    "hpc-ops": OpsStage,
-    "hpc_ops": OpsStage,
+STAGES: dict[str, str] = {
+    "ingest": "hfauto.stages.ingest:IngestStage",
+    "enrich": "hfauto.stages.enrich:EnrichStage",
+    "enumerate-states": "hfauto.stages.enumerate_states:EnumerateStatesStage",
+    "detect-sites": "hfauto.stages.detect_sites:DetectSitesStage",
+    "conformers": "hfauto.stages.conformers:ConformersStage",
+    "build-complexes": "hfauto.stages.build_complexes:BuildComplexesStage",
+    "generate-reactions": "hfauto.stages.generate_reactions:GenerateReactionsStage",
+    "explore-reactions": "hfauto.stages.explore_reactions:ExploreReactionsStage",
+    "discovery-audit": "hfauto.stages.discovery_audit:DiscoveryAuditStage",
+    "minimum-registry": "hfauto.stages.minimum_registry:MinimumRegistryStage",
+    "connect-minima": "hfauto.stages.connect_minima:ConnectMinimaStage",
+    "preopt": "hfauto.stages.preopt:PreoptStage",
+    "relaxation-discovery": (
+        "hfauto.stages.relaxation_discovery:RelaxationDiscoveryStage"
+    ),
+    "dft-minima": "hfauto.stages.dft_minima:DFTMinimaStage",
+    "minimum-mode-follow": (
+        "hfauto.stages.minimum_mode_follow:MinimumModeFollowStage"
+    ),
+    "minimum-mode-assess": (
+        "hfauto.stages.minimum_mode_assess:MinimumModeAssessStage"
+    ),
+    "endpoint-seeds": "hfauto.stages.endpoint_seeds:EndpointSeedsStage",
+    "endpoint-seed-screen": (
+        "hfauto.stages.endpoint_seed_screen:EndpointSeedScreenStage"
+    ),
+    "reaction-plan": "hfauto.stages.reaction_plan:ReactionPlanStage",
+    "recover-path": "hfauto.stages.recover_path:RecoverPathStage",
+    "ts-search": "hfauto.stages.ts_search:TSSearchStage",
+    "path-ensemble": "hfauto.stages.path_ensemble:PathEnsembleStage",
+    "path-ensemble-assess": (
+        "hfauto.stages.path_ensemble_assess:PathEnsembleAssessStage"
+    ),
+    "path-intermediates": (
+        "hfauto.stages.path_intermediates:PathIntermediatesStage"
+    ),
+    "irc": "hfauto.stages.irc:IRCStage",
+    "reaction-classify": (
+        "hfauto.stages.reaction_classify:ReactionClassifyStage"
+    ),
+    "reaction-segments": "hfauto.stages.reaction_segments:ReactionSegmentsStage",
+    "sp": "hfauto.stages.sp:SinglePointStage",
+    "method-panel": "hfauto.stages.method_panel:MethodPanelStage",
+    "basin-populations": "hfauto.stages.basin_populations:BasinPopulationsStage",
+    "thermo": "hfauto.stages.thermo:ThermoStage",
+    "thermo-sensitivity": (
+        "hfauto.stages.thermo_sensitivity:ThermoSensitivityStage"
+    ),
+    "descriptors": "hfauto.stages.descriptors:DescriptorsStage",
+    "kinetics": "hfauto.stages.kinetics:KineticsStage",
+    "calibrate": "hfauto.stages.calibrate:CalibrateStage",
+    "connector-audit": "hfauto.stages.connector_audit:ConnectorAuditStage",
+    "rank": "hfauto.stages.rank:RankStage",
+    "reaction-rank": "hfauto.stages.reaction_rank:ReactionRankStage",
+    "viz": "hfauto.stages.viz:VizStage",
+    "hpc-plan": "hfauto.stages.hpc_plan:HPCPlanStage",
+    "ops": "hfauto.stages.ops:OpsStage",
 }
 
-
 def get_stage(name: str):
-    if name not in STAGES:
-        raise KeyError(f"Unknown stage: {name}")
-    return STAGES[name]()
+    from importlib import import_module
+
+    try:
+        reference = STAGES[str(name)]
+    except KeyError as exc:
+        raise KeyError(f"Unknown stage: {name}") from exc
+    module_name, class_name = reference.split(":", maxsplit=1)
+    stage_type = getattr(import_module(module_name), class_name)
+    return stage_type()

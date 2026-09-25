@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """ORCA QM backend for DFT opt/freq and single-point calculations.
 
 The backend is intentionally auditable and conservative:
@@ -9,13 +7,15 @@ The backend is intentionally auditable and conservative:
 - missing ORCA can either produce a recoverable failure Artifact or an explicit
   dummy fallback Artifact, depending on configuration.
 
-This keeps Phase 4 useful both on developer laptops without ORCA and on HPC
+This keeps development runs useful on laptops without ORCA and on HPC
 nodes where ORCA is installed.
 """
 
-from dataclasses import asdict
+from __future__ import annotations
+
 import os
 import re
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -24,8 +24,15 @@ import numpy as np
 from hfauto.backends.qm.dummy import DummyQMEngine
 from hfauto.chemistry.descriptors import hf_descriptors_from_species
 from hfauto.chemistry.geometry_qc import geometry_qc_from_xyz
-from hfauto.chemistry.hf_builder import XYZ, read_xyz, write_xyz
+from hfauto.chemistry.xyz import XYZ, read_xyz, write_xyz
+from hfauto.core.artifacts import canonical_species_id
 from hfauto.core.executables import resolve_executable, run_command
+from hfauto.core.frequency_qc import (
+    DEFAULT_IMAGINARY_FREQUENCY_CUTOFF_CM1,
+    imaginary_frequency_cutoff_from_method,
+    resolve_imaginary_frequency_cutoff,
+    significant_imaginary_frequencies,
+)
 from hfauto.core.hashing import fingerprint_dict
 from hfauto.core.schemas.artifact import Artifact
 
@@ -42,7 +49,7 @@ def allow_orca_subprocess(method: dict[str, Any]) -> bool:
 
 def _last_float(patterns: list[str], text: str) -> float | None:
     for pat in patterns:
-        matches = re.findall(pat, text, flags=re.I | re.M)
+        matches = re.findall(pat, text, flags=re.IGNORECASE | re.MULTILINE)
         if matches:
             val = matches[-1]
             if isinstance(val, tuple):
@@ -58,7 +65,7 @@ def parse_orca_frequencies(text: str) -> list[float]:
     """Parse vibrational frequencies in cm^-1 from common ORCA text formats."""
     freqs: list[float] = []
     # Typical ORCA frequency table: "   6:       123.45 cm**-1"
-    for m in re.findall(r"^\s*\d+\s*:\s*(-?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?)\s+cm\*\*-1", text, flags=re.M):
+    for m in re.findall(r"^\s*\d+\s*:\s*(-?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?)\s+cm\*\*-1", text, flags=re.MULTILINE):
         try:
             freqs.append(float(m))
         except ValueError:
@@ -68,7 +75,7 @@ def parse_orca_frequencies(text: str) -> list[float]:
 
     # Fallback for compact/sample outputs containing "Frequencies -- ...".
     for line in text.splitlines():
-        if re.search(r"frequenc", line, flags=re.I):
+        if re.search(r"frequenc", line, flags=re.IGNORECASE):
             vals = re.findall(r"-?\d+\.\d+|-?\d+", line)
             for v in vals:
                 try:
@@ -89,7 +96,7 @@ def parse_orca_cartesian_blocks(text: str) -> list[XYZ]:
     lines = text.splitlines()
     blocks: list[XYZ] = []
     i = 0
-    header_re = re.compile(r"CARTESIAN COORDINATES\s*\(ANGSTROEM\)", re.I)
+    header_re = re.compile(r"CARTESIAN COORDINATES\s*\(ANGSTROEM\)", re.IGNORECASE)
     coord_re = re.compile(
         r"^\s*([A-Z][a-z]?)\s+(-?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?)\s+(-?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?)\s+(-?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?)"
     )
@@ -123,13 +130,21 @@ def parse_orca_cartesian_blocks(text: str) -> list[XYZ]:
     return blocks
 
 
-def parse_orca_output(text: str | Path) -> dict[str, Any]:
+def parse_orca_output(
+    text: str | Path,
+    imaginary_frequency_cutoff_cm1: float = (
+        DEFAULT_IMAGINARY_FREQUENCY_CUTOFF_CM1
+    ),
+) -> dict[str, Any]:
     """Parse stable calculation fields from ORCA output text or an output path.
 
     The parser is deliberately tolerant; it returns ``None`` for absent fields
     rather than raising. Backend execution/QC decides whether missing fields are
     fatal for a specific task.
     """
+    imaginary_cutoff = resolve_imaginary_frequency_cutoff(
+        imaginary_frequency_cutoff_cm1
+    )
     if isinstance(text, Path):
         text = text.read_text(encoding="utf-8", errors="ignore")
     energy = _last_float([r"FINAL\s+SINGLE\s+POINT\s+ENERGY\s+(-?\d+\.\d+(?:[Ee][-+]?\d+)?)"], text)
@@ -177,11 +192,12 @@ def parse_orca_output(text: str | Path) -> dict[str, Any]:
         enthalpy = energy + h_corr
 
     freqs = parse_orca_frequencies(text)
-    imag = [f for f in freqs if f < 0.0]
+    frequency_analysis_present = bool(freqs)
+    imag = significant_imaginary_frequencies(freqs, imaginary_cutoff)
     positive = [f for f in freqs if f > 0.0]
     hf_stretch = max(positive) if positive else None
     version = None
-    m = re.search(r"Program\s+Version\s+([0-9][^\s]*)", text, flags=re.I) or re.search(r"ORCA\s+VERSION\s+([0-9][^\s]*)", text, flags=re.I)
+    m = re.search(r"Program\s+Version\s+([0-9][^\s]*)", text, flags=re.IGNORECASE) or re.search(r"ORCA\s+VERSION\s+([0-9][^\s]*)", text, flags=re.IGNORECASE)
     if m:
         version = m.group(1)
     dipole = _last_float(
@@ -191,11 +207,11 @@ def parse_orca_output(text: str | Path) -> dict[str, Any]:
         ],
         text,
     )
-    normal = bool(re.search(r"ORCA\s+TERMINATED\s+NORMALLY", text, flags=re.I))
-    scf_bad = bool(re.search(r"SCF\s+NOT\s+CONVERGED|SCF.*FAILED|convergence\s+failure", text, flags=re.I))
-    scf_good = bool(re.search(r"SCF\s+CONVERGED|SCF.*CONVERGED\s+AFTER", text, flags=re.I)) or (energy is not None and not scf_bad)
-    opt_good = bool(re.search(r"THE\s+OPTIMIZATION\s+HAS\s+CONVERGED|OPTIMIZATION\s+CONVERGED|OPTIMIZATION\s+RUN\s+DONE", text, flags=re.I))
-    opt_bad = bool(re.search(r"OPTIMIZATION\s+DID\s+NOT\s+CONVERGE|GEOMETRY\s+OPTIMIZATION\s+FAILED", text, flags=re.I))
+    normal = bool(re.search(r"ORCA\s+TERMINATED\s+NORMALLY", text, flags=re.IGNORECASE))
+    scf_bad = bool(re.search(r"SCF\s+NOT\s+CONVERGED|SCF.*FAILED|convergence\s+failure", text, flags=re.IGNORECASE))
+    scf_good = bool(re.search(r"SCF\s+CONVERGED|SCF.*CONVERGED\s+AFTER", text, flags=re.IGNORECASE)) or (energy is not None and not scf_bad)
+    opt_good = bool(re.search(r"THE\s+OPTIMIZATION\s+HAS\s+CONVERGED|OPTIMIZATION\s+CONVERGED|OPTIMIZATION\s+RUN\s+DONE", text, flags=re.IGNORECASE))
+    opt_bad = bool(re.search(r"OPTIMIZATION\s+DID\s+NOT\s+CONVERGE|GEOMETRY\s+OPTIMIZATION\s+FAILED", text, flags=re.IGNORECASE))
     return {
         "program_version": version,
         "electronic_energy_hartree": energy,
@@ -205,7 +221,9 @@ def parse_orca_output(text: str | Path) -> dict[str, Any]:
         "thermal_correction_gibbs_hartree": None if gibbs is None or energy is None else gibbs - energy,
         "thermal_correction_enthalpy_hartree": None if enthalpy is None or energy is None else enthalpy - energy,
         "frequencies_cm1": freqs,
-        "n_imag": len(imag),
+        "frequency_analysis_present": frequency_analysis_present,
+        "imaginary_frequency_cutoff_cm1": imaginary_cutoff,
+        "n_imag": len(imag) if frequency_analysis_present else None,
         "lowest_freq_cm1": min(freqs) if freqs else None,
         "imag_freq_cm1": min(imag) if imag else None,
         "hf_stretch_cm1": hf_stretch,
@@ -214,10 +232,6 @@ def parse_orca_output(text: str | Path) -> dict[str, Any]:
         "scf_converged": scf_good,
         "geometry_converged": opt_good and not opt_bad,
     }
-
-
-def _canonical_species_id(species: Artifact) -> str:
-    return str(species.data.get("species_id") or species.data.get("source_species_id") or species.artifact_id)
 
 
 class OrcaInputRenderer:
@@ -260,7 +274,7 @@ class OrcaInputRenderer:
         mem_mb = int(method.get("memory_mb", method.get("maxcore_mb", 2000)) or 2000)
         lines = [
             "# generated_by=hfauto",
-            f"# species_id={_canonical_species_id(species)}",
+            f"# species_id={canonical_species_id(species)}",
             f"# task={task}",
             "! " + " ".join(OrcaInputRenderer.keywords(method, task)),
             "",
@@ -334,6 +348,7 @@ class OrcaEngine:
             "fallback_dummy": True,
             "engine_is_dummy": True,
             "real_orca_executed": False,
+            "real_qm_executed": False,
             "fallback_reason": reason,
             "scientific_use": "software_test_only_not_dft",
         }
@@ -345,11 +360,13 @@ class OrcaEngine:
             "task": task,
             "calculation_level": "dummy_fallback_for_orca",
             "real_orca_executed": False,
+            "real_qm_executed": False,
         }
         return dummy
 
     def _run(self, species: Artifact, method_in: dict[str, Any], workdir: str, task: str) -> Artifact:
         method = self._method(method_in)
+        imaginary_cutoff = imaginary_frequency_cutoff_from_method(method)
         wd = Path(workdir)
         inp = self._write_input(species, method, wd, task)
         calc_id = "calc_" + fingerprint_dict({"species": species.artifact_id, "method": method, "task": task, "engine": self.name})
@@ -370,7 +387,7 @@ class OrcaEngine:
                 recoverable=True,
                 recommended_fallback="set allow_subprocess=true, configure executable, or enable fallback_to_dummy",
                 input=str(inp),
-                data={"species_id": _canonical_species_id(species), "task": task, "engine": self.name, "method_id": method.get("method_id", "orca")},
+                data={"species_id": canonical_species_id(species), "task": task, "engine": self.name, "method_id": method.get("method_id", "orca")},
             )
 
         result = run_command(
@@ -388,7 +405,10 @@ class OrcaEngine:
             err = stderr_path.read_text(encoding="utf-8", errors="ignore")
             if err.strip():
                 output_text += "\nSTDERR\n" + err
-        parsed = parse_orca_output(output_text)
+        parsed = parse_orca_output(
+            output_text,
+            imaginary_frequency_cutoff_cm1=imaginary_cutoff,
+        )
         if (not result.ok) or parsed.get("electronic_energy_hartree") is None:
             fail = Artifact.failure(
                 artifact_id=calc_id,
@@ -402,10 +422,10 @@ class OrcaEngine:
                 output=str(stdout_path),
                 stderr=str(stderr_path),
                 command_result=asdict(result),
-                data={"species_id": _canonical_species_id(species), "task": task, "engine": self.name, "method_id": method.get("method_id", "orca"), **parsed},
+                data={"species_id": canonical_species_id(species), "task": task, "engine": self.name, "method_id": method.get("method_id", "orca"), **parsed},
             )
             fail.method = {"engine": self.name, "method_id": method.get("method_id", "orca"), "task": task}
-            fail.qc = {"real_orca_executed": True, "orca_output_parsed": bool(parsed), "fallback_dummy": False, **{k: parsed.get(k) for k in ["scf_converged", "geometry_converged", "normal_termination", "n_imag"]}}
+            fail.qc = {"real_qm_executed": True, "real_orca_executed": True, "orca_output_parsed": bool(parsed), "fallback_dummy": False, **{k: parsed.get(k) for k in ["scf_converged", "geometry_converged", "normal_termination", "n_imag"]}}
             return fail
 
         final_xyz = self._find_final_xyz(wd, output_text, species)
@@ -416,7 +436,7 @@ class OrcaEngine:
         desc = hf_descriptors_from_species(species_for_qc, parsed)
         data = {
             "calc_id": calc_id,
-            "species_id": _canonical_species_id(species),
+            "species_id": canonical_species_id(species),
             "source_species_artifact_id": species.artifact_id,
             "state": species.data.get("state"),
             "task": task,
@@ -424,6 +444,7 @@ class OrcaEngine:
             "method_id": method.get("method_id", "orca"),
             "calculation_level": "orca_real",
             "real_orca_executed": True,
+            "real_qm_executed": True,
             "program_version": parsed.get("program_version"),
             "electronic_energy_hartree": parsed.get("electronic_energy_hartree"),
             "zpe_hartree": parsed.get("zpe_hartree"),
@@ -431,6 +452,11 @@ class OrcaEngine:
             "gibbs_298K_hartree": parsed.get("gibbs_298K_hartree") or parsed.get("electronic_energy_hartree"),
             "thermal_correction_gibbs_hartree": parsed.get("thermal_correction_gibbs_hartree"),
             "thermal_correction_enthalpy_hartree": parsed.get("thermal_correction_enthalpy_hartree"),
+            "frequencies_cm1": parsed.get("frequencies_cm1"),
+            "frequency_analysis_present": parsed.get(
+                "frequency_analysis_present"
+            ),
+            "imaginary_frequency_cutoff_cm1": imaginary_cutoff,
             "n_imag": parsed.get("n_imag"),
             "lowest_freq_cm1": parsed.get("lowest_freq_cm1"),
             "imag_freq_cm1": parsed.get("imag_freq_cm1"),
@@ -448,6 +474,7 @@ class OrcaEngine:
             "fallback_dummy": False,
             "engine_is_dummy": False,
             "real_orca_executed": True,
+            "real_qm_executed": True,
             "orca_output_parsed": True,
             "geometry_sane": geom_qc.get("geometry_sane"),
             "geometry_qc": geom_qc,
@@ -463,7 +490,7 @@ class OrcaEngine:
                 "command_result": str(wd / "command_result.json"),
                 "final_xyz": str(final_xyz) if final_xyz is not None else "",
             },
-            method={"engine": self.name, "method_id": method.get("method_id", "orca"), "task": task, "keywords": OrcaInputRenderer.keywords(method, task)},
+            method={"engine": self.name, "method_id": method.get("method_id", "orca"), "task": task, "keywords": OrcaInputRenderer.keywords(method, task), "imaginary_frequency_cutoff_cm1": imaginary_cutoff},
             data=data,
             qc=qc,
             provenance={"command": asdict(result), "created_by": "OrcaEngine"},

@@ -1,0 +1,55 @@
+pipeline_id: amine_hf_water_extension_v1
+run_root: runs
+
+global:
+  mode: production
+
+stages:
+  - name: build-complexes
+    checkpoint_each_definition: true
+    resume_completed_definitions: true
+    max_components: 5
+    crest_nci_settings:
+      allow_subprocess: true
+      executable: /home/user/.local/bin/crest
+      xtb_executable: /home/user/.local/bin/xtb
+      quick: true
+      gfn: 2
+      threads: 1
+      timeout_s: 7200
+      energy_window_kcal_mol: 4.0
+    compositions:
+      # This is an incremental campaign: its start manifest must already
+      # contain the reviewed TMA conformer plus isolated HF and H2O species.
+      - &tma_hf_water
+        composition_id: TMA_HF1_H2O
+        state: encounter_complex
+        max_seeds: 1
+        max_nci_complexes: 1
+        components:
+          - selector: {artifact_id: mol00001_state000_conf0000}
+            role: base
+          - selector: {artifact_id: spc_hf}
+            role: acid
+          - selector: {artifact_id: spc_water}
+            role: relay
+      - <<: *tma_hf_water
+        composition_id: TMA_HF2_H2O
+        components:
+          - selector: {artifact_id: mol00001_state000_conf0000}
+            role: base
+          - selector: {artifact_id: spc_hf}
+            count: 2
+            role: acid
+          - selector: {artifact_id: spc_water}
+            role: relay
+      - <<: *tma_hf_water
+        composition_id: TMA_HF3_H2O
+        components:
+          - selector: {artifact_id: mol00001_state000_conf0000}
+            role: base
+          - selector: {artifact_id: spc_hf}
+            count: 3
+            role: acid
+          - selector: {artifact_id: spc_water}
+            role: relay

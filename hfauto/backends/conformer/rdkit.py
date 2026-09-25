@@ -73,7 +73,7 @@ class RDKitConformerBackend:
                 "relative_energy_kcal_mol": float(conf.relative_energy_kcal_mol),
                 "boltzmann_weight_298K": float(conf.boltzmann_weight_298K),
                 "xyz_path": str(xyz_path),
-                "selected_for_hf_build": True,
+                "selected_for_complex_build": True,
                 "rmsd_cluster_id": f"rdkit_rank_{idx:04d}",
                 "formal_charge": int(molecule.data.get("formal_charge", 0) or 0),
                 "multiplicity": int(molecule.data.get("multiplicity", 1) or 1),

@@ -26,7 +26,14 @@ class ConformersStage(Stage):
         engine_kwargs = config.get("engine_settings", {}) or {}
         engine = get_conformer_engine(engine_spec, **engine_kwargs)
         records: list[dict] = []
-        mol_artifacts = list(manifest.iter_artifacts("molecule_enriched")) or list(manifest.iter_artifacts("molecule"))
+        # Enumerated states replace their source molecules.  This prevents the
+        # input state from being generated twice while retaining compatibility
+        # with pipelines that do not use enumerate-states.
+        mol_artifacts = (
+            list(manifest.latest_artifacts("molecule_state"))
+            or list(manifest.iter_artifacts("molecule_enriched"))
+            or list(manifest.iter_artifacts("molecule"))
+        )
 
         for mol_art in mol_artifacts:
             if mol_art.status.status == "failed":

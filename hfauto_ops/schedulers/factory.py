@@ -20,8 +20,9 @@ def get_scheduler(name: str | None) -> SchedulerAdapter:
 
 
 from pathlib import Path
+
 import pandas as pd
-from hfauto_ops.schedulers.base import SchedulerResult
+
 
 def _ids(job_table: pd.DataFrame) -> list[str]:
     if job_table is None or job_table.empty:

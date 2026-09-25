@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
-from hfauto_ops.core.run_index import load_latest_manifest, latest_table_path, read_table
+from hfauto_ops.core.run_index import latest_table_path, load_latest_manifest, read_table
 
 
 def _ranking_table(run_dir: str | Path, table_id: str) -> pd.DataFrame:

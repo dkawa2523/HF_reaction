@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
-import subprocess, shutil
 
 import pandas as pd
 
@@ -54,10 +55,13 @@ def build_reaction_network(reaction_df: pd.DataFrame, molecules: dict[str, dict[
         assoc = row.get('delta_G_assoc_pressure_corrected_kcal_mol', row.get('delta_G_assoc_kcal_mol',''))
         act = row.get('delta_G_act_kcal_mol','')
         qtier = row.get('quality_tier','')
+        rc_label = _dot_quote(f"B···(HF){hf}\n{qtier}")
+        ts_label = _dot_quote(f"TS\n{qtier}")
+        ip_label = _dot_quote(f"ion pair\n{qtier}")
         lines += [
-            f'{rc} [label={_dot_quote("B···(HF)"+hf+"\\n"+str(qtier))}, fillcolor="#e7f1ff", URL={_dot_quote(dossier)}];',
-            f'{ts} [label={_dot_quote("TS\\n"+str(qtier))}, shape=octagon, fillcolor="#fff3cd", URL={_dot_quote(dossier)}];',
-            f'{ip} [label={_dot_quote("ion pair\\n"+str(qtier))}, fillcolor="#e9f7ef", URL={_dot_quote(dossier)}];',
+            f'{rc} [label={rc_label}, fillcolor="#e7f1ff", URL={_dot_quote(dossier)}];',
+            f'{ts} [label={ts_label}, shape=octagon, fillcolor="#fff3cd", URL={_dot_quote(dossier)}];',
+            f'{ip} [label={ip_label}, fillcolor="#e9f7ef", URL={_dot_quote(dossier)}];',
             f'{_safe_id(mid)} -> {rc} [label={_dot_quote("assoc "+str(assoc))}, URL={_dot_quote(dossier)}];',
             f'{rc} -> {ts} [label={_dot_quote("ΔG‡="+str(act))}, color="#d08b00", URL={_dot_quote(dossier)}];',
             f'{ts} -> {ip} [label="PT", URL={_dot_quote(dossier)}];',

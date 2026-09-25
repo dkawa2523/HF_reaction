@@ -1,17 +1,23 @@
 from __future__ import annotations
 
-from typing import Any
 import json
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from hfauto.core.io import ensure_dir
 from hfauto.core.public_data import process_penalty_from_public_data
-from hfauto.core.qc import cap_confidence, production_rank_eligible, scientific_rank_eligible, tier_numeric
+from hfauto.core.qc import (
+    cap_confidence,
+    production_rank_eligible,
+    scientific_rank_eligible,
+    tier_numeric,
+)
 from hfauto.core.schemas.artifact import Artifact
 from hfauto.core.schemas.manifest import Manifest
 from hfauto.stages.base import Stage, StageContext
+from hfauto.stages.reaction_rank import ReactionRankStage
 
 
 def _z(series: pd.Series, neutral: float = 0.0) -> pd.Series:
@@ -54,6 +60,26 @@ class RankStage(Stage):
         if not thermo:
             out.add_artifact(Artifact.failure("rank_failed", "ranking", "no_thermo_records", category="missing_input"))
             return out
+        generic_thermo = [record for record in thermo if record.get("stoichiometry")]
+        if generic_thermo and len(generic_thermo) != len(thermo):
+            out.add_artifact(
+                Artifact.failure(
+                    "rank_failed_mixed_domains",
+                    "ranking",
+                    "generic stoichiometric and legacy HF thermochemistry cannot share one ranking",
+                    category="incomparable_reaction_domains",
+                    recoverable=True,
+                    recommended_fallback=(
+                        "run reaction-rank for generic reactions and rank for the legacy HF study "
+                        "in separate manifests"
+                    ),
+                )
+            )
+            return out
+        if generic_thermo:
+            return ReactionRankStage(output_stage_name=self.name).run(
+                manifest, config, context
+            )
 
         df = pd.DataFrame(thermo)
         dfd = pd.DataFrame(desc)
@@ -82,10 +108,11 @@ class RankStage(Stage):
             support_map.update({str(k): float(v) for k, v in (data.get("db_calibration_support_by_mol") or {}).items()})
             support_notes_map.update(data.get("support_notes_by_mol") or {})
             if data.get("calibration_support_score") is not None:
-                try:
-                    global_support = max(global_support, float(data.get("calibration_support_score")))
-                except Exception:
-                    pass
+                support_value = pd.to_numeric(
+                    pd.Series([data.get("calibration_support_score")]), errors="coerce"
+                ).iloc[0]
+                if pd.notna(support_value):
+                    global_support = max(global_support, float(support_value))
         df["db_calibration_support"] = df["mol_id"].map(lambda x: float(support_map.get(str(x), global_support))) if "mol_id" in df.columns else global_support
         df["db_calibration_notes"] = df["mol_id"].map(lambda x: ";".join(support_notes_map.get(str(x), [])) if isinstance(support_notes_map.get(str(x), []), list) else str(support_notes_map.get(str(x), ""))) if "mol_id" in df.columns else ""
 
@@ -163,7 +190,7 @@ class RankStage(Stage):
         def _fmt(v, digits=2):
             try:
                 return f"{float(v):.{digits}f}" if pd.notna(v) else "NA"
-            except Exception:
+            except (TypeError, ValueError):
                 return "NA"
 
         df["key_evidence"] = df.apply(
@@ -257,10 +284,10 @@ class RankStage(Stage):
         pd.DataFrame(failure_rows, columns=failure_columns).to_csv(failure_path, index=False)
         ranking_summary = {
             "mode": context.global_config.get("mode", "development"),
-            "n_rows": int(len(df)),
-            "n_screening_rows": int(len(screening)),
-            "n_scientific_rows": int(len(scientific)),
-            "n_production_rows": int(len(production)),
+            "n_rows": len(df),
+            "n_screening_rows": len(screening),
+            "n_scientific_rows": len(scientific),
+            "n_production_rows": len(production),
             "contains_dummy_or_fallback": bool((df["main_values_are_dummy"] | df["main_values_are_fallback"]).any()),
             "warning": "screening rankings may include dummy/fallback values; use rank_production.csv for production decisions",
         }
@@ -269,7 +296,7 @@ class RankStage(Stage):
             df.to_parquet(parquet_path, index=False)
             table_path = parquet_path
             table_key = "parquet"
-        except Exception:
+        except (ImportError, OSError, ValueError):
             table_path = out_dir / "reaction_results.csv"
             table_key = "csv"
             df.to_csv(table_path, index=False)
@@ -283,7 +310,7 @@ class RankStage(Stage):
         ]:
             out.add_artifact(Artifact(artifact_id=artifact_id, artifact_type="ranking", paths={"csv": str(path)}, data={"ranking_type": ranking_type, "n_rows": int(rows)}))
         out.add_artifact(Artifact(artifact_id="ranking_summary", artifact_type="table", paths={"json": str(metadata_path)}, data=ranking_summary))
-        out.add_artifact(Artifact(artifact_id="candidate_summary", artifact_type="table", paths={"csv": str(summary_path)}, data={"n_rows": int(len(candidate_summary))}))
-        out.add_artifact(Artifact(artifact_id="failure_report", artifact_type="table", paths={"csv": str(failure_path)}, data={"n_rows": int(len(failures))}))
-        out.add_artifact(Artifact(artifact_id="reaction_results", artifact_type="table", paths={table_key: str(table_path)}, data={"n_rows": int(len(df))}))
+        out.add_artifact(Artifact(artifact_id="candidate_summary", artifact_type="table", paths={"csv": str(summary_path)}, data={"n_rows": len(candidate_summary)}))
+        out.add_artifact(Artifact(artifact_id="failure_report", artifact_type="table", paths={"csv": str(failure_path)}, data={"n_rows": len(failures)}))
+        out.add_artifact(Artifact(artifact_id="reaction_results", artifact_type="table", paths={table_key: str(table_path)}, data={"n_rows": len(df)}))
         return out

@@ -1,8 +1,8 @@
-from __future__ import annotations
-
 """Create reviewable job plans from a run manifest or pipeline config."""
 
-from dataclasses import dataclass, asdict
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -101,11 +101,36 @@ def retry_jobs_from_manifest(
 ) -> list[JobRecord]:
     jobs: list[JobRecord] = []
     retry_root = Path(retry_root)
-    for idx, artifact in enumerate(manifest.artifacts):
+    artifact_stage = {
+        "molecule": "ingest",
+        "molecule_enriched": "enrich",
+        "site": "detect-sites",
+        "conformer": "conformers",
+        "species": "build-complexes",
+        "reaction_trial": "explore-reactions",
+        "reaction_candidate": "dft-minima",
+        "minimum_registry": "reaction-plan",
+        "preopt_geometry": "preopt",
+        "species_preopt": "preopt",
+        "ts_result": "ts-search",
+        "reaction_validated": "ts-search",
+        "irc": "irc",
+        "species_thermo": "thermo",
+        "thermo": "thermo",
+        "kinetics": "kinetics",
+        "ranking": "rank",
+    }
+    valid_stages = set(artifact_stage.values()) | {"dft-minima", "sp", "descriptors", "calibrate", "viz", "ops"}
+    for idx, artifact in enumerate(manifest.latest_artifacts()):
         if artifact.status.status != "failed":
             continue
         stage = artifact.method.get("stage") if artifact.method else None
-        stage = stage or artifact.data.get("stage") or artifact.artifact_type
+        stage = stage or artifact.data.get("stage") or artifact_stage.get(artifact.artifact_type)
+        category = str(artifact.status.category or "").lower()
+        if artifact.artifact_type == "calculation" and not stage:
+            stage = "ts-search" if any(x in category for x in ("ts", "neb")) else "dft-minima"
+        if stage not in valid_stages:
+            continue
         req = estimate_artifact_resources(artifact, stage=stage, config=config)
         out_dir = str(retry_root / artifact.artifact_id)
         command = f"hfauto run-stage {stage} --in $HFAUTO_INPUT_MANIFEST --out {out_dir}"

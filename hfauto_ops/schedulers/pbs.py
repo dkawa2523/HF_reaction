@@ -38,11 +38,12 @@ def render_pbs_stage_script(row: dict[str, Any], out_dir: Path, run_id: str, pro
     path = out_dir / f"submit_{int(row['stage_index']):02d}_{stage}.pbs.sh"
     command = str(row["command"]).replace("${RUN_ID}", run_id)
     queue = row.get("queue")
+    queue_directive = f"#PBS -q {queue}\n" if queue else ""
     content = f"""#!/usr/bin/env bash
 #PBS -N hfauto_{run_id}_{stage}
 #PBS -l select=1:ncpus={int(row['ncores'])}:mem={int(row['memory_gb'])}gb
 #PBS -l walltime={row.get('time_slurm', '01:00:00').replace('-', ':')}
-{f'#PBS -q {queue}\n' if queue else ''}set -euo pipefail
+{queue_directive}set -euo pipefail
 cd "$PBS_O_WORKDIR"
 export PYTHONPATH={project_root}:${{PYTHONPATH:-}}
 {command}

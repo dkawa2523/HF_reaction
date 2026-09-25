@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 
 from hfauto.core.schemas.manifest import Manifest
+from hfauto.stages.registry import STAGES
 from hfauto_ops.core.run_index import failure_rows
 
 DEFAULT_RETRY_POLICY: dict[str, dict[str, Any]] = {
@@ -16,7 +17,12 @@ DEFAULT_RETRY_POLICY: dict[str, dict[str, Any]] = {
     "ts_search_failed": {"stage": "ts-search", "priority": 95, "max_retries": 2, "action": "try_next_ts_backend"},
     "ts_wrong_mode": {"stage": "ts-search", "priority": 90, "max_retries": 1, "action": "constrained_scan_near_expected_coordinate"},
     "irc_failed": {"stage": "irc", "priority": 88, "max_retries": 1, "action": "shorter_step_or_restart_from_ts"},
-    "endpoint_mismatch": {"stage": "build-hf", "priority": 100, "max_retries": 1, "action": "rebuild_endpoints_and_atom_order"},
+    "endpoint_mismatch": {
+        "stage": "irc",
+        "priority": 100,
+        "max_retries": 1,
+        "action": "reoptimize_irc_endpoints_or_revisit_reaction_plan",
+    },
     "missing_input": {"stage": "inspect", "priority": 100, "max_retries": 0, "action": "run_upstream_stage"},
     "xtb_opt_failed": {"stage": "preopt", "priority": 75, "max_retries": 2, "action": "try_rdkit_or_xtb_relaxed_settings"},
     "unknown": {"stage": "inspect", "priority": 10, "max_retries": 0, "action": "manual_inspection"},
@@ -27,16 +33,17 @@ def build_retry_plan(manifest: Manifest, run_dir: str | Path, config: dict[str, 
     cfg = config or {}
     policy = {**DEFAULT_RETRY_POLICY, **(cfg.get("retry_policy", {}) or {})}
     rows = []
+    valid_stages = set(STAGES) | {"inspect", "manual"}
     for idx, row in enumerate(failure_rows(manifest)):
         cat = row.get("category") or "unknown"
         spec = policy.get(cat, policy["unknown"])
-        target_stage = row.get("recommended_fallback") or spec.get("stage", "inspect")
-        if target_stage.startswith("run_") or "before" in str(target_stage):
+        target_stage = row.get("stage") or spec.get("stage", "inspect")
+        if target_stage not in valid_stages:
             target_stage = spec.get("stage", "inspect")
         command = "manual_inspection_required"
         if target_stage not in {"inspect", "manual"}:
             command = (
-                f"hfauto pipeline --config configs/pipelines/phase9_hpc_template.yaml "
+                f"hfauto pipeline --config $HFAUTO_PIPELINE_CONFIG "
                 f"--run-id {manifest.run_id} --from {target_stage} --to {target_stage} "
                 f"--start-manifest $(cat {Path(run_dir) / 'manifest.path'})"
             )

@@ -7,7 +7,7 @@ used by ORCA, pysisyphus, dummy, and offline tests.  They provide conservative,
 machine-readable QC for two common questions:
 
 1. Does a TS-like geometry sit between reactant complex and ion-pair product
-   along q = r(B-H) - r(H-F)?
+   along q = r(H-F) - r(B-H)?
 2. Do IRC endpoints match the intended reactant/product endpoint geometries?
 
 The endpoint match is not a replacement for full chemical inspection, but it
@@ -21,7 +21,8 @@ from typing import Any
 
 import numpy as np
 
-from hfauto.chemistry.hf_builder import XYZ, read_xyz
+from hfauto.chemistry.geometry import xyz_rmsd
+from hfauto.chemistry.xyz import XYZ, read_xyz
 
 
 def _distance(coords: np.ndarray, i: int, j: int) -> float | None:
@@ -44,8 +45,13 @@ def proton_transfer_coordinate(xyz: XYZ, atoms: dict[str, int]) -> dict[str, flo
     f = atoms.get("leaving_f")
     r_bh = _distance(xyz.coords, base, h) if base is not None and h is not None else None
     r_hf = _distance(xyz.coords, h, f) if h is not None and f is not None else None
-    q = None if r_bh is None or r_hf is None else float(r_bh - r_hf)
-    return {"r_BH_A": r_bh, "r_HF_A": r_hf, "q_BH_minus_HF_A": q}
+    q = None if r_bh is None or r_hf is None else float(r_hf - r_bh)
+    return {
+        "r_BH_A": r_bh,
+        "r_HF_A": r_hf,
+        "q_HF_minus_BH_A": q,
+        "q_BH_minus_HF_A": None if q is None else -q,
+    }
 
 
 def estimate_ts_mode_overlap_from_geometry(ts_xyz_path: str | Path, reaction_data: dict[str, Any]) -> dict[str, Any]:
@@ -66,30 +72,13 @@ def estimate_ts_mode_overlap_from_geometry(ts_xyz_path: str | Path, reaction_dat
         }
     atoms = _atoms(reaction_data)
     q = proton_transfer_coordinate(xyz, atoms)
-    val = q.get("q_BH_minus_HF_A")
+    val = q.get("q_HF_minus_BH_A")
     if val is None:
         return {**q, "mode_overlap_score": None, "mode_overlap_model": "geometry_proxy_missing_reaction_atoms"}
     # |q| near zero resembles a centered proton-transfer TS.  Decay slowly so
     # asymmetric but chemically relevant TSs are not rejected too aggressively.
     score = max(0.0, min(1.0, 1.0 - abs(float(val)) / 1.5))
-    return {**q, "mode_overlap_score": float(round(score, 4)), "mode_overlap_model": "geometry_proxy_q=rBH-rHF"}
-
-
-def kabsch_rmsd(xyz_a: XYZ, xyz_b: XYZ) -> float | None:
-    if xyz_a.symbols != xyz_b.symbols or len(xyz_a.symbols) != len(xyz_b.symbols):
-        return None
-    a = np.asarray(xyz_a.coords, dtype=float)
-    b = np.asarray(xyz_b.coords, dtype=float)
-    if len(a) == 0:
-        return 0.0
-    a0 = a - a.mean(axis=0)
-    b0 = b - b.mean(axis=0)
-    cov = a0.T @ b0
-    v, _, wt = np.linalg.svd(cov)
-    d = np.sign(np.linalg.det(v @ wt))
-    u = v @ np.diag([1.0, 1.0, d]) @ wt
-    ar = a0 @ u
-    return float(np.sqrt(np.mean(np.sum((ar - b0) ** 2, axis=1))))
+    return {**q, "mode_overlap_score": float(round(score, 4)), "mode_overlap_model": "geometry_proxy_q=rHF-rBH"}
 
 
 def endpoint_match(reference_xyz: str | Path, endpoint_xyz: str | Path, reaction_data: dict[str, Any], expected_state: str) -> dict[str, Any]:
@@ -104,7 +93,7 @@ def endpoint_match(reference_xyz: str | Path, endpoint_xyz: str | Path, reaction
     except Exception as exc:
         return {"endpoint_match": False, "endpoint_match_reason": f"xyz_parse_failed: {exc}"}
     symbols_ok = ref.symbols == end.symbols
-    rmsd = kabsch_rmsd(ref, end) if symbols_ok else None
+    rmsd = xyz_rmsd(ref, end) if symbols_ok else None
     atoms = _atoms(reaction_data)
     q = proton_transfer_coordinate(end, atoms)
     r_bh = q.get("r_BH_A")

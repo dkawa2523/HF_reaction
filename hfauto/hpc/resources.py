@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Resource estimation for independent workflow stages and backend jobs.
 
 The estimates are intentionally conservative defaults.  They are not used to
@@ -7,7 +5,9 @@ change scientific results; they only help create reviewable job plans and HPC
 submit templates.
 """
 
-from dataclasses import dataclass, asdict
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
 from typing import Any
 
 
@@ -33,30 +33,24 @@ DEFAULT_STAGE_RESOURCES: dict[str, ResourceRequest] = {
     "enrich": ResourceRequest("enrich", ncores=1, memory_gb=1, walltime="00:30:00", priority=20, reason="cache-first DB enrichment"),
     "detect-sites": ResourceRequest("detect-sites", ncores=1, memory_gb=1, walltime="00:10:00", priority=15, reason="SMARTS matching"),
     "conformers": ResourceRequest("conformers", backend="crest_or_rdkit", ncores=4, memory_gb=8, walltime="04:00:00", priority=50, reason="conformer ensemble generation"),
-    "build-hf": ResourceRequest("build-hf", ncores=1, memory_gb=2, walltime="00:30:00", priority=30, reason="HF endpoint construction"),
+    "build-complexes": ResourceRequest("build-complexes", backend="crest_nci", ncores=4, memory_gb=8, walltime="04:00:00", priority=45, reason="bounded multicomponent complex ensemble"),
     "preopt": ResourceRequest("preopt", backend="xtb", ncores=4, memory_gb=8, walltime="02:00:00", priority=55, reason="xTB preoptimization"),
-    "dft-minima": ResourceRequest("dft-minima", backend="orca", ncores=16, memory_gb=32, walltime="24:00:00", priority=70, reason="DFT opt/freq"),
-    "ts-search": ResourceRequest("ts-search", backend="orca_nebts", ncores=32, memory_gb=64, walltime="48:00:00", priority=85, reason="NEB-TS / OptTS"),
-    "irc": ResourceRequest("irc", backend="orca", ncores=16, memory_gb=32, walltime="24:00:00", priority=80, reason="IRC validation"),
-    "sp": ResourceRequest("sp", backend="orca", ncores=16, memory_gb=32, walltime="12:00:00", priority=75, reason="high-level single point"),
-    "thermo": ResourceRequest("thermo", backend="goodvibes_internal", ncores=1, memory_gb=2, walltime="00:30:00", priority=35, reason="thermal corrections"),
+    "relaxation-discovery": ResourceRequest("relaxation-discovery", ncores=1, memory_gb=2, walltime="00:30:00", priority=60, reason="connectivity-changing relaxation normalization"),
+    "generate-reactions": ResourceRequest("generate-reactions", ncores=1, memory_gb=2, walltime="00:30:00", priority=50, reason="reaction trial generation"),
+    "explore-reactions": ResourceRequest("explore-reactions", backend="readuct_xtb", ncores=4, memory_gb=8, walltime="12:00:00", priority=65, reason="NT2/AFIR reaction discovery"),
+    "dft-minima": ResourceRequest("dft-minima", backend="nwchem", ncores=4, memory_gb=4, walltime="24:00:00", priority=70, reason="same-PES DFT opt/freq"),
+    "minimum-registry": ResourceRequest("minimum-registry", ncores=1, memory_gb=4, walltime="00:30:00", priority=40, reason="cross-trial minimum basin registry"),
+    "reaction-plan": ResourceRequest("reaction-plan", ncores=1, memory_gb=2, walltime="00:10:00", priority=45, reason="distinct-basin reaction promotion"),
+    "ts-search": ResourceRequest("ts-search", backend="nwchem_path", ncores=4, memory_gb=4, walltime="48:00:00", priority=85, reason="NEB/string and saddle/frequency"),
+    "irc": ResourceRequest("irc", backend="pysisyphus_nwchem", ncores=4, memory_gb=4, walltime="24:00:00", priority=80, reason="bidirectional IRC and endpoint reoptimization"),
+    "sp": ResourceRequest("sp", backend="nwchem", ncores=4, memory_gb=4, walltime="12:00:00", priority=75, reason="fixed-geometry high-level single point"),
+    "thermo": ResourceRequest("thermo", backend="goodvibes", ncores=1, memory_gb=2, walltime="00:30:00", priority=35, reason="external thermal corrections"),
+    "basin-populations": ResourceRequest("basin-populations", ncores=1, memory_gb=1, walltime="00:10:00", priority=30, reason="conditional finite-ensemble populations"),
     "kinetics": ResourceRequest("kinetics", backend="tst_cantera", ncores=1, memory_gb=2, walltime="00:30:00", priority=35, reason="TST / mechanism export"),
     "calibrate": ResourceRequest("calibrate", ncores=1, memory_gb=2, walltime="00:30:00", priority=25, reason="public reference audit"),
     "rank": ResourceRequest("rank", ncores=1, memory_gb=2, walltime="00:10:00", priority=20, reason="scoring and tables"),
     "viz": ResourceRequest("viz", ncores=1, memory_gb=4, walltime="00:30:00", priority=20, reason="HTML/report rendering"),
 }
-
-STAGE_ALIASES = {
-    "detect_sites": "detect-sites",
-    "build_hf": "build-hf",
-    "dft_minima": "dft-minima",
-    "ts_search": "ts-search",
-}
-
-
-def canonical_stage_name(stage: str) -> str:
-    return STAGE_ALIASES.get(stage, stage)
-
 
 def parse_walltime_to_seconds(walltime: str) -> int:
     parts = [int(p) for p in walltime.split(":")]
@@ -78,7 +72,7 @@ def merge_resource(base: ResourceRequest, override: dict[str, Any] | None = None
 
 
 def estimate_stage_resources(stage: str, config: dict[str, Any] | None = None) -> ResourceRequest:
-    name = canonical_stage_name(stage)
+    name = str(stage)
     base = DEFAULT_STAGE_RESOURCES.get(name, ResourceRequest(name, reason="generic stage"))
     cfg = config or {}
     stage_overrides = (cfg.get("resources") or {}).get(name) or cfg.get("resources") or {}

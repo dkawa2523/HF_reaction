@@ -3,7 +3,6 @@ from __future__ import annotations
 """Run and backend comparison utilities."""
 
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
@@ -49,8 +48,8 @@ def compare_runs(run_a: str | Path, run_b: str | Path, out_dir: str | Path) -> d
     summary = {
         "run_a": ma.run_id,
         "run_b": mb.run_id,
-        "n_artifacts_a": int(len(a)),
-        "n_artifacts_b": int(len(b)),
+        "n_artifacts_a": len(a),
+        "n_artifacts_b": len(b),
         "n_failures_a": int((a.get("status") == "failed").sum()) if not a.empty else 0,
         "n_failures_b": int((b.get("status") == "failed").sum()) if not b.empty else 0,
     }

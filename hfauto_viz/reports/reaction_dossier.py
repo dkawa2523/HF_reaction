@@ -5,16 +5,24 @@ from typing import Any
 
 import pandas as pd
 
-from hfauto_viz.core.html import esc, write_html
-from hfauto_viz.data.loaders import RunData, dataframe_to_html
+from hfauto_viz.core.html import dataframe_to_html, esc, write_html
+from hfauto_viz.data.loaders import RunData
 from hfauto_viz.renderers.coordinate_plot import write_reaction_coordinate_plot
 from hfauto_viz.renderers.mode_view import write_imaginary_mode_view
 from hfauto_viz.renderers.mol3d_3dmol import html_for_structure, write_animation_html
-from hfauto_viz.renderers.plotly_energy import plotly_energy_div, write_energy_profile, write_energy_profile_static_svg
+from hfauto_viz.renderers.plotly_energy import (
+    plotly_energy_div,
+    write_energy_profile,
+    write_energy_profile_static_svg,
+)
 from hfauto_viz.renderers.publication_bundle import write_publication_bundle
-from hfauto_viz.structure.bond_changes import annotation_shapes_for_frame, bond_change_table, write_bond_change_outputs
+from hfauto_viz.structure.bond_changes import (
+    annotation_shapes_for_frame,
+    bond_change_table,
+    write_bond_change_outputs,
+)
 from hfauto_viz.structure.path_sources import reaction_path_frames_from_run
-from hfauto_viz.structure.xyz import Frame, read_xyz_frames, frames_to_xyz
+from hfauto_viz.structure.xyz import Frame, frames_to_xyz, read_xyz_frames
 
 
 def _first_frame(path):
@@ -29,7 +37,7 @@ def _frame_annotations(frame: Frame | None, reaction_data: dict[str, Any]) -> li
 def _path_frame_annotations(frames: list[tuple[str, Frame]], reaction_data: dict[str, Any]) -> list[dict[str, Any]]:
     annotations: list[dict[str, Any]] = []
     # Annotate first, TS-like middle, and last frames so the viewer stays readable.
-    idxs = sorted(set([0, max(0, len(frames)//2), max(0, len(frames)-1)]))
+    idxs = sorted({0, max(0, len(frames)//2), max(0, len(frames)-1)})
     for idx in idxs:
         if idx < len(frames):
             annotations.extend({**ann, "frame": idx} for ann in _frame_annotations(frames[idx][1], reaction_data))
@@ -118,7 +126,7 @@ def render_reaction_dossier(run: RunData, reaction_id: str, out_dir: str | Path,
     warn = "" if path_source.get('real_path_frames') else "<div class='warn'><b>Path-frame note:</b> This dossier uses an interpolated reactant→TS→product path unless a real IRC/NEB trajectory artifact is available.</div>"
     body = (
         f"{warn}<div class='card'><h2>Reaction {esc(reaction_id)}</h2>"
-        "<p class='muted'>Phase 11 dossier links energy, annotated 3D structures, path animation, reaction-coordinate diagnostics, imaginary-mode arrows and exportable figure files.</p>"
+        "<p class='muted'>The dossier links energy, annotated 3D structures, path animation, reaction-coordinate diagnostics, imaginary-mode arrows and exportable figure files.</p>"
         f"<ul>{link_html}</ul></div>"
         f"<div class='grid'><div class='card'><h2>Review summary</h2>{dataframe_to_html(pd.DataFrame([quality_bits]))}</div><div class='card'><h2>Bond-change distances</h2>{dataframe_to_html(pd.DataFrame(bc_rows))}</div></div>"
         f"<div class='card'>{plotly_energy_div(row) if row else ''}</div>"

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+import csv
+import json
 from math import sqrt
 from pathlib import Path
 from typing import Any
-import csv
-import json
 
 from hfauto_viz.structure.xyz import Atom, Frame
 

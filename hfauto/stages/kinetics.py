@@ -5,9 +5,9 @@ from typing import Any
 import pandas as pd
 
 from hfauto.backends.kinetics.cantera import CanteraEngine
-from hfauto.backends.thermo.arkane import ArkaneEngine
 from hfauto.backends.registry import get_kinetics_engine
-from hfauto.core.io import ensure_dir, read_json, write_json, write_jsonl
+from hfauto.backends.thermo.arkane import ArkaneEngine
+from hfauto.core.io import ensure_dir, read_json, write_jsonl
 from hfauto.core.schemas.artifact import Artifact
 from hfauto.core.schemas.manifest import Manifest
 from hfauto.stages.base import Stage, StageContext
@@ -16,7 +16,7 @@ from hfauto.stages.base import Stage, StageContext
 class KineticsStage(Stage):
     """Compute TST kinetics and export production-connector artifacts.
 
-    Phase 10 still calculates core rates with the internal auditable TST engine,
+    Core rates are calculated with the internal auditable TST engine,
     but it now writes machine-readable connector QC for Cantera and Arkane.  This
     lets production runs distinguish between:
     * internal screening kinetics;
@@ -47,7 +47,7 @@ class KineticsStage(Stage):
             rec["quality_tier"] = thermo.data.get("quality_tier")
             rec["confidence_score"] = thermo.data.get("confidence_score")
             rec["thermo_artifact_id"] = thermo.artifact_id
-            # Carry Phase 10 thermochemistry readiness flags into kinetics.
+            # Carry thermochemistry readiness flags into kinetics.
             for key in ["production_thermo_ready", "external_goodvibes_executed", "external_goodvibes_status"]:
                 if key in thermo.data:
                     rec[key] = thermo.data.get(key)
@@ -88,7 +88,7 @@ class KineticsStage(Stage):
                 data={
                     "format": "hfauto_yaml_and_cantera_connector",
                     "status": "success",
-                    "n_reactions": int(len(records)),
+                    "n_reactions": len(records),
                     "production_cantera_ready": bool(validation.get("production_cantera_ready", False)),
                     "cantera_validation_status": validation.get("cantera_validation_status"),
                     "pseudo_species": True,
@@ -120,5 +120,5 @@ class KineticsStage(Stage):
                     qc={"connector": "arkane", "arkane_status": arkane_meta.get("arkane_status"), "production_ready": arkane_meta.get("production_arkane_ready", False)},
                 )
             )
-        out.add_artifact(Artifact(artifact_id="kinetics_table", artifact_type="table", paths={"csv": str(out_dir / "kinetics_records.csv"), "jsonl": str(out_dir / "kinetics_records.jsonl")}, data={"n_rows": int(len(records)), "table_type": "kinetics"}))
+        out.add_artifact(Artifact(artifact_id="kinetics_table", artifact_type="table", paths={"csv": str(out_dir / "kinetics_records.csv"), "jsonl": str(out_dir / "kinetics_records.jsonl")}, data={"n_rows": len(records), "table_type": "kinetics"}))
         return out

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from html import escape as _esc
 from pathlib import Path
 from typing import Any
@@ -25,11 +26,3 @@ def dataframe_to_html(df, max_rows: int = 30) -> str:
 def table_html(rows: list[dict[str, Any]], max_rows: int = 30) -> str:
     import pandas as pd
     return dataframe_to_html(pd.DataFrame(rows), max_rows=max_rows)
-
-# Phase 8 compatibility alias.
-def df_to_html(df, max_rows: int = 30) -> str:
-    return dataframe_to_html(df, max_rows=max_rows)
-
-# Phase 8 compatibility alias.
-def df_to_html(df, max_rows: int = 30) -> str:
-    return dataframe_to_html(df, max_rows=max_rows)

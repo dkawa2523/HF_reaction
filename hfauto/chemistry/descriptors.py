@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 
-from hfauto.chemistry.hf_builder import read_xyz
+from hfauto.chemistry.xyz import read_xyz
 from hfauto.core.constants import DEFAULT_HF_BOND_A, DEFAULT_HF_STRETCH_CM1
 
 

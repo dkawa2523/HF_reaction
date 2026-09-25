@@ -6,7 +6,12 @@ from typing import Any
 from hfauto_viz.core.html import dataframe_to_html, write_html
 from hfauto_viz.renderers.mol3d_3dmol import html_for_structure
 from hfauto_viz.structure.bond_changes import annotation_shapes_for_frame
-from hfauto_viz.structure.modes import annotations_for_mode, approximate_proton_transfer_mode, mode_vectors_table, write_mode_vectors
+from hfauto_viz.structure.modes import (
+    annotations_for_mode,
+    approximate_proton_transfer_mode,
+    mode_vectors_table,
+    write_mode_vectors,
+)
 from hfauto_viz.structure.xyz import Frame
 
 

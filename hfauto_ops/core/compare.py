@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
@@ -20,8 +20,16 @@ def _table(run_dir: str | Path, name: str) -> pd.DataFrame:
     return pd.read_csv(matches[-1])
 
 
+def _outer_comparison(left: pd.DataFrame, right: pd.DataFrame, on: str | list[str]) -> pd.DataFrame:
+    # Wide result tables can trigger a pandas fragmentation warning inside merge;
+    # deltas are appended in one concat below, so this is not an hfauto mutation loop.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
+        return left.merge(right, on=on, how="outer", suffixes=("_a", "_b"), indicator=True)
+
+
 def _numeric_delta(df: pd.DataFrame, suffix_a: str = "_a", suffix_b: str = "_b") -> pd.DataFrame:
-    out = df.copy()
+    deltas: dict[str, pd.Series] = {}
     for col in list(df.columns):
         if not col.endswith(suffix_a):
             continue
@@ -34,8 +42,10 @@ def _numeric_delta(df: pd.DataFrame, suffix_a: str = "_a", suffix_b: str = "_b")
             and not pd.api.types.is_bool_dtype(df[col])
             and not pd.api.types.is_bool_dtype(df[other])
         ):
-            out[f"delta_{base}"] = df[other] - df[col]
-    return out
+            deltas[f"delta_{base}"] = df[other] - df[col]
+    if not deltas:
+        return df.copy()
+    return pd.concat([df, pd.DataFrame(deltas, index=df.index)], axis=1)
 
 
 def compare_runs(run_a: str | Path, run_b: str | Path, out_dir: str | Path) -> dict[str, Path]:
@@ -48,7 +58,7 @@ def compare_runs(run_a: str | Path, run_b: str | Path, out_dir: str | Path) -> d
 
     paths: dict[str, Path] = {}
     if not cand_a.empty and not cand_b.empty and "mol_id" in cand_a.columns and "mol_id" in cand_b.columns:
-        merged = cand_a.merge(cand_b, on="mol_id", how="outer", suffixes=("_a", "_b"), indicator=True)
+        merged = _outer_comparison(cand_a, cand_b, on="mol_id")
         merged = _numeric_delta(merged)
         p = out / "candidate_comparison.csv"
         merged.to_csv(p, index=False)
@@ -60,7 +70,7 @@ def compare_runs(run_a: str | Path, run_b: str | Path, out_dir: str | Path) -> d
 
     keys = [k for k in ["reaction_id", "mol_id", "site_id", "hf_n"] if k in rxn_a.columns and k in rxn_b.columns]
     if not rxn_a.empty and not rxn_b.empty and keys:
-        merged = rxn_a.merge(rxn_b, on=keys, how="outer", suffixes=("_a", "_b"), indicator=True)
+        merged = _outer_comparison(rxn_a, rxn_b, on=keys)
         merged = _numeric_delta(merged)
         p = out / "reaction_comparison.csv"
         merged.to_csv(p, index=False)
@@ -73,10 +83,10 @@ def compare_runs(run_a: str | Path, run_b: str | Path, out_dir: str | Path) -> d
     summary = {
         "run_a": str(run_a),
         "run_b": str(run_b),
-        "candidate_rows_a": int(len(cand_a)),
-        "candidate_rows_b": int(len(cand_b)),
-        "reaction_rows_a": int(len(rxn_a)),
-        "reaction_rows_b": int(len(rxn_b)),
+        "candidate_rows_a": len(cand_a),
+        "candidate_rows_b": len(cand_b),
+        "reaction_rows_a": len(rxn_a),
+        "reaction_rows_b": len(rxn_b),
     }
     summary_path = out / "run_comparison_summary.json"
     summary_path.write_text(__import__("json").dumps(summary, indent=2), encoding="utf-8")

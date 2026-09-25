@@ -2,8 +2,8 @@ from __future__ import annotations
 
 """Cantera-oriented exports and process-screening reactor models.
 
-Phase 10 keeps the safe pseudo-mechanism draft while adding optional production
-validation/execution hooks.  If Cantera is installed and explicitly enabled, the
+The safe pseudo-mechanism draft is separate from optional production
+validation/execution hooks. If Cantera is installed and explicitly enabled, the
 adapter attempts to load the generated or user-supplied mechanism and run a very
 small batch-reactor smoke test.  Failures are recorded as data, never hidden.
 """
@@ -61,7 +61,7 @@ class CanteraEngine:
         reaction_ids = sorted({str(r.get("reaction_id")) for r in kinetics_records if r.get("reaction_id")})
         species_names: list[str] = []
         lines: list[str] = [
-            "# hfauto Phase 10 Cantera draft mechanism",
+            "# hfauto Cantera draft mechanism",
             "# Pseudo-species preserve reaction IDs until Arkane/NASA thermo is available.",
             "# This file is valid as a smoke-test mechanism only; review before production use.",
             "units:",
@@ -156,7 +156,7 @@ class CanteraEngine:
         self._write_rows(reactor_path, rows, ["reaction_id", "mol_id", "site_id", "hf_n", "T_K", "residence_time_s", "k_corrected_s-1", "first_order_conversion_RC_to_IP", "reactor_model"])
 
         reactor_template_path.write_text(
-            "# generated_by=hfauto Phase 10\n"
+            "# generated_by=hfauto\n"
             "# Requires cantera and production thermo/species definitions for real reactor use.\n"
             "import cantera as ct\n"
             "gas = ct.Solution('cantera_mechanism.yaml')\n"
@@ -166,7 +166,7 @@ class CanteraEngine:
 
         validation = self.validate_mechanism(cantera_path)
         write_json(validation_path, {**validation, "draft_meta": draft_meta})
-        reactor_meta = self.run_cantera_reactor_smoke_test(cantera_path, production_reactor_path)
+        self.run_cantera_reactor_smoke_test(cantera_path, production_reactor_path)
         # If no real Cantera run happened, write a stable empty CSV.
         if not production_reactor_path.exists():
             production_reactor_path.write_text("status,reason\nnot_run,cantera_not_available_or_not_allowed\n", encoding="utf-8")

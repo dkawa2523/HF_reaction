@@ -13,7 +13,7 @@ ARTIFACT_TO_STAGE = {
     "molecule_enriched": "enrich",
     "site": "detect-sites",
     "conformer": "conformers",
-    "species": "build-hf",
+    "species": "build-complexes",
     "species_preopt": "preopt",
     "calculation": "dft-minima",
     "ts_path": "ts-search",

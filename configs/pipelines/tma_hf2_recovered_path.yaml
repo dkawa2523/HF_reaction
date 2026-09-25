@@ -1,0 +1,103 @@
+pipeline_id: tma_hf2_recovered_path_v1
+run_root: runs
+
+global:
+  mode: production
+  temperature_K: [298.15]
+  standard_pressure_bar: 1.0
+
+stages:
+  # The preserved NEB profile is used only to select a geometry. Its 10.5
+  # kcal/mol rise is not publishable because the NEB optimization was stopped.
+  - name: recover-path
+    paths:
+      - reaction_id: rxn_candidate_dft_basins_eaee13b6ba59b839
+        engine: nwchem_neb
+        path_xyz: runs/tma_hf2_path_v1/04_ts-search/rxn_candidate_dft_e08520bd5f/attempt_00_nwchem_neb/neb/hfauto_neb.nebpath_000001.xyz
+        optimization_history: runs/tma_hf2_path_v1/04_ts-search/rxn_candidate_dft_e08520bd5f/attempt_00_nwchem_neb/neb/hfauto_neb.neb_epath
+        endpoint_rmsd_tolerance_A: 0.10
+        barrier_threshold_kcal_mol: 0.5
+        max_path_attempts: 4
+
+  - name: ts-search
+    reaction_ids: [rxn_candidate_dft_basins_eaee13b6ba59b839]
+    # The recovered maximum is tried first. If its Hessian has ambiguous
+    # negative directions, the reaction-case state authorizes an adaptive
+    # string refinement on the same PES instead of repeating the saddle guess.
+    engine_order: [nwchem_saddle, nwchem_string]
+    method: pbe0_def2_svpd_tma_hf2_saddle
+    require_validated_dft_minima: true
+    require_reaction_case: true
+    checkpoint_each_attempt: true
+    resume_completed_reactions: true
+    max_reactions: 1
+    # One recovered-seed saddle precheck, one adaptive path, and a fresh
+    # saddle refinement of the path maximum must all fit in one invocation.
+    max_total_attempts: 4
+    max_stage_walltime_s: 14400
+    settings: &method
+      allow_subprocess: true
+      fallback_to_dummy: false
+      functional: pbe0
+      basis: def2-svpd
+      disp_vdw: 3
+      required_program_version: 7.2.3
+      grid: xfine
+      scf_energy_tolerance: 1.0e-8
+      optimization_convergence: default
+      geometry_maxiter: 180
+      ncores: 4
+      memory_mb: 4000
+      timeout_s: 14400
+      executable: /home/user/.local/bin/nwchem
+      mpi_executable: /home/user/.local/opt/nwchem-7.2.3/bin/mpirun
+      saddle_seed_hessian_precheck: true
+      string_nbeads: 9
+      # Iterations are full nine-bead DFT gradient sweeps. Twelve is a
+      # deliberate path budget. If walltime expires first, a structurally
+      # validated single-maximum profile may supply geometry only; its energy
+      # remains non-publishable until an independent first-order saddle and
+      # bidirectional IRC pass.
+      string_maxiter: 12
+      allow_interrupted_path_seed: true
+      string_tolerance: 0.00045
+      ts_mode_overlap_threshold: 0.50
+      ts_opt_threshold: gau_tight
+
+  - name: irc
+    engine: pysisyphus
+    method: pbe0_def2_svpd_tma_hf2_irc
+    require_reaction_case: true
+    settings:
+      <<: *method
+      program: nwchem
+      pysis_executable: /mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline/.venv/bin/pysis
+      irc_integrator: eulerpc
+      irc_maxiter: 180
+      optimize_irc_endpoints: true
+      require_optimized_irc_endpoints: true
+      endpoint_optimizer: nwchem
+
+  - name: reaction-classify
+    require_real_qm: true
+
+  - name: thermo
+    engine: goodvibes
+    settings:
+      allow_subprocess: true
+      use_external_goodvibes: true
+      prefer_external_goodvibes_g: true
+      apply_internal_quasi_rrho: false
+      quasi_rrho_cutoff_cm1: 100.0
+      frequency_scale_factor: 0.985
+      extra_args: [-q, -f, "100", -v, "0.985", --temp, "298.15", --csv, Goodvibes.csv]
+
+  - name: basin-populations
+    require_production_thermo: true
+
+  - name: reaction-rank
+    metric: delta_G_activation_standard_kcal_mol
+    objective: lower
+    evidence_policy: production
+
+  - name: discovery-audit

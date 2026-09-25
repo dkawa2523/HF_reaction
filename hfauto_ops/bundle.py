@@ -6,20 +6,19 @@ from typing import Any
 from hfauto.core.io import write_json
 from hfauto.core.schemas.artifact import Artifact
 from hfauto_ops.core.array_jobs import write_array_plan
-from hfauto_ops.core.artifact_jobs import write_artifact_job_plan
 from hfauto_ops.core.autotune import write_autotune_report
 from hfauto_ops.core.backend_compare import write_backend_comparison
 from hfauto_ops.core.compare import compare_runs
 from hfauto_ops.core.qcarchive import write_qcarchive_bundle
-from hfauto_ops.qcarchive.export import write_qcarchive_export
-from hfauto_ops.qcarchive.connector import write_qcarchive_plan
 from hfauto_ops.core.resource import build_resource_plan, write_resource_plan
 from hfauto_ops.core.retry import write_retry_plan
 from hfauto_ops.core.reuse import write_reuse_bundle
 from hfauto_ops.core.run_index import write_index_bundle
+from hfauto_ops.qcarchive.connector import write_qcarchive_plan
+from hfauto_ops.qcarchive.export import write_qcarchive_export
 from hfauto_ops.reports.operations_report import write_operations_report
-from hfauto_ops.schedulers.production import write_multi_scheduler_bundle
 from hfauto_ops.schedulers.controller import scheduler_status
+from hfauto_ops.schedulers.production import write_multi_scheduler_bundle
 
 
 def build_operations_bundle(
@@ -52,28 +51,6 @@ def build_operations_bundle(
         )
         paths.update({f"array_{k}": v for k, v in array_paths.items()})
         array_jsonl = array_paths.get("array_jsonl")
-        # Backward-compatible Phase 12 file names used by earlier ops reports/tests.
-        if array_paths.get("array_csv") and Path(array_paths["array_csv"]).exists():
-            import pandas as pd
-            df_alias = pd.read_csv(array_paths["array_csv"])
-            if not df_alias.empty:
-                df_alias = df_alias.copy()
-                df_alias["artifact_job_id"] = df_alias.get("array_item_id")
-                df_alias["target_stage"] = df_alias.get("stage")
-                df_alias["target_artifact_id"] = df_alias.get("target_artifact_id")
-                df_alias["artifact_type"] = df_alias.get("target_artifact_type")
-                df_alias["job_id"] = df_alias.get("array_item_id")
-                df_alias["command"] = df_alias.apply(lambda r: f"python -m hfauto_ops.cli.main run-array-task --array-items {array_jsonl} --task-id {int(r['array_index'])}", axis=1)
-            artifact_job_plan = out / "artifact_job_plan.csv"
-            df_alias.to_csv(artifact_job_plan, index=False)
-            arrays = df_alias.groupby("stage").size().reset_index(name="n_jobs") if not df_alias.empty and "stage" in df_alias.columns else pd.DataFrame()
-            artifact_arrays = out / "artifact_job_arrays.csv"
-            arrays.to_csv(artifact_arrays, index=False)
-            commands = out / "artifact_job_commands.sh"
-            cmds = df_alias.get("command", pd.Series(dtype=str)).dropna().astype(str).tolist() if not df_alias.empty else []
-            commands.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + "\n".join(cmds) + "\n", encoding="utf-8")
-            commands.chmod(0o755)
-            paths.update({"artifact_jobs_csv": artifact_job_plan, "artifact_job_csv": artifact_job_plan, "artifact_arrays_csv": artifact_arrays, "artifact_commands_sh": commands})
 
         schedulers = ops_config.get("schedulers") or [ops_config.get("scheduler", "slurm")]
         scheduler_paths = write_multi_scheduler_bundle(
@@ -84,19 +61,6 @@ def build_operations_bundle(
             project_root=ops_config.get("project_root", "$PWD"),
         )
         paths.update({f"scheduler_{k}": v for k, v in scheduler_paths.items()})
-        # Backward-compatible root-level slurm/ directory used by Phase 9 operators/tests.
-        try:
-            if any(str(s).lower() == "slurm" for s in schedulers):
-                import shutil
-                src = out / "scheduler" / "slurm"
-                dst = out / "slurm"
-                if src.exists() and not dst.exists():
-                    shutil.copytree(src, dst)
-                    paths["slurm_scripts_dir"] = dst
-                    if (dst / "submit_all.sh").exists():
-                        paths["slurm_submit_all"] = dst / "submit_all.sh"
-        except Exception:
-            pass
         paths.update({f"scheduler_status_{k}": v for k, v in scheduler_status(out, scheduler=str(schedulers[0]), dry_run=True).items()})
 
     paths.update({f"retry_{k}": v for k, v in write_retry_plan(run, out, pipeline_config).items()})
@@ -105,14 +69,14 @@ def build_operations_bundle(
     paths.update(write_reuse_bundle(
         run,
         out,
-        artifact_job_plan_csv=paths.get("array_array_csv"),
+        job_plan_csv=paths.get("array_array_csv"),
         registry_db=registry_db,
         cache_runs=ops_config.get("cache_roots") or ops_config.get("cache_runs") or ops_config.get("reuse_from") or [],
     ))
 
     qca_paths = write_qcarchive_export(run, out / "qcarchive", dataset_name=ops_config.get("qcarchive_dataset_name") or ops_config.get("qcarchive_dataset") or f"hfauto_{run.name}")
     paths.update(qca_paths)
-    # Root-level import plan used by operations reports and Phase 12 tests.
+    # Root-level import plan used by operations reports.
     paths.update(write_qcarchive_plan(run, out, dataset_name=ops_config.get("qcarchive_dataset_name") or ops_config.get("qcarchive_dataset") or f"hfauto_{run.name}"))
     if paths.get("artifact_job_csv") or paths.get("array_array_csv"):
         # Legacy/review payload keyed from artifact/array plan for external QCArchive mapping.
@@ -131,7 +95,7 @@ def build_operations_bundle(
         cmp_paths = compare_runs(compare_to, run, cmp_dir)
         paths.update({f"compare_{k}": v for k, v in cmp_paths.items()})
 
-    report = write_operations_report(out, title="hfauto Phase 12 production operations report")
+    report = write_operations_report(out, title="hfauto production operations report")
     paths["operations_report"] = report
     summary = {k: str(v) for k, v in paths.items()}
     paths["operations_manifest"] = write_json(out / "operations_manifest.json", summary)
@@ -140,11 +104,10 @@ def build_operations_bundle(
 
 def operations_artifact(run_dir: str | Path, out_dir: str | Path, paths: dict[str, Path]) -> Artifact:
     return Artifact(
-        artifact_id="ops_phase12_bundle",
+        artifact_id="operations_bundle",
         artifact_type="operations_bundle",
         paths={k: str(v) for k, v in paths.items()},
         data={
-            "phase": "phase12",
             "operations_package": "hfauto_ops",
             "run_dir": str(run_dir),
             "n_outputs": len(paths),

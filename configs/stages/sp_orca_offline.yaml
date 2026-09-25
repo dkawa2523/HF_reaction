@@ -1,8 +1,0 @@
-engine: orca
-method: wb97xd4_def2_tzvppd_orca
-settings:
-  allow_subprocess: false
-  fallback_to_dummy: true
-  ncores: 4
-  memory_mb: 3000
-  orca_keywords: ["wB97X-D4", "def2-TZVPPD", "TightSCF", "Grid5", "FinalGrid6"]

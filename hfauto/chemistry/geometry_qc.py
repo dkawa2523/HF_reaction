@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from hfauto.chemistry.hf_builder import read_xyz
+from hfauto.chemistry.xyz import read_xyz
 
 
 def _distance(coords: np.ndarray, i: int, j: int) -> float | None:
@@ -124,7 +124,10 @@ def geometry_qc_from_xyz(species_data: dict[str, Any], xyz_path: str | Path | No
             )
             qc["ion_pair_dissociated"] = bool(r_bh is not None and r_bh > 1.80)
         elif state == "transition_state":
-            qc["pt_coordinate_A"] = None if r_bh is None or r_hf is None else float(r_bh - r_hf)
+            canonical_q = None if r_bh is None or r_hf is None else float(r_hf - r_bh)
+            qc["pt_coordinate_A"] = canonical_q
+            qc["q_HF_minus_BH_A"] = canonical_q
+            qc["q_BH_minus_HF_A"] = None if canonical_q is None else -canonical_q
 
     # General HF sanity for clusters and complexes. Ion-pair products may contain
     # FHF- motifs, so not all H-F distances are expected to be covalent there.

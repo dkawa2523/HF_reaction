@@ -1,26 +1,43 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
+import pandas as pd
 import typer
 from rich.console import Console
-import pandas as pd
 
 from hfauto.core.config import load_yaml
+from hfauto.core.environment import environment_report
 from hfauto.core.io import read_manifest, write_manifest
+from hfauto.hpc.cache import write_cache_index
+from hfauto.hpc.compare import compare_backends as hpc_compare_backends
+from hfauto.hpc.compare import compare_runs as hpc_compare_runs
+from hfauto.hpc.dashboard import render_hpc_dashboard
+from hfauto.hpc.job_plan import planned_stage_jobs, retry_jobs_from_manifest, write_job_plan
+from hfauto.hpc.schedulers import (
+    write_snakefile_from_job_plan,
+    write_snakemake_profile,
+    write_submit_scripts,
+)
 from hfauto.reporting.html_report import latest_manifest_path, render_report
 from hfauto.stages.base import StageContext
 from hfauto.stages.registry import get_stage
 from hfauto.workflow.runner import run_pipeline
-from hfauto.hpc.job_plan import planned_stage_jobs, retry_jobs_from_manifest, write_job_plan
-from hfauto.hpc.cache import write_cache_index
-from hfauto.hpc.compare import compare_runs as hpc_compare_runs, compare_backends as hpc_compare_backends
-from hfauto.hpc.schedulers import write_submit_scripts, write_snakemake_profile, write_snakefile_from_job_plan
-from hfauto.hpc.dashboard import render_hpc_dashboard
 
-app = typer.Typer(help="HF gas-phase reactivity workflow")
+app = typer.Typer(help="Molecular complex, reaction-path, and energy workflow")
 console = Console()
+
+
+@app.command("doctor")
+def doctor(
+    config: Path | None = typer.Option(None, help="Production pipeline YAML to validate"),
+    strict: bool = typer.Option(False, help="Exit non-zero when required tools are missing"),
+):
+    """Check Python packages and external chemistry/HPC executables."""
+    report = environment_report(config)
+    console.print_json(data=report)
+    if strict and not report["ready"]:
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -41,9 +58,9 @@ def run_stage(
     stage_name: str = typer.Argument(..., help="Stage name, e.g. enrich, detect-sites, dft-minima"),
     in_manifest: Path = typer.Option(..., "--in", help="Input manifest.json"),
     out: Path = typer.Option(..., help="Output stage directory"),
-    config: Optional[Path] = typer.Option(None, help="YAML config for this stage"),
-    global_config: Optional[Path] = typer.Option(None, help="Pipeline/global YAML to inherit temperature, pressure, and mode settings"),
-    run_id: Optional[str] = typer.Option(None, help="Override run id"),
+    config: Path | None = typer.Option(None, help="YAML config for this stage"),
+    global_config: Path | None = typer.Option(None, help="Pipeline/global YAML to inherit temperature, pressure, and mode settings"),
+    run_id: str | None = typer.Option(None, help="Override run id"),
 ):
     manifest = read_manifest(in_manifest)
     cfg = load_yaml(config)
@@ -65,12 +82,20 @@ def run_stage(
 def pipeline(
     config: Path = typer.Option(..., help="Pipeline YAML"),
     run_id: str = typer.Option(..., help="Run id"),
-    from_stage: Optional[str] = typer.Option(None, "--from", help="Start stage name for partial run"),
-    to_stage: Optional[str] = typer.Option(None, "--to", help="End stage name for partial run"),
-    start_manifest: Optional[Path] = typer.Option(None, help="Input manifest for partial run"),
+    from_stage: str | None = typer.Option(None, "--from", help="Start stage name for partial run"),
+    to_stage: str | None = typer.Option(None, "--to", help="End stage name for partial run"),
+    start_manifest: Path | None = typer.Option(None, help="Input manifest for partial run"),
+    skip_preflight: bool = typer.Option(False, help="Skip production dependency preflight (advanced use only)"),
 ):
     cfg = load_yaml(config)
     cfg["__config_path"] = str(config)
+    if str((cfg.get("global") or {}).get("mode", "")).lower() == "production" and not skip_preflight:
+        report = environment_report(cfg)
+        if not report["ready"]:
+            console.print_json(data=report)
+            missing = ", ".join(report["missing_python"] + report["missing_external"])
+            console.print(f"[red]production preflight failed[/red]: missing or unusable: {missing}")
+            raise typer.Exit(code=2)
     run_dir = run_pipeline(cfg, run_id, from_stage=from_stage, to_stage=to_stage, start_manifest=start_manifest)
     console.print(f"[green]pipeline completed[/green] {run_dir}")
 
@@ -124,7 +149,7 @@ def report(
 def hpc_plan(
     run_dir: Path = typer.Argument(..., help="Existing run directory"),
     out: Path = typer.Option(..., help="Output operations directory"),
-    config: Optional[Path] = typer.Option(None, help="Pipeline YAML containing stages to plan"),
+    config: Path | None = typer.Option(None, help="Pipeline YAML containing stages to plan"),
     scheduler: str = typer.Option("slurm", help="slurm | pbs | local"),
 ):
     """Create job plans, submit script templates, Snakemake files, retry plans, and cache index."""

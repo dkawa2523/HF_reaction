@@ -38,6 +38,9 @@ real_ts_search_executed
 fallback_dummy
 ```
 
+Path methods must retain their scientific identity: NEB/GSM evidence is not IRC
+evidence. Set `real_irc_executed` only for an actual IRC calculation.
+
 ## Thermochemistry backend checklist
 
 A thermochemistry backend should report:

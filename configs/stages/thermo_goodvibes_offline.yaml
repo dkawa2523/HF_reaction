@@ -1,6 +1,0 @@
-engine: goodvibes
-settings:
-  quasi_rrho: true
-  quasi_rrho_cutoff_cm1: 100.0
-  frequency_scale_factor: 1.0
-  allow_subprocess: false

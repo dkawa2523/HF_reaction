@@ -16,6 +16,7 @@ class StageContext:
 
 class Stage:
     name: str
+    accepts_empty_manifest: bool = False
 
     def run(self, manifest: Manifest | None, config: dict[str, Any], context: StageContext) -> Manifest:
         raise NotImplementedError

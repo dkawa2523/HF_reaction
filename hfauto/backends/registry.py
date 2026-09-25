@@ -13,14 +13,19 @@ from hfauto.backends.db.pubchem import PubChemProvider
 from hfauto.backends.kinetics.cantera import CanteraEngine
 from hfauto.backends.kinetics.tst import TSTKineticsEngine
 from hfauto.backends.qm.dummy import DummyQMEngine
+from hfauto.backends.qm.nwchem import NWChemEngine
 from hfauto.backends.qm.orca import OrcaEngine
 from hfauto.backends.qm.xtb import XTBEngine
+from hfauto.backends.reaction_discovery.readuct import ReaDuctDiscoveryBackend
 from hfauto.backends.thermo.arkane import ArkaneEngine
 from hfauto.backends.thermo.goodvibes import GoodVibesEngine
 from hfauto.backends.ts.dummy import DummyTSEngine
+from hfauto.backends.ts.nwchem_neb import NWChemNEBEngine
+from hfauto.backends.ts.nwchem_saddle import NWChemSaddleEngine
+from hfauto.backends.ts.nwchem_string import NWChemStringEngine
 from hfauto.backends.ts.orca_nebts import ORCANEBTSEngine
 from hfauto.backends.ts.pysisyphus import PysisyphusEngine
-from hfauto.backends.ts.scan_optts import ScanOptTSEngine
+from hfauto.backends.ts.pysisyphus_saddle import PysisyphusSaddleEngine
 
 
 def _normalize_spec(spec, explicit_kwargs: dict | None = None) -> tuple[str, dict]:
@@ -36,7 +41,7 @@ def _normalize_spec(spec, explicit_kwargs: dict | None = None) -> tuple[str, dic
 
 
 def get_qm_engine(spec: str | dict, **kwargs):
-    engines = {"dummy": DummyQMEngine, "orca": OrcaEngine, "xtb": XTBEngine}
+    engines = {"dummy": DummyQMEngine, "nwchem": NWChemEngine, "orca": OrcaEngine, "xtb": XTBEngine}
     name, init_kwargs = _normalize_spec(spec, kwargs)
     if name not in engines:
         raise KeyError(f"Unknown QM engine: {name}")
@@ -51,19 +56,23 @@ def get_conformer_engine(spec: str | dict, **kwargs):
     return engines[name](**init_kwargs)
 
 
-get_conformer_backend = get_conformer_engine
+def get_reaction_discovery_engine(spec: str | dict, **kwargs):
+    engines = {"readuct": ReaDuctDiscoveryBackend}
+    name, init_kwargs = _normalize_spec(spec, kwargs)
+    if name not in engines:
+        raise KeyError(f"Unknown reaction-discovery engine: {name}")
+    return engines[name](**init_kwargs)
 
 
 def get_ts_engine(spec: str | dict, **kwargs):
     engines = {
         "dummy": DummyTSEngine,
+        "nwchem_neb": NWChemNEBEngine,
+        "nwchem_saddle": NWChemSaddleEngine,
+        "nwchem_string": NWChemStringEngine,
         "orca_nebts": ORCANEBTSEngine,
-        "orca-nebts": ORCANEBTSEngine,
-        "orca_irc": ORCANEBTSEngine,
-        "orca": ORCANEBTSEngine,
-        "scan_optts": ScanOptTSEngine,
-        "scan-optts": ScanOptTSEngine,
         "pysisyphus": PysisyphusEngine,
+        "pysisyphus_saddle": PysisyphusSaddleEngine,
     }
     name, init_kwargs = _normalize_spec(spec, kwargs)
     if name not in engines:
@@ -96,13 +105,6 @@ def get_thermo_engine(spec: str | dict, **kwargs):
         "internal": GoodVibesEngine,
         "internal_quasirrho": GoodVibesEngine,
         "quasi_rrho": GoodVibesEngine,
-        "phase6": GoodVibesEngine,
-        "phase6_internal": GoodVibesEngine,
-        "phase6_offline": GoodVibesEngine,
-        "phase5_offline": GoodVibesEngine,
-        "phase4_offline": GoodVibesEngine,
-        "orca_dft_ts_irc": GoodVibesEngine,
-        "orca_dft_ts_irc_sp": GoodVibesEngine,
         "dummy": GoodVibesEngine,
         "arkane": ArkaneEngine,
     }
@@ -118,8 +120,6 @@ def get_kinetics_engine(spec: str | dict, **kwargs):
         "simple": TSTKineticsEngine,
         "internal": TSTKineticsEngine,
         "internal_tst": TSTKineticsEngine,
-        "phase6": TSTKineticsEngine,
-        "simple": TSTKineticsEngine,
         "dummy": TSTKineticsEngine,
         "cantera": CanteraEngine,
         "arkane": ArkaneEngine,

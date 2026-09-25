@@ -10,14 +10,16 @@ from hfauto.core.config import load_yaml
 from hfauto.core.io import read_manifest
 from hfauto.reporting.html_report import latest_manifest_path
 
-
 DEFAULT_STAGE_RESOURCES: dict[str, dict[str, Any]] = {
     "ingest": {"ncores": 1, "memory_gb": 1, "time_min": 10, "queue": "short"},
     "enrich": {"ncores": 1, "memory_gb": 2, "time_min": 30, "queue": "short"},
     "detect-sites": {"ncores": 1, "memory_gb": 2, "time_min": 10, "queue": "short"},
     "conformers": {"ncores": 4, "memory_gb": 8, "time_min": 120, "queue": "medium"},
-    "build-hf": {"ncores": 1, "memory_gb": 4, "time_min": 30, "queue": "short"},
+    "build-complexes": {"ncores": 4, "memory_gb": 8, "time_min": 240, "queue": "medium"},
+    "generate-reactions": {"ncores": 1, "memory_gb": 2, "time_min": 30, "queue": "short"},
+    "explore-reactions": {"ncores": 4, "memory_gb": 8, "time_min": 720, "queue": "long"},
     "preopt": {"ncores": 4, "memory_gb": 8, "time_min": 240, "queue": "medium"},
+    "relaxation-discovery": {"ncores": 1, "memory_gb": 2, "time_min": 30, "queue": "short"},
     "dft-minima": {"ncores": 16, "memory_gb": 32, "time_min": 1440, "queue": "long"},
     "ts-search": {"ncores": 16, "memory_gb": 48, "time_min": 2880, "queue": "long"},
     "irc": {"ncores": 16, "memory_gb": 48, "time_min": 1440, "queue": "long"},
@@ -33,8 +35,11 @@ DEFAULT_STAGE_RESOURCES: dict[str, dict[str, Any]] = {
 
 STAGE_OUTPUT_HINTS: dict[str, tuple[str, ...]] = {
     "conformers": ("molecule",),
-    "build-hf": ("conformer", "site"),
+    "build-complexes": ("conformer", "site", "species"),
+    "generate-reactions": ("species_preopt", "species"),
+    "explore-reactions": ("reaction_trial",),
     "preopt": ("species",),
+    "relaxation-discovery": ("preopt_geometry", "conformer"),
     "dft-minima": ("species_preopt", "species"),
     "ts-search": ("reaction",),
     "irc": ("reaction_validated",),
@@ -110,7 +115,7 @@ def build_resource_plan(
         res = _merge_resource(defaults, stage_cfg, profile)
         item_count = estimate_stage_item_count(name, counts)
         array_chunk = int(res.get("array_chunk", profile.get("array_chunk", 1)) or 1)
-        n_array_tasks = int(math.ceil(item_count / max(1, array_chunk)))
+        n_array_tasks = math.ceil(item_count / max(1, array_chunk))
         job_id = f"job_{i:02d}_{name.replace('-', '_')}"
         rows.append(
             {

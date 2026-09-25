@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import yaml
 
@@ -44,8 +45,7 @@ def load_niosh_flags(path: str | Path | None = None) -> dict[str, Any]:
 
 
 def iter_reference_entries(reference_set: dict[str, Any]) -> Iterable[dict[str, Any]]:
-    for entry in reference_set.get("references", []) or []:
-        yield entry
+    yield from reference_set.get("references", []) or []
 
 
 def match_reference(data: dict[str, Any], reference_set: dict[str, Any] | None = None) -> dict[str, Any] | None:

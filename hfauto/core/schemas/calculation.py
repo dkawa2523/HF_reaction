@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -14,11 +14,11 @@ class CalculationRecord(BaseModel):
     engine: str
     method_id: str
     status: str = "success"
-    electronic_energy_hartree: Optional[float] = None
-    zpe_hartree: Optional[float] = None
-    enthalpy_298K_hartree: Optional[float] = None
-    gibbs_298K_hartree: Optional[float] = None
-    n_imag: Optional[int] = None
-    imag_freq_cm1: Optional[float] = None
-    hf_stretch_cm1: Optional[float] = None
+    electronic_energy_hartree: float | None = None
+    zpe_hartree: float | None = None
+    enthalpy_298K_hartree: float | None = None
+    gibbs_298K_hartree: float | None = None
+    n_imag: int | None = None
+    imag_freq_cm1: float | None = None
+    hf_stretch_cm1: float | None = None
     qc: dict[str, Any] = Field(default_factory=dict)

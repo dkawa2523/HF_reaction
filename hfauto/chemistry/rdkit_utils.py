@@ -71,7 +71,7 @@ def molecule_identity(mol) -> dict[str, Any]:
         "formal_charge": int(Chem.GetFormalCharge(mol_no_h)),
         "num_atoms": int(mol.GetNumAtoms()),
         "num_heavy_atoms": int(mol_no_h.GetNumAtoms()),
-        "fragment_count": int(len(frags)),
+        "fragment_count": len(frags),
         "has_multiple_fragments": bool(len(frags) > 1),
     }
 
@@ -156,30 +156,3 @@ def embed_conformers_from_smiles(
 def smiles_to_3d_mol(smiles: str, seed: int = 20260708):
     results = embed_conformers_from_smiles(smiles, max_conformers=1, seed=seed)
     return results[0].mol
-
-
-def generate_rdkit_conformers(
-    smiles: str,
-    n_conformers: int | None = None,
-    max_conformers: int | None = None,
-    seed: int = 20260708,
-    prune_rms_thresh: float = 0.5,
-    forcefield: str = "mmff",
-    energy_window_kcal_mol: float | None = None,
-) -> list[tuple[object, int, float]]:
-    """Backward-compatible wrapper returning ``(mol, conf_id, relative_energy)``.
-
-    Older stages used ``n_conformers`` while newer backends use
-    ``max_conformers``. Supporting both keeps stage/backends decoupled.
-    """
-    n = int(max_conformers if max_conformers is not None else (n_conformers or 20))
-    results = embed_conformers_from_smiles(
-        smiles,
-        max_conformers=n,
-        seed=seed,
-        prune_rms_thresh=prune_rms_thresh,
-        optimize=True,
-        forcefield=forcefield,
-        energy_window_kcal_mol=energy_window_kcal_mol,
-    )
-    return [(r.mol, r.conf_id, r.relative_energy_kcal_mol) for r in results]

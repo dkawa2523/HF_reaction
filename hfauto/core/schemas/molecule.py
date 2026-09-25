@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -11,14 +11,19 @@ class MoleculeRecord(BaseModel):
     mol_id: str
     source_sdf_index: int
     name: str
-    canonical_smiles: Optional[str] = None
-    inchi: Optional[str] = None
-    inchikey: Optional[str] = None
-    formal_charge: Optional[int] = 0
+    canonical_smiles: str | None = None
+    isomeric_smiles: str | None = None
+    inchi: str | None = None
+    inchikey: str | None = None
+    formula: str | None = None
+    exact_mw: float | None = None
+    formal_charge: int | None = 0
     multiplicity: int = 1
-    num_atoms: Optional[int] = None
+    num_atoms: int | None = None
+    num_fragments: int = 1
     has_3d: bool = False
     sdf_props: dict[str, Any] = Field(default_factory=dict)
     identity: dict[str, Any] = Field(default_factory=dict)
     public_data: dict[str, Any] = Field(default_factory=dict)
     ingest_qc: dict[str, Any] = Field(default_factory=dict)
+    extras: dict[str, Any] = Field(default_factory=dict)

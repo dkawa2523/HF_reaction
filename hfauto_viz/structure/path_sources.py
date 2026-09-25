@@ -5,7 +5,7 @@ from typing import Any
 
 from hfauto.core.schemas.artifact import Artifact
 from hfauto_viz.data.loaders import RunData
-from hfauto_viz.structure.xyz import Frame, read_xyz_frames, interpolate_frames
+from hfauto_viz.structure.xyz import Frame, interpolate_frames, read_xyz_frames
 
 
 def _path_from_artifact(run: RunData, art: Artifact | None, keys: list[str]) -> Path | None:

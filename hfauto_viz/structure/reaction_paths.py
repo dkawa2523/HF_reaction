@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from pathlib import Path
-from hfauto_viz.structure.xyz import frames_to_xyz, reaction_path_frames, read_xyz_frames
+
+from hfauto_viz.structure.xyz import frames_to_xyz, read_xyz_frames
 
 
 def reaction_frame_xyz(run, reaction_id: str, out_path: str | Path) -> Path | None:

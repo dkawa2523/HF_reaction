@@ -1,107 +1,101 @@
-# hfauto finalized baseline
+# hfauto molecular reaction discovery
 
-`hfauto` is a modular workflow for gas-phase HF reactivity screening of SDF candidate molecules.  It focuses on HF association, proton transfer, HF-cluster assisted ion-pair formation, thermochemistry, kinetics, ranking, visualization, and production operations.
+`hfauto` is a manifest-based workflow for discovering molecular products,
+validating distinct minima, and calculating reaction paths.  Its scientific
+scope is gas-phase molecules and non-covalent molecular complexes.  A wet-etch
+reactor or solid-surface physical model is intentionally outside this package.
 
-This finalized baseline keeps the Phase 12.5 safety improvements and adds documentation polish.  It does **not** claim that offline or dummy/fallback results are chemically valid.  Use offline runs to verify wiring, reports, and operations outputs only.
-
-## Package boundaries
+The production workflow is:
 
 ```text
-hfauto      calculation workflow, public-data enrichment, thermochemistry, kinetics, ranking
-hfauto_viz  read-only visualization and molecule/reaction dossiers
-hfauto_ops  read-only HPC planning, retry, reuse, QCArchive payloads, backend comparison
+ingest -> enumerate-states -> conformers -> build-complexes
+       -> preopt -> relaxation-discovery
+       -> generate-reactions -> explore-reactions
+       -> dft-minima -> minimum-registry -> connect-minima -> reaction-plan
+       -> ts-search -> irc -> reaction-classify -> thermo
+       -> basin-populations -> reaction-rank
+       -> discovery-audit
 ```
 
-`hfauto_viz` and `hfauto_ops` read artifacts from a run directory.  They do not rewrite energies, structures, rankings, or QC results.
+`method-panel` and `thermo-sensitivity` are optional validation branches. They
+quantify fixed-geometry electronic/grid sensitivity and external GoodVibes
+low-frequency-cutoff sensitivity without changing the production reaction.
 
-## Quick start: offline smoke run
+The central rule is that discovery does not create a reaction.  ReaDuct AFIR
+or NT2 first publishes a `reaction_candidate`.  A `reaction` is created only
+after both endpoints are real opt/freq minima on one configured PES and the
+global `minimum_registry` assigns them to different basins.  Same-basin pairs,
+missing minima, ambiguous basin identity, and method-lineage mismatches never
+enter NEB/TS.
+
+## Production environment
+
+The validated environment is WSL/Linux, Python 3.12, CREST, xTB, NWChem 7.2.3,
+pysisyphus 1.0, ReaDuct 6.1.0, and the SCINE xTB wrapper:
 
 ```bash
-PYTHONPATH=. python -m hfauto.cli.main pipeline \
-  --config configs/pipelines/final_offline_smoke.yaml \
-  --run-id demo_final
-
-PYTHONPATH=. python -m hfauto.cli.main science-status runs/demo_final
-PYTHONPATH=. python -m hfauto.cli.main next-actions runs/demo_final
+uv run --extra production --frozen hfauto doctor \
+  --config configs/pipelines/molecular_reaction_discovery_nwchem.yaml --strict
 ```
 
-Main review entry points:
+ReaDuct wheels are Linux/Python-3.12-specific in this project.  A missing or
+failed external program creates a failure artifact; no dummy calculation is
+accepted as scientific evidence.
 
-```text
-runs/<run_id>/15_viz/report.html
-runs/<run_id>/14_rank/candidate_summary.csv
-runs/<run_id>/14_rank/rank_screening.csv
-runs/<run_id>/14_rank/rank_production.csv
-runs/<run_id>/14_rank/ranking_summary.json
-runs/<run_id>/13_connector-audit/production_connector_audit.html
-runs/<run_id>/16_ops/operations_report.html
-```
+## Reference pipelines
 
-## Which ranking should I use?
-
-```text
-rank_screening.csv    development/exploration; may include fallback values
-rank_scientific.csv   rows with real DFT minima or better
-rank_production.csv   validated TS/IRC plus production thermochemistry
-rank_scavenger.csv    HF scavenger-oriented score, with eligibility flags
-rank_activation.csv   HF activation-oriented score, with eligibility flags
-candidate_summary.csv one row per candidate with science/process/ops next actions
-```
-
-Production decisions should only use rows where:
-
-```text
-production_rank_eligible = true
-main_values_are_dummy = false
-main_values_are_fallback = false
-quality_tier >= Q4
-production_thermo_ready = true
-real_irc_executed = true
-```
-
-## Independent stage execution
-
-Every stage reads a `manifest.json` and writes a new `manifest.json`.
+HCN -> HNC is the compact positive benchmark:
 
 ```bash
-PYTHONPATH=. python -m hfauto.cli.main run-stage thermo \
-  --in runs/<run_id>/09_sp/manifest.json \
-  --out runs/<run_id>/10_thermo_rerun \
-  --config configs/stages/thermo_goodvibes_phase10.yaml \
-  --global-config configs/pipelines/final_offline_smoke.yaml
+hfauto pipeline \
+  --config configs/pipelines/molecular_reaction_discovery_nwchem.yaml \
+  --run-id hcn_validation
 ```
 
-The `--global-config` option passes temperature, pressure, and mode settings into independent stage runs.
+TMA(HF)2 uses four bounded CREST NCI complexes, twelve reaction trials shared
+across them, low-level-diverse product endpoints, and a bounded DFT anchor
+ensemble that remains active when low-level discovery finds no product:
 
-## Quality tiers
-
-```text
-Q0  structure/data only
-Q1  screening or fallback values; no real DFT evidence
-Q2  real DFT minima/frequency available
-Q3  TS frequency available, IRC not validated
-Q4  TS + IRC validated
-Q5  Q4 + high-level single point / calibration support
+```bash
+hfauto pipeline \
+  --config configs/pipelines/m3_trimethylamine_hf2_nwchem.yaml \
+  --run-id tma_hf2_validation
 ```
 
-Confidence scores are capped by evidence tier so Q0/Q1 dummy or fallback values cannot look production-ready.
+The broader amine/HF pilot deliberately separates bounded low-level discovery
+from expensive evidence promotion. After the first command reaches its final
+`discovery-audit`, the second pipeline selects candidates round-robin across
+composition/charge/multiplicity surfaces and can be stopped at
+`reaction-plan` before any TS work is authorized:
 
-## Documentation map
+```bash
+hfauto pipeline \
+  --config configs/pipelines/amine_hf_pilot_hf1_hf3.yaml \
+  --run-id amine_hf_pilot
 
-Start with:
-
-```text
-docs/current/index.md                 documentation entry point
-docs/current/hf_gas_reactivity_technical_report.md  technical report for chemists and reaction/process engineers
-docs/current/user_guide.md            user workflows and outputs
-docs/current/science_gate.md          scientific readiness and ranking gates
-docs/current/stage_io_reference.md    compact stage input/output map
-docs/current/output_reference.md      result tables and how to interpret them
-docs/current/extension_points.md      backend and stage extension points
-docs/current/future_methods.md        useful future chemistry/simulation methods
-docs/current/stage_future_extensions.md stage-by-stage future extensions
-docs/current/production_checklist.md  before using results for candidate decisions
-docs/current/developer_architecture.md package boundaries and code organization
+hfauto pipeline \
+  --config configs/pipelines/amine_hf_pilot_dft_followup.yaml \
+  --run-id amine_hf_pilot_dft \
+  --from dft-minima --to reaction-plan \
+  --start-manifest runs/amine_hf_pilot/08_discovery-audit/manifest.json
 ```
 
-Historical phase notes are kept under `docs/PHASE*.md` for traceability, but day-to-day users should read `docs/current/` first.
+AFIR artificial-force energies are never reported as barriers.  A production
+activation barrier requires a first-order saddle with exactly one significant
+imaginary mode and bidirectional IRC endpoints that reoptimize into the
+declared reactant and product registry basins.
+
+The completed HCN/HNC benchmark also passes an external GoodVibes 4.3
+thermochemistry cross-check. `configs/pipelines/hcn_method_sensitivity.yaml`
+adds a separate fixed-geometry electronic method panel; its values are labeled
+as sensitivity and do not revalidate stationary points on another PES.
+`configs/pipelines/hcn_numerical_sensitivity.yaml` adds a fine/xfine grid panel
+and an external-GoodVibes 50/100/150 cm-1 cutoff panel.
+
+Long TS searches checkpoint after every attempt and support explicit reaction,
+attempt, and wall-time budgets. `recover-path` may recover a geometry seed from
+a preserved interrupted path, but it never publishes the unconverged path
+energy as a barrier.
+
+See [the canonical workflow design](docs/current/reaction_discovery_platform.md)
+and [stage I/O](docs/current/stage_io_reference.md).
