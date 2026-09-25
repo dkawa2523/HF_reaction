@@ -3,7 +3,7 @@
 - 環境: WSL2 Ubuntu(4 vCPU / 11 GB)、`configs/sites/wsl_local.yaml`(NWChem 7.2.3 を 4 rank × 1,200 MB、xTB 6.7.1、CREST 3.0.2、SCINE ReaDuct 6.1.0、GoodVibes 4.3.0)。
 - 手法: DFT は `pbe0-d3bj_def2-svpd`(grid fine、SCF 1e-7)、低レベルは GFN2-xTB。設定は `configs/` のまま使い、amine パイロットと A/B だけ一時 system / pipeline を使った。
 - run の置き場所: WSL の ext4 上の `/home/user/hfauto_w7/<run>`(下表の run 列はこの `<run>`)。リポジトリの `runs/`(過去の run)には書き込まない。
-- コード: `6b87814`。TMA·(HF)₂ の paths 以降と A/B は、修正 F1(§5。W7 のコミットに含まれる)を入れた後に実行した(A/B は F1 の影響を受けない)。`resolved_config.yaml` の `code_version` に付く `-dirty` は、WSL の git が Windows 側の改行(CRLF)を差分と見なすためで、改行以外の差分は F1 だけである。
+- コード: `6b87814`。TMA·(HF)₂ の paths 以降と A/B は、修正 F1(§5。W7 のコミットに含まれる)を入れた後に実行した(A/B は F1 の影響を受けない)。`<run>/resolved_config.yaml` の `code_version` に付く `-dirty` は、WSL の git が Windows 側の改行(CRLF)を差分と見なすためで、改行以外の差分は F1 だけである。
 - 実エンジンの smoke(WSL、`HFAUTO_REAL=1 HFAUTO_SITE=configs/sites/wsl_local.yaml pytest -m real tests/smoke`): 10 passed(59 秒)。
 - 所要時間は `/usr/bin/time` の壁時計時間。ジョブ数は `hfauto status` の misses + hits。
 

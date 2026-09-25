@@ -1,3 +1,4 @@
+> 計画時の設計書(凍結)。現状は [docs/design.md](../design.md)。
 # hfauto 抜本的リファクタリング設計書(2026-09-25、確定版)
 
 - ブランチ: `refactor/fundamental-2026-09`(起点 `5d76201`)

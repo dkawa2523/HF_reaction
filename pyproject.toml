@@ -80,7 +80,7 @@ pythonpath = ["tests"]
 addopts = "-m 'not real' --strict-markers --import-mode=importlib"
 
 # ---------------------------------------------------------------------------
-# Architecture contracts (import-linter, docs/current/refactor_design.md 11.1).
+# Architecture contracts (import-linter, docs/design.md §1).
 # Run from the repository root:  lint-imports
 # ---------------------------------------------------------------------------
 [tool.importlinter]
