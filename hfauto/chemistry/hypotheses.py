@@ -122,6 +122,14 @@ class _Pool:
         found = (self.basin_of.get(s) for s in held)
         return next((m for m in found if m is not None and m.tier == "dft"), None)
 
+    def endpoint_basin(self, species_id: str) -> MinimumRecord | None:
+        """Basin of a declared endpoint: a seed that collapsed into a screen basin is not
+        refined itself (§8.2), so it takes the DFT minimum of that basin when there is one."""
+        own = self.basin_of.get(species_id)
+        if own is None or own.tier == "dft":
+            return own
+        return self.dft_basin(own.minimum_id) or own
+
     def negative_evidence(self, composition: str, formed: Bonds, broken: Bonds) -> tuple[str, ...]:
         """Negative discoveries of the same composition and bond change (either direction)."""
         wanted = {(formed, broken), (broken, formed)} if formed or broken else set()
@@ -156,7 +164,7 @@ def _record(pool: _Pool, rid: str, source: Source, minima: tuple[MinimumRecord, 
 
 def _declared(pool: _Pool, reaction: ReactionInput) -> ReactionRecord:
     sa, sb = pool.species.get(reaction.reactant), pool.species.get(reaction.product)
-    ma, mb = pool.basin_of.get(reaction.reactant), pool.basin_of.get(reaction.product)
+    ma, mb = pool.endpoint_basin(reaction.reactant), pool.endpoint_basin(reaction.product)
     coordinate = tuple(reaction.coordinate)
     if sa is None or sb is None or ma is None or mb is None:
         # An endpoint without a minimum is kept so that decide() blocks it (row 1).

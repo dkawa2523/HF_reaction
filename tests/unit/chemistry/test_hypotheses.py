@@ -89,6 +89,16 @@ def test_declared_endpoint_without_minimum_is_kept_for_blocking():
     assert rec.minima == ("", "") and rec.products == ()
 
 
+def test_declared_endpoint_collapsed_at_screen_takes_the_dft_basin():
+    """W7 TMA·(HF)2: an endpoint merged into a screen basin was BLOCKED (endpoints_not_on_one_pes)."""
+    a = species("pt_a", "NHHH", NH3)
+    b = species("pt_b", "NHHH", NH3 + [[0.0, 0.0, 0.2], [0, 0, 0], [0, 0, 0], [0, 0, 0]])
+    screen = minimum("s_a", "pt_a", members=("pt_b",)).model_copy(update={"tier": "screen"})
+    declared = ReactionInput(id="pt", reactant="pt_a", product="pt_b")
+    [rec] = select([screen, minimum("d_a", "pt_a")], [a, b], [], [declared], load)
+    assert rec.minima == ("d_a", "d_a") and not rec.degenerate  # decide(): SAME_BASIN
+
+
 def test_conformer_pairs_need_a_30_degree_twist():
     confs = [species(f"hooh{d}", "OOHH", h2o2(d)) for d in (180, 170, 110)]
     minima = [minimum(f"m{i}", s.species_id, -1.0 + 1e-4 * i) for i, s in enumerate(confs)]
