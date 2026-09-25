@@ -1,137 +1,185 @@
+"""hfauto command line (design §7.4): doctor, run, status, report and case.
+
+PIPELINE, --system and --site take a file path or a name under ``configs/<kind>/`` of the
+working directory.
+"""
+
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 from rich.console import Console
+from rich.markup import escape
+from rich.table import Table
 
-from hfauto.core.config import load_yaml
-from hfauto.core.environment import environment_report
-from hfauto.core.io import read_manifest, write_manifest
-from hfauto.reporting.html_report import latest_manifest_path, render_report
-from hfauto.stages.base import StageContext
-from hfauto.stages.registry import get_stage
-from hfauto.workflow.runner import run_pipeline
+from hfauto.chemistry.xyz import read_xyz
+from hfauto.core.evidence import FailureKind
+from hfauto.core.ids import path_token
+from hfauto.core.system import SystemConfig
+from hfauto.pipeline import config, preflight, runner
+from hfauto.pipeline.layout import RunLayout
+from hfauto.reporting import html
 
-app = typer.Typer(help="Molecular complex, reaction-path, and energy workflow")
+app = typer.Typer(
+    help="Reaction discovery for gas-phase molecules and complexes.",
+    no_args_is_help=True,
+    add_completion=False,
+)
 console = Console()
+CONFIGS = Path("configs")
+RUNS = Path("runs")
 
 
-@app.command("doctor")
+def _fail(message: object) -> NoReturn:
+    console.print(f"[red]error[/red] {escape(str(message))}")
+    raise typer.Exit(2)
+
+
+def config_path(kind: str, value: str) -> Path:
+    """``value`` when it names a .yaml file, else ``configs/<kind>/<value>.yaml``."""
+    path = Path(value)
+    if path.suffix not in (".yaml", ".yml"):
+        path = CONFIGS / kind / f"{value}.yaml"
+    if not path.is_file():
+        _fail(f"{kind} file not found: {path}")
+    return path
+
+
+def _layout(run_dir: Path) -> RunLayout:
+    layout = RunLayout(run_dir)
+    if not layout.run_state_path.is_file():
+        _fail(f"{run_dir} is not a run directory (no run_state.json)")
+    return layout
+
+
+def _failure_kinds(value: str) -> tuple[FailureKind, ...]:
+    try:
+        return tuple(FailureKind(kind.strip()) for kind in value.split(",") if kind.strip())
+    except ValueError:
+        _fail(f"--retry-failed takes a comma-separated list of {', '.join(FailureKind)}")
+
+
+def _site_probe(site: config.SiteConfig) -> config.ResolvedConfig:
+    """A pipeline naming every engine of the site, so that preflight checks all of them."""
+    stages = [config.StageEntry(id=name, stage="doctor", engine=name) for name in site.engines]
+    return config.ResolvedConfig(
+        pipeline=config.PipelineConfig(pipeline_id="doctor", stages=stages),
+        system=SystemConfig(system_id="doctor", species=[]),
+        site=site,
+        methods={},
+        code_version=config.code_version(),
+    )
+
+
+def _print_problems(problems: list[str]) -> None:
+    for problem in problems:
+        console.print(f"[red]problem[/red] {escape(problem)}")
+
+
+@app.command()
 def doctor(
-    config: Path | None = typer.Option(None, help="Production pipeline YAML to validate"),
-    strict: bool = typer.Option(False, help="Exit non-zero when required tools are missing"),
-):
-    """Check Python packages and external chemistry/HPC executables."""
-    report = environment_report(config)
-    console.print_json(data=report)
-    if strict and not report["ready"]:
-        raise typer.Exit(code=1)
+    site: str | None = typer.Option(None, help="Site name or file (default: configs/sites/*)"),
+) -> None:
+    """Preflight every engine of a site: executables, version pins, worker modules, scratch."""
+    paths = [config_path("sites", site)] if site else sorted((CONFIGS / "sites").glob("*.yaml"))
+    if not paths:
+        _fail(f"no site files under {CONFIGS / 'sites'}")
+    console.print(f"hfauto {config.code_version()}")
+    ready = True
+    for path in paths:
+        probe = _site_probe(config.load_site(path))
+        problems = preflight.preflight(probe)
+        table = Table("engine", "version pin", "check", title=f"site {probe.site.site} ({path})")
+        for name, engine in probe.site.engines.items():
+            own = [p.split(": ", 1)[1] for p in problems if p.startswith(f"{name}: ")]
+            table.add_row(name, engine.version, escape("\n".join(own)) or "[green]ok[/green]")
+        console.print(table)
+        _print_problems([p for p in problems if p.split(": ", 1)[0] not in probe.site.engines])
+        ready = ready and not problems
+    if not ready:
+        raise typer.Exit(1)
 
 
 @app.command()
-def ingest(
-    sdf: Path = typer.Option(..., help="Input candidates.sdf"),
-    out: Path = typer.Option(..., help="Output stage directory"),
-    run_id: str = typer.Option("manual", help="Run id"),
-):
-    stage = get_stage("ingest")
-    context = StageContext(out_dir=out, run_id=run_id, global_config={})
-    manifest = stage.run(None, {"sdf": str(sdf)}, context)
-    path = write_manifest(manifest, out)
-    console.print(f"[green]wrote[/green] {path}")
-
-
-@app.command("run-stage")
-def run_stage(
-    stage_name: str = typer.Argument(..., help="Stage name, e.g. enrich, detect-sites, dft-minima"),
-    in_manifest: Path = typer.Option(..., "--in", help="Input manifest.json"),
-    out: Path = typer.Option(..., help="Output stage directory"),
-    config: Path | None = typer.Option(None, help="YAML config for this stage"),
-    global_config: Path | None = typer.Option(None, help="Pipeline/global YAML to inherit temperature, pressure, and mode settings"),
-    run_id: str | None = typer.Option(None, help="Override run id"),
-):
-    manifest = read_manifest(in_manifest)
-    cfg = load_yaml(config)
-    inherited = dict((manifest.metadata or {}).get("global_config") or {})
-    if global_config:
-        loaded = load_yaml(global_config)
-        inherited.update(loaded.get("global", loaded))
-    if isinstance(cfg.get("global"), dict):
-        inherited.update(cfg.pop("global"))
-    stage = get_stage(stage_name)
-    context = StageContext(out_dir=out, run_id=run_id or manifest.run_id, global_config=inherited)
-    out_manifest = stage.run(manifest, cfg, context)
-    out_manifest.metadata.setdefault("global_config", inherited)
-    path = write_manifest(out_manifest, out)
-    console.print(f"[green]wrote[/green] {path}")
-
-
-@app.command()
-def pipeline(
-    config: Path = typer.Option(..., help="Pipeline YAML"),
-    run_id: str = typer.Option(..., help="Run id"),
-    from_stage: str | None = typer.Option(None, "--from", help="Start stage name for partial run"),
-    to_stage: str | None = typer.Option(None, "--to", help="End stage name for partial run"),
-    start_manifest: Path | None = typer.Option(None, help="Input manifest for partial run"),
-    skip_preflight: bool = typer.Option(False, help="Skip production dependency preflight (advanced use only)"),
-):
-    cfg = load_yaml(config)
-    cfg["__config_path"] = str(config)
-    if str((cfg.get("global") or {}).get("mode", "")).lower() == "production" and not skip_preflight:
-        report = environment_report(cfg)
-        if not report["ready"]:
-            console.print_json(data=report)
-            missing = ", ".join(report["missing_python"] + report["missing_external"])
-            console.print(f"[red]production preflight failed[/red]: missing or unusable: {missing}")
-            raise typer.Exit(code=2)
-    run_dir = run_pipeline(cfg, run_id, from_stage=from_stage, to_stage=to_stage, start_manifest=start_manifest)
-    console.print(f"[green]pipeline completed[/green] {run_dir}")
+def run(
+    pipeline: str = typer.Argument(..., help="Pipeline name (configs/pipelines/<name>.yaml) or file"),
+    system: str = typer.Option(..., help="System name or file"),
+    site: str = typer.Option(..., help="Site name or file"),
+    run_dir: Path | None = typer.Option(None, help="Default: runs/<system_id>_<pipeline_id>"),
+    start: str | None = typer.Option(None, "--from", help="Re-run from this stage id"),
+    stop: str | None = typer.Option(None, "--to", help="Stop after this stage id"),
+    dry_run: bool = typer.Option(False, help="Check the configs and print the plan only"),
+    retry_failed: str = typer.Option("", help="FailureKinds whose cached failures are retried"),
+) -> None:
+    """Run a pipeline for a system on a site (resumes a run directory)."""
+    kinds = _failure_kinds(retry_failed)
+    paths = [config_path(k, v) for k, v in (("pipelines", pipeline), ("systems", system),
+                                            ("sites", site))]
+    try:
+        resolved = config.load(*paths)
+        pipeline_id = resolved.pipeline.pipeline_id
+        target = run_dir or RUNS / f"{resolved.system.system_id}_{pipeline_id}"
+        steps = runner.plan(resolved, RunLayout(target), start=start, stop=stop, retry_failed=kinds)
+    except (OSError, ValueError, KeyError) as exc:
+        _fail(exc)
+    problems = preflight.preflight(resolved, dry_run=dry_run)
+    if problems:
+        _print_problems(problems)
+        raise typer.Exit(2)
+    if dry_run:
+        table = Table("stage id", "stage", "action")
+        for step in steps:
+            table.add_row(step.stage_id, step.stage, step.action)
+        console.print(f"dry run of {pipeline_id} in {escape(str(target))}", soft_wrap=True)
+        console.print(table)
+        return
+    runner.run_pipeline(resolved, target, start=start, stop=stop, retry_failed=kinds)
+    console.print(f"[green]done[/green] {escape(str(target))}", soft_wrap=True)
 
 
 @app.command()
-def status(run_dir: Path):
-    path = latest_manifest_path(run_dir)
-    manifest = read_manifest(path)
-    console.print(f"run_id: {manifest.run_id}")
-    console.print(f"latest_manifest: {path}")
-    console.print(f"latest_stage: {manifest.stage}")
-    counts = {}
-    failures = 0
-    for a in manifest.artifacts:
-        counts[a.artifact_type] = counts.get(a.artifact_type, 0) + 1
-        if a.status.status == "failed":
-            failures += 1
-    for k in sorted(counts):
-        console.print(f"{k:20s} {counts[k]}")
-    console.print(f"failures             {failures}")
+def status(run_dir: Path) -> None:
+    """Stages in execution order, job failures by FailureKind and the JobStore reuse rate."""
+    states = _layout(run_dir).read_state()
+    table = Table("stage", "pipeline", "status", "ok", "failed", "job hits", "job misses")
+    failures: Counter[str] = Counter()
+    for s in states:
+        jobs = s.jobs
+        table.add_row(s.stage_id, s.pipeline_id, s.status, str(s.n_ok), str(s.n_failed),
+                      str(jobs.hits), str(jobs.misses))
+        failures.update(jobs.failures_by_kind)
+    console.print(table)
+    counts = ", ".join(f"{kind}={n}" for kind, n in sorted(failures.items()))
+    console.print(f"job failures: {counts or 'none'}")
+    hits = sum(s.jobs.hits for s in states)
+    total = hits + sum(s.jobs.misses for s in states)
+    console.print(f"job reuse: {hits}/{total}" + (f" ({hits / total:.0%})" if total else ""))
 
 
 @app.command()
-def failures(run_dir: Path, limit: int = typer.Option(50, help="Maximum rows")):
-    manifest = read_manifest(latest_manifest_path(run_dir))
-    rows = [a for a in manifest.artifacts if a.status.status == "failed"]
-    for a in rows[:limit]:
-        console.print(f"{a.artifact_id}\t{a.artifact_type}\t{a.status.category}\t{a.status.reason}\t{a.status.recommended_fallback}")
-    console.print(f"total_failures: {len(rows)}")
+def report(run_dir: Path) -> None:
+    """Write RUN_DIR/report.html from the view of every done stage."""
+    layout = _layout(run_dir)
+    path = html.render(layout.view(), layout.run_dir,
+                       load_xyz=lambda geometry: read_xyz(layout.run_dir / geometry.file.path))
+    console.print(f"[green]wrote[/green] {escape(str(path))}", soft_wrap=True)
 
 
 @app.command()
-def inspect(run_dir: Path, artifact_id: str):
-    manifest = read_manifest(latest_manifest_path(run_dir))
-    artifact = manifest.find(artifact_id)
-    if artifact is None:
-        raise typer.BadParameter(f"Artifact not found: {artifact_id}")
-    console.print_json(artifact.model_dump_json(indent=2))
-
-
-@app.command()
-def report(
-    run_dir: Path,
-    out: Path = typer.Option(..., help="Output HTML report path"),
-):
-    path = render_report(run_dir, out)
-    console.print(f"[green]wrote[/green] {path}")
+def case(run_dir: Path, reaction_id: str) -> None:
+    """Print cases/<REACTION_ID>/log.jsonl of every stage that drove the reaction."""
+    layout = _layout(run_dir)
+    logs = [layout.cases_dir(s.stage_id) / path_token(reaction_id) / "log.jsonl"
+            for s in layout.read_state()]
+    found = [path for path in logs if path.is_file()]
+    if not found:
+        _fail(f"no case log for {reaction_id!r} in {run_dir}")
+    for path in found:
+        console.rule(escape(path.relative_to(layout.run_dir).as_posix()))
+        typer.echo(path.read_text(encoding="utf-8"), nl=False)
 
 
 if __name__ == "__main__":

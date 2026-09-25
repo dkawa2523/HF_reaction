@@ -1,0 +1,7 @@
+# Two starting geometries of one water minimum: expected outcome same_basin, no TS search.
+system_id: water_same_basin
+species:
+  - {id: reference, xyz: xyz/water_same_basin/reference.xyz, role: endpoint}
+  - {id: distorted, xyz: xyz/water_same_basin/distorted.xyz, role: endpoint}
+reactions:
+  - {id: water_same_basin, reactant: reference, product: distorted}

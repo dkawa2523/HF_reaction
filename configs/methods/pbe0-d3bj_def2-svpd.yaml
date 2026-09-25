@@ -1,0 +1,8 @@
+# Stationary points (minima, saddles, strings, freq) of discover and known_endpoints.
+id: pbe0-d3bj_def2-svpd
+kind: dft
+functional: pbe0
+basis: def2-svpd
+dispersion: d3bj
+grid: fine
+scf_energy_tol: 1.0e-7

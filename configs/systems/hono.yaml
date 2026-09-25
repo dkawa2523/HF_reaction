@@ -1,0 +1,10 @@
+system_id: hono
+species:
+  - {id: trans_hono, xyz: xyz/hono/trans.xyz, role: endpoint}
+  - {id: cis_hono, xyz: xyz/hono/cis.xyz, role: endpoint}
+reactions:
+  - id: trans_to_cis
+    reactant: trans_hono
+    product: cis_hono
+    coordinate: [{kind: dihedral, atoms: [0, 1, 2, 3]}]  # H-O-N=O in trans.xyz
+    torsional: true

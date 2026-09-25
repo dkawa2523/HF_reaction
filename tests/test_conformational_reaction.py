@@ -10,8 +10,8 @@ from hfauto.stages.build_complexes import BuildComplexesStage
 from hfauto.workflow.runner import run_pipeline
 
 ROOT = Path(__file__).resolve().parents[1]
-REACTANT = ROOT / "examples" / "m3_ammonia_inversion" / "reactant.xyz"
-PRODUCT = ROOT / "examples" / "m3_ammonia_inversion" / "product.xyz"
+REACTANT = ROOT / "configs" / "systems" / "xyz" / "nh3_inversion" / "reactant.xyz"
+PRODUCT = ROOT / "configs" / "systems" / "xyz" / "nh3_inversion" / "product.xyz"
 COORDINATE = {
     "bond_changes": [],
     "reaction_coordinate": {

@@ -1,0 +1,17 @@
+# Discovery from monomers and compositions: conformers -> xTB minima -> ReaDuct exploration
+# -> DFT minima -> reaction paths -> thermochemistry -> report.
+pipeline_id: discover
+conditions: {temperatures_K: [298.15], standard_states: [1atm]}
+stages:
+  - {id: structures, stage: structures}
+  - {id: conformers, stage: conformers, engine: crest, method: gfn2}
+  - {id: screen, stage: minima, level: screen, engine: xtb, method: gfn2}
+  - {id: explore, stage: explore, engine: readuct, method: gfn2}
+  - {id: dft, stage: minima, level: dft, engine: nwchem, method: pbe0-d3bj_def2-svpd,
+     select: {include: window, per_state: 3, window_kcal: 6.0, rerank_sp: true},
+     init_hessian: {engine: xtb, method: gfn2}}
+  - {id: paths, stage: reaction-paths, method: pbe0-d3bj_def2-svpd,
+     engines: {qm: nwchem, saddle: nwchem_saddle, path: nwchem_string},
+     screen: {method: gfn2, qm: xtb, path: pysis_gs}}
+  - {id: thermo, stage: thermo, engine: goodvibes}
+  - {id: report, stage: report}

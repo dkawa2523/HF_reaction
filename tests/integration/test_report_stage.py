@@ -48,9 +48,11 @@ def test_report_stage_writes_tables_from_a_fake_view(fake_runtime, tmp_run):
     assert artifact.type == T.REPORT and [(r.reaction_id, r.rank, r.tier) for r in rows] == [
         ("r1", 1, "saddle")]
     tables = artifact.payload.tables
-    assert sorted(tables) == ["coverage.csv", "method_panel.csv", "ranking.csv"]
+    assert sorted(tables) == ["coverage.csv", "method_panel.csv", "ranking.csv", "report.html"]
+    page = (tmp_run / tables["report.html"].path).read_text(encoding="utf-8")
+    assert "<svg class='energy'" in page and "href='#rxn-r1'" in page and "800.0i" in page
     read = {name: list(csv.DictReader((tmp_run / ref.path).read_text().splitlines()))
-            for name, ref in tables.items() if ref.path.startswith("report/")}
+            for name, ref in tables.items() if name.endswith(".csv")}
     panel = read["method_panel.csv"]  # two levels on one PES: same values, no disagreement
     assert len({row["level_key"] for row in panel}) == 2
     assert {row["sign_disagreement"] for row in panel} == {"False"}

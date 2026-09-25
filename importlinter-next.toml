@@ -76,11 +76,12 @@ forbidden_modules = [
 
 [[tool.importlinter.contracts]]
 id = "next-protocols-only"
-name = "drivers, new stages and the report summary see engines only through backends.protocols"
+name = "drivers, new stages and the new reporting see engines only through backends.protocols"
 type = "forbidden"
 source_modules = [
   "hfauto.drivers",
   "hfauto.reporting.summary",
+  "hfauto.reporting.html",
   "hfauto.stages.spec",
   "hfauto.stages.catalog",
   "hfauto.stages.structures",

@@ -1,0 +1,7 @@
+# Method panel: range-separated hybrid; the D3 term belongs to the functional.
+id: wb97x-d3_def2-tzvpd
+kind: dft
+functional: wb97x-d3
+basis: def2-tzvpd
+grid: fine
+scf_energy_tol: 1.0e-7

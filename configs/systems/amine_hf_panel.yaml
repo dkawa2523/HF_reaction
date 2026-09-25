@@ -1,0 +1,26 @@
+# Pilot subset of the gas-phase amine-HF panel (NH3, TMA, aniline, pyridine) with 1-3 HF,
+# plus the TMA microsolvation series (one explicit water). SMILES species need rdkit.
+system_id: amine_hf_panel
+species:
+  - {id: nh3, smiles: "N"}
+  - {id: tma, smiles: "CN(C)C"}
+  - {id: anl, smiles: "Nc1ccccc1"}
+  - {id: pyr, smiles: "n1ccccc1"}
+  - {id: hf, xyz: xyz/amine_hf_panel/hf.xyz}
+  - {id: water, xyz: xyz/amine_hf_panel/water.xyz}
+compositions:
+  - {id: nh3_hf1, components: {nh3: 1, hf: 1}}
+  - {id: nh3_hf2, components: {nh3: 1, hf: 2}}
+  - {id: nh3_hf3, components: {nh3: 1, hf: 3}}
+  - {id: tma_hf1, components: {tma: 1, hf: 1}}
+  - {id: tma_hf2, components: {tma: 1, hf: 2}}
+  - {id: tma_hf3, components: {tma: 1, hf: 3}}
+  - {id: anl_hf1, components: {anl: 1, hf: 1}}
+  - {id: anl_hf2, components: {anl: 1, hf: 2}}
+  - {id: anl_hf3, components: {anl: 1, hf: 3}}
+  - {id: pyr_hf1, components: {pyr: 1, hf: 1}}
+  - {id: pyr_hf2, components: {pyr: 1, hf: 2}}
+  - {id: pyr_hf3, components: {pyr: 1, hf: 3}}
+  - {id: tma_hf1_h2o, components: {tma: 1, hf: 1, water: 1}}
+  - {id: tma_hf2_h2o, components: {tma: 1, hf: 2, water: 1}}
+  - {id: tma_hf3_h2o, components: {tma: 1, hf: 3, water: 1}}

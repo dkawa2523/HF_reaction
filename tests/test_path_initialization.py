@@ -15,8 +15,8 @@ from hfauto.core.schemas.artifact import Artifact
 from hfauto.core.schemas.chemistry import ReactionCoordinateTermRecord
 
 ROOT = Path(__file__).resolve().parents[1]
-HONO_TRANS = ROOT / "examples" / "m3_hono_isomerization" / "trans.xyz"
-HONO_CIS = ROOT / "examples" / "m3_hono_isomerization" / "cis.xyz"
+HONO_TRANS = ROOT / "configs" / "systems" / "xyz" / "hono" / "trans.xyz"
+HONO_CIS = ROOT / "configs" / "systems" / "xyz" / "hono" / "cis.xyz"
 HONO_COORDINATE = {
     "reaction_coordinate": {
         "min_change": 1.0,

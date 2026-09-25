@@ -1,6 +1,5 @@
-"""report stage (design §4.1 #8, §8.2): ranking, discovery coverage and method panel tables.
-
-Reads the whole view; the HTML page is added in Wave 5 (reporting.html).
+"""report stage (design §4.1 #8, §8.2): ranking, discovery coverage and method panel tables,
+and the static HTML page (reporting.html) of the whole view.
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ from hfauto.core.records import (
     ReactionThermo,
     ReportRecord,
 )
-from hfauto.reporting import summary
+from hfauto.reporting import html, summary
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
 
@@ -55,9 +54,15 @@ class ReportStage:
             [a for a in inputs.artifacts if a.status == "failed"],
         )
         paths = summary.write_tables(rt.stage_dir, rows, counts, panel)
-        record = ReportRecord(
-            rows=tuple(rows), tables={name: rt.file_ref(path) for name, path in paths.items()}
+        tables = {name: rt.file_ref(path) for name, path in paths.items()}
+        artifact_id = f"report_{rt.stage_id}"
+        # The page shows this stage's ranks, so it renders the view plus the table-only record.
+        tables_only = Artifact(
+            artifact_id=artifact_id,
+            type=ArtifactType.REPORT,
+            payload=ReportRecord(rows=tuple(rows), tables=tables),
         )
-        return [
-            Artifact(artifact_id=f"report_{rt.stage_id}", type=ArtifactType.REPORT, payload=record)
-        ]
+        view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, tables_only]})
+        page = html.render(view, rt.stage_dir, load_xyz=rt.load_xyz)
+        record = ReportRecord(rows=tuple(rows), tables={**tables, "report.html": rt.file_ref(page)})
+        return [Artifact(artifact_id=artifact_id, type=ArtifactType.REPORT, payload=record)]

@@ -1,0 +1,6 @@
+system_id: formaldehyde
+species:
+  - {id: formaldehyde, xyz: xyz/formaldehyde/formaldehyde.xyz, role: endpoint}
+  - {id: hydroxymethylene, xyz: xyz/formaldehyde/trans_hydroxymethylene.xyz, role: endpoint}
+reactions:
+  - {id: formaldehyde_to_hydroxymethylene, reactant: formaldehyde, product: hydroxymethylene}

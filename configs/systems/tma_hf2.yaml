@@ -1,0 +1,10 @@
+system_id: tma_hf2
+species:
+  - {id: tma, xyz: xyz/tma_hf2/tma.xyz}
+  - {id: hf, xyz: xyz/tma_hf2/hf.xyz}
+  - {id: neutral, xyz: xyz/tma_hf2/neutral.xyz, role: endpoint}
+  - {id: shared_proton, xyz: xyz/tma_hf2/shared_proton.xyz, role: endpoint}
+compositions:
+  - {id: tma_hf2, components: {tma: 1, hf: 2}}
+reactions:
+  - {id: neutral_to_shared_proton, reactant: neutral, product: shared_proton}

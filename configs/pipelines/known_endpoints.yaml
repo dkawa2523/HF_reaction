@@ -1,0 +1,13 @@
+# Declared reactions between known endpoints: DFT minima of every input species, then the
+# reaction paths (the barrier screen re-optimizes the DFT endpoints with xTB).
+pipeline_id: known_endpoints
+conditions: {temperatures_K: [298.15], standard_states: [1atm]}
+stages:
+  - {id: structures, stage: structures}
+  - {id: dft, stage: minima, level: dft, engine: nwchem, method: pbe0-d3bj_def2-svpd,
+     select: {include: all}, init_hessian: {engine: xtb, method: gfn2}}
+  - {id: paths, stage: reaction-paths, method: pbe0-d3bj_def2-svpd,
+     engines: {qm: nwchem, saddle: nwchem_saddle, path: nwchem_string},
+     screen: {method: gfn2, qm: xtb, path: pysis_gs}}
+  - {id: thermo, stage: thermo, engine: goodvibes}
+  - {id: report, stage: report}
