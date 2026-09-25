@@ -1,0 +1,134 @@
+"""Typed observations of external jobs (design §5.1).
+
+An ``Evidence`` exists only for a job that finished normally; backends return a
+``Failure`` otherwise. Pass/fail decisions live in ``hfauto.chemistry.gates``.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from enum import StrEnum
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, field_validator
+
+_FROZEN = ConfigDict(frozen=True, extra="forbid")
+
+_LEVEL_STRINGS = ("program", "version", "method", "basis", "dispersion", "solvation", "grid")
+_NUMERICS_FIELDS = ("grid", "scf_tol")
+
+
+def _short_sha(data: dict[str, Any]) -> str:
+    text = json.dumps(data, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+class FileRef(BaseModel):
+    model_config = _FROZEN
+    path: str  # POSIX path relative to the run directory
+    sha256: str
+
+
+class Level(BaseModel):
+    """Level of theory observed in the output (not the requested one); strings are lower-case."""
+
+    model_config = _FROZEN
+    program: str
+    version: str
+    method: str
+    basis: str | None = None  # cartesian basis sets carry a "/cart" suffix
+    dispersion: str | None = None
+    solvation: str | None = None
+    charge: int
+    multiplicity: int
+    grid: str | None = None
+    scf_tol: float | None = None
+    electronic_temperature_K: float | None = None
+
+    @field_validator(*_LEVEL_STRINGS, mode="before")
+    @classmethod
+    def _lower(cls, value: object) -> object:
+        return value.lower() if isinstance(value, str) else value
+
+    def surface_key(self) -> str:
+        """Key of the potential-energy surface: every field except grid and scf_tol."""
+        data = self.model_dump(mode="json")
+        for name in _NUMERICS_FIELDS:
+            data.pop(name)
+        return _short_sha(data)
+
+    def full_key(self) -> str:
+        return _short_sha(self.model_dump(mode="json"))
+
+
+class Geometry(BaseModel):
+    model_config = _FROZEN
+    file: FileRef
+    fingerprint: str  # chemistry.xyz.geometry_fingerprint; never computed in core
+    symbols: tuple[str, ...]
+
+
+Task = Literal["sp", "opt", "freq", "saddle"]
+
+
+class Evidence(BaseModel):
+    """Observed facts of one normally terminated external job. Its existence guarantees:
+    (1) normal termination and SCF convergence  (2) geometry convergence for opt / saddle
+    (3) 3N - n_external frequencies for freq  (4) preserved atom order
+    (5) preserved input frame (echoed start geometry within 1e-4 A of the input)
+    (6) observed Level matches the requested MethodSpec and the site's version pin.
+    Backends return a Failure when any of these does not hold."""
+
+    model_config = _FROZEN
+    kind: Literal["calculation"] = "calculation"
+    engine: str
+    task: Task
+    level: Level
+    start: Geometry
+    final: Geometry  # equals start for sp / freq
+    energy_hartree: float  # electronic energy at final
+    trajectory_energies_hartree: tuple[float, ...] = ()  # opt / saddle steps; first is start
+    frequencies_cm1: tuple[float, ...] | None = None  # freq only; projected, imaginary < 0
+    n_external: Literal[5, 6] | None = None  # freq only; 5 for linear molecules
+    imaginary_modes: tuple[tuple[float, ...], ...] = ()  # normalized cartesian, input frame
+    hessian: FileRef | None = None  # freq only; canonical .npy (3N, 3N) in Eh/bohr^2
+    s2: float | None = None  # observed <S^2> (open shell only)
+    output: FileRef
+    job_key: str
+
+
+class PathProfile(BaseModel):
+    model_config = _FROZEN
+    kind: Literal["path"] = "path"
+    engine: str
+    level: Level
+    images: FileRef  # multi-frame xyz
+    energies_hartree: tuple[float, ...]
+    gmax_history: tuple[float, ...] = ()  # max gradient per iteration (Eh/bohr)
+    program_converged: bool  # the program's own claim; profile.string_converged decides
+    climbing_image: int | None = None
+    ts: Geometry | None = None  # TS optimized within the same input (pysis_gs)
+    ts_energy_hartree: float | None = None
+    job_key: str
+
+
+class FailureKind(StrEnum):
+    EXECUTABLE_MISSING = "executable_missing"
+    INPUT_INVALID = "input_invalid"
+    TIMEOUT = "timeout"
+    STAGNATED = "stagnated"
+    NONZERO_EXIT = "nonzero_exit"
+    SCF_NOT_CONVERGED = "scf_not_converged"
+    GEOMETRY_MAXITER = "geometry_maxiter"
+    INCOMPLETE_OUTPUT = "incomplete_output"
+    METHOD_MISMATCH = "method_mismatch"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    GATE_REJECTED = "gate_rejected"
+
+
+class Failure(BaseModel):
+    model_config = _FROZEN
+    kind: FailureKind
+    reason: str
+    job_key: str | None = None

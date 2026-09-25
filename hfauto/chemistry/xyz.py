@@ -6,6 +6,10 @@ it, while path, conformer, and quantum backends can use it directly.
 
 from __future__ import annotations
 
+import hashlib
+import json
+from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,3 +65,48 @@ def xyz_files_have_same_atom_order(path_a: str | Path, path_b: str | Path) -> bo
     xyz_a = read_xyz(path_a)
     xyz_b = read_xyz(path_b)
     return xyz_a.symbols == xyz_b.symbols
+
+
+def geometry_fingerprint(symbols: Sequence[str], coords: np.ndarray) -> str:
+    """sha256 of the element list and the coordinates rounded to 1e-6 Å (normalized JSON)."""
+
+    rounded = np.round(np.asarray(coords, dtype=float).reshape(-1, 3), 6) + 0.0  # drops -0.0
+    if len(rounded) != len(symbols):
+        raise ValueError("symbols and coordinates differ in atom count")
+    payload = json.dumps(
+        {"symbols": list(symbols), "coords": rounded.tolist()}, separators=(",", ":")
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def hill_formula(symbols: Sequence[str]) -> str:
+    """Hill-order formula: C, then H, then the rest alphabetically (all alphabetical without C)."""
+
+    counts = Counter(symbols)
+    first = ["C", "H"] if "C" in counts else []
+    order = first + sorted(element for element in counts if element not in first)
+    return "".join(f"{e}{counts[e] if counts[e] > 1 else ''}" for e in order if e in counts)
+
+
+def composition_key(symbols: Sequence[str], charge: int, multiplicity: int) -> str:
+    return f"{hill_formula(symbols)}_q{int(charge)}_m{int(multiplicity)}"
+
+
+@dataclass(frozen=True, eq=False)
+class Molecule:
+    xyz: XYZ
+    charge: int
+    multiplicity: int
+
+    def fingerprint(self) -> str:
+        """Geometry fingerprint extended with charge and multiplicity."""
+
+        payload = json.dumps(
+            [geometry_fingerprint(self.xyz.symbols, self.xyz.coords), self.charge,
+             self.multiplicity],
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def write(self, path: str | Path) -> Path:
+        return write_xyz(self.xyz, path)

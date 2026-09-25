@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import pytest
+from pydantic import ValidationError
+
+from hfauto.core import records as r
+from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry, Level
+from hfauto.core.manifest import Artifact, Manifest, load_manifest, save_manifest
+from hfauto.core.records import ArtifactType as AT
+
+REF = FileRef(path="jobs/ab/out.txt", sha256="f" * 64)
+GEO = Geometry(file=REF, fingerprint="fp", symbols=("H", "C", "N"))
+LEVEL = Level(program="nwchem", version="7.2.3", method="pbe0", basis="def2-svpd",
+              dispersion="d3bj", charge=0, multiplicity=1, grid="fine", scf_tol=1e-7)
+TERM = (r.StoichTerm(composition_id="CHN|0|1", coefficient=1),)
+ELEMENTARY = r.CaseOutcome.ELEMENTARY_STEP
+PAYLOADS = {
+    AT.CALCULATION: Evidence(
+        engine="nwchem", task="freq", level=LEVEL, start=GEO, final=GEO, energy_hartree=-93.4,
+        frequencies_cm1=(-1131.6, 900.0, 2100.0), n_external=6,
+        imaginary_modes=((0.1,) * 9,), hessian=REF, s2=None, output=REF, job_key="k"),
+    AT.SPECIES: r.SpeciesRecord(
+        species_id="s1", composition_id="CHN|0|1", formula="CHN", charge=0, multiplicity=1,
+        geometry=GEO, source="input", state_label="CHN:ab12cd34"),
+    AT.MINIMUM: r.MinimumRecord(
+        minimum_id="m1", basin_id="b1", composition_id="CHN|0|1", species_id="s1", tier="dft",
+        level_key=LEVEL.full_key(), opt_calc="c1", freq_calc="c2", energy_hartree=-93.4,
+        state_label="CHN:ab12cd34", n_fragments=1, members=("s1",), notes=("soft",)),
+    AT.DISCOVERY: r.DiscoveryRecord(
+        discovery_id="d1", source_minimum="m1", mechanism="nt2", outcome="product",
+        trial=r.ReactionTrial(trial_id="t1", source_minimum="m1", kind="h_shift",
+                              mechanism="nt2", associations=((0, 2),), perturbed=True),
+        product_species="s2", ts=GEO, ts_imag_cm1=-1200.0, barrier_kj_mol=190.0),
+    AT.REACTION: r.ReactionRecord(
+        reaction_id="r1", reactants=TERM, products=TERM, minima=("m1", "m2"),
+        endpoints=("s1", "s2"), source="declared",
+        coordinate=(r.CoordinateTerm(kind="angle", atoms=(0, 1, 2)),),
+        barrier=r.BarrierVerdict(verdict="proceed", max_rel_dft_kcal=40.0, seed=GEO),
+        saddle=r.SaddleClaim(saddle_calc="c3", freq_calc="c4", imag_cm1=-1131.6,
+                             energy_hartree=-93.3),
+        connection=r.ConnectionClaim(side_calcs=("c5", "c6"), minima=("m1", "m2"),
+                                     amplitude_A=0.2),
+        outcome=ELEMENTARY, log="cases/r1/log.jsonl"),
+    AT.SPECIES_THERMO: r.SpeciesThermo(
+        subject="m1", freq_calc="c2", T_K=298.15, G_hartree=None, H_hartree=None,
+        zpe_hartree=None, settings_sha="abc", notes=("thermo_unavailable",)),
+    AT.REACTION_THERMO: r.ReactionThermo(
+        reaction_id="r1", T_K=298.15, standard_state="1M", dE_act_kcal=46.7, dE_rxn_kcal=14.0,
+        dzpe_act_kcal=-4.4, dG_act_kcal=42.3, dG_rxn_kcal=12.7, band_kcal=(42.0, 42.6)),
+    AT.REPORT: r.ReportRecord(
+        rows=(r.RankRow(reaction_id="r1", outcome=ELEMENTARY, tier="connected", rankable=True,
+                        rank=1, dG_act_kcal=42.3, band_kcal=(42.0, 42.6), blockers=()),),
+        tables={"ranking.csv": REF}),
+}
+
+
+def art(artifact_id: str, kind: AT = AT.SPECIES, **kw) -> Artifact:
+    return Artifact(artifact_id=artifact_id, type=kind, payload=PAYLOADS[kind], **kw)
+
+
+def manifest(*artifacts: Artifact, stage: str = "s") -> Manifest:
+    return Manifest(run_id="run", stage_id=stage, created_at="2026-09-25T00:00:00+00:00",
+                    artifacts=list(artifacts))
+
+
+def test_artifact_validator():
+    failure = Failure(kind="timeout", reason="rc 124")
+    with pytest.raises(ValidationError):
+        Artifact(artifact_id="a", type=AT.SPECIES)
+    with pytest.raises(ValidationError):
+        Artifact(artifact_id="a", type=AT.MINIMUM, payload=PAYLOADS[AT.SPECIES])
+    with pytest.raises(ValidationError):
+        Artifact(artifact_id="a", type=AT.MINIMUM, status="failed")
+    failed = Artifact(artifact_id="a", type=AT.MINIMUM, status="failed", failure=failure)
+    assert failed.payload is None
+
+
+def test_every_payload_round_trips(tmp_path):
+    original = manifest(*(art(f"a_{kind}", kind) for kind in PAYLOADS),
+                        Artifact(artifact_id="f", type=AT.CALCULATION, status="failed",
+                                 failure=Failure(kind="nonzero_exit", reason="rc -15")))
+    path = save_manifest(original, tmp_path / "stage" / "manifest.json")
+    assert load_manifest(path) == original
+    assert [p.name for p in path.parent.iterdir()] == ["manifest.json"]  # no temp file left
+    path.write_text(path.read_text(encoding="utf-8").replace(".v2", ".v1"), encoding="utf-8")
+    with pytest.raises(ValidationError):  # no compatibility with other schema versions
+        load_manifest(path)
+
+
+def test_union_keeps_first_order_and_last_wins():
+    newer = art("x", parents=("p",))
+    union = Manifest.union([manifest(art("x"), art("y")), manifest(art("z"), newer)],
+                           run_id="run", stage_id="view")
+    assert [a.artifact_id for a in union.artifacts] == ["x", "y", "z"]
+    assert union.get("x") == newer and union.stage_id == "view"
+
+
+def test_queries():
+    failed = Artifact(artifact_id="f", type=AT.SPECIES, status="failed",
+                      failure=Failure(kind="gate_rejected", reason="no_collision_free_seed"))
+    newer = art("s", parents=("p",))
+    m = manifest(art("s"), art("c", AT.CALCULATION), failed, newer)
+    assert m.get("s") == newer
+    assert [a.artifact_id for a in m.of(AT.SPECIES)] == ["s", "s"]
+    assert len(m.of(AT.SPECIES, ok_only=False)) == 3
+    assert m.records(AT.SPECIES, r.SpeciesRecord)[0].species_id == "s1"
+    with pytest.raises(TypeError):
+        m.records(AT.SPECIES, r.MinimumRecord)
+    assert m.evidence("c") == PAYLOADS[AT.CALCULATION]
+    with pytest.raises(ValueError):
+        m.evidence("s")
+    with pytest.raises(KeyError):
+        m.get("missing")
