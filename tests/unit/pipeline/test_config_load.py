@@ -35,4 +35,4 @@ def test_unknown_keys_are_errors():
     config = create_model("MinimaConfig", __base__=StageConfig, level=(str, "screen"))
     assert config.model_validate({"level": "dft"}).level == "dft"
     with pytest.raises(ValidationError):
-        config.model_validate({"level": "dft", "fallback_to_dummy": True})
+        config.model_validate({"level": "dft", "no_such_key": True})

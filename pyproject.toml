@@ -1,7 +1,7 @@
 [project]
 name = "hfauto"
 version = "0.14.0"
-description = "Manifest-based molecular complex, reaction-path, NEB/TS, and thermochemistry workflow"
+description = "Evidence-gated reaction discovery, reaction-path/TS and thermochemistry pipeline for molecular complexes"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{name = "HF Auto Project"}]
@@ -10,34 +10,28 @@ dependencies = [
   "typer>=0.12",
   "PyYAML>=6.0",
   "rich>=13.0",
-  "pandas>=2.0",
   "numpy>=1.24",
-  "scipy>=1.13"
+  "scipy>=1.13",
 ]
 
 [project.optional-dependencies]
 chem = ["rdkit"]
-reaction-discovery = [
-  "setuptools>=84; platform_system == 'Linux' and python_version >= '3.12' and python_version < '3.13'",
-  "scine-readuct==6.1.0; platform_system == 'Linux' and python_version >= '3.12' and python_version < '3.13'",
-  "scine-xtb-wrapper==3.0.2; platform_system == 'Linux' and python_version >= '3.12' and python_version < '3.13'",
-]
+# Linux / CPython 3.12 only (the WSL production environment, docs/environment.md).
 production = [
-  "rdkit",
-  "pysisyphus>=1.0,<2",
-  "numba>=0.66,<1",
-  "llvmlite>=0.48,<1",
-  "qcengine>=0.50,<1",
-  "setuptools>=84; platform_system == 'Linux' and python_version >= '3.12' and python_version < '3.13'",
-  "scine-readuct==6.1.0; platform_system == 'Linux' and python_version >= '3.12' and python_version < '3.13'",
-  "scine-xtb-wrapper==3.0.2; platform_system == 'Linux' and python_version >= '3.12' and python_version < '3.13'",
-  "goodvibes==3.2; platform_system == 'Windows'",
-  "goodvibes>=4.3; platform_system != 'Windows'",
+  "rdkit; platform_system == 'Linux' and python_version == '3.12'",
+  "pysisyphus>=1.0,<2; platform_system == 'Linux' and python_version == '3.12'",
+  "numba>=0.66,<1; platform_system == 'Linux' and python_version == '3.12'",
+  "llvmlite>=0.48,<1; platform_system == 'Linux' and python_version == '3.12'",
+  "scine-readuct==6.1.0; platform_system == 'Linux' and python_version == '3.12'",
+  "scine-xtb-wrapper==3.0.2; platform_system == 'Linux' and python_version == '3.12'",
+  "goodvibes==4.3.0; platform_system == 'Linux' and python_version == '3.12'",
+  "pymsym; platform_system == 'Linux' and python_version == '3.12'",
+  # scine_utilities imports setuptools._distutils at runtime without declaring it.
+  "setuptools>=84; platform_system == 'Linux' and python_version == '3.12'",
 ]
 dev = [
   "pytest",
   "ruff",
-  "mypy",
   "types-PyYAML",
   "import-linter",
   "pyrefly",
@@ -59,17 +53,19 @@ include = ["hfauto*"]
 line-length = 100
 
 [tool.ruff.lint]
-# External programs, optional dependencies, and heterogeneous public-data
-# parsers are deliberate exception boundaries. They convert arbitrary provider
-# failures into typed failure artifacts or best-effort optional output.
+extend-select = ["C901", "TID251"]
+# External programs and optional dependencies are deliberate exception boundaries: they
+# turn arbitrary provider failures into typed Failure results.
 ignore = ["BLE001", "S110", "S112"]
 
 [tool.ruff.lint.mccabe]
-# Threshold used whenever C901 is selected (e.g. the architecture review run:
-# `ruff check --select C90,...`).  C901 is not part of the default rule set.
 max-complexity = 15
 
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"subprocess".msg = "Only hfauto/execution/process.py starts processes (design 2.5); use execution.process.run_command."
+
 [tool.ruff.lint.per-file-ignores]
+"hfauto/execution/process.py" = ["TID251"]
 # Typer declares CLI metadata through Option/Argument default values by design.
 "hfauto/cli/*.py" = ["B008"]
 
@@ -84,27 +80,84 @@ pythonpath = ["tests"]
 addopts = "-m 'not real' --strict-markers --import-mode=importlib"
 
 # ---------------------------------------------------------------------------
-# Architecture contracts (import-linter).  Run from the repository root:
-#   lint-imports
-# During the refactor only core-is-foundation is kept here; new-module
-# contracts live in importlinter-next.toml (Wave 3) and the final contracts
-# replace this section in Wave 6 (docs/current/refactor_design.md, 11.1).
+# Architecture contracts (import-linter, docs/current/refactor_design.md 11.1).
+# Run from the repository root:  lint-imports
 # ---------------------------------------------------------------------------
 [tool.importlinter]
 root_packages = ["hfauto"]
 
 [[tool.importlinter.contracts]]
-id = "core-is-foundation"
-name = "hfauto.core imports nothing above it"
+id = "hfauto-layers"
+name = "cli > pipeline > stages > drivers | reporting > backends > execution | chemistry > core"
+type = "layers"
+containers = ["hfauto"]
+layers = [
+  "cli",
+  "pipeline",
+  "stages",
+  "drivers | reporting",
+  "backends",
+  "execution | chemistry",
+  "core",
+]
+exhaustive = true
+
+[[tool.importlinter.contracts]]
+id = "adapters-private"
+name = "only the engine registry reaches the concrete adapters"
 type = "forbidden"
-source_modules = ["hfauto.core"]
-forbidden_modules = [
-  "hfauto.chemistry",
-  "hfauto.backends",
-  "hfauto.stages",
-  "hfauto.workflow",
-  "hfauto.reporting",
+source_modules = [
   "hfauto.cli",
+  "hfauto.pipeline",
+  "hfauto.stages",
+  "hfauto.drivers",
+  "hfauto.reporting",
+]
+forbidden_modules = [
+  "hfauto.backends.nwchem",
+  "hfauto.backends.xtb",
+  "hfauto.backends.pysis",
+  "hfauto.backends.crest",
+  "hfauto.backends.readuct",
+  "hfauto.backends.goodvibes",
+]
+
+[[tool.importlinter.contracts]]
+id = "protocols-only"
+name = "stages, drivers and reporting see engines only through backends.protocols"
+type = "forbidden"
+source_modules = ["hfauto.stages", "hfauto.drivers", "hfauto.reporting"]
+forbidden_modules = ["hfauto.backends.engines", "hfauto.execution"]
+# backends.protocols names execution.jobs.JobRunner under TYPE_CHECKING (design 6.1), which
+# import-linter counts; only direct imports from these sources are forbidden.
+allow_indirect_imports = "true"
+
+[[tool.importlinter.contracts]]
+id = "adapters-independent"
+name = "engine adapters do not import each other"
+type = "independence"
+modules = [
+  "hfauto.backends.nwchem",
+  "hfauto.backends.xtb",
+  "hfauto.backends.pysis",
+  "hfauto.backends.crest",
+  "hfauto.backends.readuct",
+  "hfauto.backends.goodvibes",
+]
+
+[[tool.importlinter.contracts]]
+id = "stages-independent"
+name = "the eight stages do not import each other"
+type = "independence"
+modules = [
+  "hfauto.stages.structures",
+  "hfauto.stages.conformer_search",
+  "hfauto.stages.minima",
+  "hfauto.stages.explore",
+  "hfauto.stages.reaction_paths",
+  "hfauto.stages.single_point",
+  "hfauto.stages.thermochemistry",
+  "hfauto.stages.report",
 ]
 
 # ---------------------------------------------------------------------------
@@ -118,6 +171,8 @@ project-excludes = ["**/__pycache__", "runs", "tests"]
 search-path = ["."]
 python-version = "3.12"
 python-interpreter-path = ".venv-win-qa/Scripts/python.exe"
+# Linux-only production libraries, imported inside the worker functions only.
+ignore-missing-imports = ["goodvibes", "goodvibes.*", "pysisyphus", "pysisyphus.*", "scine_readuct", "scine_utilities", "scine_xtb_wrapper"]
 
 # ---------------------------------------------------------------------------
 # Complexity metrics (radon >= 5.1 reads [tool.radon]).  Example:

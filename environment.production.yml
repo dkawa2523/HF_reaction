@@ -7,7 +7,6 @@ dependencies:
   - rdkit
   - xtb
   - crest
-  - graphviz
   - openmpi
   - nwchem=7.2.3
   - pip:

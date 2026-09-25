@@ -23,7 +23,7 @@ class Out(BaseModel):
 
 
 class ScriptAdapter:
-    """Runs inputs['codes'][0] after appending to a marker; continuation drops that code."""
+    """Runs inputs['codes'][0] after dropping a unique marker file; continuation drops that code."""
 
     result_type = Out
 
@@ -31,7 +31,8 @@ class ScriptAdapter:
         self.store, self.marker = store, marker
 
     def prepare(self, task, workdir):
-        code = f"open({str(self.marker)!r}, 'a').write('x')\n" + task.inputs["codes"][0]
+        mark = f"import uuid; open({str(self.marker)!r} + '/' + uuid.uuid4().hex, 'w').close()\n"
+        code = mark + task.inputs["codes"][0]
         return Command(argv=(task.inputs.get("exe", sys.executable), "-c", code), cwd=workdir)
 
     def parse(self, task, workdir, result):
@@ -53,6 +54,7 @@ class ScriptAdapter:
 
 def _setup(tmp_path, cores=1, **store_options):
     store = JobStore(tmp_path / "run" / "jobs", **store_options)
+    (tmp_path / "marker").mkdir(exist_ok=True)
     return JobRunner(store, cores=cores), ScriptAdapter(store, tmp_path / "marker")
 
 
@@ -63,7 +65,7 @@ def _task(*codes, name="a", timeout_s=30.0, ranks=1):
 
 def _runs(tmp_path):
     marker = tmp_path / "marker"
-    return len(marker.read_text()) if marker.exists() else 0
+    return len(list(marker.iterdir())) if marker.exists() else 0
 
 
 def test_timeout_continues_then_result_is_reused(tmp_path):
