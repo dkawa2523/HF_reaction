@@ -20,7 +20,7 @@ _STRATEGY_FOR_DIAGNOSIS = {
 }
 
 _ENGINES_FOR_STRATEGY = {
-    "double_ended_path": ["nwchem_neb", "orca_nebts"],
+    "double_ended_path": ["nwchem_neb"],
     "adaptive_double_ended_path": ["nwchem_string"],
     "reparameterized_double_ended_path": ["nwchem_string"],
     "bracketed_saddle_search": ["nwchem_saddle"],

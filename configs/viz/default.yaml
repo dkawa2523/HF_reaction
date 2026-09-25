@@ -1,7 +1,0 @@
-# Visualization defaults
-max_molecule_dossiers: 8
-max_reaction_dossiers: 8
-top_energy_profiles: 12
-max_network_reactions: 30
-max_chemiscope_structures: 200
-library_mode: cdn

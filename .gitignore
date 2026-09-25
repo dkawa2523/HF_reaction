@@ -14,3 +14,11 @@ cache/
 .hfauto_cache/
 *.log
 .DS_Store
+/afir_biased/
+/nt2_guess/
+/product_unbiased/
+/ts_bofill/
+/ts_hessian/
+/internal_coords.log
+.import_linter_cache/
+.uv-cache-review/

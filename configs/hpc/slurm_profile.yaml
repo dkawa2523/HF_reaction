@@ -1,7 +1,0 @@
-scheduler: slurm
-submit_command: sbatch
-status_command: squeue
-cancel_command: scancel
-notes:
-  - Review partition, account, and module loading before production use.
-  - Generated submit scripts are templates; they do not include site-specific modules.

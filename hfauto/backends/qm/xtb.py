@@ -7,7 +7,6 @@ import subprocess
 from pathlib import Path
 
 from hfauto.backends.qm.dummy import DummyQMEngine
-from hfauto.chemistry.descriptors import hf_descriptors_from_species
 from hfauto.chemistry.electronic_state import resolve_electronic_state
 from hfauto.chemistry.geometry_qc import geometry_qc_from_xyz
 from hfauto.chemistry.xyz import read_xyz
@@ -73,8 +72,6 @@ def _xtb_geometry_qc(species: Artifact, final_xyz: str | Path) -> dict:
     data = dict(species.data)
     data["xyz_path"] = str(final_xyz)
     qc = geometry_qc_from_xyz(data, final_xyz)
-    desc = hf_descriptors_from_species(data)
-    qc.update({k: v for k, v in desc.items() if v is not None})
     # Keep legacy top-level flags expected by existing stages.
     qc.setdefault("geometry_sane", not bool(qc.get("hf_dissociated", False)))
     qc.setdefault("hf_dissociated", False)

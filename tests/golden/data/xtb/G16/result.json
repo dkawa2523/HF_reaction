@@ -1,0 +1,25 @@
+{
+  "success": true,
+  "returncode": 0,
+  "duration_s": 4.364808797836304,
+  "fingerprint": "79765cb21e706eb4505f3427f75636d1facad0d51ea875b953837f6038216bed",
+  "command": [
+    "xtb",
+    "input.xyz",
+    "--opt",
+    "tight",
+    "--gfn",
+    "1",
+    "--etemp",
+    "1000.0",
+    "--input",
+    "scan.inp",
+    "--alpb",
+    "water",
+    "--norestart",
+    "--chrg",
+    "0",
+    "--uhf",
+    "0"
+  ]
+}

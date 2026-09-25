@@ -1,3 +1,4 @@
+> 移行中(ブランチ refactor/fundamental-2026-09): 本 README は Wave 9 で書き直すまで最新ではない。設計は docs/current/refactor_design.md。
 # hfauto molecular reaction discovery
 
 `hfauto` is a manifest-based workflow for discovering molecular products,

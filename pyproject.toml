@@ -11,16 +11,12 @@ dependencies = [
   "PyYAML>=6.0",
   "rich>=13.0",
   "pandas>=2.0",
-  "numpy>=1.24"
+  "numpy>=1.24",
+  "scipy>=1.13"
 ]
 
 [project.optional-dependencies]
 chem = ["rdkit"]
-web = ["requests", "beautifulsoup4"]
-viz = ["jinja2", "plotly", "graphviz", "networkx", "rdkit"]
-viz-prod = ["jinja2", "plotly", "graphviz", "networkx", "rdkit", "chemiscope", "ase"]
-hpc = ["snakemake"]
-chemiscope = ["chemiscope", "ase"]
 reaction-discovery = [
   "setuptools>=84; platform_system == 'Linux' and python_version >= '3.12' and python_version < '3.13'",
   "scine-readuct==6.1.0; platform_system == 'Linux' and python_version >= '3.12' and python_version < '3.13'",
@@ -28,15 +24,6 @@ reaction-discovery = [
 ]
 production = [
   "rdkit",
-  "requests",
-  "beautifulsoup4",
-  "jinja2",
-  "plotly",
-  "graphviz",
-  "networkx",
-  "matplotlib>=3.8",
-  "Pillow>=10.0",
-  "cantera>=3.1",
   "pysisyphus>=1.0,<2",
   "numba>=0.66,<1",
   "llvmlite>=0.48,<1",
@@ -52,7 +39,6 @@ dev = [
   "ruff",
   "mypy",
   "types-PyYAML",
-  "types-requests",
   "import-linter",
   "pyrefly",
   "radon",
@@ -60,8 +46,6 @@ dev = [
 
 [project.scripts]
 hfauto = "hfauto.cli.main:app"
-hfauto-viz = "hfauto_viz.cli.main:app"
-hfauto-ops = "hfauto_ops.cli.main:app"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
@@ -69,7 +53,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["hfauto*", "hfauto_viz*", "hfauto_ops*"]
+include = ["hfauto*"]
 
 [tool.ruff]
 line-length = 100
@@ -88,144 +72,26 @@ max-complexity = 15
 [tool.ruff.lint.per-file-ignores]
 # Typer declares CLI metadata through Option/Argument default values by design.
 "hfauto/cli/*.py" = ["B008"]
-"hfauto_ops/cli/*.py" = ["B008"]
-"hfauto_viz/cli/*.py" = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.setuptools.package-data]
-hfauto = ["data/*.yaml"]
-hfauto_viz = ["static/*", "reports/templates/*"]
+markers = [
+  "golden: runs/ 由来の実出力フィクスチャ",
+  "integration: fake エンジンでの結合",
+  "real: 実エンジン(WSL、HFAUTO_REAL=1)",
+]
+pythonpath = ["tests"]
+addopts = "-m 'not real' --strict-markers --import-mode=importlib"
 
 # ---------------------------------------------------------------------------
 # Architecture contracts (import-linter).  Run from the repository root:
 #   lint-imports
-# The contracts encode the *intended* layering from
-# docs/current/developer_architecture.md and backend_extension_guide.md.
-# They are deliberately not weakened with ignore_imports: a broken contract is
-# the review signal.
+# During the refactor only core-is-foundation is kept here; new-module
+# contracts live in importlinter-next.toml (Wave 3) and the final contracts
+# replace this section in Wave 6 (docs/current/refactor_design.md, 11.1).
 # ---------------------------------------------------------------------------
 [tool.importlinter]
-root_packages = ["hfauto", "hfauto_ops", "hfauto_viz"]
-
-[[tool.importlinter.contracts]]
-id = "hfauto-layers"
-name = "hfauto layers: cli > workflow > stages > backends|hpc|reporting > chemistry > core"
-type = "layers"
-containers = ["hfauto"]
-layers = [
-  "cli",
-  # Orchestration: pipeline runner and cross-stage workflow services.
-  "workflow",
-  # One responsibility and one manifest boundary per stage.
-  "stages",
-  # Replaceable execution backends, HPC planning, and read-only reporting.
-  "backends | hpc | reporting",
-  # Backend-agnostic chemical domain logic (used by backends and stages).
-  "chemistry",
-  # Schemas, IO, hashing, units, executables.
-  "core",
-]
-exhaustive = true
-exhaustive_ignores = ["data"]
-
-[[tool.importlinter.contracts]]
-id = "backend-categories-independent"
-name = "Backend categories are independent replaceable implementations"
-type = "independence"
-modules = [
-  "hfauto.backends.qm",
-  "hfauto.backends.ts",
-  "hfauto.backends.thermo",
-  "hfauto.backends.kinetics",
-  "hfauto.backends.conformer",
-  "hfauto.backends.db",
-  "hfauto.backends.reaction_discovery",
-]
-
-[[tool.importlinter.contracts]]
-id = "concrete-backends-via-registry"
-name = "Concrete backend implementations are reached only through hfauto.backends(.registry)"
-type = "protected"
-protected_modules = [
-  "hfauto.backends.conformer.crest",
-  "hfauto.backends.conformer.rdkit",
-  "hfauto.backends.db.atct",
-  "hfauto.backends.db.cas_common_chemistry",
-  "hfauto.backends.db.cccbdb",
-  "hfauto.backends.db.comptox",
-  "hfauto.backends.db.dummy",
-  "hfauto.backends.db.niosh",
-  "hfauto.backends.db.nist_webbook",
-  "hfauto.backends.db.pubchem",
-  "hfauto.backends.kinetics.cantera",
-  "hfauto.backends.kinetics.tst",
-  "hfauto.backends.qm.dummy",
-  "hfauto.backends.qm.nwchem",
-  "hfauto.backends.qm.orca",
-  "hfauto.backends.qm.xtb",
-  "hfauto.backends.reaction_discovery.readuct",
-  "hfauto.backends.thermo.arkane",
-  "hfauto.backends.thermo.goodvibes",
-  "hfauto.backends.ts.dummy",
-  "hfauto.backends.ts.nwchem_neb",
-  "hfauto.backends.ts.nwchem_path_support",
-  "hfauto.backends.ts.nwchem_saddle",
-  "hfauto.backends.ts.nwchem_string",
-  "hfauto.backends.ts.orca_nebts",
-  "hfauto.backends.ts.pysisyphus",
-  "hfauto.backends.ts.pysisyphus_saddle",
-]
-allowed_importers = ["hfauto.backends"]
-
-[[tool.importlinter.contracts]]
-id = "stages-independent"
-name = "Stage modules are independent (they share only hfauto.stages.base)"
-type = "independence"
-modules = [
-  "hfauto.stages.basin_populations",
-  "hfauto.stages.build_complexes",
-  "hfauto.stages.calibrate",
-  "hfauto.stages.conformers",
-  "hfauto.stages.connect_minima",
-  "hfauto.stages.connector_audit",
-  "hfauto.stages.descriptors",
-  "hfauto.stages.detect_sites",
-  "hfauto.stages.dft_minima",
-  "hfauto.stages.discovery_audit",
-  "hfauto.stages.endpoint_seed_screen",
-  "hfauto.stages.endpoint_seeds",
-  "hfauto.stages.enrich",
-  "hfauto.stages.enumerate_states",
-  "hfauto.stages.explore_reactions",
-  "hfauto.stages.generate_reactions",
-  "hfauto.stages.hpc_plan",
-  "hfauto.stages.ingest",
-  "hfauto.stages.irc",
-  "hfauto.stages.kinetics",
-  "hfauto.stages.method_panel",
-  "hfauto.stages.minimum_mode_assess",
-  "hfauto.stages.minimum_mode_follow",
-  "hfauto.stages.minimum_registry",
-  "hfauto.stages.ops",
-  "hfauto.stages.path_ensemble",
-  "hfauto.stages.path_ensemble_assess",
-  "hfauto.stages.path_intermediates",
-  "hfauto.stages.preopt",
-  "hfauto.stages.rank",
-  "hfauto.stages.reaction_classify",
-  "hfauto.stages.reaction_plan",
-  "hfauto.stages.reaction_rank",
-  "hfauto.stages.reaction_segments",
-  "hfauto.stages.recover_path",
-  "hfauto.stages.relaxation_discovery",
-  "hfauto.stages.sp",
-  "hfauto.stages.thermo",
-  "hfauto.stages.thermo_sensitivity",
-  "hfauto.stages.ts_search",
-  "hfauto.stages.viz",
-]
+root_packages = ["hfauto"]
 
 [[tool.importlinter.contracts]]
 id = "core-is-foundation"
@@ -237,58 +103,9 @@ forbidden_modules = [
   "hfauto.backends",
   "hfauto.stages",
   "hfauto.workflow",
-  "hfauto.hpc",
   "hfauto.reporting",
   "hfauto.cli",
-  "hfauto_ops",
-  "hfauto_viz",
 ]
-
-[[tool.importlinter.contracts]]
-id = "hfauto-without-addons"
-name = "hfauto does not import the hfauto_ops / hfauto_viz add-on distributions"
-type = "forbidden"
-source_modules = ["hfauto"]
-forbidden_modules = ["hfauto_ops", "hfauto_viz"]
-
-[[tool.importlinter.contracts]]
-id = "addons-consume-artifacts"
-name = "Add-ons consume manifests/artifacts, not backends or chemistry internals"
-type = "forbidden"
-source_modules = ["hfauto_ops", "hfauto_viz"]
-forbidden_modules = ["hfauto.backends", "hfauto.chemistry"]
-
-[[tool.importlinter.contracts]]
-id = "addons-independent"
-name = "hfauto_ops and hfauto_viz are independent"
-type = "independence"
-modules = ["hfauto_ops", "hfauto_viz"]
-
-[[tool.importlinter.contracts]]
-id = "viz-layers"
-name = "hfauto_viz layers: cli > reports > renderers > structure > data > core"
-type = "layers"
-containers = ["hfauto_viz"]
-layers = ["cli", "reports", "renderers", "structure", "data", "core"]
-
-[[tool.importlinter.contracts]]
-id = "ops-layers"
-name = "hfauto_ops layers: cli > bundle > feature packages > core"
-type = "layers"
-containers = ["hfauto_ops"]
-layers = [
-  "cli",
-  "bundle",
-  "cache | compare | qcarchive | reports | retry | reuse | scheduler | schedulers | status",
-  "core",
-]
-
-[[tool.importlinter.contracts]]
-id = "acyclic-siblings"
-name = "No import cycles between sibling packages"
-type = "acyclic_siblings"
-ancestors = ["hfauto", "hfauto_ops", "hfauto_viz"]
-depth = 3
 
 # ---------------------------------------------------------------------------
 # Type checking (pyrefly).  Run from the repository root:  pyrefly check
@@ -296,7 +113,7 @@ depth = 3
 # activate the project venv or pass --python-interpreter-path.
 # ---------------------------------------------------------------------------
 [tool.pyrefly]
-project-includes = ["hfauto", "hfauto_ops", "hfauto_viz"]
+project-includes = ["hfauto"]
 project-excludes = ["**/__pycache__", "runs", "tests"]
 search-path = ["."]
 python-version = "3.12"
@@ -304,12 +121,12 @@ python-interpreter-path = ".venv-win-qa/Scripts/python.exe"
 
 # ---------------------------------------------------------------------------
 # Complexity metrics (radon >= 5.1 reads [tool.radon]).  Example:
-#   radon cc -n C hfauto hfauto_ops hfauto_viz
-#   radon mi hfauto hfauto_ops hfauto_viz
+#   radon cc -n C hfauto
+#   radon mi hfauto
 # Notes: radon feeds the whole [tool] table through configparser, so string
 # values anywhere under [tool.*] must not contain a bare '%'.  Do not set
 # boolean keys (show_complexity, average, ...) to true here: mando then turns
 # the matching CLI flags (-s, -a, ...) into "store_false" switches.
 # ---------------------------------------------------------------------------
 [tool.radon]
-exclude = "runs/*,scripts/*"
+exclude = "runs/*"

@@ -1,6 +1,0 @@
-engine: cantera
-tunneling_model: wigner
-prefer_pressure_corrected_barrier: false
-arkane_export: true
-cantera:
-  filename: cantera_mechanism.yaml

@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/home/user/.local/opt/nwchem-7.2.3/bin/mpirun",
+    "-np",
+    "2",
+    "/home/user/.local/bin/nwchem",
+    "nwchem.nw"
+  ],
+  "cwd": "runs/amine_hf_pilot_dft_followup_v1/00_dft-minima/spc_NH3_HF3_seed00_nci_0",
+  "returncode": 124,
+  "stdout_path": "runs/amine_hf_pilot_dft_followup_v1/00_dft-minima/spc_NH3_HF3_seed00_nci_0/nwchem.out",
+  "stderr_path": "runs/amine_hf_pilot_dft_followup_v1/00_dft-minima/spc_NH3_HF3_seed00_nci_0/nwchem.err",
+  "duration_s": 14382.865327119827,
+  "timed_out": true,
+  "executable": "/home/user/.local/opt/nwchem-7.2.3/bin/mpirun"
+}

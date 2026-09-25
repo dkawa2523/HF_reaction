@@ -1,0 +1,158 @@
+Couldn't find configuration file. Expected it at '/home/user/.pysisyphusrc'.
+                           d8b                            888
+                           Y8P                            888
+                                                          888
+88888b.  888  888 .d8888b  888 .d8888b  888  888 88888b.  88888b.  888  888 .d8888b
+888 "88b 888  888 88K      888 88K      888  888 888 "88b 888 "88b 888  888 88K
+888  888 888  888 "Y8888b. 888 "Y8888b. 888  888 888  888 888  888 888  888 "Y8888b.
+888 d88P Y88b 888      X88 888      X88 Y88b 888 888 d88P 888  888 Y88b 888      X88
+88888P"   "Y88888  88888P' 888  88888P'  "Y88888 88888P"  888  888  "Y88888  88888P'
+888           888                            888 888
+888      Y8b d88P                       Y8b d88P 888
+888       "Y88P"                         "Y88P"  888                            
+
+Version 1.0.0 (Python 3.12.3, NumPy 2.4.6, SciPy 1.18.0)
+Executed at Sat Aug 15 09:12:15 2026 on 'DESKTOP-621T1UP'
+Platform: Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39
+Interpreter: /mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline/.venv/bin/python
+Current working directory: /mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline/runs/hono_isomerization_v3/07_irc/rxn_candidate_dft_basins_a4130bf1b004a237
+
+If pysisyphus benefitted your research please cite:
+
+	https://doi.org/10.1002/qua.26390
+
+Good luck!
+
+{'calc': {'charge': 0,
+          'keywords': {'basis__spherical': True, 'dft__disp': 'vdw 3'},
+          'model': {'basis': 'def2-svpd', 'method': 'pbe0'},
+          'mult': 1,
+          'pal': 1,
+          'program': 'nwchem',
+          'type': 'qcengine'},
+ 'geom': {'coord_kwargs': {},
+          'fn': '/mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline/runs/hono_isomerization_v3/06_ts-search/rxn_candidate_dft_998cc65513/attempt_00_nwchem_neb/saddle_freq/final.xyz',
+          'type': 'cart'},
+ 'irc': {'backward': True,
+         'dump_every': 5,
+         'forward': True,
+         'max_cycles': 150,
+         'rms_grad_thresh': 0.001,
+         'step_length': 0.1,
+         'type': 'eulerpc'}}
+
+Read 1 geometry.
+                                ###############
+                                # RUNNING IRC #
+                                ###############
+
+Convergence thresholds (non mass-weighted gradient):
+	     rms(|gradient|) <= 0.001000 E_h a_0⁻¹
+	             Δenergy <= 0.000001 E_h
+
+Calculating energy and gradient at TS.
+Transition vector is mode 0 with wavenumber -676.32 cm⁻¹.
+Crossover temperature T_c: 154.87 K
+Energy-based (ΔE=0.001 au) initial displacement from the TS using 2rd derivatives.
+Initial step lengths (not mass-weighted):
+	 Forward: 0.3061 au
+	Backward: 0.3061 au
+IRC length in mw. coords, max(|grad|) and rms(grad) in unweighted coordinates.
+
+                               #################
+                               # IRC - FORWARD #
+                               #################
+
+Requested energy lowering:  0.0010 au ( 2.63 kJ mol⁻¹)
+   Actual energy lowering: -0.0010 au (-2.65 kJ mol⁻¹)
+                        Δ:  0.0020 au ( 5.28 kJ mol⁻¹)
+Displaced geometry is higher in energy compared to TS!
+
+
+                Step    IRC length       dE / au   max(|grad|)     rms(grad)
+        ---------------------------------------------------------------------
+                   0      0.360028     -0.000415      0.012264      0.004969 
+                   1      0.420954     -0.000840      0.010369      0.004607 
+                   2      0.502552     -0.000835      0.010051      0.004748 
+                   3      0.549030     -0.000417      0.010059      0.004957 
+                   4      0.592404     -0.000386      0.010112      0.005177 
+                   5      0.636357     -0.000402      0.010275      0.005406 
+                   6      0.680783     -0.000417      0.010465      0.005642 
+                   7      0.725445     -0.000434      0.010663      0.005878 
+                   8      0.775045     -0.000503      0.011081      0.006132 
+                   9      0.824778     -0.000522      0.011430      0.006377 
+                  10      0.924720     -0.001155      0.012066      0.006802 
+                  11      1.024490     -0.001231      0.012404      0.007156 
+                  12      1.123875     -0.001294      0.012513      0.007424 
+                  13      1.222396     -0.001345      0.012437      0.007597 
+                  14      1.319181     -0.001369      0.012168      0.007658 
+                  15      1.415966     -0.001400      0.011708      0.007597 
+                  16      1.511326     -0.001389      0.011101      0.007407 
+                  17      1.604970     -0.001347      0.010367      0.007085 
+                  18      1.697795     -0.001290      0.009515      0.006635 
+                  19      1.789569     -0.001204      0.008576      0.006068 
+                  20      1.880661     -0.001097      0.007803      0.005396 
+                  21      1.970891     -0.000967      0.006850      0.004639 
+                  22      2.060908     -0.000824      0.005748      0.003815 
+                  23      2.150269     -0.000664      0.004526      0.002952 
+                  24      2.239518     -0.000497      0.003245      0.002092 
+                  25      2.329335     -0.000319      0.002064      0.001493 
+                  26      2.420937     -0.000107      0.004976      0.002383 
+                  27      2.458748     -0.000044      0.000956      0.000453 
+        rms(grad) converged!
+
+        Summary afer forward IRC:
+        max(gradient,cartesian):       0.000956 hartree/bohr
+        rms(gradient,cartesian):       0.000453 hartree/bohr
+                         energy:    -205.345526 hartree
+                  energy change:      -0.021706 hartree (        -56.99 kJ mol⁻¹)
+
+                               ##################
+                               # IRC - BACKWARD #
+                               ##################
+
+Requested energy lowering:  0.0010 au ( 2.63 kJ mol⁻¹)
+   Actual energy lowering: -0.0020 au (-5.38 kJ mol⁻¹)
+                        Δ:  0.0030 au ( 8.00 kJ mol⁻¹)
+Displaced geometry is higher in energy compared to TS!
+
+
+                Step    IRC length       dE / au   max(|grad|)     rms(grad)
+        ---------------------------------------------------------------------
+                   0     -0.322253     -0.002220      0.008882      0.004280 
+                   1     -0.351417     -0.000227      0.008593      0.004288 
+                   2     -0.387007     -0.000284      0.008374      0.004413 
+                   3     -0.430096     -0.000326      0.008555      0.004713 
+                   4     -0.474576     -0.000352      0.008748      0.005029 
+                   5     -0.520041     -0.000374      0.009037      0.005375 
+                   6     -0.624263     -0.000959      0.009533      0.006125 
+                   7     -0.730571     -0.001112      0.010407      0.006849 
+                   8     -0.837058     -0.001226      0.011054      0.007498 
+                   9     -0.942852     -0.001333      0.011673      0.008022 
+                  10     -1.048372     -0.001429      0.012514      0.008399 
+                  11     -1.153560     -0.001502      0.013118      0.008616 
+                  12     -1.257771     -0.001539      0.013462      0.008663 
+                  13     -1.360896     -0.001543      0.013534      0.008539 
+                  14     -1.462847     -0.001512      0.013591      0.008254 
+                  15     -1.563884     -0.001452      0.013342      0.007817 
+                  16     -1.664690     -0.001366      0.012694      0.007239 
+                  17     -1.764986     -0.001244      0.011642      0.006535 
+                  18     -1.865388     -0.001098      0.010191      0.005706 
+                  19     -1.964824     -0.000913      0.008391      0.004763 
+                  20     -2.065103     -0.000721      0.006253      0.003672 
+                  21     -2.166320     -0.000501      0.003813      0.002390 
+                  22     -2.270368     -0.000253      0.001496      0.000849 
+        rms(grad) converged!
+
+        Summary afer backward IRC:
+        max(gradient,cartesian):       0.001496 hartree/bohr
+        rms(gradient,cartesian):       0.000849 hartree/bohr
+                         energy:    -205.345260 hartree
+                  energy change:      -0.021439 hartree (        -56.29 kJ mol⁻¹)
+
+        Final IRC summary:
+         Start (finished_first):    -205.345260 hartree (        -56.29 kJ mol⁻¹)
+                             TS:    -205.323821 hartree (         +0.00 kJ mol⁻¹)
+            End (finished_last):    -205.345526 hartree (        -56.99 kJ mol⁻¹)
+        
+pysisyphus run took 0:08:33 h.

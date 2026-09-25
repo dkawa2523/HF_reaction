@@ -33,6 +33,28 @@ from hfauto.core.frequency_qc import (
     resolve_imaginary_frequency_cutoff,
 )
 
+# Most abundant isotope masses (amu, NIST AME2016) used to mass-weight modes.
+_ISOTOPE_MASS_AMU: dict[str, float] = {
+    "H": 1.00782503, "He": 4.00260325, "Li": 7.01600344, "Be": 9.01218307,
+    "B": 11.00930536, "C": 12.0, "N": 14.00307400, "O": 15.99491462,
+    "F": 18.99840316, "Ne": 19.99244018, "Na": 22.98976928, "Mg": 23.98504170,
+    "Al": 26.98153853, "Si": 27.97692653, "P": 30.97376200, "S": 31.97207117,
+    "Cl": 34.96885268, "Ar": 39.96238312, "K": 38.96370649, "Ca": 39.96259086,
+    "Sc": 44.95590828, "Ti": 47.94794198, "V": 50.94395704, "Cr": 51.94050623,
+    "Mn": 54.93804391, "Fe": 55.93493633, "Co": 58.93319429, "Ni": 57.93534241,
+    "Cu": 62.92959772, "Zn": 63.92914201, "Ga": 68.92557350, "Ge": 73.92117776,
+    "As": 74.92159457, "Se": 79.91652180, "Br": 78.91833760, "Kr": 83.91149773,
+    "I": 126.90447190,
+}
+
+
+def _isotope_masses(symbols: list[str]) -> np.ndarray:
+    """Return an (n, 1) column of isotope masses; unknown elements raise."""
+    unknown = sorted(set(symbols) - _ISOTOPE_MASS_AMU.keys())
+    if unknown:
+        raise ValueError(f"no isotope mass tabulated for elements {unknown}")
+    return np.array([_ISOTOPE_MASS_AMU[symbol] for symbol in symbols]).reshape((-1, 1))
+
 
 def reaction_coordinate_value(
     species_data: dict[str, Any], xyz_path: str | Path | None
@@ -304,29 +326,17 @@ def _best_mode_reference_overlap(
     masses: np.ndarray | None = None
     projection_prefix = "cartesian"
     if mode_component_units == "amu^-1/2":
-        try:
-            from rdkit import Chem
-
-            symbols = read_xyz(xyz_path).symbols
-            periodic_table = Chem.GetPeriodicTable()
-            masses = np.asarray(
-                [periodic_table.GetAtomicWeight(symbol) for symbol in symbols],
-                dtype=float,
-            ).reshape((-1, 1))
-            if (
-                masses.shape[0] != expected_shape[0]
-                or not np.isfinite(masses).all()
-                or np.any(masses <= 0.0)
-            ):
-                return 0.0, "atomic_mass_weighting_unavailable"
-            # NWChem prints a Cartesian displacement for each mode.  Move both
-            # that displacement and the Cartesian reaction reference into the
-            # same mass-weighted space; applying inverse weights to only the
-            # reference would change the physical metric.
-            displacement = displacement * np.sqrt(masses)
-            projection_prefix = "mass_weighted"
-        except (ImportError, OSError, TypeError, ValueError):
+        if xyz_path is None:
             return 0.0, "atomic_mass_weighting_unavailable"
+        masses = _isotope_masses(read_xyz(xyz_path).symbols)
+        if masses.shape[0] != expected_shape[0]:
+            return 0.0, "atomic_mass_weighting_unavailable"
+        # NWChem prints a Cartesian displacement for each mode.  Move both
+        # that displacement and the Cartesian reaction reference into the
+        # same mass-weighted space; applying inverse weights to only the
+        # reference would change the physical metric.
+        displacement = displacement * np.sqrt(masses)
+        projection_prefix = "mass_weighted"
 
     best_score = 0.0
     best_label = "reaction_mode_reference_unavailable"

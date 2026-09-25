@@ -1,0 +1,848 @@
+             Northwest Computational Chemistry Package (NWChem) 7.2.3
+    nwchem branch   = 7.2.3
+                             Geometry "geometry" -> ""
+                             -------------------------
+
+ Output coordinates in angstroms (scale by  1.889725989 to convert to a.u.)
+
+  No.       Tag          Charge          X              Y              Z
+ ---- ---------------- ---------- -------------- -------------- --------------
+    1 C                    6.0000     0.01855977     0.13425447     0.67200207
+    2 N                    7.0000     0.80766334    -0.03822204    -0.19035561
+    3 H                    1.0000    -0.75648620    -0.03730637    -0.18699005
+
+      Atomic Mass 
+ Summary of "ao basis" -> "" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ *                         def2-svpd                  on all atoms 
+
+                      Basis "ao basis" -> "ao basis" (spherical)
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.170114821426
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.170114820415
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+@ Step       Energy      Delta E   Gmax     Grms     Xrms     Xmax   Walltime
+@ ---- ---------------- -------- -------- -------- -------- -------- --------
+@    0     -93.17011482  0.0D+00  0.02576  0.01190  0.00000  0.00000      5.3
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.169839920333
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+@    1     -93.16983992  2.7D-04  0.01559  0.00901  0.01276  0.03000      6.0
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.169110014886
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+@    2     -93.16911001  7.3D-04  0.01350  0.00769  0.01035  0.01991      6.7
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.168472451653
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+@    3     -93.16847245  6.4D-04  0.01119  0.00648  0.01000  0.01803      7.3
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.167946358067
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+@    4     -93.16794636  5.3D-04  0.00916  0.00523  0.01001  0.01841      8.0
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.167533746391
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+@    5     -93.16753375  4.1D-04  0.00684  0.00396  0.01000  0.01830      8.6
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.167237009349
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+@    6     -93.16723701  3.0D-04  0.00456  0.00266  0.01000  0.01847      9.3
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.167057156794
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+@    7     -93.16705716  1.8D-04  0.00222  0.00137  0.01000  0.01855     10.0
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.166994243075
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+@    8     -93.16699424  6.3D-05  0.00043  0.00024  0.01000  0.01866     10.7
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.166994279222
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+@    9     -93.16699428 -3.6D-08  0.00003  0.00002  0.00044  0.00089     11.2
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.166994284400
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+  ---- ---------------- -------- -------- -------- -------- -------- --------
+@   10     -93.16699428 -5.2D-09  0.00001  0.00000  0.00003  0.00006     11.7
+                                     ok       ok       ok       ok  
+
+
+      ----------------------
+      Optimization converged
+      ----------------------
+
+
+  Step       Energy      Delta E   Gmax     Grms     Xrms     Xmax   Walltime
+  ---- ---------------- -------- -------- -------- -------- -------- --------
+@   10     -93.16699428 -5.2D-09  0.00001  0.00000  0.00003  0.00006     11.7
+                         Geometry "geometry" -> "geometry"
+                         ---------------------------------
+
+ Output coordinates in angstroms (scale by  1.889725989 to convert to a.u.)
+
+  No.       Tag          Charge          X              Y              Z
+ ---- ---------------- ---------- -------------- -------------- --------------
+    1 C                    6.0000     0.02222044     0.14415027     0.72151769
+    2 N                    7.0000     0.72855205    -0.04249966    -0.21181979
+    3 H                    1.0000    -0.68103558    -0.04292456    -0.21504150
+
+      Atomic Mass 
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-svpd                 8       20   4s2p2d
+ N                         def2-svpd                 8       20   4s2p2d
+ H                         def2-svpd                 4        8   2s2p
+
+          Charge           :     0
+          Spin multiplicity:     1
+          Convergence on energy requested:  1.00D-07
+              XC Information
+              --------------
+                         PBE0 Method XC Functional
+                     Hartree-Fock (Exact) Exchange  0.250          
+          PerdewBurkeErnzerhof Exchange Functional  0.750          
+            Perdew 1991 LDA Correlation Functional  1.000 local    
+           PerdewBurkeErnz. Correlation Functional  1.000 non-local
+
+          Grid used for XC integration:  fine      
+             DFT-D3 Model   
+         Total DFT energy =      -93.166994283613
+  Vibrational analysis via the FX method 
+
+  See chapter 2 in "Molecular Vibrations" by Wilson, Decius and Cross
+
+  Vib: Default input used 
+
+  Nuclear Hessian passed symmetry test 
+
+
+
+ ---------------------------- Atom information ----------------------------
+     atom    #        X              Y              Z            mass
+ --------------------------------------------------------------------------
+    C        1  4.1990546D-02  2.7240451D-01  1.3634707D+00  1.2000000D+01
+    N        2  1.3767637D+00 -8.0312705D-02 -4.0028135D-01  1.4003070D+01
+    H        3 -1.2869706D+00 -8.1115648D-02 -4.0636950D-01  1.0078250D+00
+ --------------------------------------------------------------------------
+
+
+
+
+          ----------------------------------------------------
+          MASS-WEIGHTED NUCLEAR HESSIAN (Hartree/Bohr/Bohr/Kamu)
+          ----------------------------------------------------
+
+
+               1            2            3            4            5            6            7            8            9
+   ----- ----- ----- ----- -----
+    1    4.11540D+01
+    2   -7.30743D+00  2.23523D+00
+    3   -3.65301D+01  1.11784D+01  5.59017D+01
+    4   -2.95200D+01  9.03816D+00  4.51987D+01  2.81371D+01
+    5    8.42210D+00 -1.92763D+00 -9.63705D+00 -7.79246D+00  1.92255D+00
+    6    4.21163D+01 -9.63657D+00 -4.81832D+01 -3.89670D+01  9.61323D+00  4.80686D+01
+    7   -3.19729D+01 -8.47507D+00 -4.24291D+01 -3.01884D+00 -1.49026D-02 -7.69174D-02  1.21579D+02
+    8   -6.17873D+00 -5.28128D-01 -2.65055D+00 -2.14064D+00 -5.15583D-01 -2.58107D+00  2.92998D+01  3.74422D+00
+    9   -3.09396D+01 -2.65233D+00 -1.32941D+01 -1.07129D+01 -2.57941D+00 -1.29142D+01  1.46693D+02  1.87670D+01  9.40109D+01
+
+
+
+          -------------------------------------------------
+          NORMAL MODE EIGENVECTORS IN CARTESIAN COORDINATES
+          -------------------------------------------------
+                 (Frequencies expressed in cm-1)
+
+                    1           2           3           4           5           6
+ 
+ Frequency      -1131.59       -7.72       -5.17       -2.14       -0.63        2.57
+ 
+           1    -0.02189     0.00080     0.20484     0.00170     0.14398    -0.03499
+           2    -0.01559    -0.08132     0.03579    -0.16198    -0.02545     0.00403
+           3    -0.07801     0.01704     0.17385     0.03126    -0.12416     0.02325
+           4     0.06560    -0.00025     0.00326     0.00175     0.14705     0.18042
+           5     0.00419    -0.00152     0.00536    -0.21020    -0.02057     0.03671
+           6     0.02104     0.00029     0.02738     0.04094    -0.12281     0.17973
+           7    -0.65080    -0.00011     0.00257     0.00176     0.14706     0.18115
+           8     0.12733     0.93574     0.06082    -0.17270    -0.02530    -0.02612
+           9     0.63658    -0.18543     0.32072     0.03335    -0.12649    -0.13302
+
+                    7           8           9
+ 
+ Frequency          2.89     2122.97     2694.00
+ 
+           1     0.00094    -0.12959     0.04628
+           2     0.21722     0.03205     0.00912
+           3    -0.04509     0.16025     0.04568
+           4     0.00209     0.11303     0.01191
+           5    -0.15685    -0.02841     0.00137
+           6     0.03059    -0.14204     0.00685
+           7     0.00215    -0.02741    -0.71658
+           8     0.22159     0.01309    -0.12762
+           9    -0.04687     0.06548    -0.63911
+
+
+
+ ----------------------------------------------------------------------------
+ Normal Eigenvalue ||         Derivative Dipole Moments (debye/angs)
+  Mode   [cm**-1]  ||      [d/dqX]             [d/dqY]           [d/dqZ]
+ ------ ---------- || ------------------ ------------------ -----------------
+    1    -1131.588 ||      -1.091               0.239             1.197
+    2       -7.719 ||      -0.001               1.084            -0.215
+    3       -5.172 ||      -0.138               0.040             0.223
+    4       -2.139 ||       0.000               0.008            -0.002
+    5       -0.631 ||       0.002              -0.002            -0.003
+    6        2.566 ||       0.147              -0.047            -0.237
+    7        2.894 ||       0.001               0.161            -0.034
+    8     2122.968 ||       0.303               0.068             0.341
+    9     2693.999 ||       1.713               0.169             0.845
+ ----------------------------------------------------------------------------
+
+
+
+  
+  
+ ----------------------------------------------------------------------------
+ Normal Eigenvalue ||                 Infra Red Intensities
+  Mode   [cm**-1]  || [atomic units] [(debye/angs)**2] [(KM/mol)] [arbitrary]
+ ------ ---------- || -------------- ----------------- ---------- -----------
+    1    -1131.588 ||    0.116166           2.680       113.245      30.274
+    2       -7.719 ||    0.052957           1.222        51.625      13.801
+    3       -5.172 ||    0.003044           0.070         2.967       0.793
+    4       -2.139 ||    0.000003           0.000         0.003       0.001
+    5       -0.631 ||    0.000001           0.000         0.001       0.000
+    6        2.566 ||    0.003474           0.080         3.387       0.905
+    7        2.894 ||    0.001178           0.027         1.149       0.307
+    8     2122.968 ||    0.009215           0.213         8.984       2.402
+    9     2693.999 ||    0.159303           3.675       155.296      41.516
+ ----------------------------------------------------------------------------
+
+
+
+
+
+        Vibrational analysis via the FX method 
+  --- with translations and rotations projected out ---
+  --- via the Eckart algorithm                      ---
+ Projected Nuclear Hessian trans-rot subspace norm:2.2290D-32
+                         (should be close to zero!) 
+
+          --------------------------------------------------------
+          MASS-WEIGHTED PROJECTED HESSIAN (Hartree/Bohr/Bohr/Kamu)
+          --------------------------------------------------------
+
+
+               1            2            3            4            5            6            7            8            9
+   ----- ----- ----- ----- -----
+    1    4.11543D+01
+    2   -7.30734D+00  2.23530D+00
+    3   -3.65297D+01  1.11784D+01  5.59020D+01
+    4   -2.95197D+01  9.03817D+00  4.51987D+01  2.81369D+01
+    5    8.42211D+00 -1.92741D+00 -9.63708D+00 -7.79252D+00  1.92255D+00
+    6    4.21164D+01 -9.63660D+00 -4.81832D+01 -3.89673D+01  9.61323D+00  4.80687D+01
+    7   -3.19729D+01 -8.47496D+00 -4.24286D+01 -3.01904D+00 -1.48756D-02 -7.67756D-02  1.21580D+02
+    8   -6.17862D+00 -5.28741D-01 -2.65031D+00 -2.14065D+00 -5.15537D-01 -2.58111D+00  2.92994D+01  3.74616D+00
+    9   -3.09390D+01 -2.65210D+00 -1.32936D+01 -1.07129D+01 -2.57946D+00 -1.29144D+01  1.46691D+02  1.87663D+01  9.40098D+01
+
+ center of mass
+ --------------
+ x =   0.68438178 y =   0.07635731 z =   0.38306512
+
+ moments of inertia (a.u.)
+ ------------------
+          21.585071279308           2.717394121384          13.584130730674
+           2.717394121384          36.336761863536          -4.150310131020
+          13.584130730674          -4.150310131020          16.411526808724
+
+ Rotational Constants
+ --------------------
+ A=  13.655165 cm-1  ( 19.646298 K)
+ B=   1.837720 cm-1  (  2.644010 K)
+ C=   1.619735 cm-1  (  2.330385 K)
+
+
+ Temperature                      =   298.15K
+ frequency scaling parameter      =   1.0000
+
+ Zero-Point correction to Energy  =    6.883 kcal/mol  (  0.010969 au)
+ Thermal correction to Energy     =    8.660 kcal/mol  (  0.013800 au)
+ Thermal correction to Enthalpy   =    9.252 kcal/mol  (  0.014744 au)
+
+ Total Entropy                    =   52.130 cal/mol-K
+   - Translational                =   35.800 cal/mol-K (mol. weight =  27.0109)
+   - Rotational                   =   16.329 cal/mol-K (symmetry #  =        1)
+   - Vibrational                  =    0.001 cal/mol-K
+
+ Cv (constant volume heat capacity) =    5.967 cal/mol-K
+   - Translational                  =    2.979 cal/mol-K
+   - Rotational                     =    2.979 cal/mol-K
+   - Vibrational                    =    0.008 cal/mol-K
+
+
+
+          -------------------------------------------------
+          NORMAL MODE EIGENVECTORS IN CARTESIAN COORDINATES
+          -------------------------------------------------
+             (Projected Frequencies expressed in cm-1)
+
+                    1           2           3           4           5           6
+ 
+ P.Frequency    -1131.57       -0.00        0.00        0.00        0.00        0.00
+ 
+           1    -0.02189     0.21429     0.01236     0.00042    -0.01415    -0.08552
+           2    -0.01559    -0.00077     0.28630    -0.00021     0.00353    -0.00020
+           3    -0.07801     0.16867    -0.02318     0.00031     0.01752     0.10654
+           4     0.06560    -0.00344    -0.00993    -0.00028     0.01154     0.06975
+           5     0.00419     0.00072     0.00009     0.00000     0.26568    -0.00014
+           6     0.02104     0.00360     0.01719    -0.00026    -0.01546     0.22403
+           7    -0.65080    -0.00418    -0.01000    -0.00013     0.01159     0.07029
+           8     0.12733     0.06199     0.01048     0.97694    -0.00021    -0.00091
+           9     0.63658     0.32019     0.04871    -0.19446    -0.00105    -0.01031
+
+                    7           8           9
+ 
+ P.Frequency        0.00     2122.97     2693.99
+ 
+           1     0.10165    -0.12959     0.04629
+           2     0.00047     0.03205     0.00912
+           3    -0.09398     0.16025     0.04568
+           4     0.22155     0.11303     0.01191
+           5    -0.00060    -0.02841     0.00137
+           6    -0.00304    -0.14204     0.00685
+           7     0.22196    -0.02741    -0.71658
+           8    -0.03458     0.01309    -0.12762
+           9    -0.17732     0.06548    -0.63911
+
+
+
+ ----------------------------------------------------------------------------
+ Normal Eigenvalue ||    Projected Derivative Dipole Moments (debye/angs)
+  Mode   [cm**-1]  ||      [d/dqX]             [d/dqY]           [d/dqZ]
+ ------ ---------- || ------------------ ------------------ -----------------
+    1    -1131.571 ||      -1.091               0.239             1.197
+    2       -0.000 ||      -0.149               0.068             0.236
+    3        0.000 ||      -0.015              -0.183             0.062
+    4        0.000 ||      -0.000               1.074            -0.214
+    5        0.000 ||       0.018              -0.114            -0.007
+    6        0.000 ||       0.106              -0.001            -0.178
+    7        0.000 ||       0.082              -0.038            -0.130
+    8     2122.967 ||       0.303               0.068             0.341
+    9     2693.989 ||       1.713               0.169             0.845
+ ----------------------------------------------------------------------------
+
+
+
+  
+  
+ ----------------------------------------------------------------------------
+ Normal Eigenvalue ||           Projected Infra Red Intensities
+  Mode   [cm**-1]  || [atomic units] [(debye/angs)**2] [(KM/mol)] [arbitrary]
+ ------ ---------- || -------------- ----------------- ---------- -----------
+    1    -1131.571 ||    0.116165           2.680       113.244      30.274
+    2       -0.000 ||    0.003569           0.082         3.479       0.930
+    3        0.000 ||    0.001632           0.038         1.591       0.425
+    4        0.000 ||    0.051941           1.198        50.634      13.536
+    5        0.000 ||    0.000577           0.013         0.563       0.150
+    6        0.000 ||    0.001856           0.043         1.809       0.484
+    7        0.000 ||    0.001083           0.025         1.055       0.282
+    8     2122.967 ||    0.009215           0.213         8.984       2.402
+    9     2693.989 ||    0.159303           3.675       155.297      41.516
+ ----------------------------------------------------------------------------
+
+
+
+
+
+
+ ===============================================================================
+      Negative Nuclear Hessian Mode    1  Eigenvalue =  -1131.57 cm**(-1)
+ -------------------------------------------------------------------------------
+   Raw step length:  0.490 angstroms ;  The Raw step for this mode is:
+    1 C                    6.0000     0.01158486     0.00824931     0.04128369
+    2 N                    7.0000    -0.03471382    -0.00221983    -0.01113371
+    3 H                    1.0000     0.34438693    -0.06738000    -0.33686223
+
+
+  Geometry after  100.0% step for mode  1; Step length =  0.490 angstroms 
+   Maximum component (any atom: x,y, or z) displacement:  0.651
+    1 C                    6.0000     0.03380530     0.15239958     0.76280138
+    2 N                    7.0000     0.69383823    -0.04471949    -0.22295349
+    3 H                    1.0000    -0.33664865    -0.11030456    -0.55190373
+
+
+  Geometry after -100.0% step for mode  1; Step length =  0.490 angstroms 
+   Maximum component (any atom: x,y, or z) displacement:  0.651
+    1 C                    6.0000     0.01063559     0.13590096     0.68023400
+    2 N                    7.0000     0.76326587    -0.04027983    -0.20068608
+    3 H                    1.0000    -1.02542251     0.02445545     0.12182074
+
+
+  Geometry after   50.0% step for mode  1; Step length =  0.245 angstroms 
+   Maximum component (any atom: x,y, or z) displacement:  0.325
+    1 C                    6.0000     0.02801287     0.14827492     0.74215953
+    2 N                    7.0000     0.71119514    -0.04360957    -0.21738664
+    3 H                    1.0000    -0.50884212    -0.07661456    -0.38347261
+
+
+  Geometry after  -50.0% step for mode  1; Step length =  0.245 angstroms 
+   Maximum component (any atom: x,y, or z) displacement:  0.325
+    1 C                    6.0000     0.01642801     0.14002562     0.70087585
+    2 N                    7.0000     0.74590896    -0.04138974    -0.20625293
+    3 H                    1.0000    -0.85322904    -0.00923455    -0.04661038
+
+
+  Geometry after   30.7% step for mode  1; Step length =  0.151 angstroms 
+   Maximum component (any atom: x,y, or z) displacement:  0.200
+    1 C                    6.0000     0.02578065     0.14668541     0.73420481
+    2 N                    7.0000     0.71788395    -0.04318184    -0.21524135
+    3 H                    1.0000    -0.57520013    -0.06363148    -0.31856449
+
+
+  Geometry after  -30.7% step for mode  1; Step length =  0.151 angstroms 
+   Maximum component (any atom: x,y, or z) displacement:  0.200
+    1 C                    6.0000     0.01866024     0.14161513     0.70883057
+    2 N                    7.0000     0.73922014    -0.04181747    -0.20839822
+    3 H                    1.0000    -0.78687103    -0.02221763    -0.11151850
+
+
+  Geometry after   15.4% step for mode  1; Step length =  0.075 angstroms 
+   Maximum component (any atom: x,y, or z) displacement:  0.100
+    1 C                    6.0000     0.02400054     0.14541784     0.72786125
+    2 N                    7.0000     0.72321800    -0.04284075    -0.21353057
+    3 H                    1.0000    -0.62811785    -0.05327802    -0.26680299
+
+
+  Geometry after  -15.4% step for mode  1; Step length =  0.075 angstroms 
+   Maximum component (any atom: x,y, or z) displacement:  0.100
+    1 C                    6.0000     0.02044034     0.14288270     0.71517413
+    2 N                    7.0000     0.73388610    -0.04215856    -0.21010900
+    3 H                    1.0000    -0.73395330    -0.03257109    -0.16328000
+
+
+ vib:animation  F
+
+ Task  times  cpu:        4.1s     wall:        4.5s
+
+          E. Apra, E. J. Bylaska, W. A. de Jong, N. Govind, K. Kowalski,
+       T. P. Straatsma, M. Valiev, H. J. J. van Dam, Y. Alexeev, J. Anchell,
+       V. Anisimov, F. W. Aquino, R. Atta-Fynn, J. Autschbach, N. P. Bauman,
+     J. C. Becca, D. E. Bernholdt, K. Bhaskaran-Nair, S. Bogatko, P. Borowski,
+         J. Boschen, J. Brabec, A. Bruner, E. Cauet, Y. Chen, G. N. Chuev,
+      C. J. Cramer, J. Daily, M. J. O. Deegan, T. H. Dunning Jr., M. Dupuis,
+   K. G. Dyall, G. I. Fann, S. A. Fischer, A. Fonari, H. Fruchtl, L. Gagliardi,
+      J. Garza, N. Gawande, S. Ghosh, K. Glaesemann, A. W. Gotz, J. Hammond,
+       V. Helms, E. D. Hermes, K. Hirao, S. Hirata, M. Jacquelin, L. Jensen,
+   B. G. Johnson, H. Jonsson, R. A. Kendall, M. Klemm, R. Kobayashi, V. Konkov,
+      S. Krishnamoorthy, M. Krishnan, Z. Lin, R. D. Lins, R. J. Littlefield,
+      A. J. Logsdail, K. Lopata, W. Ma, A. V. Marenich, J. Martin del Campo,
+   D. Mejia-Rodriguez, J. E. Moore, J. M. Mullin, T. Nakajima, D. R. Nascimento,
+    J. A. Nichols, P. J. Nichols, J. Nieplocha, A. Otero-de-la-Roza, B. Palmer,
+    A. Panyala, T. Pirojsirikul, B. Peng, R. Peverati, J. Pittner, L. Pollack,
+   R. M. Richard, P. Sadayappan, G. C. Schatz, W. A. Shelton, D. W. Silverstein,
+   D. M. A. Smith, T. A. Soares, D. Song, M. Swart, H. L. Taylor, G. S. Thomas,
+            V. Tipparaju, D. G. Truhlar, K. Tsemekhman, T. Van Voorhis,
+      A. Vazquez-Mayagoitia, P. Verma, O. Villa, A. Vishnu, K. D. Vogiatzis,
+        D. Wang, J. H. Weare, M. J. Williamson, T. L. Windus, K. Wolinski,
+        A. T. Wong, Q. Wu, C. Yang, Q. Yu, M. Zacharias, Z. Zhang, Y. Zhao,
+                                and R. J. Harrison
+                        "NWChem: Past, present, and future
+                         J. Chem. Phys. 152, 184102 (2020)
+                               doi:10.1063/5.0004997
+
+                                      AUTHORS
+                                      -------
+  E. Apra, E. J. Bylaska, N. Govind, K. Kowalski, M. Valiev, D. Mejia-Rodriguez,
+       A. Kunitsa, N. P. Bauman, A. Panyala, W. A. de Jong, T. P. Straatsma,
+   H. J. J. van Dam, D. Wang, T. L. Windus, J. Hammond, J. Autschbach, A. Woods,
+    K. Bhaskaran-Nair, J. Brabec, K. Lopata, S. A. Fischer, S. Krishnamoorthy,
+     M. Jacquelin, W. Ma, M. Klemm, O. Villa, Y. Chen, V. Anisimov, F. Aquino,
+     S. Hirata, M. T. Hackler, E. Hermes, L. Jensen, J. E. Moore, J. C. Becca,
+      V. Konjkov, T. Risthaus, M. Malagoli, A. Marenich, A. Otero-de-la-Roza,
+        J. Mullin, P. Nichols, R. Peverati, J. Pittner, Y. Zhao, P.-D. Fan,
+        A. Fonari, M. J. Williamson, R. J. Harrison, J. R. Rehr, M. Dupuis,
+     D. Silverstein, D. M. A. Smith, J. Nieplocha, V. Tipparaju, M. Krishnan,
+     B. E. Van Kuiken, A. Vazquez-Mayagoitia, M. Swart, Q. Wu, T. Van Voorhis,
+     A. A. Auer, M. Nooijen, L. D. Crosby, E. Brown, G. Cisneros, G. I. Fann,
+   H. Fruchtl, J. Garza, K. Hirao, R. A. Kendall, J. A. Nichols, K. Tsemekhman,
+    K. Wolinski, J. Anchell, D. E. Bernholdt, P. Borowski, T. Clark, D. Clerc,
+   H. Dachsel, M. J. O. Deegan, K. Dyall, D. Elwood, E. Glendening, M. Gutowski,
+   A. C. Hess, J. Jaffe, B. G. Johnson, J. Ju, R. Kobayashi, R. Kutteh, Z. Lin,
+   R. Littlefield, X. Long, B. Meng, T. Nakajima, S. Niu, L. Pollack, M. Rosing,
+   K. Glaesemann, G. Sandrone, M. Stave, H. Taylor, G. Thomas, J. H. van Lenthe,
+                               A. T. Wong, Z. Zhang.
+
+ Total times  cpu:       14.0s     wall:       16.5s

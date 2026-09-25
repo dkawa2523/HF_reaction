@@ -1,0 +1,165 @@
+Couldn't find configuration file. Expected it at '/home/user/.pysisyphusrc'.
+                           d8b                            888
+                           Y8P                            888
+                                                          888
+88888b.  888  888 .d8888b  888 .d8888b  888  888 88888b.  88888b.  888  888 .d8888b
+888 "88b 888  888 88K      888 88K      888  888 888 "88b 888 "88b 888  888 88K
+888  888 888  888 "Y8888b. 888 "Y8888b. 888  888 888  888 888  888 888  888 "Y8888b.
+888 d88P Y88b 888      X88 888      X88 Y88b 888 888 d88P 888  888 Y88b 888      X88
+88888P"   "Y88888  88888P' 888  88888P'  "Y88888 88888P"  888  888  "Y88888  88888P'
+888           888                            888 888
+888      Y8b d88P                       Y8b d88P 888
+888       "Y88P"                         "Y88P"  888                            
+
+Version 1.0.0 (Python 3.12.3, NumPy 2.4.6, SciPy 1.18.0)
+Executed at Fri Aug 14 15:47:13 2026 on 'DESKTOP-621T1UP'
+Platform: Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39
+Interpreter: /home/user/.venvs/hfauto-prod/bin/python
+Current working directory: /mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline/runs/hcn_irc_v5/work
+
+If pysisyphus benefitted your research please cite:
+
+	https://doi.org/10.1002/qua.26390
+
+Good luck!
+
+{'calc': {'charge': 0,
+          'keywords': {'basis__spherical': True, 'dft__disp': 'vdw 3'},
+          'model': {'basis': 'def2-svpd', 'method': 'pbe0'},
+          'mult': 1,
+          'pal': 4,
+          'program': 'nwchem',
+          'type': 'qcengine'},
+ 'geom': {'coord_kwargs': {},
+          'fn': '/mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline/runs/hcn_saddle_v3/work/saddle_frequency/final.xyz',
+          'type': 'cart'},
+ 'irc': {'backward': True,
+         'dump_every': 5,
+         'forward': True,
+         'max_cycles': 150,
+         'rms_grad_thresh': 0.0005,
+         'step_length': 0.08,
+         'type': 'eulerpc'}}
+
+Read 1 geometry.
+                                ###############
+                                # RUNNING IRC #
+                                ###############
+
+Convergence thresholds (non mass-weighted gradient):
+	     rms(|gradient|) <= 0.000500 E_h a_0⁻¹
+	             Δenergy <= 0.000001 E_h
+
+Calculating energy and gradient at TS.
+Transition vector is mode 0 with wavenumber -84.37 cm⁻¹.
+Crossover temperature T_c: 19.32 K
+Energy-based (ΔE=0.001 au) initial displacement from the TS using 2rd derivatives.
+Initial step lengths (not mass-weighted):
+	 Forward: 2.5150 au
+	Backward: 2.5150 au
+IRC length in mw. coords, max(|grad|) and rms(grad) in unweighted coordinates.
+
+                               #################
+                               # IRC - FORWARD #
+                               #################
+
+Requested energy lowering:  0.0010 au ( 2.63 kJ mol⁻¹)
+   Actual energy lowering: -0.1134 au (-297.82 kJ mol⁻¹)
+                        Δ:  0.1144 au ( 300.44 kJ mol⁻¹)
+Displaced geometry is higher in energy compared to TS!
+
+
+                Step    IRC length       dE / au   max(|grad|)     rms(grad)
+        ---------------------------------------------------------------------
+                   0      2.729871     -0.001211      0.087693      0.050812 
+        Bonds broken: [c0-h2], [n1-h2]
+                   1      2.735027     -0.001223      0.087537      0.050919 
+                   2      2.740503     -0.001220      0.087388      0.051027 
+                   3      2.746297     -0.001215      0.087246      0.051138 
+                   4      2.752406     -0.001210      0.087111      0.051249 
+                   5      2.758829     -0.001204      0.086984      0.051363 
+                   6      2.765564     -0.001197      0.086865      0.051477 
+                   7      2.772608     -0.001189      0.086754      0.051592 
+                   8      2.779960     -0.001181      0.086649      0.051707 
+                   9      2.787618     -0.001172      0.086552      0.051823 
+                  10      2.795578     -0.001161      0.086462      0.051938 
+                  11      2.803838     -0.001150      0.086427      0.052053 
+                  12      2.812397     -0.001138      0.086768      0.052167 
+                  13      2.821250     -0.001125      0.087093      0.052280 
+                  14      2.830396     -0.001111      0.087400      0.052391 
+                  15      2.839831     -0.001096      0.087691      0.052501 
+                  16      2.849554     -0.001081      0.087963      0.052609 
+                  17      2.859560     -0.001064      0.088217      0.052714 
+                  18      2.869847     -0.001046      0.088452      0.052818 
+                  19      2.880412     -0.001027      0.088667      0.052918 
+                  20      2.891251     -0.001008      0.088863      0.053016 
+                  21      2.902362     -0.000987      0.089038      0.053110 
+                  22      2.913742     -0.000966      0.089193      0.053201 
+                  23      2.925386     -0.000943      0.089326      0.053288 
+                  24      2.937293     -0.000920      0.089438      0.053372 
+                  25      2.949458     -0.000895      0.089528      0.053451 
+                  26      2.961878     -0.000870      0.089596      0.053526 
+                  27      2.974550     -0.000843      0.089643      0.053597 
+                  28      2.987470     -0.000816      0.089667      0.053663 
+                  29      3.000635     -0.000788      0.089669      0.053724 
+                  30      3.014041     -0.000759      0.089649      0.053780 
+                  31      3.027686     -0.000729      0.089607      0.053831 
+                  32      3.041564     -0.000698      0.089543      0.053878 
+                  33      3.055674     -0.000667      0.089456      0.053918 
+                  34      3.070011     -0.000634      0.089348      0.053954 
+                  35      3.084572     -0.000601      0.089219      0.053984 
+                  36      3.097228     -0.000489      0.089091      0.054006 
+                  37      3.110044     -0.000464      0.088948      0.054023 
+                  38      3.123017     -0.000438      0.088789      0.054037 
+                  39      3.136145     -0.000412      0.088615      0.054046 
+                  40      3.149427     -0.000385      0.088427      0.054052 
+                  41      3.162859     -0.000359      0.088224      0.054053 
+                  42      3.176439     -0.000332      0.088007      0.054050 
+                  43      3.190166     -0.000304      0.087776      0.054043 
+                  44      3.204037     -0.000277      0.087531      0.054031 
+                  45      3.218050     -0.000249      0.087273      0.054016 
+                  46      3.232204     -0.000221      0.087002      0.053997 
+                  47      3.246494     -0.000192      0.086718      0.053973 
+                  48      3.260921     -0.000164      0.086630      0.053945 
+                  49      3.275481     -0.000135      0.086675      0.053914 
+                  50      3.290172     -0.000106      0.086719      0.053878 
+                  51      3.304992     -0.000077      0.086764      0.053838 
+                  52      3.319940     -0.000048      0.086808      0.053794 
+                  53      3.335014     -0.000019      0.086851      0.053746 
+                  54      3.350210      0.000010      0.086894      0.053694 
+        Energy increased!
+
+        Summary afer forward IRC:
+        max(gradient,cartesian):       0.086894 hartree/bohr
+        rms(gradient,cartesian):       0.053694 hartree/bohr
+                         energy:     -93.094368 hartree
+                  energy change:       0.072626 hartree (        190.68 kJ mol⁻¹)
+
+                               ##################
+                               # IRC - BACKWARD #
+                               ##################
+
+Requested energy lowering:  0.0010 au ( 2.63 kJ mol⁻¹)
+   Actual energy lowering: -0.0012 au (-3.08 kJ mol⁻¹)
+                        Δ:  0.0022 au ( 5.71 kJ mol⁻¹)
+Displaced geometry is higher in energy compared to TS!
+
+
+                Step    IRC length       dE / au   max(|grad|)     rms(grad)
+        ---------------------------------------------------------------------
+                   0     -2.720190      0.000475      0.405460      0.189230 
+        Bond broken: [n1-h2]
+        Energy increased!
+
+        Summary afer backward IRC:
+        max(gradient,cartesian):       0.405460 hartree/bohr
+        rms(gradient,cartesian):       0.189230 hartree/bohr
+                         energy:     -93.165345 hartree
+                  energy change:       0.001649 hartree (          4.33 kJ mol⁻¹)
+
+        Final IRC summary:
+         Start (finished_first):     -93.165345 hartree (         +4.33 kJ mol⁻¹)
+                             TS:     -93.166994 hartree (         +0.00 kJ mol⁻¹)
+            End (finished_last):     -93.094368 hartree (       +190.68 kJ mol⁻¹)
+        
+pysisyphus run took 0:03:55 h.

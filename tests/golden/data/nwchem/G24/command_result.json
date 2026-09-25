@@ -1,0 +1,13 @@
+{
+  "command": [
+    "/home/user/.local/bin/nwchem",
+    "nwchem_neb.nw"
+  ],
+  "cwd": "runs/hono_isomerization_v1/06_ts-search/rxn_candidate_dft_998cc65513/attempt_00_nwchem_neb/neb",
+  "returncode": -15,
+  "stdout_path": "runs/hono_isomerization_v1/06_ts-search/rxn_candidate_dft_998cc65513/attempt_00_nwchem_neb/neb/nwchem_neb.out",
+  "stderr_path": "runs/hono_isomerization_v1/06_ts-search/rxn_candidate_dft_998cc65513/attempt_00_nwchem_neb/neb/nwchem_neb.err",
+  "duration_s": 893.6222412586212,
+  "timed_out": false,
+  "executable": "/home/user/.local/bin/nwchem"
+}

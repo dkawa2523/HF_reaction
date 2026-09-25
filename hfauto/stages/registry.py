@@ -8,7 +8,6 @@ from __future__ import annotations
 
 STAGES: dict[str, str] = {
     "ingest": "hfauto.stages.ingest:IngestStage",
-    "enrich": "hfauto.stages.enrich:EnrichStage",
     "enumerate-states": "hfauto.stages.enumerate_states:EnumerateStatesStage",
     "detect-sites": "hfauto.stages.detect_sites:DetectSitesStage",
     "conformers": "hfauto.stages.conformers:ConformersStage",
@@ -34,7 +33,6 @@ STAGES: dict[str, str] = {
         "hfauto.stages.endpoint_seed_screen:EndpointSeedScreenStage"
     ),
     "reaction-plan": "hfauto.stages.reaction_plan:ReactionPlanStage",
-    "recover-path": "hfauto.stages.recover_path:RecoverPathStage",
     "ts-search": "hfauto.stages.ts_search:TSSearchStage",
     "path-ensemble": "hfauto.stages.path_ensemble:PathEnsembleStage",
     "path-ensemble-assess": (
@@ -55,15 +53,7 @@ STAGES: dict[str, str] = {
     "thermo-sensitivity": (
         "hfauto.stages.thermo_sensitivity:ThermoSensitivityStage"
     ),
-    "descriptors": "hfauto.stages.descriptors:DescriptorsStage",
-    "kinetics": "hfauto.stages.kinetics:KineticsStage",
-    "calibrate": "hfauto.stages.calibrate:CalibrateStage",
-    "connector-audit": "hfauto.stages.connector_audit:ConnectorAuditStage",
-    "rank": "hfauto.stages.rank:RankStage",
     "reaction-rank": "hfauto.stages.reaction_rank:ReactionRankStage",
-    "viz": "hfauto.stages.viz:VizStage",
-    "hpc-plan": "hfauto.stages.hpc_plan:HPCPlanStage",
-    "ops": "hfauto.stages.ops:OpsStage",
 }
 
 def get_stage(name: str):

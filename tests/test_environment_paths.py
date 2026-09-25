@@ -34,6 +34,17 @@ def test_production_preflight_uses_stage_owned_explicit_executables() -> None:
     }
 
 
+def test_dft_preflight_requires_nwchem_and_mpirun_only_for_nwchem() -> None:
+    config = {
+        "stages": [
+            {"name": "dft-minima", "engine": "nwchem", "settings": {"ncores": 4}},
+            {"name": "sp", "engine": "unsupported"},
+        ]
+    }
+
+    assert _configured_external_requirements(config) == {"nwchem", "mpirun"}
+
+
 def test_production_preflight_detects_crest_nci_requirements() -> None:
     config = {
         "stages": [

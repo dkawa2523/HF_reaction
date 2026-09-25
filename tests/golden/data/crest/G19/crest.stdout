@@ -1,0 +1,112 @@
+
+       ╔════════════════════════════════════════════╗
+       ║            ___ ___ ___ ___ _____           ║
+       ║           / __| _ \ __/ __|_   _|          ║
+       ║          | (__|   / _|\__ \ | |            ║
+       ║           \___|_|_\___|___/ |_|            ║
+       ║                                            ║
+       ║  Conformer-Rotamer Ensemble Sampling Tool  ║
+       ║          based on the xTB methods          ║
+       ║                                            ║
+       ╚════════════════════════════════════════════╝
+       Version 3.0.2, Sun, 25 August 20:02:44, 08/25/2024
+       commit (af7eb99) compiled by 'usr@fv-az732-492'
+
+   Cite work conducted with this code as
+
+   • P.Pracht, F.Bohle, S.Grimme, PCCP, 2020, 22, 7169-7192.
+   • S.Grimme, JCTC, 2019, 15, 2847-2862.
+   • P.Pracht, S.Grimme, C.Bannwarth, F.Bohle, S.Ehlert,
+     G.Feldmann, J.Gorges, M.Müller, T.Neudecker, C.Plett,
+     S.Spicher, P.Steinbach, P.Wesołowski, F.Zeller,
+     J. Chem. Phys., 2024, 160, 114110.
+
+   for works involving QCG cite
+
+   • S.Spicher, C.Plett, P.Pracht, A.Hansen, S.Grimme,
+     JCTC, 2022, 18 (5), 3174-3189.
+   • C.Plett, S. Grimme,
+     Angew. Chem. Int. Ed. 2023, 62, e202214477.
+
+   for works involving MECP screening cite
+
+   • P.Pracht, C.Bannwarth, JCTC, 2022, 18 (10), 6370-6385.
+
+   Original code
+     P.Pracht, S.Grimme, Universität Bonn, MCTC
+   with help from (alphabetical order):
+     C.Bannwarth, F.Bohle, S.Ehlert, G.Feldmann, J.Gorges,
+     S.Grimme, C.Plett, P.Pracht, S.Spicher, P.Steinbach,
+     P.Wesolowski, F.Zeller
+
+   Online documentation is available at
+   https://crest-lab.github.io/crest-docs/
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+   GNU Lesser General Public License (LGPL) for more details.
+
+ Command line input:
+ $ /home/user/.local/bin/crest input.xyz --gfn2 --quick --nci
+
+  --gfn2               : Use of GFN2-xTB requested.
+  --nci  : Special NCI mode for non-covalently bound complexes or clusters.
+> constraint: wall_fermi atoms: 16/all
+  radii(AA)=     5.85147     5.13569     7.00000
+       kb*T=     0.00094  exp=    50.00000
+  Automatically generated ellipsoide potential for NCI mode:
+
+> Generating logfermi wall potential for the system.
+> wscal=   1.000  wpad=   0.000  atoms: all
+> constraint: wall_fermi atoms: 16/all
+  radii(AA)=     5.85147     5.13569     7.00000
+       kb*T=     0.00094  exp=    50.00000
+
+> Setting up backup calculator ... done.
+ ----------------
+ Calculation info
+ ----------------
+> User-defined calculation level:
+ : xTB calculation via tblite lib
+ : GFN2-xTB level
+ :   Molecular charge    : 0
+ :   Fermi temperature   : 300.00000
+ :   Accuracy            : 1.00000
+ :   max SCC cycles      : 500
+
+> User-defined constraints:
+> constraint: wall_fermi atoms: 16/all
+  radii(AA)=     5.85147     5.13569     7.00000
+       kb*T=     0.00094  exp=    50.00000
+> constraint: wall_fermi atoms: 16/all
+  radii(AA)=     5.85147     5.13569     7.00000
+       kb*T=     0.00094  exp=    50.00000
+
+
+ -----------------------------
+ Initial Geometry Optimization
+ -----------------------------
+ Geometry successfully optimized.
+
+ *WARNING* Change in topology detected!
+ Topology change compared to the input affects atoms:
+ 2(C) 15(H) 16(F)
+
+ --------------------------------
+ * READ THE FOLLOWING CAREFULLY *
+ --------------------------------
+ A topology change was seen in the initial geometry optimization.
+ This could be an artifact of the chosen theory level (e.g. xTB).
+ You can check the optimization trajectory in the "crestopt.log" file.
+ Try either of these options:
+
+    A) Pre-optimize your input seperately and use the optimized
+       structure as input for CREST. (Only recommended if structure is intact)
+
+    B) Restart the same CREST call as before, but ignore the topology change
+       by using the "--noreftopo" keyword. (May produce artifacts)
+
+    C) Fix the initial input geometry by introducing bond length constraints
+       or by using a method with fixed topology (e.g. GFN-FF).
+

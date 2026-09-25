@@ -1,0 +1,501 @@
+[
+ {
+  "id": "G01",
+  "files": [
+   {
+    "golden": "nwchem/G01/nwchem.out.gz",
+    "source": "hono_isomerization_v3/06_ts-search/rxn_candidate_dft_998cc65513/attempt_00_nwchem_neb/saddle_freq/nwchem.out",
+    "source_sha256": "ae0b1c317605c9ae49684e21872559054cf2b43d93f8c9eff36873ee127211b2",
+    "method": "nwchem"
+   }
+  ],
+  "expect": "振動ブロックが 2 つある(ZPE 0.019317 と 0.018747)。パーサは最終ブロック(−680.11)だけを採る。この出力は freq ジョブとしては不正(ブロック数 ≠ 1)で、`INCOMPLETE_OUTPUT` になる",
+  "refs": [
+   "CH-38"
+  ]
+ },
+ {
+  "id": "G02",
+  "files": [
+   {
+    "golden": "goodvibes/G02/hono_cis.csv",
+    "source": "hono_isomerization_v3/09_thermo/backend_runs/combined_thermo_source_spc_hono_cis/Goodvibes.csv",
+    "source_sha256": "82ce8d89ea9d9e9d8a30782860ef993f8cb7e774677a842a4757c9aafdac7e6d",
+    "method": "copy"
+   },
+   {
+    "golden": "goodvibes/G02/hono_trans.csv",
+    "source": "hono_isomerization_v3/09_thermo/backend_runs/combined_thermo_source_spc_hono_trans/Goodvibes.csv",
+    "source_sha256": "e49d768db5cbd1b30efe0712dc644dbddf8c39352a43b1f12073b6bd43a18115",
+    "method": "copy"
+   },
+   {
+    "golden": "goodvibes/G02/ts.csv",
+    "source": "hono_isomerization_v3/09_thermo/backend_runs/combined_thermo_source_ts_candidate_dft_basins_a4130bf1b004a237/Goodvibes.csv",
+    "source_sha256": "e270d5a14f3e9a68c2987c6d4d2f86ba99ef3e3f8f0ee41dbe0909242d204d33",
+    "method": "copy"
+   }
+  ],
+  "expect": "TS の zpe 0.0375115 は 0.985 × 0.018747 と一致しない → `thermo_consistent` は不合格。24.11 は再現しない",
+  "refs": [
+   "CH-38"
+  ]
+ },
+ {
+  "id": "G03",
+  "files": [
+   {
+    "golden": "nwchem/G03/hono_trans.out",
+    "source": "hono_isomerization_v1/02_dft-minima/spc_hono_trans/nwchem.out",
+    "source_sha256": "53aa86826bccaeb48d8c8731eccdb010b6a5baaa708c07b26b01dd5d2d05fe6c",
+    "method": "nwchem"
+   },
+   {
+    "golden": "nwchem/G03/hono_cis.out",
+    "source": "hono_isomerization_v1/02_dft-minima/spc_hono_cis/nwchem.out",
+    "source_sha256": "07d0c483d112de106c38ad4a1f9a60bda1da9da01f208b90039979ce6eb3b762",
+    "method": "nwchem"
+   },
+   {
+    "golden": "nwchem/G03/hono_trans_final.xyz",
+    "source": "hono_isomerization_v1/02_dft-minima/spc_hono_trans/final.xyz",
+    "source_sha256": "5ba7dd02c571c89403ea895c184762fa73e38ad3cfd1a2872489bf9211b94cc6",
+    "method": "copy"
+   },
+   {
+    "golden": "nwchem/G03/hono_cis_final.xyz",
+    "source": "hono_isomerization_v1/02_dft-minima/spc_hono_cis/final.xyz",
+    "source_sha256": "09b72de7b3620fbca4d948a50e854b43dffec54282aa01b179648ee337243ffc",
+    "method": "copy"
+   }
+  ],
+  "expect": "G01 と合わせて ΔE‡ 13.62。ΔG‡ ≈ 12.2 kcal/mol(GoodVibes を実行するテストは `real`)",
+  "refs": [
+   "CH-38"
+  ]
+ },
+ {
+  "id": "G04",
+  "files": [
+   {
+    "golden": "nwchem/G04/hnc.out",
+    "source": "hcn_readuct_nwchem_validation/04_dft-minima/spc_discovered_product_620510d259663999/nwchem.out",
+    "source_sha256": "e94e2be35f1ec62eb5a40f936cc29386a97a5824a2217aa9adfc66142f1c1bdb",
+    "method": "nwchem"
+   }
+  ],
+  "expect": "NWChem の RRHO は回転エントロピーが負になる → 使わない。Evidence はパースでき、直線分子として n_external = 5",
+  "refs": [
+   "CH-39"
+  ]
+ },
+ {
+  "id": "G05",
+  "files": [
+   {
+    "golden": "nwchem/G05/hcn.out",
+    "source": "hcn_readuct_nwchem_validation/04_dft-minima/spc_hcn/nwchem.out",
+    "source_sha256": "d28276b060b9a38e0b14bf18011958d3a1cedf26d161cfe7c162860656ae3394",
+    "method": "nwchem"
+   }
+  ],
+  "expect": "直線分子で、振動数は 3N−5 本",
+  "refs": [
+   "CH-39"
+  ]
+ },
+ {
+  "id": "G06",
+  "files": [
+   {
+    "golden": "goodvibes/G06/hnc.csv",
+    "source": "hcn_goodvibes_v4/11_thermo/backend_runs/combined_thermo_source_spc_discovered_product_620510d259663999/Goodvibes.csv",
+    "source_sha256": "078fe2c4eeae6e5b83c8ec4f72fbd17d0e2e8e8cf036cd039b81640df751a9ca",
+    "method": "copy"
+   },
+   {
+    "golden": "goodvibes/G06/hcn.csv",
+    "source": "hcn_goodvibes_v4/11_thermo/backend_runs/combined_thermo_source_spc_hcn/Goodvibes.csv",
+    "source_sha256": "670e3d649d3370272d25270291a71a4076e859c6f665fdbc5a3111dd21333dbb",
+    "method": "copy"
+   },
+   {
+    "golden": "goodvibes/G06/ts.csv",
+    "source": "hcn_goodvibes_v4/11_thermo/backend_runs/combined_thermo_source_ts_candidate_620510d259663999/Goodvibes.csv",
+    "source_sha256": "f01952b3bf552bf1bb035bf07e0e7af6cd69f39ae9183e6b2eea7f78996398e3",
+    "method": "copy"
+   }
+  ],
+  "expect": "ΔG_rxn 12.742、ΔG‡ 42.281 kcal/mol",
+  "refs": [
+   "CH-39"
+  ]
+ },
+ {
+  "id": "G07",
+  "files": [
+   {
+    "golden": "nwchem/G07/nwchem.out",
+    "source": "hcn_saddle_v3/work/saddle_frequency/nwchem.out",
+    "source_sha256": "a5d681f11b1940f0d872f04ddff95ea70eb4fc7d4becffa9edb9cbdef0860cae",
+    "method": "nwchem"
+   },
+   {
+    "golden": "nwchem/G07/hfauto_job.hess",
+    "source": "hcn_saddle_v3/work/saddle_frequency/hfauto_job.hess",
+    "source_sha256": "3fa5e0bdf21ed86b8620b3c92d4ef221ea263332c3ce149ac1746bd42259bcb2",
+    "method": "copy"
+   },
+   {
+    "golden": "nwchem/G07/final.xyz",
+    "source": "hcn_saddle_v3/work/saddle_frequency/final.xyz",
+    "source_sha256": "9ee3c0e571c911b2c9e8e74474a5e11a997cb6c39ddc2a70193fb5753fe2e196",
+    "method": "copy"
+   }
+  ],
+  "expect": "`.hess` から**同位体質量**で射影した振動数が、NWChem の値(−1131.57)と 1 cm⁻¹ 以内で一致する。`frame_residual` はおよそ 6e-6(診断値の確認だけ)。`is_first_order_saddle` に合格する",
+  "refs": [
+   "CH-26",
+   "CH-34"
+  ]
+ },
+ {
+  "id": "G08",
+  "files": [
+   {
+    "golden": "nwchem/G08/hfauto_job.hess",
+    "source": "m3_tma_p0_seed_hessian_001/frequency/hfauto_job.hess",
+    "source_sha256": "f89a88790df95c48580f6e6c6b095f9b75893c98d77b976d7a163e6ed12ae5c5",
+    "method": "copy"
+   },
+   {
+    "golden": "nwchem/G08/nwchem.nw",
+    "source": "m3_tma_p0_seed_hessian_001/frequency/nwchem.nw",
+    "source_sha256": "9a7de9ca40a89125facb7b646ada27c108d8c954aa2bb94c6ecd3f8618f2873e",
+    "method": "copy"
+   }
+  ],
+  "expect": "射影後の虚振動は**本数 4 だけを検査する**(非停留点なので値は NWChem と約 30 cm⁻¹ ずれる)。`frame_residual` は大きい(約 1e-2)が、ゲートには使わない",
+  "refs": [
+   "CH-26",
+   "chem 2"
+  ]
+ },
+ {
+  "id": "G09",
+  "files": [
+   {
+    "golden": "pysisyphus/G09/pysis_irc.out",
+    "source": "hcn_irc_v5/work/pysis_irc.out",
+    "source_sha256": "45805f49dae8dde4e744511c0520aba05aa1851a87905fd7c5cdf859f59f7ae5",
+    "method": "copy"
+   }
+  ],
+  "expect": "両分岐が TS より上にある → 分岐の軌跡として `connection` は不合格",
+  "refs": [
+   "CH-03"
+  ]
+ },
+ {
+  "id": "G10",
+  "files": [
+   {
+    "golden": "nwchem/G10/irc_000.001.qce_nwchem_stdout",
+    "source": "hcn_irc_v5/work/qm_calcs/irc_000.001.qce_nwchem_stdout",
+    "source_sha256": "09e875cea797cfb7b6f151b264c31a18a5a98c61174bf02b744952fb6e002669",
+    "method": "nwchem"
+   }
+  ],
+  "expect": "NWChem パーサが grid medium を観測する → xfine を要求した MethodSpec に対して `level_mismatches` が空でない。入力デッキと出力の初期構造が剛体回転でずれている → frame 検査で不合格",
+  "refs": [
+   "CH-01",
+   "CH-02"
+  ]
+ },
+ {
+  "id": "G11",
+  "files": [
+   {
+    "golden": "pysisyphus/G11/pysis_irc.out",
+    "source": "m3_real_qm_ammonia_inversion_004/05_irc/rxn_ammonia_inversion/pysis_irc.out",
+    "source_sha256": "73cd55dd408bcec1d896e68eba01fa4745cded869fcf7a729d3969c7703c0c75",
+    "method": "copy"
+   }
+  ],
+  "expect": "後退側が step 0 で上昇している → 不合格",
+  "refs": [
+   "CH-03"
+  ]
+ },
+ {
+  "id": "G12",
+  "files": [
+   {
+    "golden": "pysisyphus/G12/pysis_irc.out",
+    "source": "hono_isomerization_v3/07_irc/rxn_candidate_dft_basins_a4130bf1b004a237/pysis_irc.out",
+    "source_sha256": "deaeabf64de031c88b51b8c091aae9210ade3f79678362b16bb2779aec3e0bed",
+    "method": "copy"
+   },
+   {
+    "golden": "pysisyphus/G12/backward_final.xyz",
+    "source": "hono_isomerization_v3/07_irc/rxn_candidate_dft_basins_a4130bf1b004a237/backward_endpoint_optimization/final.xyz",
+    "source_sha256": "0287f414ed8d4bd7dc78cd622fcab80ce9a44b8fac2b349139590aefcf41dde8",
+    "method": "copy"
+   },
+   {
+    "golden": "pysisyphus/G12/forward_final.xyz",
+    "source": "hono_isomerization_v3/07_irc/rxn_candidate_dft_basins_a4130bf1b004a237/forward_endpoint_optimization/final.xyz",
+    "source_sha256": "021cf58ee651066fa12f4b0f8823502abae1db2ba78ffb5fcdb6f002fdd2fe9e",
+    "method": "copy"
+   }
+  ],
+  "expect": "降下の条件は合格するが、割付けは 4 通りとも閾値内 → 一意性で不合格",
+  "refs": [
+   "CH-03",
+   "CH-04"
+  ]
+ },
+ {
+  "id": "G13",
+  "files": [
+   {
+    "golden": "nwchem/G13/nwchem_string.out.gz",
+    "source": "m3_tma_path_ensemble_001/rxn_tma_hf2_proton_reorganization/images_11/string/nwchem_string.out",
+    "source_sha256": "86089438340fd9c943d87d1689b138ac1a16e104dbbb01c5c7036459061584e6",
+    "method": "nwchem"
+   }
+  ],
+  "expect": "gmax が 9.14e-4 から 9.15e-3 に悪化している → `string_converged` は False",
+  "refs": [
+   "CH-08"
+  ]
+ },
+ {
+  "id": "G14",
+  "files": [
+   {
+    "golden": "nwchem/G14/hfauto_neb.neb_epath.gz",
+    "source": "hono_isomerization_v3/06_ts-search/rxn_candidate_dft_998cc65513/attempt_00_nwchem_neb/neb/hfauto_neb.neb_epath",
+    "source_sha256": "a5b63a770d2923302d629f63b910c5b22191fbd3f88dea17a315f649cd9499f5",
+    "method": "copy"
+   }
+  ],
+  "expect": "最後の 58 反復で Xmax = 0 → `stagnated` は True",
+  "refs": [
+   "CH-09"
+  ]
+ },
+ {
+  "id": "G15",
+  "files": [
+   {
+    "golden": "nwchem/G15/hfauto_neb.neb_final.xyz",
+    "source": "hcn_ts_irc_validation/07_ts-search/rxn_candidate_620_a0961220a0/attempt_00_nwchem_neb/neb/hfauto_neb.neb_final.xyz",
+    "source_sha256": "4214b611472d0d42622e3dad09726edb59e49b6c89c42031167e7173a4297647",
+    "method": "copy"
+   },
+   {
+    "golden": "nwchem/G15/hfauto_neb.neb_final_epath",
+    "source": "hcn_ts_irc_validation/07_ts-search/rxn_candidate_620_a0961220a0/attempt_00_nwchem_neb/neb/hfauto_neb.neb_final_epath",
+    "source_sha256": "b78bf89a5e442a37dd1b5fd169f5692a155b71190fc16a1404ad05594424e1ca",
+    "method": "copy"
+   }
+  ],
+  "expect": "最小の原子間距離が 0.529 Å → 初期経路の検査(0.7 Å)で不合格。同じ端点から作った IDPP は合格",
+  "refs": [
+   "CH-09"
+  ]
+ },
+ {
+  "id": "G16",
+  "files": [
+   {
+    "golden": "xtb/G16/stdout.txt.gz",
+    "source": "sio2_wet_etch_aniline_001/cases/path00_control/02_xtb_scan/segment_b_departure/stdout.log",
+    "source_sha256": "17097109334008a87521198ce35e68ddb7b3e2a25960137b51ca908dabb12275",
+    "method": "copy"
+   },
+   {
+    "golden": "xtb/G16/stderr.txt",
+    "source": "sio2_wet_etch_aniline_001/cases/path00_control/02_xtb_scan/segment_b_departure/stderr.log",
+    "source_sha256": "db41edc1c74dad5a3527d5c6e4a48bfce3c2cabc0f0ad20acb5e420ad2a68ea9",
+    "method": "copy"
+   },
+   {
+    "golden": "xtb/G16/result.json",
+    "source": "sio2_wet_etch_aniline_001/cases/path00_control/02_xtb_scan/segment_b_departure/result.json",
+    "source_sha256": "befaecad8a7992a53ada4bc7172e55c17c01a803cd4f3fff0a8b25e7bbee2d76",
+    "method": "copy"
+   }
+  ],
+  "expect": "rc=0 でも `FAILED TO CONVERGE` がある → `GEOMETRY_MAXITER`",
+  "refs": [
+   "BUG-07",
+   "CH-20"
+  ]
+ },
+ {
+  "id": "G17",
+  "files": [
+   {
+    "golden": "xtb/G17/xtb.out",
+    "source": "amine_hf_pilot_hf1_hf3_v3_discovery/04_preopt/spc_NH3_HF1_seed00_nci_0/attempt_00/xtb.out",
+    "source_sha256": "a3bdb2fe7ad1e1ce87e491695b8e3298b1d3ebaeba7fa8ba33c6c2ba892295c5",
+    "method": "copy"
+   },
+   {
+    "golden": "xtb/G17/xtbopt.xyz",
+    "source": "amine_hf_pilot_hf1_hf3_v3_discovery/04_preopt/spc_NH3_HF1_seed00_nci_0/attempt_00/xtbopt.xyz",
+    "source_sha256": "75f74a46218eac8f3f2f226e44fa184350223f19758a3b9a3ea07965922473ca",
+    "method": "copy"
+   }
+  ],
+  "expect": "正常に収束している",
+  "refs": []
+ },
+ {
+  "id": "G18",
+  "files": [
+   {
+    "golden": "crest/G18/crest.stdout",
+    "source": "amine_hf_pilot_hf1_hf3_v3/03_build-complexes/crest_nci/TMA_HF2/TMA_HF2_seed00/attempt_00/spc_TMA_HF2_seed00/crest/crest.stdout",
+    "source_sha256": "2747d8cd583257b7ecb9777b7135525dd29f27ea20bb35d74089c8b17a970d48",
+    "method": "copy"
+   },
+   {
+    "golden": "crest/G18/crest.energies",
+    "source": "amine_hf_pilot_hf1_hf3_v3/03_build-complexes/crest_nci/TMA_HF2/TMA_HF2_seed00/attempt_00/spc_TMA_HF2_seed00/crest/crest.energies",
+    "source_sha256": "4eece63749de2e6a4c27bac5ba1b4cff8637eb9cb388453f2ac2ea0231e43738",
+    "method": "copy"
+   },
+   {
+    "golden": "crest/G18/crest_conformers.xyz",
+    "source": "amine_hf_pilot_hf1_hf3_v3/03_build-complexes/crest_nci/TMA_HF2/TMA_HF2_seed00/attempt_00/spc_TMA_HF2_seed00/crest/crest_conformers.xyz",
+    "source_sha256": "6430b88cfb6bfa5822e5b51cdba36a6e9c5dc21c91e3c39aa7d2b94a4d6c1c8c",
+    "method": "copy"
+   }
+  ],
+  "expect": "配座数とエネルギーが読める。欠損は None になる",
+  "refs": [
+   "BUG-08"
+  ]
+ },
+ {
+  "id": "G19",
+  "files": [
+   {
+    "golden": "crest/G19/crest.stdout",
+    "source": "amine_hf_pilot_hf1_hf3_v1/03_build-complexes/crest_nci/ANL_HF1/mol00002_state000/crest/crest.stdout",
+    "source_sha256": "8090bfeee9c23c9a75a0b3f84a65a68413786f17bdd9c965ab312cb8e0591197",
+    "method": "copy"
+   }
+  ],
+  "expect": "トポロジー停止として分類される",
+  "refs": [
+   "CH-18"
+  ]
+ },
+ {
+  "id": "G20",
+  "files": [
+   {
+    "golden": "readuct/G20/pipeline.stdout.txt",
+    "source": "amine_hf_pilot_hf1_hf3_v3_discovery/pipeline.stdout.log",
+    "source_sha256": "443128fd5f7064d7a03ac09fee04b3a0010435adcdceecd6d6770e6cf3975636",
+    "method": "readuct_vib_blocks"
+   },
+   {
+    "golden": "readuct/G20/reaction_discovery_attempts.jsonl",
+    "source": "amine_hf_pilot_hf1_hf3_v3_discovery/07_explore-reactions/reaction_discovery_attempts.jsonl",
+    "source_sha256": "f6b2e90d45679b2f858668131a3190fbf9199c4405eda316573602fa10f4223d",
+    "method": "jsonl_imaginary_rows"
+   }
+  ],
+  "expect": "8 件とも虚振動は 1 本(−1173.2 〜 −239.2)",
+  "refs": [
+   "CH-26"
+  ]
+ },
+ {
+  "id": "G21",
+  "files": [
+   {
+    "golden": "nwchem/G21/water_reference.out",
+    "source": "same_basin_water_v1/01_dft-minima/spc_water_reference/nwchem.out",
+    "source_sha256": "9cf710458f7a55a8e08fb5655ca418d01e279a68f20493c6b2ec7afebb548051",
+    "method": "nwchem"
+   },
+   {
+    "golden": "nwchem/G21/water_distorted.out",
+    "source": "same_basin_water_v1/01_dft-minima/spc_water_distorted/nwchem.out",
+    "source_sha256": "b2d0eecc22baa96f1c2ea96914d72b53feeda6b3f990a29ae2d9d90133db53a5",
+    "method": "nwchem"
+   },
+   {
+    "golden": "nwchem/G21/water_reference_final.xyz",
+    "source": "same_basin_water_v1/01_dft-minima/spc_water_reference/final.xyz",
+    "source_sha256": "c4dba9788fa9b52b2d295c7c5159138a6db2fe05400049faeb24216adec28c01",
+    "method": "copy"
+   },
+   {
+    "golden": "nwchem/G21/water_distorted_final.xyz",
+    "source": "same_basin_water_v1/01_dft-minima/spc_water_distorted/final.xyz",
+    "source_sha256": "53fbcb943a6157eeb93c73e2466568e7b6213470d13a8556a0358b417c6d3865",
+    "method": "copy"
+   }
+  ],
+  "expect": "`compare_minima` は same(RMSD 8e-6 Å、ΔE 2.6e-10 Eh)",
+  "refs": []
+ },
+ {
+  "id": "G22",
+  "files": [
+   {
+    "golden": "nwchem/G22/nwchem.out",
+    "source": "amine_hf_pilot_dft_followup_v1/00_dft-minima/spc_NH3_HF3_seed00_nci_0/nwchem.out",
+    "source_sha256": "9fdfef4c269c7871587c92ffd9cd4a3932d6705c29254722368a65cfc5a9a476",
+    "method": "head400_tail200"
+   },
+   {
+    "golden": "nwchem/G22/command_result.json",
+    "source": "amine_hf_pilot_dft_followup_v1/00_dft-minima/spc_NH3_HF3_seed00_nci_0/command_result.json",
+    "source_sha256": "7f78fe5744efa6f4aea810b6c332d7bace426437d46b133efe2e62a8e9be697c",
+    "method": "copy"
+   }
+  ],
+  "expect": "rc 124 → `TIMEOUT`。継続に使うファイルの一覧が得られる",
+  "refs": [
+   "AR-08"
+  ]
+ },
+ {
+  "id": "G23",
+  "files": [
+   {
+    "golden": "nwchem/G23/nwchem.out.gz",
+    "source": "m3_tma_mode3_saddle_001/work/saddle_frequency/nwchem.out",
+    "source_sha256": "f026b7621a8594ad260174c6ef08a4915708d3228099253e829a363d92581a3a",
+    "method": "nwchem"
+   }
+  ],
+  "expect": "`GEOMETRY_MAXITER`。失敗した saddle の Hessian を TS として公開しない",
+  "refs": [
+   "AR-26"
+  ]
+ },
+ {
+  "id": "G24",
+  "files": [
+   {
+    "golden": "nwchem/G24/command_result.json",
+    "source": "hono_isomerization_v1/06_ts-search/rxn_candidate_dft_998cc65513/attempt_00_nwchem_neb/neb/command_result.json",
+    "source_sha256": "9c05a5ff9897be2b717474172ceb191c719f61e1158813f6ebedea22cca0d8bb",
+    "method": "copy"
+   }
+  ],
+  "expect": "rc −15 → 中断(`NONZERO_EXIT`)として分類される",
+  "refs": [
+   "AR-26"
+  ]
+ }
+]

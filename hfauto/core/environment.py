@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import platform
-import shutil
 import sys
 from collections.abc import Mapping
 from importlib import import_module, metadata
@@ -17,11 +16,6 @@ PYTHON_DISTRIBUTIONS = {
     "pandas": "pandas",
     "numpy": "numpy",
     "rdkit": "rdkit",
-    "requests": "requests",
-    "bs4": "beautifulsoup4",
-    "plotly": "plotly",
-    "graphviz": "graphviz",
-    "cantera": "cantera",
     "goodvibes": "goodvibes",
     "pysisyphus": "pysisyphus",
     "qcengine": "qcengine",
@@ -79,14 +73,12 @@ def _configured_external_requirements(config: dict[str, Any]) -> set[str]:
                 required.update({"crest", "xtb"})
         if name == "preopt" and engine == "xtb":
             required.add("xtb")
-        if name in {"dft-minima", "sp"} and engine in {"nwchem", "orca"}:
-            required.add(str(engine))
-            if engine == "nwchem" and int((stage.get("settings", {}) or {}).get("ncores", 1)) > 1:
+        if name in {"dft-minima", "sp"} and engine == "nwchem":
+            required.add("nwchem")
+            if int((stage.get("settings", {}) or {}).get("ncores", 1)) > 1:
                 required.add("mpirun")
         if name in {"ts-search", "irc"}:
             specs = stage.get("engine_order") or [engine]
-            if any("orca" in str(spec) for spec in specs):
-                required.add("orca")
             if any("nwchem" in str(spec) for spec in specs):
                 required.add("nwchem")
                 settings = stage.get("settings", {}) or {}
@@ -118,7 +110,7 @@ def _configured_python_requirements(config: Mapping[str, Any]) -> set[str]:
         if stage.get("enabled", True)
     }
     if stage_names.intersection(
-        {"ingest", "enrich", "detect-sites", "conformers", "build-complexes"}
+        {"ingest", "detect-sites", "conformers", "build-complexes"}
     ):
         required.add("rdkit")
     uses_readuct = any(
@@ -195,7 +187,7 @@ def environment_report(config_path: str | Path | Mapping[str, Any] | None = None
     packages = [_distribution_status(k, v) for k, v in PYTHON_DISTRIBUTIONS.items()]
     configured_paths = _configured_external_paths(config)
     executables = []
-    for name in ["orca", "nwchem", "pysis", "mpirun", "xtb", "crest", "goodvibes", "dot", "sbatch", "qsub"]:
+    for name in ["nwchem", "pysis", "mpirun", "xtb", "crest", "goodvibes"]:
         path = resolve_executable(name, configured_paths.get(name))
         if name == "mpirun" and path is None:
             nwchem = resolve_executable("nwchem")
@@ -220,7 +212,6 @@ def environment_report(config_path: str | Path | Mapping[str, Any] | None = None
         "packages": packages,
         "executables": executables,
         "configured_external_paths": configured_paths,
-        "graphviz_dot": shutil.which("dot"),
         "required_python": sorted(required_python),
         "required_external": sorted(required_external),
         "missing_python": missing_python,

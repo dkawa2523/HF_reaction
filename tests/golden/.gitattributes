@@ -1,0 +1,2 @@
+# Keep engine outputs byte-identical on every checkout (no CRLF conversion).
+data/** -text

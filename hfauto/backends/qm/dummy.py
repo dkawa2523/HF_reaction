@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar
 
-from hfauto.chemistry.descriptors import hf_descriptors_from_species
 from hfauto.core.artifacts import canonical_species_id
 from hfauto.core.hashing import fingerprint_dict
 from hfauto.core.schemas.artifact import Artifact
@@ -82,7 +81,6 @@ class DummyQMEngine:
         Path(out_path).write_text(f"Dummy QM output\nE={energy}\n", encoding="utf-8")
         n_imag = 1 if species.data.get("state") == "transition_state" else 0
         imag = -1000.0 if n_imag == 1 else None
-        desc = hf_descriptors_from_species(species.data) if species.data.get("state") in {"reactant_complex", "ion_pair", "transition_state"} else {}
         hf_n = int(species.data.get("hf_n", 0) or 0)
         strength = self._strength(species)
         hf_stretch = None
@@ -111,7 +109,6 @@ class DummyQMEngine:
                 "hf_stretch_cm1": hf_stretch,
                 "dummy_assoc_kcal_mol": self._assoc_kcal(species) if species.data.get("state") == "reactant_complex" else None,
                 "dummy_barrier_kcal_mol": self._barrier_kcal(species) if species.data.get("state") == "transition_state" else None,
-                **{k: v for k, v in desc.items() if v is not None},
             },
             qc={"scf_converged": True, "geometry_converged": True, "n_imag": n_imag, "engine_is_dummy": True, "scientific_use": "software_test_only"},
         )

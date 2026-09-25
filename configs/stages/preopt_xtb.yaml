@@ -1,8 +1,0 @@
-engine: xtb
-method: gfn2-xtb
-update_species_geometry: true
-settings:
-  allow_subprocess: false
-  executable: xtb
-  gfn: 2
-  timeout_s: 3600

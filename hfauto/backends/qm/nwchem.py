@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 from hfauto.backends.qm.dummy import DummyQMEngine
-from hfauto.chemistry.descriptors import hf_descriptors_from_species
 from hfauto.chemistry.electronic_state import resolve_electronic_state
 from hfauto.chemistry.geometry_qc import geometry_qc_from_xyz
 from hfauto.chemistry.nwchem_evidence import (
@@ -1203,7 +1202,6 @@ class NWChemEngine:
         geometry_qc["final_symbols"] = (
             list(final_structure.symbols) if final_structure is not None else []
         )
-        descriptors = hf_descriptors_from_species(species_data, parsed)
         data = {
             "calc_id": calc_id,
             "species_id": canonical_species_id(species),
@@ -1220,7 +1218,6 @@ class NWChemEngine:
             "electron_count": electronic_state["electron_count"],
             **parsed,
             **{key: value for key, value in geometry_qc.items() if value is not None},
-            **{key: value for key, value in descriptors.items() if value is not None},
         }
         qc = {
             "scf_converged": bool(parsed["scf_converged"]),
