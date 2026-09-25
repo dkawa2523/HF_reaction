@@ -91,14 +91,14 @@ class ResolvedConfig(BaseModel):
 
 
 def method_ids(value: object) -> set[str]:
-    """Method ids referenced anywhere below ``value`` through ``method:`` / ``methods:`` keys."""
+    """Method ids below ``value`` under ``method`` / ``energy_method`` / ``methods`` keys."""
     if isinstance(value, list):
         return set().union(*(method_ids(item) for item in value))
     if not isinstance(value, dict):
         return set()
     found: set[str] = set()
     for key, item in value.items():
-        if key == "method" and isinstance(item, str):
+        if key in ("method", "energy_method") and isinstance(item, str):
             found.add(item)
         elif key == "methods" and isinstance(item, list):
             found.update(str(i) for i in item)

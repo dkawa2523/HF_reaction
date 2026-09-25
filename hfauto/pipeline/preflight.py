@@ -92,7 +92,10 @@ def _version_problems(tmp: Path, name: str, req: Requirements, site: EngineSite)
     if not req.version_command:
         return []
     head, *rest = req.version_command
-    executable = resolve_executable(head, site.executables.get(head))
+    explicit = site.executables.get(head)
+    if explicit is None and head == "python":  # a worker engine's own interpreter
+        explicit = site.python or sys.executable
+    executable = resolve_executable(head, explicit)
     if executable is None:
         return [f"{name}: version command {head!r} not found"]
     _, output = _run(tmp, (executable, *rest))

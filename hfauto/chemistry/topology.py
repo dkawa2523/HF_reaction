@@ -1,4 +1,5 @@
-"""Covalent topology with hysteresis, fragments, labile H, acceptors and state labels (§5.5).
+"""Covalent topology with hysteresis, fragments, labile H, acceptors, state labels (§5.5)
+and the value and gradient of a declared reaction coordinate.
 
 A pair is bonded at r ≤ 1.15 Σr_cov and non-bonded at r ≥ 1.45 Σr_cov.  In between it keeps
 its previous state; with no previous state it counts as bonded, so strong and symmetric
@@ -15,8 +16,10 @@ from collections.abc import Collection, Sequence
 import numpy as np
 
 from hfauto.chemistry.xyz import hill_formula
+from hfauto.core.records import CoordinateTerm
 
 Bond = tuple[int, int]  # (i, j) with i < j
+_FD_STEP_A = 1.0e-4  # central-difference step of a declared coordinate's gradient
 
 BOND_MAX_RATIO = 1.15
 NONBOND_MIN_RATIO = 1.45
@@ -126,6 +129,37 @@ def proton_coordinate(coords: np.ndarray, d: int, h: int, a: int) -> float:
 
     x = np.asarray(coords, dtype=float).reshape(-1, 3)
     return float(np.linalg.norm(x[d] - x[h]) - np.linalg.norm(x[a] - x[h]))
+
+
+def declared_coordinate(terms: Sequence[CoordinateTerm], x: np.ndarray) -> float:
+    """Σ coefficient × (distance Å | angle ° | dihedral °)."""
+    total = 0.0
+    for term in terms:
+        p = np.asarray(x, dtype=float).reshape(-1, 3)[list(term.atoms)]
+        if term.kind == "distance":
+            value = float(np.linalg.norm(p[1] - p[0]))
+        elif term.kind == "angle":
+            u, v = p[0] - p[1], p[2] - p[1]
+            value = float(np.degrees(np.arccos(np.clip(
+                u @ v / (np.linalg.norm(u) * np.linalg.norm(v)), -1.0, 1.0))))
+        else:
+            b0, b1, b2 = p[0] - p[1], p[2] - p[1], p[3] - p[2]
+            b1 = b1 / np.linalg.norm(b1)
+            v, w = b0 - (b0 @ b1) * b1, b2 - (b2 @ b1) * b1
+            value = float(np.degrees(np.arctan2(np.cross(b1, v) @ w, v @ w)))
+        total += term.coefficient * value
+    return total
+
+
+def declared_coordinate_gradient(terms: Sequence[CoordinateTerm], x: np.ndarray) -> np.ndarray:
+    """Central-difference gradient of ``declared_coordinate``; dihedral steps wrap at ±180°."""
+    flat, grad = np.asarray(x, dtype=float).ravel(), np.zeros(np.size(x))
+    for i in range(flat.size):
+        step = np.zeros_like(flat)
+        step[i] = _FD_STEP_A
+        delta = declared_coordinate(terms, flat + step) - declared_coordinate(terms, flat - step)
+        grad[i] = ((delta + 180.0) % 360.0 - 180.0) / (2 * _FD_STEP_A)
+    return grad
 
 
 def transferred_hydrogens(symbols: Sequence[str], a: np.ndarray, b: np.ndarray) -> int:

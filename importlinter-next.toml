@@ -31,7 +31,7 @@ forbidden_modules = [
 
 [[tool.importlinter.contracts]]
 id = "next-chemistry"
-name = "Wave 2 chemistry modules stay pure"
+name = "Wave 2-4 chemistry modules stay pure"
 type = "forbidden"
 source_modules = [
   "hfauto.chemistry.gates",
@@ -40,8 +40,13 @@ source_modules = [
   "hfauto.chemistry.identity",
   "hfauto.chemistry.interpolation",
   "hfauto.chemistry.modes",
+  "hfauto.chemistry.placement",
   "hfauto.chemistry.profile",
+  "hfauto.chemistry.selection",
+  "hfauto.chemistry.smiles",
+  "hfauto.chemistry.thermo",
   "hfauto.chemistry.topology",
+  "hfauto.chemistry.trials",
   "hfauto.chemistry.vibrations",
   "hfauto.chemistry.xyz",
 ]
@@ -71,11 +76,30 @@ forbidden_modules = [
 
 [[tool.importlinter.contracts]]
 id = "next-protocols-only"
-name = "drivers and stage types see engines only through backends.protocols"
+name = "drivers, new stages and the report summary see engines only through backends.protocols"
 type = "forbidden"
-source_modules = ["hfauto.drivers", "hfauto.stages.spec", "hfauto.stages.catalog"]
+source_modules = [
+  "hfauto.drivers",
+  "hfauto.reporting.summary",
+  "hfauto.stages.spec",
+  "hfauto.stages.catalog",
+  "hfauto.stages.structures",
+  "hfauto.stages.conformer_search",
+  "hfauto.stages.minima",
+  "hfauto.stages.explore",
+  "hfauto.stages.reaction_paths",
+  "hfauto.stages.single_point",
+  "hfauto.stages.thermochemistry",
+  "hfauto.stages.report",
+]
 forbidden_modules = [
   "hfauto.backends.engines",
+  "hfauto.backends.nwchem",
+  "hfauto.backends.xtb",
+  "hfauto.backends.pysis",
+  "hfauto.backends.crest",
+  "hfauto.backends.readuct",
+  "hfauto.backends.goodvibes",
   "hfauto.execution",
   "hfauto.pipeline",
   "hfauto.workflow",
@@ -83,6 +107,19 @@ forbidden_modules = [
 # backends.protocols names JobRunner under TYPE_CHECKING (design 6.1), which import-linter
 # counts; only direct imports from these sources are forbidden.
 allow_indirect_imports = "true"
+
+[[tool.importlinter.contracts]]
+id = "next-adapters-independent"
+name = "engine adapters do not import each other"
+type = "independence"
+modules = [
+  "hfauto.backends.nwchem",
+  "hfauto.backends.xtb",
+  "hfauto.backends.pysis",
+  "hfauto.backends.crest",
+  "hfauto.backends.readuct",
+  "hfauto.backends.goodvibes",
+]
 
 [[tool.importlinter.contracts]]
 id = "next-pipeline"

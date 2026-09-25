@@ -1,0 +1,74 @@
+"""Real NWChem 7.2.3 (WSL, HFAUTO_REAL=1, ranks <= 2; design §10.3).
+
+The moddir case uses planar hydroxylamine (N, O and all three H in one plane): at
+PBE0-D3BJ/def2-SVP its Hessian has exactly two negative eigenvalues (NH2 inversion near
+-1019 cm-1, OH torsion near -666 cm-1), and ``mode_index=1`` follows the torsion (moddir 2).
+"""
+
+import numpy as np
+import pytest
+
+from hfauto.backends.protocols import Capability
+from hfauto.chemistry.gates import is_first_order_saddle, is_minimum
+from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
+from hfauto.core.evidence import Evidence
+from hfauto.core.method import MethodSpec
+
+pytestmark = pytest.mark.real
+PBE0 = MethodSpec(id="pbe0-d3bj_def2-svp", kind="dft", functional="pbe0", basis="def2-svp",
+                  dispersion="d3bj", grid="fine", scf_energy_tol=1e-7)
+
+
+def _mol(*rows: tuple) -> Molecule:
+    return Molecule(XYZ([r[0] for r in rows], np.array([r[1:] for r in rows], dtype=float)), 0, 1)
+
+
+WATER = _mol(("O", 0, 0, 0.1273), ("H", 0, 0.7872, -0.4692), ("H", 0, -0.7472, -0.4792))
+PLANAR_NH3 = _mol(("N", 0, 0, 0), ("H", 1.01, 0, 0), ("H", -0.505, 0.874686, 0),
+                  ("H", -0.505, -0.874686, 0))
+PLANAR_NH2OH = _mol(("N", 0, 0, 0), ("O", 1.42, 0, 0), ("H", -0.5, 0.866, 0),
+                    ("H", -0.5, -0.866, 0), ("H", 1.74, 0.91, 0))
+HCN = _mol(("H", 0, 0, -1.066), ("C", 0, 0, 0), ("N", 0, 0, 1.156))
+
+
+def _final(tmp_path, ev: Evidence) -> Molecule:
+    return Molecule(read_xyz(tmp_path / "run" / ev.final.file.path), 0, 1)
+
+
+def test_water_opt_then_a_separate_freq_job(real_engine, tmp_path):
+    qm = real_engine(Capability.QM, "nwchem")
+    opt = qm.optimize(WATER, PBE0)
+    assert isinstance(opt, Evidence), opt
+    freq = qm.frequencies(_final(tmp_path, opt), PBE0)  # one block, Level as requested
+    assert isinstance(freq, Evidence), freq
+    assert freq.level == opt.level and is_minimum(freq, opt=opt)
+
+
+def test_planar_ammonia_saddle_from_the_freq_hessian(real_engine, tmp_path):
+    qm = real_engine(Capability.QM, "nwchem")
+    saddle = real_engine(Capability.SADDLE, "nwchem_saddle")
+    ts = saddle.refine(PLANAR_NH3, PBE0, hessian=qm.frequencies(PLANAR_NH3, PBE0))
+    assert isinstance(ts, Evidence) and ts.task == "saddle", ts
+    freq = qm.frequencies(_final(tmp_path, ts), PBE0)
+    assert is_first_order_saddle(freq, saddle=ts)
+    assert sum(f < -50 for f in freq.frequencies_cm1) == 1
+
+
+def test_moddir_follows_the_second_negative_mode(real_engine):
+    qm = real_engine(Capability.QM, "nwchem")
+    saddle = real_engine(Capability.SADDLE, "nwchem_saddle")
+    hessian = qm.frequencies(PLANAR_NH2OH, PBE0)
+    assert sum(f < -50 for f in hessian.frequencies_cm1) == 2
+    ts = saddle.refine(PLANAR_NH2OH, PBE0, hessian=hessian, mode_index=1)
+    assert isinstance(ts, Evidence) and ts.task == "saddle", ts
+
+
+def test_mp2_single_point_and_the_wb97x_d3_level(real_engine):
+    qm = real_engine(Capability.QM, "nwchem")
+    mp2 = qm.energy(HCN, MethodSpec(id="mp2", kind="wft", wft_method="mp2", basis="def2-svp"))
+    assert isinstance(mp2, Evidence) and mp2.level.method == "mp2", mp2
+    wb97 = MethodSpec(id="wb97x-d3", kind="dft", functional="wb97x-d3", basis="def2-svp",
+                      grid="fine")
+    ev = qm.energy(WATER, wb97)
+    assert isinstance(ev, Evidence), ev
+    assert (ev.level.method, ev.level.dispersion, ev.level.grid) == ("wb97x-d3", None, "fine")
