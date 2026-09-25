@@ -2,12 +2,17 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
 from hfauto.execution.jobs import thread_map
 from hfauto.execution.lock import SITE_LOCK_NAME, SiteLock
 from hfauto.execution.process import Command, run_command
+
+
+def echo(job, workdir):  # worker target: the job and where it ran
+    return {"job": job, "cwd": str(Path.cwd()), "workdir": str(workdir)}
 
 
 def test_site_lock_refuses_second_run_and_takes_over_dead_holders(tmp_path):
@@ -34,9 +39,10 @@ def test_worker_echo_runs_in_the_job_directory(tmp_path):
     job_dir = tmp_path / "attempt_00"
     job_dir.mkdir()
     (job_dir / "job.json").write_text(json.dumps({"n": 3}))
-    argv = (sys.executable, "-m", "hfauto.execution.worker", "hfauto.execution.worker:_echo",
+    argv = (sys.executable, "-m", "hfauto.execution.worker", "test_lock_worker:echo",
             str(job_dir / "job.json"))
-    res = run_command(Command(argv, tmp_path), timeout_s=60)
+    env = {"PYTHONPATH": str(Path(__file__).parent)}
+    res = run_command(Command(argv, tmp_path, env), timeout_s=60)
     assert res.returncode == 0, res.stderr.read_text()
     out = json.loads((job_dir / "result.json").read_text())
     assert out["job"] == {"n": 3} and os.path.samefile(out["cwd"], job_dir)

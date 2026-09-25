@@ -25,7 +25,7 @@ def test_report_stage_writes_tables_from_a_fake_view(fake_runtime, tmp_run):
     arts += [Artifact(artifact_id=side, type=T.MINIMUM, payload=rec.MinimumRecord(
         minimum_id=side, basin_id=side, composition_id="c", species_id=side, tier="dft",
         level_key="k", opt_calc=f"pbe0_{side}", freq_calc=f"pbe0_{side}", energy_hartree=0.0,
-        state_label=side, n_fragments=1)) for side in ("reactant", "product")]
+        state_label=side)) for side in ("reactant", "product")]
     saddle = rec.SaddleClaim(saddle_calc="pbe0_ts", freq_calc="pbe0_ts", imag_cm1=-800.0,
                              energy_hartree=0.0)
     reaction = rec.ReactionRecord(reaction_id="r1", reactants=(), products=(), saddle=saddle,

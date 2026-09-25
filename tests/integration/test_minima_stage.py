@@ -37,7 +37,7 @@ class ShiftedQM(fakes.FakeQM):
 def species(root, pes, sid, point, shift=0.0):
     x = pes.points[point] + shift
     record = SpeciesRecord(species_id=sid, composition_id=composition_key(pes.symbols, 0, 1),
-                           formula="x", charge=0, multiplicity=1, source="input",
+                           charge=0, multiplicity=1, source="input",
                            geometry=fakes.write_geometry(root, f"in/{sid}.xyz", pes.symbols, x),
                            state_label=state_label(pes.symbols, x))
     return Artifact(artifact_id=sid, type=T.SPECIES, payload=record)
@@ -65,7 +65,7 @@ def test_ambiguous_duplicate_is_rejudged_into_one_basin_and_tiers_split(fake_run
     inputs = [species(tmp_run, pes, "a", "start"), species(tmp_run, pes, "b", "start", 0.01)]
     screen = run("screen", inputs, **SCREEN)
     (low,) = screen.records(T.MINIMUM, MinimumRecord)
-    assert low.tier == "screen" and low.members == ("a", "b") and low.n_fragments == 1
+    assert low.tier == "screen" and low.members == ("a", "b")
     assert [ev.task for ev in screen.records(T.CALCULATION, Evidence)].count("opt") == 3  # tight
     both = run("dft", screen.artifacts, **DFT)
     (high,) = [m for m in both.records(T.MINIMUM, MinimumRecord) if m.tier == "dft"]
@@ -92,7 +92,7 @@ def test_soft_mode_known_minimum_and_init_hessian(fake_runtime, tmp_run):
     run, xtb, dft = stage(fake_runtime, tmp_run, pes, low=SoftQM)
     soft = run("screen", [species(tmp_run, pes, "r", "reactant")], **SCREEN)
     (record,) = soft.records(T.MINIMUM, MinimumRecord)
-    assert record.notes == ("soft_imaginary_mode",) and record.n_fragments == 2
+    assert record.notes == ("soft_imaginary_mode",)
     init = {"init_hessian": {"engine": "xtb", "method": "gfn2"}, "select": {"include": "all"}}
     first = run("dft", soft.artifacts, **DFT, **init)
     assert dft.calls == ["optimize+init_hessian", "frequencies"] and "frequencies" in xtb.calls

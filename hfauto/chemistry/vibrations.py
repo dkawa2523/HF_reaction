@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from hfauto.core.constants import AMU_TO_ME, BOHR_TO_ANGSTROM, CM1_TO_HARTREE
+from hfauto.core.constants import AMU_TO_ME, CM1_TO_HARTREE
 
 # Most abundant isotope masses (amu, NIST AME2016, 6 decimals), H..Kr and I.
 ISOTOPIC_MASSES: dict[str, float] = {
@@ -113,29 +113,6 @@ def rotational_constants_ghz(symbols: Sequence[str], coords: np.ndarray) -> tupl
     moments = np.linalg.eigvalsh(np.trace(inertia) * np.eye(3) - inertia)
     floor = _EXTERNAL_RANK_TOL**2 * max(masses.sum(), float(moments.max()))
     return tuple(0.0 if m <= floor else _GHZ_AMU_A2 / float(m) for m in moments)
-
-
-def curvature_along(hessian: np.ndarray, mode: np.ndarray) -> float:
-    """uᵀHu in Eh/Å² with the mode scaled to a 1 Å largest atomic displacement."""
-
-    u = np.asarray(mode, dtype=float).reshape(-1, 3)
-    u = (u / np.linalg.norm(u, axis=1).max()).ravel()
-    h = _square_hessian(hessian, len(u) // 3) / BOHR_TO_ANGSTROM**2
-    return float(u @ h @ u)
-
-
-def frame_residual(hessian: np.ndarray, symbols: Sequence[str], coords: np.ndarray) -> float:
-    """max |H·R_i| (Eh/bohr²) over orthonormal Cartesian rotations about the center of mass.
-
-    Diagnostic only: at a non-stationary point H·R = −(gradient terms) is legitimately large.
-    """
-
-    x, _ = _centered(symbols, coords)
-    h = _square_hessian(hessian, len(x))
-    rotations = np.array([np.cross(axis, x).ravel() for axis in np.eye(3)]).T
-    u, singular, _ = np.linalg.svd(rotations, full_matrices=False)
-    basis = u[:, singular > _EXTERNAL_RANK_TOL * singular.max()]
-    return float(np.linalg.norm(h @ basis, axis=0).max())
 
 
 def to_canonical_npy(hessian: np.ndarray, path: str | Path) -> Path:

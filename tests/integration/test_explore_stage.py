@@ -23,14 +23,14 @@ def _inputs(root):
     """Three HCN screen minima of one state; m0 also holds a seed that relaxed from HNC."""
     geo = write_geometry(root, "in/hcn.xyz", SYMBOLS, HCN)
     out = [Artifact(artifact_id=sid, type=SPECIES, payload=SpeciesRecord(
-        species_id=sid, composition_id="CHN_q0_m1", formula="CHN", charge=0, multiplicity=1,
+        species_id=sid, composition_id="CHN_q0_m1", charge=0, multiplicity=1,
         geometry=geo, source="conformer", state_label=state_label(SYMBOLS, x)))
         for sid, x in (("seed", HNC), ("s0", HCN), ("s1", HCN), ("s2", HCN))]
     return Manifest(run_id="r", stage_id="screen", created_at="t", artifacts=out + [
         Artifact(artifact_id=f"m{i}", type=MINIMUM, payload=MinimumRecord(
             minimum_id=f"m{i}", basin_id=f"b{i}", composition_id="CHN_q0_m1", species_id=f"s{i}",
             tier="screen", level_key="k", opt_calc="o", freq_calc="f", energy_hartree=i / 10,
-            state_label=LABEL, n_fragments=1, members=(f"s{i}", "seed")[: 2 - min(i, 1)]))
+            state_label=LABEL, members=(f"s{i}", "seed")[: 2 - min(i, 1)]))
         for i in range(3)])
 
 

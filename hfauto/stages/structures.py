@@ -1,7 +1,7 @@
 """structures stage (design §4.1 #1, §8.2): system species → ``species`` artifacts.
 
 xyz files are copied into the stage directory and SMILES are embedded once (RDKit ETKDG).
-Charge and multiplicity are checked with ``resolve_electronic_state``; both ends of a
+Charge and multiplicity are checked with ``check_electronic_state``; both ends of a
 declared reaction must list the same elements in the same order. Every problem becomes a
 failed artifact with ``INPUT_INVALID``.
 """
@@ -12,10 +12,10 @@ import shutil
 from pathlib import Path
 from typing import ClassVar
 
-from hfauto.chemistry.electronic_state import resolve_electronic_state
+from hfauto.chemistry.electronic_state import check_electronic_state
 from hfauto.chemistry.smiles import smiles_to_molecule
 from hfauto.chemistry.topology import state_label
-from hfauto.chemistry.xyz import XYZ, composition_key, geometry_fingerprint, hill_formula, read_xyz
+from hfauto.chemistry.xyz import XYZ, composition_key, geometry_fingerprint, read_xyz
 from hfauto.core.evidence import Failure, FailureKind, Geometry
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.records import ArtifactType, SpeciesRecord
@@ -58,10 +58,9 @@ def _write(species: SpeciesInput, target: Path) -> Path:
 def _species(species: SpeciesInput, rt: StageRuntime) -> Artifact:
     try:
         geometry, xyz = geometry_of(_write(species, rt.stage_dir / "xyz" / f"{species.id}.xyz"), rt)
-        resolve_electronic_state({"charge": species.charge, "multiplicity": species.multiplicity},
-                                 symbols=xyz.symbols)
+        check_electronic_state(xyz.symbols, species.charge, species.multiplicity)
         record = SpeciesRecord(
-            species_id=species.id, formula=hill_formula(xyz.symbols),
+            species_id=species.id,
             composition_id=composition_key(xyz.symbols, species.charge, species.multiplicity),
             charge=species.charge, multiplicity=species.multiplicity, geometry=geometry,
             source="input", state_label=state_label(xyz.symbols, xyz.coords),

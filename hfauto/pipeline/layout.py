@@ -102,9 +102,6 @@ class RunLayout:
     def manifest_path(self, stage_id: str) -> Path:
         return self.stage_dir(stage_id) / "manifest.json"
 
-    def diagnostics_path(self, stage_id: str) -> Path:
-        return self.stage_dir(stage_id) / "diagnostics.json"
-
     def cases_dir(self, stage_id: str) -> Path:
         return self.stage_dir(stage_id) / "cases"
 

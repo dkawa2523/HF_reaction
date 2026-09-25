@@ -26,7 +26,7 @@ NONBOND_MIN_RATIO = 1.45
 PROTON_Q_MIN_A = 0.3
 _WL_ITERATIONS = 3
 
-# Cordero et al., Dalton Trans. 2008 (values shared with the legacy connectivity table).
+# Cordero et al., Dalton Trans. 2008.
 _COVALENT_RADII_A = {
     "H": 0.31, "He": 0.28, "Li": 1.28, "Be": 0.96, "B": 0.84, "C": 0.76, "N": 0.71,
     "O": 0.66, "F": 0.57, "Ne": 0.58, "Na": 1.66, "Mg": 1.41, "Al": 1.21, "Si": 1.11,

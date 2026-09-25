@@ -17,7 +17,7 @@ from typing import ClassVar, Literal, cast
 
 from hfauto.backends import protocols as bp
 from hfauto.chemistry import placement
-from hfauto.chemistry.electronic_state import coupled_multiplicities, resolve_electronic_state
+from hfauto.chemistry.electronic_state import check_electronic_state, coupled_multiplicities
 from hfauto.chemistry.identity import permutation_invariant_rmsd
 from hfauto.chemistry.topology import acceptor_atoms, labile_hydrogens, state_label
 from hfauto.chemistry.xyz import (
@@ -25,7 +25,6 @@ from hfauto.chemistry.xyz import (
     Molecule,
     composition_key,
     geometry_fingerprint,
-    hill_formula,
     read_xyz,
     write_xyz,
 )
@@ -140,7 +139,7 @@ def _artifacts(found: _Found, rt: StageRuntime, cfg: ConformersConfig) -> list[A
         cands.append(_Cand(geometry, energy, source, xyz, state_label(xyz.symbols, xyz.coords)))
     for k, c in enumerate(_select(cands, cfg)):
         record = SpeciesRecord(
-            species_id=f"{item.base}_{_TAG[c.source]}{k:02d}", formula=hill_formula(c.xyz.symbols),
+            species_id=f"{item.base}_{_TAG[c.source]}{k:02d}",
             composition_id=composition_key(c.xyz.symbols, charge, mult), charge=charge,
             multiplicity=mult, geometry=c.geometry, source=c.source, state_label=c.label,
             energy_hartree=c.energy,
@@ -159,9 +158,32 @@ def _monomer(sp: SpeciesRecord, rt: StageRuntime, cfg: ConformersConfig) -> _Ite
                  skip=placement.is_small_rigid(xyz.symbols, xyz.coords))
 
 
+def _monomers(species: dict[str, SpeciesRecord], rt: StageRuntime, cfg: ConformersConfig
+              ) -> list[_Item]:
+    return [_monomer(species[s.id], rt, cfg) for s in rt.system.species
+            if s.role == "monomer" and s.id in species]
+
+
 def _lowest(found: _Found, rt: StageRuntime) -> XYZ:
     ranked = sorted(found.candidates, key=lambda c: (c[2] != "conformer", c[1] is None, c[1] or 0))
     return rt.load_xyz((ranked or list(found.item.fallback))[0][0])
+
+
+def _seed_geometries(comp_id: str, seeds: list[XYZ], rt: StageRuntime) -> list[Geometry]:
+    geoms = []
+    for k, seed in enumerate(seeds):
+        path = write_xyz(seed, rt.stage_dir / "placement" / f"{comp_id}_seed{k:02d}.xyz")
+        xyz = read_xyz(path)  # fingerprint the file as written
+        geoms.append(Geometry(file=rt.file_ref(path), symbols=tuple(xyz.symbols),
+                              fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords)))
+    return geoms
+
+
+def _notopo(xyz: XYZ) -> tuple[int, ...]:
+    """Labile H and acceptor atoms when the structure has both, else none."""
+    labile = labile_hydrogens(xyz.symbols, xyz.coords)
+    acceptors = acceptor_atoms(xyz.symbols, xyz.coords)
+    return tuple(sorted({*labile, *acceptors})) if labile and acceptors else ()
 
 
 def _composition(comp: CompositionInput, species: dict[str, SpeciesRecord],
@@ -179,25 +201,16 @@ def _composition(comp: CompositionInput, species: dict[str, SpeciesRecord],
     charge = sum(species[sid].charge for sid, _ in parts)
     mult = coupled_multiplicities([species[sid].multiplicity for sid, _ in parts])[-1]
     try:
-        resolve_electronic_state({"charge": charge, "multiplicity": mult},
-                                 symbols=[s for _, xyz in parts for s in xyz.symbols])
+        check_electronic_state([s for _, xyz in parts for s in xyz.symbols], charge, mult)
     except ValueError as exc:
         return reject(FailureKind.INPUT_INVALID, str(exc))
     seeds = placement.seeds(parts[0][1], [xyz for _, xyz in parts[1:]],
                             n_seeds=cfg.seeds_per_composition)
     if not seeds:
         return reject(FailureKind.GATE_REJECTED, "no_collision_free_seed")
-    geoms = []
-    for k, seed in enumerate(seeds):
-        path = write_xyz(seed, rt.stage_dir / "placement" / f"{comp.id}_seed{k:02d}.xyz")
-        xyz = read_xyz(path)  # fingerprint the file as written
-        geoms.append(Geometry(file=rt.file_ref(path), symbols=tuple(xyz.symbols),
-                              fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords)))
+    geoms = _seed_geometries(comp.id, seeds, rt)
     first = rt.load_xyz(geoms[0])
-    labile = labile_hydrogens(first.symbols, first.coords)
-    acceptors = acceptor_atoms(first.symbols, first.coords)
-    notopo = tuple(sorted({*labile, *acceptors})) if labile and acceptors else ()
-    settings = cfg.settings.model_copy(update={"nci": True, "notopo_atoms": notopo})
+    settings = cfg.settings.model_copy(update={"nci": True, "notopo_atoms": _notopo(first)})
     parents = tuple(dict.fromkeys(artifact_id(sid) for sid, _ in parts))
     return _Item(comp.id, parents, Molecule(first, charge, mult), settings,
                  tuple((g, None, "placement") for g in geoms))
@@ -215,9 +228,8 @@ class ConformersStage:
         search = partial(_search, engine, rt.method(cfg.method))
         species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)
                    if s.source == "input"}
-        monomers = [_monomer(species[s.id], rt, cfg) for s in rt.system.species
-                    if s.role == "monomer" and s.id in species]
-        found = rt.thread_map(search, monomers, threads_per_item=cfg.settings.threads)
+        found = rt.thread_map(search, _monomers(species, rt, cfg),
+                              threads_per_item=cfg.settings.threads)
         best = {f.item.base: _lowest(f, rt) for f in found}
         built = [_composition(c, species, best, rt, cfg) for c in rt.system.compositions]
         items = [b for b in built if isinstance(b, _Item)]

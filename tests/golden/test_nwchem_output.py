@@ -1,6 +1,7 @@
 """NWChem parser on real outputs (design §10.2: G01, G03-G05, G07, G10, G13, G21-G24)."""
 
 import json
+import re
 
 import numpy as np
 import pytest
@@ -18,10 +19,8 @@ XFINE = MethodSpec(id="m", kind="dft", functional="pbe0", basis="def2-svpd",
                    dispersion="d3zero", grid="xfine", scf_energy_tol=1e-8)
 
 
-def test_g01_two_vibrational_blocks_and_the_last_one(golden):
-    text = golden.text("nwchem/G01/nwchem.out")
-    assert nw.count_frequency_blocks(text) == 2
-    assert nw.last_frequency_block(text)[0] == pytest.approx(-680.11)
+def test_g01_two_vibrational_blocks(golden):
+    assert nw.count_frequency_blocks(golden.text("nwchem/G01/nwchem.out")) == 2
 
 
 @pytest.mark.parametrize(("stem", "energy", "steps"), [
@@ -43,7 +42,9 @@ def test_linear_molecules_have_five_external_modes(golden, stem):
     text = golden.text(f"nwchem/{stem}.out")
     symbols, coords = nw.geometry_block(text, -1)
     assert external_basis(symbols, coords).shape[1] == 5
-    assert len([f for f in nw.last_frequency_block(text) if abs(f) > 1.0]) == 3 * 3 - 5
+    printed = [float(v) for row in re.findall(r"^\s*P\.Frequency(.*)$", text, re.MULTILINE)
+               for v in row.split()]  # NWChem's own projection, one block
+    assert len([f for f in printed if abs(f) > 1.0]) == 3 * 3 - 5
 
 
 def test_g07_hess_to_canonical_npy(golden, tmp_path):

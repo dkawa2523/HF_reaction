@@ -20,12 +20,12 @@ PAYLOADS = {
         frequencies_cm1=(-1131.6, 900.0, 2100.0), n_external=6,
         imaginary_modes=((0.1,) * 9,), hessian=REF, s2=None, output=REF, job_key="k"),
     AT.SPECIES: r.SpeciesRecord(
-        species_id="s1", composition_id="CHN|0|1", formula="CHN", charge=0, multiplicity=1,
+        species_id="s1", composition_id="CHN|0|1", charge=0, multiplicity=1,
         geometry=GEO, source="input", state_label="CHN:ab12cd34"),
     AT.MINIMUM: r.MinimumRecord(
         minimum_id="m1", basin_id="b1", composition_id="CHN|0|1", species_id="s1", tier="dft",
         level_key=LEVEL.full_key(), opt_calc="c1", freq_calc="c2", energy_hartree=-93.4,
-        state_label="CHN:ab12cd34", n_fragments=1, members=("s1",), notes=("soft",)),
+        state_label="CHN:ab12cd34", members=("s1",), notes=("soft",)),
     AT.DISCOVERY: r.DiscoveryRecord(
         discovery_id="d1", source_minimum="m1", mechanism="nt2", outcome="product",
         trial=r.ReactionTrial(trial_id="t1", source_minimum="m1", kind="h_shift",

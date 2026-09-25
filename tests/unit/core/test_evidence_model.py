@@ -18,10 +18,7 @@ def test_level_keys():
     canonical = json.dumps(LEVEL.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
     assert LEVEL.full_key() == hashlib.sha256(canonical.encode()).hexdigest()[:16]
     numerics = LEVEL.model_copy(update={"grid": "xfine", "scf_tol": 1e-8})
-    assert numerics.surface_key() == LEVEL.surface_key()
     assert numerics.full_key() != LEVEL.full_key()
-    assert LEVEL.model_copy(update={"charge": 1}).surface_key() != LEVEL.surface_key()
-    assert len(LEVEL.surface_key()) == 16
 
 
 def test_models_are_frozen_and_forbid_extra_fields():

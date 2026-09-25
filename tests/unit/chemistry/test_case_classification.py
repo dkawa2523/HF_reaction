@@ -55,19 +55,19 @@ def test_split_inherits_the_parent_stoichiometry():
                       barrier=None, claim=None, connection=None)
     well = r.MinimumRecord(minimum_id="mi", basin_id="bi", composition_id="H3N_q0_m1",
                            species_id="si", tier="dft", level_key="L", opt_calc="o",
-                           freq_calc="f", energy_hartree=-56.0, state_label="x", n_fragments=1)
+                           freq_calc="f", energy_hartree=-56.0, state_label="x")
     geo = Geometry(file=FileRef(path="si.xyz", sha256="0" * 64), fingerprint="si",
                    symbols=("N", "H", "H", "H"))
-    well_species = r.SpeciesRecord(species_id="si", composition_id="H3N_q0_m1", formula="H3N",
-                                   charge=0, multiplicity=1, geometry=geo, source="intermediate",
+    well_species = r.SpeciesRecord(species_id="si", composition_id="H3N_q0_m1", charge=0,
+                                   multiplicity=1, geometry=geo, source="intermediate",
                                    state_label="x")
 
     first, second = split(parent, well, well_species)
     assert (first.minima, second.minima) == (("ma", "mi"), ("mi", "mb"))
     assert (first.endpoints, second.endpoints) == (("sa", "si"), ("si", "sb"))
-    assert first.reaction_id != second.reaction_id
+    assert (first.reaction_id, second.reaction_id) == ("rxn_split1", "rxn_split2")
     for child in (first, second):
-        assert (child.source, child.parent_id) == ("split", "rxn")
+        assert child.source == "split"
         assert child.reactants == parent.reactants and child.products == parent.products
         assert child.outcome is None and child.reasons == () and child.negative_evidence == ()
         assert child.torsional and child.n_h_transferred == 1

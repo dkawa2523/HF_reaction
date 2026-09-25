@@ -216,24 +216,35 @@ def _auto(pool: _Pool, source: Source, ma: MinimumRecord, mb: MinimumRecord,
     return _record(pool, rid, source, (ma, mb), (sa, sb), low_level_ts=ts)
 
 
+def _pool(minima: Iterable[MinimumRecord], species: Iterable[SpeciesRecord],
+          discoveries: Sequence[DiscoveryRecord], load_xyz: LoadXYZ, window_kcal: float,
+          min_distance_A: float, min_angle_deg: float) -> _Pool:
+    by_id = {m.minimum_id: m for m in minima}
+    basin_of: dict[str, MinimumRecord] = {}
+    for m in sorted(by_id.values(), key=lambda m: m.tier != "dft"):  # DFT minima first
+        for s in (m.species_id, *m.members):
+            basin_of.setdefault(s, m)
+    return _Pool(species={s.species_id: s for s in species}, minima=by_id, basin_of=basin_of,
+                 negatives=tuple(d for d in discoveries if d.outcome == "negative"),
+                 load=load_xyz, window_kcal=window_kcal, min_distance_A=min_distance_A,
+                 min_angle_deg=min_angle_deg)
+
+
+def _lend_ts(record: ReactionRecord, ts: Geometry | None) -> ReactionRecord:
+    """A repeated minima pair keeps its first hypothesis, which borrows a low-level TS it lacks."""
+    if record.low_level_ts is None and ts is not None:
+        return record.model_copy(update={"low_level_ts": ts})
+    return record
+
+
 def select(minima: Iterable[MinimumRecord], species: Iterable[SpeciesRecord],
            discoveries: Iterable[DiscoveryRecord], declared: Sequence[ReactionInput],
            load_xyz: LoadXYZ, *, window_kcal: float = Policy.reaction_window_kcal,
            min_distance_A: float = 0.2, min_angle_deg: float = 30.0,
            max_per_composition: int = 6) -> list[ReactionRecord]:
     """One ReactionRecord per hypothesis; a repeated minima pair keeps the first hypothesis."""
-    all_minima = {m.minimum_id: m for m in minima}
-    basin_of: dict[str, MinimumRecord] = {}
-    for m in sorted(all_minima.values(), key=lambda m: m.tier != "dft"):
-        for s in (m.species_id, *m.members):
-            basin_of.setdefault(s, m)
     found = list(discoveries)
-    pool = _Pool(
-        species={s.species_id: s for s in species}, minima=all_minima, basin_of=basin_of,
-        negatives=tuple(d for d in found if d.outcome == "negative"),
-        load=load_xyz, window_kcal=window_kcal,
-        min_distance_A=min_distance_A, min_angle_deg=min_angle_deg,
-    )
+    pool = _pool(minima, species, found, load_xyz, window_kcal, min_distance_A, min_angle_deg)
     records = [_declared(pool, r) for r in declared]
     index = {frozenset(r.minima): i for i, r in enumerate(records)}
     per_composition = Counter(r.reactants[0].composition_id for r in records if r.reactants)
@@ -241,10 +252,8 @@ def select(minima: Iterable[MinimumRecord], species: Iterable[SpeciesRecord],
         if ma is None or mb is None:
             continue
         pair = frozenset((ma.minimum_id, mb.minimum_id))
-        if pair in index:  # keep the first hypothesis, lend it a low-level TS it lacks
-            first = records[index[pair]]
-            if first.low_level_ts is None and ts is not None:
-                records[index[pair]] = first.model_copy(update={"low_level_ts": ts})
+        if pair in index:
+            records[index[pair]] = _lend_ts(records[index[pair]], ts)
             continue
         if per_composition[ma.composition_id] >= max_per_composition:
             continue

@@ -170,15 +170,6 @@ def count_frequency_blocks(text: str) -> int:
     return text.count(_PROJECTED)
 
 
-def last_frequency_block(text: str) -> tuple[float, ...]:
-    """NWChem's own projected frequencies of the last block (cross-checks only)."""
-    if _PROJECTED not in text:
-        return ()
-    tail = text.rpartition(_PROJECTED)[2]
-    rows = re.findall(r"^\s*P\.Frequency\s+(.*)$", tail, re.MULTILINE)
-    return tuple(_number(v) for row in rows for v in row.split())
-
-
 def read_hess(path: Path, n_atoms: int) -> np.ndarray:
     """``.hess``: lower triangle row by row, Fortran D exponents, Eh/bohr² (symmetrized)."""
     values = [_number(v) for v in Path(path).read_text(encoding="ascii").split()]

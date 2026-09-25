@@ -3,7 +3,7 @@ name = "hfauto"
 version = "0.14.0"
 description = "Evidence-gated reaction discovery, reaction-path/TS and thermochemistry pipeline for molecular complexes"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"  # enum.StrEnum, datetime.UTC
 authors = [{name = "HF Auto Project"}]
 dependencies = [
   "pydantic>=2.0",

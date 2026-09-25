@@ -59,14 +59,6 @@ def write_xyz(xyz: XYZ, path: str | Path) -> Path:
     return target
 
 
-def xyz_files_have_same_atom_order(path_a: str | Path, path_b: str | Path) -> bool:
-    """Return whether two XYZ files contain the same ordered element list."""
-
-    xyz_a = read_xyz(path_a)
-    xyz_b = read_xyz(path_b)
-    return xyz_a.symbols == xyz_b.symbols
-
-
 def geometry_fingerprint(symbols: Sequence[str], coords: np.ndarray) -> str:
     """sha256 of the element list and the coordinates rounded to 1e-6 Å (normalized JSON)."""
 

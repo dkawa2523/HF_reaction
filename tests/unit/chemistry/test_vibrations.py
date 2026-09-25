@@ -48,10 +48,8 @@ def test_rotational_constants_of_linear_hcn():
     assert a == 0.0 and b == pytest.approx(c) and b == pytest.approx(44.5, abs=0.2)
 
 
-def test_curvature_and_canonical_npy(tmp_path):
+def test_canonical_npy(tmp_path):
     h = np.diag([0.5] + [0.0] * 5)  # Eh/bohr², atom 0 along x
-    mode = np.array([[2.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
-    assert vib.curvature_along(h, mode) == pytest.approx(0.5 / 0.529177210903**2)
     out = vib.to_canonical_npy(h, tmp_path / "freq" / "hessian.npy")
     assert np.array_equal(np.load(out), h)
     with pytest.raises(ValueError):

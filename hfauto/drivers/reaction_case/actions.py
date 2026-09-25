@@ -19,9 +19,9 @@ from hfauto.chemistry.interpolation import align_mapped, idpp
 from hfauto.chemistry.modes import displace, overlap, qrc_amplitude
 from hfauto.chemistry.topology import declared_coordinate, declared_coordinate_gradient, state_label
 from hfauto.chemistry.vibrations import projected_frequencies
-from hfauto.chemistry.xyz import XYZ, Molecule, composition_key, geometry_fingerprint, hill_formula
+from hfauto.chemistry.xyz import XYZ, Molecule, composition_key, geometry_fingerprint
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
-from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
+from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry, PathProfile
 from hfauto.core.ids import species_id
 from hfauto.core.method import Deadline
 from hfauto.core.records import (
@@ -201,6 +201,21 @@ def _screen_idpp(ctx: Ctx) -> BarrierVerdict:
     return ctx.verdict(dft, frames=frames)
 
 
+def _screen_seed(ctx: Ctx, prof: PathProfile, frames: list[np.ndarray], dft: list[float]
+                 ) -> tuple[Seed, list[float], list[float]]:
+    """(seed, DFT profile, low profile): the GS's TSOpt structure when its xTB freq confirms
+    it (its energies follow the DFT HEI in both profiles), else the DFT HEI node."""
+    low, k = list(prof.energies_hartree), 1 + int(np.argmax(dft[1:-1]))
+    ts = prof.ts if prof.ts is not None and _xtb_saddle_ok(ctx, ctx.coords(prof.ts)) else None
+    e_ts = None if ts is None else ctx.sp(ctx.coords(ts))
+    if ts is None or e_ts is None:
+        tangent = tuple(profile.tangent(frames, k).ravel())
+        return Seed(ctx.geometry("screen_hei", frames[k]), "screen_hei", tangent), dft, low
+    if prof.ts_energy_hartree is not None:
+        low.insert(k + 1, prof.ts_energy_hartree)
+    return Seed(ts, "screen_ts", ctx.chord(ctx.coords(ts))), [*dft[:k + 1], e_ts, *dft[k + 1:]], low
+
+
 def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
     """Steps 2-4: xTB endpoints, then GS with TSOpt, DFT single points on every node."""
     rt = ctx.rt
@@ -222,17 +237,7 @@ def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
     dft = _single_points(ctx, frames)
     if dft is None:
         return _unavailable("screen_single_point"), None
-    low, k = list(prof.energies_hartree), 1 + int(np.argmax(dft[1:-1]))
-    ts = prof.ts if prof.ts is not None and _xtb_saddle_ok(ctx, ctx.coords(prof.ts)) else None
-    e_ts = None if ts is None else ctx.sp(ctx.coords(ts))
-    if ts is not None and e_ts is not None:
-        dft.insert(k + 1, e_ts)
-        if prof.ts_energy_hartree is not None:
-            low.insert(k + 1, prof.ts_energy_hartree)
-        seed = Seed(ts, "screen_ts", ctx.chord(ctx.coords(ts)))
-    else:
-        seed = Seed(ctx.geometry("screen_hei", frames[k]), "screen_hei",
-                    tuple(profile.tangent(frames, k).ravel()))
+    seed, dft, low = _screen_seed(ctx, prof, frames, dft)
     low_ends = (ea.energy_hartree, eb.energy_hartree)
     return ctx.verdict(dft, frames=frames, low=low, low_ends=low_ends, seed=seed.geometry), seed
 
@@ -345,7 +350,7 @@ def _register(ctx: Ctx, coords: np.ndarray, name: str,
         return None
     x, opt = ctx.coords(out.opt.final), out.opt
     species = SpeciesRecord(
-        species_id=species_id(ctx.case.reaction_id, name), formula=hill_formula(ctx.symbols),
+        species_id=species_id(ctx.case.reaction_id, name),
         composition_id=composition_key(ctx.symbols, ctx.charge, ctx.multiplicity),
         charge=ctx.charge, multiplicity=ctx.multiplicity, geometry=opt.final, source=source,
         state_label=state_label(ctx.symbols, x), energy_hartree=opt.energy_hartree,

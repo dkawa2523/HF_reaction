@@ -38,7 +38,7 @@ def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None):
     registry, minima, species = Registry([], load), {}, {}
     for name in ("reactant", "product"):
         geo = fakes.write_geometry(root, f"in/{name}.xyz", pes.symbols, pes.points[name])
-        species[name] = SpeciesRecord(species_id=name, formula="x", state_label="x", charge=0,
+        species[name] = SpeciesRecord(species_id=name, state_label="x", charge=0,
                                       multiplicity=1, geometry=geo, source="input",
                                       composition_id=composition_key(pes.symbols, 0, 1))
         out = relax_to_minimum(pes.molecule(name), DFT, qm, load_xyz=load)

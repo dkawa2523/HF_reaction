@@ -37,7 +37,7 @@ def dft_view(root, pes, points=ENDS):
     registry, arts, basins = Registry([], load), [], {}
     for sid, point in points.items():
         geo = fakes.write_geometry(root, f"in/{sid}.xyz", pes.symbols, pes.points[point])
-        s = SpeciesRecord(species_id=sid, formula="x", state_label="x", charge=0, multiplicity=1,
+        s = SpeciesRecord(species_id=sid, state_label="x", charge=0, multiplicity=1,
                           geometry=geo, source="input",
                           composition_id=composition_key(pes.symbols, 0, 1))
         out = relax_to_minimum(pes.molecule(point), DFT, qm, load_xyz=load)

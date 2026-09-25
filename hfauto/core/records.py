@@ -28,7 +28,6 @@ class SpeciesRecord(BaseModel):
     kind: Literal["species"] = "species"
     species_id: str
     composition_id: str  # chemistry.xyz.composition_key
-    formula: str
     charge: int
     multiplicity: int
     geometry: Geometry
@@ -54,7 +53,6 @@ class MinimumRecord(BaseModel):
     freq_calc: str
     energy_hartree: float
     state_label: str
-    n_fragments: int
     members: tuple[str, ...] = ()  # species that fell into this basin (collapsed seeds included)
     notes: tuple[str, ...] = ()
 
@@ -146,8 +144,7 @@ class CaseOutcome(StrEnum):
 class ReactionRecord(BaseModel):
     model_config = _FROZEN
     kind: Literal["reaction"] = "reaction"
-    reaction_id: str
-    parent_id: str | None = None
+    reaction_id: str  # a split child is "<parent reaction_id>_split<n>"
     reactants: tuple[StoichTerm, ...]
     products: tuple[StoichTerm, ...]
     minima: tuple[str, str]  # (reactant side, product side); equal for degenerate reactions

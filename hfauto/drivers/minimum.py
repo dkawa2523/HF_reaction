@@ -14,7 +14,7 @@ import numpy as np
 from hfauto.chemistry.gates import Policy, imaginary_tier, is_minimum, spin_ok
 from hfauto.chemistry.identity import assign, compare_minima
 from hfauto.chemistry.modes import classify_mode_follow, displace
-from hfauto.chemistry.topology import fragments, state_label
+from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.xyz import XYZ, Molecule
 from hfauto.core.evidence import Evidence, Failure, FailureKind, Geometry
 from hfauto.core.method import Deadline, MethodSpec
@@ -290,6 +290,5 @@ def _new_record(opt: Evidence, freq: Evidence, notes: tuple[str, ...], species: 
         composition_id=species.composition_id, species_id=species.species_id, tier=tier,
         level_key=level_key, opt_calc=calc_id(opt), freq_calc=calc_id(freq),
         energy_hartree=opt.energy_hartree, state_label=state_label(xyz.symbols, xyz.coords),
-        n_fragments=len(fragments(xyz.symbols, xyz.coords)), members=(species.species_id,),
-        notes=notes,
+        members=(species.species_id,), notes=notes,
     )

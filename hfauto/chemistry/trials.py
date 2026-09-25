@@ -122,20 +122,32 @@ def aromatic_bonds(symbols: Sequence[str], x: np.ndarray, nbr: list[set[int]]) -
     return out
 
 
-def _heavy_bonds(symbols: Sequence[str], x: np.ndarray, nbr: list[set[int]],
-                 fragment: list[int]) -> list[Drive]:
-    """Formations (3.5 Å, same fragment), formation + breaking at a shared atom, breakings."""
-    heavy = [i for i, s in enumerate(symbols) if s != "H"]
+def _breakable(symbols: Sequence[str], x: np.ndarray, nbr: list[set[int]]) -> list[Pair]:
+    """Heavy-atom bonds outside aromatic rings."""
     fixed = aromatic_bonds(symbols, x, nbr)
-    breakable = sorted(_pair(i, j) for i in heavy for j in nbr[i]
-                       if i < j and symbols[j] != "H" and _pair(i, j) not in fixed)
+    heavy = [i for i, s in enumerate(symbols) if s != "H"]
+    return sorted(_pair(i, j) for i in heavy for j in nbr[i]
+                  if i < j and symbols[j] != "H" and _pair(i, j) not in fixed)
+
+
+def _formations(symbols: Sequence[str], x: np.ndarray, nbr: list[set[int]],
+                fragment: list[int]) -> list[Pair]:
+    """Non-bonded heavy-atom pairs of one fragment within 3.5 Å, nearest first."""
+    heavy = [i for i, s in enumerate(symbols) if s != "H"]
     forms = sorted((float(np.linalg.norm(x[i] - x[j])), (i, j))
                    for i, j in itertools.combinations(heavy, 2)
                    if j not in nbr[i] and fragment[i] == fragment[j])
-    forms = [(r, p) for r, p in forms if r <= HEAVY_BOND_MAX_A]
-    joins: list[Drive] = [("heavy_bond", (p,), ()) for _, p in forms]
+    return [p for r, p in forms if r <= HEAVY_BOND_MAX_A]
+
+
+def _heavy_bonds(symbols: Sequence[str], x: np.ndarray, nbr: list[set[int]],
+                 fragment: list[int]) -> list[Drive]:
+    """Formations, formation + breaking at a shared atom, breakings."""
+    breakable = _breakable(symbols, x, nbr)
+    forms = _formations(symbols, x, nbr, fragment)
+    joins: list[Drive] = [("heavy_bond", (p,), ()) for p in forms]
     swaps: list[Drive] = [("heavy_bond", (p,), (b,))
-                          for _, p in forms for b in breakable if set(p) & set(b)]
+                          for p in forms for b in breakable if set(p) & set(b)]
     cuts: list[Drive] = [("heavy_bond", (), (b,)) for b in breakable]
     return joins + swaps + cuts
 

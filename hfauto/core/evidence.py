@@ -16,7 +16,6 @@ from pydantic import BaseModel, ConfigDict, field_validator
 _FROZEN = ConfigDict(frozen=True, extra="forbid")
 
 _LEVEL_STRINGS = ("program", "version", "method", "basis", "dispersion", "solvation", "grid")
-_NUMERICS_FIELDS = ("grid", "scf_tol")
 
 
 def _short_sha(data: dict[str, Any]) -> str:
@@ -50,13 +49,6 @@ class Level(BaseModel):
     @classmethod
     def _lower(cls, value: object) -> object:
         return value.lower() if isinstance(value, str) else value
-
-    def surface_key(self) -> str:
-        """Key of the potential-energy surface: every field except grid and scf_tol."""
-        data = self.model_dump(mode="json")
-        for name in _NUMERICS_FIELDS:
-            data.pop(name)
-        return _short_sha(data)
 
     def full_key(self) -> str:
         return _short_sha(self.model_dump(mode="json"))

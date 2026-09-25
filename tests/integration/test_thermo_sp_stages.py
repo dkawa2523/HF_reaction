@@ -40,12 +40,12 @@ def test_sp_then_thermo(fake_runtime, tmp_run):
             "energy_hartree": ev["reactant"].energy_hartree / 2 + 0.05})
     arts = [Artifact(artifact_id=calc_id(e), type=T.CALCULATION, payload=e) for e in ev.values()]
     arts += [Artifact(artifact_id=t, type=T.SPECIES, payload=R.SpeciesRecord(
-        species_id=t, composition_id=t, formula=t, charge=0, multiplicity=1,
+        species_id=t, composition_id=t, charge=0, multiplicity=1,
         geometry=ev[t].final, source="input", state_label=t)) for t in ("nh", "o")]
     arts += [Artifact(artifact_id=f"m_{k}", type=T.MINIMUM, payload=R.MinimumRecord(
         minimum_id=f"m_{k}", basin_id=k, composition_id={"nh": "nh", "o": "o"}.get(k, "HNO"),
         species_id=k, tier="dft", level_key="x", opt_calc="o", freq_calc=calc_id(ev[k]),
-        energy_hartree=0.0, state_label=k, n_fragments=1)) for k in ev if k != "ts"]
+        energy_hartree=0.0, state_label=k)) for k in ev if k != "ts"]
     term = (R.StoichTerm(composition_id="HNO", coefficient=1),)
     rx1 = R.ReactionRecord(
         reaction_id="rx1", reactants=term, products=term, minima=("m_reactant", "m_product"),

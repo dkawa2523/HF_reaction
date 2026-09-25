@@ -50,10 +50,5 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _echo(job: dict[str, Any], workdir: Path) -> dict[str, Any]:
-    """Test target: returns the job and where it ran."""
-    return {"job": job, "cwd": str(Path.cwd()), "workdir": str(workdir)}
-
-
 if __name__ == "__main__":
     sys.exit(main())

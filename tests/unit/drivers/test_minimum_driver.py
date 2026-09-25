@@ -21,7 +21,7 @@ def relax(root, pes, point, qm=None, **kw):
 
 def add(registry, outcome, sid):
     g = outcome.opt.final
-    return registry.add(outcome, SpeciesRecord(species_id=sid, formula="x", state_label="x",
+    return registry.add(outcome, SpeciesRecord(species_id=sid, state_label="x",
                         composition_id=composition_key(g.symbols, 0, 1), charge=0,
                         multiplicity=1, geometry=g, source="input"), tier="dft")
 
@@ -58,7 +58,7 @@ def test_registry_known_new_same_ambiguous_and_init_hessian(tmp_run) -> None:
     qm, registry = fakes.FakeQM(tmp_run, pes), Registry([], load)
     a, b = relax(tmp_run, pes, "reactant", qm), relax(tmp_run, pes, "product", qm)
     (ra, va), (rb, vb) = add(registry, a, "a"), add(registry, b, "b")
-    assert (va, vb) == ("new", "new") and ra.members == ("a",) and ra.n_fragments == 2
+    assert (va, vb) == ("new", "new") and ra.members == ("a",)
     hess = qm.frequencies(pes.molecule("reactant"), M)
     known = relax_to_minimum(pes.molecule("reactant"), M, qm, known=registry, init_hessian=hess)
     assert known.status == "known" and known.known_basin == ra.basin_id

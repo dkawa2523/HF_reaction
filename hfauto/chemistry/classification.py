@@ -71,7 +71,6 @@ def _child(parent: ReactionRecord, index: int, minima: tuple[str, str],
            endpoints: tuple[str, str]) -> ReactionRecord:
     return ReactionRecord(
         reaction_id=f"{parent.reaction_id}_split{index}",
-        parent_id=parent.reaction_id,
         source="split",
         reactants=parent.reactants,
         products=parent.products,

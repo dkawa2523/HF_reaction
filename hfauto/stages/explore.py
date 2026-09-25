@@ -20,7 +20,7 @@ from hfauto.backends.protocols import (
     DiscoverySettings,
 )
 from hfauto.chemistry import topology, trials
-from hfauto.chemistry.xyz import XYZ, Molecule, composition_key, hill_formula
+from hfauto.chemistry.xyz import XYZ, Molecule, composition_key
 from hfauto.core.evidence import Failure, Geometry
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
@@ -122,9 +122,8 @@ class _Explorer:
         return SpeciesRecord(
             species_id=f"spc_{discovery_id}",
             composition_id=composition_key(xyz.symbols, source.charge, source.multiplicity),
-            formula=hill_formula(xyz.symbols), charge=source.charge,
-            multiplicity=source.multiplicity, geometry=geometry, source="discovery",
-            state_label=topology.state_label(xyz.symbols, xyz.coords))
+            charge=source.charge, multiplicity=source.multiplicity, geometry=geometry,
+            source="discovery", state_label=topology.state_label(xyz.symbols, xyz.coords))
 
 
 class ExploreStage:

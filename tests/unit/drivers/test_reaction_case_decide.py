@@ -29,7 +29,7 @@ def minimum(mid: str, basin: str, kcal: float = 0.0, *,
     return r.MinimumRecord(minimum_id=mid, basin_id=basin, composition_id="CHN_q0_m1",
                            species_id="s" + mid, tier=tier, level_key=level, opt_calc="o",
                            freq_calc="f", energy_hartree=-93.0 + kcal / HARTREE_TO_KCAL_MOL,
-                           state_label="x", n_fragments=1)
+                           state_label="x")
 
 
 MA, MB = minimum("ma", "A"), minimum("mb", "B", 10.0)

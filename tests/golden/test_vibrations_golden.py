@@ -5,7 +5,7 @@ import re
 import numpy as np
 import pytest
 
-from hfauto.chemistry.vibrations import frame_residual, projected_frequencies
+from hfauto.chemistry.vibrations import projected_frequencies
 from hfauto.chemistry.xyz import read_xyz
 
 pytestmark = pytest.mark.golden
@@ -29,7 +29,6 @@ def test_g07_matches_nwchem_with_isotopic_masses(golden):
     assert k == 6
     assert freqs == pytest.approx(nwchem, abs=1.0)
     assert freqs[0] == pytest.approx(-1131.57, abs=1.0)
-    assert frame_residual(hessian, xyz.symbols, xyz.coords) < 1e-4
 
 
 def test_g08_non_stationary_seed_has_four_imaginary_modes(golden):

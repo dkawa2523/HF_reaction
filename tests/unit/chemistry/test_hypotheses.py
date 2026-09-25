@@ -22,7 +22,7 @@ def species(sid: str, symbols: str, coords) -> r.SpeciesRecord:
     STORE[sid] = XYZ(list(symbols), np.asarray(coords, dtype=float))
     geo = Geometry(file=FileRef(path=f"{sid}.xyz", sha256="0" * 64), fingerprint=sid,
                    symbols=tuple(symbols))
-    return r.SpeciesRecord(species_id=sid, composition_id="c", formula="f", charge=0,
+    return r.SpeciesRecord(species_id=sid, composition_id="c", charge=0,
                            multiplicity=1, geometry=geo, source="input", state_label="x")
 
 
@@ -30,7 +30,7 @@ def minimum(mid: str, sid: str, energy: float = -1.0, members: tuple[str, ...] =
             ) -> r.MinimumRecord:
     return r.MinimumRecord(minimum_id=mid, basin_id="b_" + mid, composition_id="c", species_id=sid,
                            tier="dft", level_key="L", opt_calc="o", freq_calc="f",
-                           energy_hartree=energy, state_label="x", n_fragments=1, members=members)
+                           energy_hartree=energy, state_label="x", members=members)
 
 
 def product(did: str, source: str, sid: str, ts: Geometry | None = None) -> r.DiscoveryRecord:

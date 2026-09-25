@@ -30,7 +30,7 @@ def ev(fp, energy, grid):
 def mini(mid, calc, notes=()):
     return rec.MinimumRecord(minimum_id=mid, basin_id=mid, composition_id="c", species_id=mid,
                          tier="dft", level_key="k", opt_calc=calc, freq_calc=calc,
-                         energy_hartree=0.0, state_label="l", n_fragments=1, notes=notes)
+                         energy_hartree=0.0, state_label="l", notes=notes)
 
 
 def test_overlapping_bands_share_a_rank_and_unrankable_reactions_are_listed_unranked():
