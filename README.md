@@ -83,13 +83,13 @@ hfauto run known_endpoints --system configs/systems/hcn.yaml --site configs/site
 
 ## 検証済みのベンチマーク
 
-WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD での実測値(改良後の再検証 v2)である。9 項目の全体、改良前(W7)との比較と、撤回した旧値は [docs/validation.md](docs/validation.md) にある。順位は PBE0-D3BJ/def2-SVPD の ΔG‡ の序数として読み、約 2 kcal/mol 未満の差は手法誤差の範囲と見る(根拠は [docs/design.md](docs/design.md) §7)。
+WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD での実測値(第2ラウンド改良後の再検証 v3)である。9 項目の全体、改良前(W7)・v2 との比較と、撤回した旧値は [docs/validation.md](docs/validation.md) にある。順位は PBE0-D3BJ/def2-SVPD の ΔG‡ の序数として読み、約 2 kcal/mol 未満の差は手法誤差の範囲と見る(根拠は [docs/design.md](docs/design.md) §7)。
 
 | 系 | pipeline | 結果 | 所要時間 |
 |---|---|---|---|
-| HCN → HNC | known_endpoints | TS −1128.5i cm⁻¹、ΔG‡ 42.18、ΔG_rxn 12.68 kcal/mol、elementary_step | 1 分 41 秒 |
-| HONO trans → cis | known_endpoints | TS −678.1i cm⁻¹、ΔG‡ 12.22 kcal/mol(旧値 24.11 は撤回) | 9 分 32 秒 |
-| TMA·(HF)₂ | discover | same_basin(プロトン移動の TS はない)。reaction-paths は 0 秒 | 31 分 15 秒(旧実装は約 30 h) |
+| HCN → HNC | known_endpoints | TS −1128.5i cm⁻¹、ΔG‡ 42.18、ΔG_rxn 12.68 kcal/mol、elementary_step | 1 分 24 秒 |
+| HONO trans → cis | known_endpoints | TS −681.0i cm⁻¹、ΔG‡ 12.23 kcal/mol(旧値 24.11 は撤回) | 5 分 23 秒 |
+| TMA·(HF)₂ | discover | same_basin(プロトン移動の TS はない)。reaction-paths は 0 秒 | 30 分 58 秒(旧実装は約 30 h) |
 
 ## 開発
 
