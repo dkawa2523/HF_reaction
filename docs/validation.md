@@ -1,6 +1,6 @@
-# 実計算による検証(v3・v4: 第2・第3ラウンド改良後の再検証、2026-09-26)
+# 実計算による検証(v3・v4・v5: 第2〜第4ラウンド改良後の再検証、2026-09-26)
 
-第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。
+第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11、第4ラウンドの小さな改良(コード `13a4340`)後の退行確認 v5 は §12 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。
 
 - 環境: WSL2 Ubuntu(4 vCPU / 11 GB)、`configs/sites/wsl_local.yaml`(NWChem 7.2.3 を 4 rank × 1,200 MB、xTB 6.7.1、CREST 3.0.2、SCINE ReaDuct 6.1.0、pysisyphus 1.0、GoodVibes 4.3.0)。
 - 手法: DFT は `pbe0-d3bj_def2-svpd`(grid fine、SCF 1e-7)、低レベルは GFN2-xTB。設定は `configs/` のまま使い、amine パイロット・(HF)₃ の配座・FIND_PATH・A/B だけ一時 system / pipeline を使った(v2 の `/home/user/hfauto_v2/configs/` を `/home/user/hfauto_v3/configs/` に複製。内容は同じ)。
@@ -137,7 +137,7 @@ HONO の TS は FIND_PATH の HEI から精密化したので虚振動が −681
 ## 9. 修正
 
 - **F1**(W7、`hfauto/chemistry/hypotheses.py`): 宣言反応の端点が screen の basin に崩壊した seed(members の 1 つ)の場合、その端点は screen の極小に割り付き、`blocked_upstream`(`endpoints_not_on_one_pes`)になっていた(TMA·(HF)₂ の shared_proton)。端点の basin がその screen basin の DFT 極小であればそちらを使うように変えた。回帰テストは `tests/unit/chemistry/test_hypotheses.py::test_declared_endpoint_collapsed_at_screen_takes_the_dft_basin`。
-- v2・v3・v4 の再検証では、コードの修正が必要な不具合は出なかった。
+- v2・v3・v4 の再検証と v5 の退行確認では、コードの修正が必要な不具合は出なかった。
 
 ## 10. 未解決事項
 
@@ -194,3 +194,24 @@ HONO の TS は FIND_PATH の HEI から精密化したので虚振動が −681
 
 - HONO の GS の発散(§10 の 1)は v4 でも同じだった(`screen:unavailable:screen_path:nonzero_exit`)。
 - 検証の run で通していない経路(§10 の 6)は v4 でも変わらない。
+
+## 12. v5(第4ラウンド後の退行確認、2026-09-26)
+
+- コード: `13a4340`(C25・C28・C40・C41・C37・C27′・C34。文書だけの C45・C39′ は `e73adc9`)。環境・手法は v4 と同じ。run は `/home/user/hfauto_v5/<run>`(すべて新しい run dir)、プローブは `/home/user/hfauto_v5_probe/`。
+- 対象は known_endpoints の 4 run(HCN、HONO、NH3、水)。第4ラウンドの項目は FIND_PATH(STO-3G)や discover の数値に効かないので、それらは再実行していない。
+- `hfauto doctor --site wsl_local`: 8 エンジンすべて ok、版数は `13a4340…`(`-dirty` なし)。実エンジンの smoke: 12 passed(72 秒)。
+- コードの修正は要らなかった。
+
+| 系 | 所要時間 v4 → v5 | ジョブ数(再利用) | v5 の結果(v4 との差) | ΔG‡ v4 → v5(kcal/mol) |
+|---|---|---|---|---|
+| HCN→HNC | 1:24 → 1:22 | 29(2)→ 29(2) | `elementary_step`、TS −1128.5i。QRC 12 / 15 → 15 / 12(両側の向きが入れ替わっただけ) | 42.1783 → 42.1783(−0.00001) |
+| HONO trans→cis | 5:32 → 5:32 | 16(0)→ 16(0) | GS は同じく失敗(`screen_path:nonzero_exit`)し、FIND_PATH から鞍点。TS −681.5i → −681.6i。QRC 15 / 13 → 15 / 15 | 12.2267 → 12.2265(−0.0002) |
+| NH3 反転 | 1:25 → 1:25 | 27(1)→ 27(1) | `degenerate_rearrangement`、TS −757.7i、QRC 25 / 25。すべて v4 と同じ | 3.8395 → 3.8395(0.000) |
+| 水(同一 basin) | 0:11 → 0:11 | 4 → 4 | `same_basin`、blocker は `outcome:same_basin` だけ | — |
+
+- ΔE‡ と ΔE_rxn は v4 と 1e-5 kcal/mol 以内で一致し、順位の付く 3 反応はすべて rank 1 のままだった。4 run の code_version は `13a4340a…`(`-dirty` なし)。
+- **C25**: 4 run の ranking.csv の見出しが `rank,reaction_id,outcome,tier,rankable,T_K,standard_state,dG_act_kcal,band_low_kcal,band_high_kcal,dG_rxn_kcal,blockers` になり、値は T_K 298.15、standard_state `1atm`、dG_rxn_kcal は thermo と同じ(HCN 12.683、HONO 0.076、NH3 0.0、水 0.0)。順位の付かない水の行にも T_K と dG_rxn_kcal が入る。
+- **C37・C27′**: 73 個の `command_result.json` に `stopped` のキーはない。`resolved_config.yaml` の site から `memory_mb` がなくなった(v4 は 11000)。NWChem の `memory_mb_per_rank` は従来どおり。
+- **C41**: v3 の TMA·(HF)₂ で失敗した ReaDuct の attempt 3 件を、同じ `job.json` から v5 の worker で再実行した(`/home/user/hfauto_v5_probe/c41`)。結果(`ts_not_converged`、`monotonic_uphill`、`afir_not_converged`)は v3 と同じで、`stderr.txt` に原因の 1 行が加わった(`run_tsopt_task: No more negative eigenvalues, optimization failed.`、`run_nt2_task: No transition state guess was found in Newton Trajectory scan.`、`run_afir_task: Problem: AFIR optimization did not converge.`)。v3 では後の 2 件の `stderr.txt` は空だった。
+- **C40**: `smiles_to_molecule("[2H]F", 0, 1)` は `SMILES '[2H]F' specifies isotopes; hfauto uses most-abundant-isotope masses` を出した。
+- **C28・C34**: 4 run には層の欠けた subject も conformers stage もないので、実 run では通っていない(C28 は S9 のテスト、C34 は第4ラウンドの CREST のプローブで確認済み)。
