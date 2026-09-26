@@ -18,7 +18,7 @@ def fake_runtime(tmp_path, override_engine):
         for (capability, name), engine in engines.items():
             override_engine(capability, name, engine)
         site = SiteConfig(site="fake", scratch_root=str(tmp_path / "scratch"), cores=4,
-                          memory_mb=4000, engines={n: EngineSite(version="0") for _, n in engines})
+                          engines={n: EngineSite(version="0") for _, n in engines})
         resolved = ResolvedConfig(pipeline=PipelineConfig(pipeline_id="fake", stages=[]),
                                   system=system, site=site, methods=dict(methods or {}),
                                   code_version="test")

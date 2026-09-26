@@ -34,9 +34,9 @@ def test_status_sums_failures_by_kind_and_job_reuse(tmp_path):
         StageState(stage_id="dft", pipeline_id="p", status="done", n_ok=3,
                    jobs=JobCounts(hits=1, misses=3, failures_by_kind={"timeout": 2})),
         StageState(stage_id="paths", pipeline_id="p", status="failed",
-                   jobs=JobCounts(hits=1, failures_by_kind={"timeout": 1, "stagnated": 1}))])
+                   jobs=JobCounts(hits=1, failures_by_kind={"timeout": 1, "nonzero_exit": 1}))])
     result = cli.invoke(app, ["status", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert "job failures: stagnated=1, timeout=3" in result.output
+    assert "job failures: nonzero_exit=1, timeout=3" in result.output
     assert "job reuse: 2/5 (40%)" in result.output
     assert cli.invoke(app, ["status", str(tmp_path / "missing")]).exit_code == 2

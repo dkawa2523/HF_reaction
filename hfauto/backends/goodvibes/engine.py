@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import ClassVar, Literal
 
@@ -66,9 +66,6 @@ class _Adapter:
             return Failure(kind=FailureKind(data["error"]["kind"]), reason=data["error"]["reason"])
         return ThermoBatch(results=tuple(
             ThermoResult(**r, notes=(), job_key="") for r in data["results"]))
-
-    def monitor(self, task: Task) -> Callable[[Path], str | None] | None:
-        return None
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
         return None  # a failed thermochemistry is final (G = None downstream)

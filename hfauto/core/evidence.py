@@ -110,7 +110,6 @@ class FailureKind(StrEnum):
     EXECUTABLE_MISSING = "executable_missing"
     INPUT_INVALID = "input_invalid"
     TIMEOUT = "timeout"
-    STAGNATED = "stagnated"
     NONZERO_EXIT = "nonzero_exit"
     SCF_NOT_CONVERGED = "scf_not_converged"
     GEOMETRY_MAXITER = "geometry_maxiter"

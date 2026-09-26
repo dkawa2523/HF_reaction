@@ -27,7 +27,7 @@ def smiles_to_molecule(smiles: str, charge: int, multiplicity: int, *,
         raise ValueError(f"SMILES {smiles!r} has formal charge {formal}, declared {charge}")
     if any(a.GetIsotope() for a in mol.GetAtoms()):
         raise ValueError(f"SMILES {smiles!r} specifies isotopes; "
-                         "hfauto uses natural-abundance masses")
+                         "hfauto uses most-abundant-isotope masses")
     mol = Chem.AddHs(mol)
     params = rdDistGeom.ETKDGv3()
     params.randomSeed = random_seed

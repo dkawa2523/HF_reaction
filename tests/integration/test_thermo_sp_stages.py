@@ -105,6 +105,7 @@ def test_sp_then_thermo(fake_runtime, tmp_run):
     assert layered[f"{ts}_298.15K"].G_hartree is None
     assert {"thermo_unavailable", "energy_layer_missing"} <= set(layered[f"{ts}_298.15K"].notes)
     assert "thermo_unavailable" in layered["rx1_298.15K_1atm"].blockers
+    assert layered["rx1_298.15K_1atm"].dE_act_kcal is None  # no dE mixing the sp and freq LOTs
 
 
 def test_association_across_charge_and_spin_fails_closed(fake_runtime, tmp_run):  # S14

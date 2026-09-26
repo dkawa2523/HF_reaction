@@ -10,7 +10,7 @@ FILES = {  # pipeline, system and site first: the arguments of load()
     "pipelines/demo.yaml": "{pipeline_id: demo, gates: {noise_cm1: 12.0}, stages: [{id: screen,"
     " stage: minima, engine: xtb, method: gfn2, init_hessian: {method: gfn2}}]}",
     "systems/h2.yaml": "{system_id: h2, species: [{id: h2, xyz: xyz/h2.xyz}]}",
-    "sites/local.yaml": "{site: local, scratch_root: /home/u/s, cores: 4, memory_mb: 11000}",
+    "sites/local.yaml": "{site: local, scratch_root: /home/u/s, cores: 4}",
     "methods/gfn2.yaml": "{id: gfn2, kind: xtb, gfn: 2}",
     "systems/xyz/h2.xyz": "2\n\nH 0 0 0\nH 0 0 0.74\n",
 }

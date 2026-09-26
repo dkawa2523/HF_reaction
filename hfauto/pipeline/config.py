@@ -33,7 +33,6 @@ class SiteConfig(BaseModel):
     site: str
     scratch_root: str
     cores: int = Field(ge=1)
-    memory_mb: int = Field(ge=1)
     engines: dict[str, EngineSite] = {}
 
 

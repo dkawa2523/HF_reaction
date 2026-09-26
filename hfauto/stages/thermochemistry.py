@@ -189,8 +189,9 @@ def _blockers(names: tuple[str, ...], subjects: dict[str, _Subject], table: Tabl
 
 def _kcal(subjects: dict[str, _Subject], a: str, b: str) -> float | None:
     sa, sb = subjects.get(a), subjects.get(b)
-    return None if sa is None or sb is None else (
-        sa.energy.energy_hartree - sb.energy.energy_hartree) * HARTREE_TO_KCAL_MOL
+    if sa is None or sb is None or sa.layer_missing or sb.layer_missing:  # no mixed-LOT dE
+        return None
+    return (sa.energy.energy_hartree - sb.energy.energy_hartree) * HARTREE_TO_KCAL_MOL
 
 
 def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject], monomers: Monomers, T: float,

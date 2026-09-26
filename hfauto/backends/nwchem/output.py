@@ -221,13 +221,10 @@ def program_converged(text: str) -> bool:
     return "@zts The string calculation converged" in text
 
 
-def classify_failure(text: str, *, returncode: int | None, timed_out: bool,
-                     stopped: str | None = None) -> Failure | None:
+def classify_failure(text: str, *, returncode: int | None, timed_out: bool) -> Failure | None:
     """The Failure of an abnormal job, or None when it terminated normally."""
     if timed_out or returncode == 124:
         return Failure(kind=FailureKind.TIMEOUT, reason="walltime")
-    if stopped:
-        return Failure(kind=FailureKind.STAGNATED, reason=stopped)
     if returncode == 0 and NORMAL_END in text:
         return None
     for pattern, kind, reason in (

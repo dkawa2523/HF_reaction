@@ -89,12 +89,11 @@ def test_g22_g23_g24_and_other_failures(golden):
         nw.classify_failure("", returncode=killed["returncode"], timed_out=killed["timed_out"]),
         nw.classify_failure(" AUTOZ failed to generate", returncode=1, timed_out=False),
         nw.classify_failure("Calculation failed to converge", returncode=1, timed_out=False),
-        nw.classify_failure(nw.NORMAL_END, returncode=None, timed_out=False, stopped="stagnated"),
         nw.classify_failure("", returncode=0, timed_out=False),
     ]
     assert [f.kind for f in failures] == [
         Kind.TIMEOUT, Kind.GEOMETRY_MAXITER, Kind.NONZERO_EXIT, Kind.INPUT_INVALID,
-        Kind.SCF_NOT_CONVERGED, Kind.STAGNATED, Kind.INCOMPLETE_OUTPUT]
+        Kind.SCF_NOT_CONVERGED, Kind.INCOMPLETE_OUTPUT]
     ok = " AUTOZ failed to generate good internal coordinates.\n" + nw.NORMAL_END
     assert nw.classify_failure(ok, returncode=0, timed_out=False) is None  # NWChem fell back
 

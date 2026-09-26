@@ -204,6 +204,10 @@ class RankRow(BaseModel):
     dG_act_kcal: float | None
     band_kcal: tuple[float, float] | None
     blockers: tuple[str, ...]
+    # rank_rows always sets these; the defaults keep reports of older manifests valid
+    T_K: float | None = None
+    standard_state: str | None = None
+    dG_rxn_kcal: float | None = None
 
 
 class ReportRecord(BaseModel):

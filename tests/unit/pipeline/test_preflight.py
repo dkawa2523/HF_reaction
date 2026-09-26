@@ -11,7 +11,7 @@ from hfauto.pipeline.preflight import check_site, engine_uses, preflight
 
 
 def site(scratch: str, **engines: EngineSite) -> SiteConfig:
-    return SiteConfig(site="s", scratch_root=scratch, cores=4, memory_mb=1000, engines=engines)
+    return SiteConfig(site="s", scratch_root=scratch, cores=4, engines=engines)
 
 
 def test_scratch_on_a_windows_drive_is_reported():

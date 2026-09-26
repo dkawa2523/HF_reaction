@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -110,9 +109,6 @@ class _Adapter:
         xyz = read_xyz(workdir / name)
         return Geometry(file=self.jobs.store.file_ref(workdir / name), symbols=tuple(xyz.symbols),
                         fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords))
-
-    def monitor(self, task: Task) -> Callable[[Path], str | None] | None:
-        return None
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
         return None

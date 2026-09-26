@@ -24,7 +24,7 @@ def parse(tmp_path, golden, kind, stdout, stderr=None, version="6.7.1"):
     mol.write(wd / "input.xyz")
     xtb = XTBEngine(jobs=JobRunner(JobStore(tmp_path / "run" / "jobs"), cores=1),
                     site=EngineSite(version=version))
-    done = CommandResult(0, False, None, 1.0, wd / "stdout.txt", wd / "stderr.txt")
+    done = CommandResult(0, False, 1.0, wd / "stdout.txt", wd / "stderr.txt")
     return xtb.adapter.parse(xtb.task(kind, mol, GFN2), wd, done), mol
 
 

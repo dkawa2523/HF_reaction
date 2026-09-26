@@ -53,8 +53,6 @@ def _fail(kind: FailureKind, reason: str) -> Failure:
 def _termination(workdir: Path, result: CommandResult, text: str) -> Failure | None:
     if result.timed_out:
         return _fail(FailureKind.TIMEOUT, "xtb timed out")
-    if result.stopped is not None:
-        return _fail(FailureKind.STAGNATED, result.stopped)
     if "FAILED TO CONVERGE" in text or (workdir / "NOT_CONVERGED").exists():
         return _fail(FailureKind.GEOMETRY_MAXITER, "xtb optimization did not converge")
     if result.returncode != 0:
@@ -117,9 +115,6 @@ class _Adapter:
         threads = task.execution.threads
         env = {"OMP_NUM_THREADS": f"{threads},1", "OMP_STACKSIZE": "4G", **task.execution.env}
         return Command(argv=tuple(argv), cwd=workdir, env=env)
-
-    def monitor(self, task: Task) -> None:
-        return None
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
         """Restart an optimization from ``xtbopt.xyz`` after a timeout or maxiter."""

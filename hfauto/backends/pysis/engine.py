@@ -135,17 +135,12 @@ class GrowingStringAdapter:
             env["PATH"] = os.pathsep.join((str(Path(xtb).parent), path))
         return env
 
-    def monitor(self, task: Task) -> None:
-        return None
-
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> None:
         return None
 
     def parse(self, task: Task, workdir: Path, result: CommandResult) -> PathProfile | Failure:
         if result.timed_out:
             return _fail(FailureKind.TIMEOUT, "pysisyphus timed out")
-        if result.stopped is not None:
-            return _fail(FailureKind.STAGNATED, result.stopped)
         if result.returncode != 0:
             lines = result.stderr.read_text(encoding="utf-8", errors="replace").splitlines()
             last = lines[-1] if lines else ""

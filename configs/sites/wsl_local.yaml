@@ -1,11 +1,10 @@
 # WSL2 Ubuntu on the workstation (.wslconfig: 4 vCPU / 11 GB). The only config layer with
 # absolute paths. Scratch must stay on ext4 under $HOME (never /mnt/c, never /tmp).
-# With .wslconfig raised to 16 vCPU / 48 GB: cores 16, memory_mb 48000,
-# nwchem ranks 16 x 2000 MB/rank (32 GB <= 0.8 x MemTotal), crest threads 4 (4 jobs at once).
+# With .wslconfig raised to 16 vCPU / 48 GB: cores 16, nwchem ranks 16 x memory_mb_per_rank
+# 2000 (32 GB <= 0.8 x MemTotal), crest threads 4 (4 jobs at once).
 site: wsl_local
 scratch_root: /home/user/hfauto_scratch
 cores: 4
-memory_mb: 11000
 engines:
   nwchem: &nwchem
     version: "7.2.3"

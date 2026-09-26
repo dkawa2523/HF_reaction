@@ -16,6 +16,7 @@ temperature (chem 11).
 from __future__ import annotations
 
 import importlib.metadata
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -137,6 +138,7 @@ class _Scine:
         except RuntimeError as exc:  # SCINE reports every failed task as RuntimeError
             if is_scc_failure(str(exc)):
                 raise SccFailure(str(exc)) from exc
+            print(f"{run}: {exc}", file=sys.stderr)  # the cause of the failure, for diagnosis
             return False
         return (bool(ok) or not strict) and all(o in self.systems for o in output)
 

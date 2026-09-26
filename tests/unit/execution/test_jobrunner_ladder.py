@@ -44,9 +44,6 @@ class ScriptAdapter:
         out = workdir / "out.txt"
         return Out(value=out.read_text(), file=self.store.file_ref(out))
 
-    def monitor(self, task):
-        return None
-
     def continuation(self, task, workdir, failure):
         codes = task.inputs["codes"][1:]
         return replace(task, inputs={"codes": codes}, execution=ExecutionSpec()) if codes else None

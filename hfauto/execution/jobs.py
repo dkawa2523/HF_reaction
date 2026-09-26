@@ -50,8 +50,6 @@ class Adapter(Protocol[T]):
 
     def parse(self, task: Task, workdir: Path, result: CommandResult) -> T | Failure: ...
 
-    def monitor(self, task: Task) -> Callable[[Path], str | None] | None: ...
-
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None: ...
 
 
@@ -147,7 +145,7 @@ class JobRunner:
         cmd = adapter.prepare(task, workdir)
         with self._semaphore.reserve(task.execution.ranks * task.execution.threads):
             try:
-                result = run_command(cmd, timeout_s=timeout_s, monitor=adapter.monitor(task))
+                result = run_command(cmd, timeout_s=timeout_s)
             except (FileNotFoundError, PermissionError) as exc:
                 return Failure(kind=FailureKind.EXECUTABLE_MISSING, reason=f"{cmd.argv[0]}: {exc}")
         return adapter.parse(task, workdir, result)

@@ -29,7 +29,7 @@ def test_models_are_frozen_and_forbid_extra_fields():
 
 
 def test_failure_kinds_and_constants():
-    assert len(FailureKind) == 11
+    assert len(FailureKind) == 10
     failure = Failure(kind="gate_rejected", reason="no_collision_free_seed")
     assert failure.kind is FailureKind.GATE_REJECTED
     assert CM1_TO_HARTREE * 219474.6313705 == pytest.approx(1.0, rel=1e-9)

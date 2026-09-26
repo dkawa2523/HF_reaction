@@ -168,7 +168,7 @@ class _NWChem:
             shutil.rmtree(self._scratch(workdir), ignore_errors=True)
         text = _read(workdir / STDOUT_NAME)
         failure = nw_out.classify_failure(text, returncode=result.returncode,
-                                          timed_out=result.timed_out, stopped=result.stopped)
+                                          timed_out=result.timed_out)
         if failure is not None:
             return failure
         level = self._observed(task, text)
@@ -177,9 +177,6 @@ class _NWChem:
         if task.kind == "string":
             return self._path(task, workdir, text, level)
         return self._evidence(task, workdir, text, level)
-
-    def monitor(self, task: Task) -> None:
-        return None  # a string runs its chunk to the end: find_path judges the bead energies
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
         """autoz -> Cartesian coordinates from the same start; SCF -> the old vectors with damping

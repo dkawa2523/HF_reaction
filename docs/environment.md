@@ -36,7 +36,7 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 
 | 項目 | 設定 |
 |---|---|
-| `.wslconfig` | `C:\Users\user\.wslconfig` に `processors=4`、`memory=12GB`、`swap=2GB`。WSL から 4 vCPU・約 11.9 GB に見える。site は `cores: 4`、`memory_mb: 11000` |
+| `.wslconfig` | `C:\Users\user\.wslconfig` に `processors=4`、`memory=12GB`、`swap=2GB`。WSL から 4 vCPU・約 11.9 GB に見える。site は `cores: 4` |
 | scratch | ext4 上の `/home/user/hfauto_scratch`(NWChem は `/home/user/hfauto_scratch/nwchem`)。`/mnt/c` などの Windows ドライブ上の scratch は preflight が拒否する。`/tmp` も使わない |
 | run ディレクトリ | `--run-dir` で ext4 上に置く(例: `/home/user/hfauto_v2/<run>`)。省略するとリポジトリ内の `runs/<system_id>_<pipeline_id>` になり、過去の run と混ざる |
 | スレッド | NWChem は `OMP_NUM_THREADS=1`(MPI rank で並列化)、xTB・CREST・ReaDuct は `OMP_NUM_THREADS=<n>,1` と `OMP_STACKSIZE=4G`。アダプタが設定する。CREST のスレッド数(`-T` と OMP)は site の `engines.crest.execution.threads` だけから決まる(省くと既定の 1 で `-T 1`) |

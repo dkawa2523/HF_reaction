@@ -60,4 +60,7 @@ def test_report_stage_writes_tables_from_a_fake_view(fake_runtime, tmp_run):
     assert {(r["metric"], r["key"], r["count"]) for r in read["coverage.csv"]} == {
         ("attempts", "nt2", "1"), ("products", "nt2", "1"),
         ("failure_kind", "scf_not_converged", "1")}
-    assert read["ranking.csv"][0]["band_low_kcal"] == "4.5"
+    ranked = read["ranking.csv"][0]
+    assert ranked["band_low_kcal"] == "4.5" and ranked["dG_act_kcal"] == "5.0"
+    assert (ranked["T_K"], ranked["standard_state"], ranked["dG_rxn_kcal"]) == (
+        "298.15", "1atm", "2.0")

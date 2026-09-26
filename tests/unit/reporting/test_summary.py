@@ -50,6 +50,9 @@ def test_overlapping_bands_share_a_rank_and_unrankable_reactions_are_listed_unra
     assert [r.rank for r in rank_rows(reactions, thermo, notes, 298.15, "1M")] == [None] * 6
     by_rxn = rank_rows(reactions[:3], thermo[:3], {}, 298.15, "1atm", metric="dG_rxn")
     assert [r.rank for r in by_rxn] == [1, 1, 1]  # equal dG_rxn, bands apply to dG_act only
+    assert {(r.T_K, r.standard_state, r.dG_rxn_kcal) for r in by_rxn} == {(298.15, "1atm", 1.0)}
+    old = by_rxn[0].model_dump(exclude={"T_K", "standard_state", "dG_rxn_kcal"})
+    assert rec.RankRow.model_validate(old).T_K is None  # a report row of an older manifest
 
 
 def test_coverage_counts_mechanisms_negative_reasons_and_failure_kinds():

@@ -4,7 +4,7 @@ import shutil
 
 import pytest
 
-from hfauto.backends.crest import parse_outputs, topology_stopped
+from hfauto.backends.crest import TOPOLOGY_STOP, parse_outputs
 from hfauto.chemistry.xyz import read_xyz
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import FailureKind
@@ -36,7 +36,7 @@ def test_g18_conformers_energies_and_a_missing_energy(tmp_path, golden):
 def test_g19_topology_change_is_a_topology_stop(tmp_path, golden):
     stdout = golden.text("crest/G19/crest.stdout")
     missing = _parse(tmp_path, stdout, ["N", "H"])  # a stop without crestopt.log
-    assert topology_stopped(stdout) and missing.kind is FailureKind.INCOMPLETE_OUTPUT
+    assert TOPOLOGY_STOP in stdout and missing.kind is FailureKind.INCOMPLETE_OUTPUT
     frame = "2\n Etot= {}\nN 0 0 0\nH 0 0 {}\n"  # crestopt.log: the last frame is the stop
     (tmp_path / "crestopt.log").write_text(frame.format(-1.0, 1.1) + frame.format(-1.2, 1.02))
     ens = _parse(tmp_path, stdout, ["N", "H"])

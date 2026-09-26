@@ -68,7 +68,7 @@ def test_result_mapping(tmp_run):
 
     def parse(data, returncode=0):
         (workdir / "result.json").write_text(json.dumps(data))
-        result = CommandResult(returncode, False, None, 1.0, workdir / "o", workdir / "stderr.txt")
+        result = CommandResult(returncode, False, 1.0, workdir / "o", workdir / "stderr.txt")
         return adapter.parse(task, workdir, result)
 
     found = worker.Found("negative", "irc_not_connected_to_source", {"ts": 0}, ts_imag_cm1=-500.0)

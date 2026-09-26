@@ -36,7 +36,6 @@ INPUT = "input.xyz"
 CONFORMERS = "crest_conformers.xyz"
 OPT_LOG = "crestopt.log"
 TOPOLOGY_STOP = "Change in topology detected"
-TOPOLOGY_CONTINUED = "Taking new topology as reference"  # printed instead with --noreftopo
 _VERSION = re.compile(r"Version\s+(\d[\w.+-]*)")
 _REMOVALS = re.compile(r"CREGEN> number of topology-based structure removals:\s*(\d+)")
 _FLOAT = re.compile(r"[-+]?\d+\.\d*(?:[Ee][-+]?\d+)?")
@@ -45,7 +44,7 @@ _FLOAT = re.compile(r"[-+]?\d+\.\d*(?:[Ee][-+]?\d+)?")
 def command(mol: Molecule, method: MethodSpec, settings: ConformerSettings, *, threads: int,
             executable: str = "crest") -> tuple[str, ...]:
     """``--gfnN [--nci] [--quick] -T n --ewin e --chrg q --uhf m-1 [--notopo atoms] [--noopt]
-    [--noreftopo] [--alpb solvent]``; atoms are 1-based on the CLI."""
+    [--alpb solvent]``; atoms are 1-based on the CLI."""
     argv = [executable, INPUT, f"--gfn{method.gfn}"]
     argv += ["--nci"] if settings.nci else []
     argv += ["--quick"] if settings.quick else []
@@ -56,7 +55,6 @@ def command(mol: Molecule, method: MethodSpec, settings: ConformerSettings, *, t
     # CREST 3.0.2's initial topology check after the pre-optimization ignores --notopo
     # (setuptest.f90), so acid-base and anion complexes stopped there; --noopt skips it.
     argv += ["--noopt"] if settings.nci else []
-    argv += ["--noreftopo"] if settings.topology == "noref" else []
     if method.solvation:
         argv += ["--alpb", method.solvation.split(":", 1)[1]]
     return tuple(argv)
@@ -70,10 +68,6 @@ def observed_version(stdout: str) -> str | None:
 def topology_removed(stdout: str) -> int:
     """Sum over every CREGEN call of the topology-based structure removals."""
     return sum(int(n) for n in _REMOVALS.findall(stdout))
-
-
-def topology_stopped(stdout: str) -> bool:
-    return TOPOLOGY_STOP in stdout and TOPOLOGY_CONTINUED not in stdout
 
 
 def _energy(comment: str) -> float | None:
@@ -91,7 +85,7 @@ def parse_outputs(workdir: Path, stdout: str, symbols: Sequence[str],
                   file_ref: Callable[[Path], FileRef]) -> ConformerEnsemble | Failure:
     """Ensemble of a finished CREST directory (return code already checked)."""
     removed, version = topology_removed(stdout), observed_version(stdout) or "unknown"
-    if topology_stopped(stdout):
+    if TOPOLOGY_STOP in stdout:
         if not (workdir / OPT_LOG).is_file():
             reason = f"topology stop without {OPT_LOG}"
             return Failure(kind=FailureKind.INCOMPLETE_OUTPUT, reason=reason)
@@ -130,20 +124,15 @@ class _Adapter:
               ) -> ConformerEnsemble | Failure:
         if result.timed_out:
             return Failure(kind=FailureKind.TIMEOUT, reason=f"{result.duration_s:.0f} s")
-        if result.stopped:
-            return Failure(kind=FailureKind.STAGNATED, reason=result.stopped)
         stdout = result.stdout.read_text(encoding="utf-8", errors="replace")
         version = observed_version(stdout)
         if (version or "").lower() != self.site.version.lower():
             return Failure(kind=FailureKind.METHOD_MISMATCH,
                            reason=f"version: requested {self.site.version!r}, observed {version!r}")
-        if result.returncode != 0 and not topology_stopped(stdout):
+        if result.returncode != 0 and TOPOLOGY_STOP not in stdout:
             return Failure(kind=FailureKind.NONZERO_EXIT, reason=f"returncode {result.returncode}")
         mol: Molecule = task.inputs["molecule"]
         return parse_outputs(workdir, stdout, mol.xyz.symbols, self.store.file_ref)
-
-    def monitor(self, task: Task) -> None:
-        return None
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> None:
         return None

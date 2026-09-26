@@ -78,7 +78,7 @@ def test_run_result_becomes_a_path_profile(tmp_run):
     assert summarize(NS(**{**vars(result), "ts_opt": NS(is_converged=False)}), work)["ts"] is None
     (work / "result.json").write_text(json.dumps(data))
     (work / "stderr.txt").write_text("Traceback\nRuntimeError: boom\n")
-    ok, crashed = (CommandResult(rc, False, None, 1.0, work / "stdout.txt", work / "stderr.txt")
+    ok, crashed = (CommandResult(rc, False, 1.0, work / "stdout.txt", work / "stderr.txt")
                    for rc in (0, 1))
     gs = engine(tmp_run)
     task = gs.task(HCN, BENT, GFN2, images=3, refine_ts=True)

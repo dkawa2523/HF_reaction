@@ -125,6 +125,9 @@ def rank_rows(
                 dG_act_kcal=t.dG_act_kcal if t is not None else None,
                 band_kcal=t.band_kcal if t is not None else None,
                 blockers=gate.reasons,
+                T_K=T,
+                standard_state=state,
+                dG_rxn_kcal=t.dG_rxn_kcal if t is not None else None,
             )
         )
     ranks = _tie_ranks(intervals)
@@ -256,17 +259,21 @@ _RANK_HEADER = (
     "outcome",
     "tier",
     "rankable",
+    "T_K",
+    "standard_state",
     "dG_act_kcal",
     "band_low_kcal",
     "band_high_kcal",
+    "dG_rxn_kcal",
     "blockers",
 )
 
 
 def _rank_cells(row: RankRow) -> tuple[object, ...]:
     low, high = row.band_kcal or (None, None)
-    cells = (row.rank, row.reaction_id, row.outcome.value, row.tier, row.rankable)
-    return (*cells, row.dG_act_kcal, low, high, ";".join(row.blockers))
+    cells = (row.rank, row.reaction_id, row.outcome.value, row.tier, row.rankable, row.T_K,
+             row.standard_state)
+    return (*cells, row.dG_act_kcal, low, high, row.dG_rxn_kcal, ";".join(row.blockers))
 
 
 def write_tables(

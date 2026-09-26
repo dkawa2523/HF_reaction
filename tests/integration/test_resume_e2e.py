@@ -26,7 +26,7 @@ STAGES = [{"id": "structures", "stage": "structures"},
            "targets": "all_minima"},
           {"id": "report", "stage": "report"}]
 ADAPTER = SimpleNamespace(  # one trivial process per job; the result is computed in parse
-    result_type=Evidence, monitor=lambda task: None, continuation=lambda *_: None,
+    result_type=Evidence, continuation=lambda *_: None,
     prepare=lambda task, workdir: Command(argv=(sys.executable, "-c", ""), cwd=workdir),
     parse=lambda task, workdir, result: task.inputs["compute"]())
 
@@ -61,7 +61,7 @@ def test_interrupted_run_resumes_and_from_reruns_the_downstream_stages(tmp_path,
         "pipeline": {"pipeline_id": "resume", "stages": STAGES}, "code_version": "test",
         "system": {"system_id": "dw", "species": ends},
         "site": {"site": "fake", "scratch_root": str(tmp_path / "scratch"), "cores": 1,
-                 "memory_mb": 1000, "engines": {"nwchem": {"version": "0"}}},
+                 "engines": {"nwchem": {"version": "0"}}},
         "methods": {b: {"id": b, "kind": "dft", "functional": "pbe0", "basis": b}
                     for b in ("svp", "tzvp")}})
     made: list[JobQM] = []  # one engine (and JobRunner) per run; the first one crashes

@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-from pydantic import ValidationError
 
 from hfauto.backends import engines
 from hfauto.backends.crest import command, topology_removed
@@ -25,11 +24,8 @@ def test_command_maps_every_setting():
                    executable="/opt/crest")  # a composition: --noopt
     assert " ".join(argv) == ("/opt/crest input.xyz --gfn2 --nci --quick -T 2 --ewin 4 --chrg -1"
                               " --uhf 1 --notopo 1,5,6 --noopt --alpb water")
-    plain = command(ION, GFN2, CS(quick=False, topology="noref"), threads=1)  # a monomer retry
-    assert not {"--nci", "--noopt", "--quick", "--notopo"} & set(plain)
-    assert plain[-1] == "--noreftopo"
-    with pytest.raises(ValidationError):
-        CS(topology="off")
+    plain = command(ION, GFN2, CS(quick=False), threads=1)  # a monomer
+    assert " ".join(plain) == "crest input.xyz --gfn2 -T 1 --ewin 6 --chrg -1 --uhf 1"
     assert topology_removed("CREGEN> number of topology-based structure removals: 23\n"
                             "CREGEN> number of topology-based structure removals: 22\n") == 45
 
@@ -65,5 +61,5 @@ def test_run_classification(tmp_path, rc, timed_out, pin, kind):
     assert (workdir / "input.xyz").is_file() and cmd.env["OMP_NUM_THREADS"] == "1,1"
     assert "--scratch" not in cmd.argv and not (tmp_path / "scratch").exists()
     (workdir / "stdout.txt").write_text("Version 3.0.2, Sun\n", encoding="utf-8")
-    result = CommandResult(rc, timed_out, None, 1.0, workdir / "stdout.txt", workdir / "e.txt")
+    result = CommandResult(rc, timed_out, 1.0, workdir / "stdout.txt", workdir / "e.txt")
     assert crest._adapter.parse(task, workdir, result).kind is kind

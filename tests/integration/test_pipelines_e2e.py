@@ -69,7 +69,7 @@ def pipeline(tmp_path, tmp_run, override_engine):
                       "compositions": [{"id": "hf2", "components": {"hf": 2}}],
                       "reactions": [{"id": "rx", "reactant": "reactant", "product": "product"}]},
            "site": {"site": "fake", "scratch_root": str(tmp_path / "scratch"), "cores": 1,
-                    "memory_mb": 4000, "engines": {n: {"version": "0"} for _, n in fake}}}
+                    "engines": {n: {"version": "0"} for _, n in fake}}}
     for name, data in cfg.items():
         (tmp_path / f"{name}.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
 

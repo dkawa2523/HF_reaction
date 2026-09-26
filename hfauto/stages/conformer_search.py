@@ -2,17 +2,18 @@
 ``--nci`` search of compositions, de-duplication, state labels and per state label the
 ``keep_per_state`` lowest structures (no energy window: the screen stage selects).
 
-Small rigid monomers skip the search and pass their input through. A topology-change stop is
-kept as a ``crest_topology`` species and the search runs once more with ``--noreftopo``.
-Compositions take the summed charge and the high-spin multiplicity of their components and
-get ``--notopo`` on labile H and acceptor atoms when they have both. When a search fails its
-input (monomer) or placement seeds (composition) are output instead. Users set only ``quick``
-and ``ewin_kcal``; CREST threads come from the site.
+Small rigid monomers skip the search and pass their input through. A topology-change stop is kept
+as a ``crest_topology`` species and the search reruns once from that structure with the same
+settings (a second stop fails). Compositions take the summed charge and the high-spin multiplicity
+of their components and get ``--notopo`` on labile H and acceptor atoms when they have both. When a
+search fails its input (monomer) or placement seeds (composition) are output instead. Users set
+quick, ewin_kcal, seeds_per_composition and keep_per_state; CREST threads come from the site.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
 from typing import ClassVar, Literal, cast
@@ -90,15 +91,18 @@ def _failed(base: str, parents: tuple[str, ...], failure: Failure) -> Artifact:
                     status="failed", failure=failure)
 
 
-def _search(engine: bp.ConformerEngine, method: MethodSpec, item: _Item) -> _Found:
+def _search(engine: bp.ConformerEngine, method: MethodSpec, load_xyz: Callable[[Geometry], XYZ],
+            item: _Item) -> _Found:
     if item.skip:
         return _Found(item, list(item.fallback), diagnostics={"skipped": True})
     result, stops = engine.search(item.mol, method, item.settings), []
     if isinstance(result, bp.ConformerEnsemble) and result.topology_stops:
         stops = [(g, None, cast(Source, "crest_topology")) for g in result.topology_stops]
-        noref = item.settings.model_copy(update={"topology": "noref"})
-        result = engine.search(item.mol, method, noref)
-    diagnostics: dict[str, object] = {"noreftopo_retry": bool(stops)}
+        stop = Molecule(load_xyz(result.topology_stops[0]), item.mol.charge, item.mol.multiplicity)
+        result = engine.search(stop, method, item.settings)
+    if isinstance(result, bp.ConformerEnsemble) and result.topology_stops:  # no second retry
+        result = Failure(kind=FailureKind.INCOMPLETE_OUTPUT, reason="topology_stop_repeated")
+    diagnostics: dict[str, object] = {"topology_retry": bool(stops)}
     if isinstance(result, Failure):
         diagnostics["failure"] = f"{result.kind}: {result.reason}"
         return _Found(item, stops + list(item.fallback), result, diagnostics)
@@ -165,7 +169,8 @@ def _monomers(species: dict[str, SpeciesRecord], rt: StageRuntime, cfg: Conforme
 
 
 def _lowest(found: _Found, rt: StageRuntime) -> XYZ:
-    ranked = sorted(found.candidates, key=lambda c: (c[2] != "conformer", c[1] is None, c[1] or 0))
+    ranked = sorted(found.candidates,  # without energies a relaxed topology stop beats the input
+                    key=lambda c: (c[1] is None, c[2] != "crest_topology", c[1] or 0))
     return rt.load_xyz((ranked or list(found.item.fallback))[0][0])
 
 
@@ -226,7 +231,7 @@ class ConformersStage:
     def run(self, inputs: Manifest, config: StageConfig, rt: StageRuntime) -> list[Artifact]:
         cfg = cast(ConformersConfig, config)
         engine = cast(bp.ConformerEngine, rt.engine(bp.Capability.CONFORMERS, cfg.engine))
-        search = partial(_search, engine, rt.method(cfg.method))
+        search = partial(_search, engine, rt.method(cfg.method), rt.load_xyz)
         species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)
                    if s.source == "input"}
         # the JobRunner core semaphore limits concurrent CREST jobs by the site threads

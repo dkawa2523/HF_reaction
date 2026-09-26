@@ -46,7 +46,6 @@ class ConformerSettings(BaseModel):  # threads: the site's engines.crest.executi
     nci: bool = False
     quick: bool = True
     ewin_kcal: float = 6.0
-    topology: Literal["on", "noref"] = "on"
     notopo_atoms: tuple[int, ...] = ()
 
 
