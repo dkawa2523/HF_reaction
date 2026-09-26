@@ -24,7 +24,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 | `minima` | opt → 別ジョブの freq → 虚振動に沿った mode-follow → 極小のレジストリ |
 | `explore` | 反応 trial を作り、ReaDuct の NT2 / AFIR で生成物を探す(陰性結果も記録する) |
 | `reaction-paths` | 反応仮説ごとに、障壁の事前判定 → saddle → TS の振動数検証 → QRC → 分類 |
-| `sp` | 停留点での一点計算(手法パネル。MP2 / CCSD(T) を含む) |
+| `sp` | 停留点での一点計算(手法パネル。CCSD(T) は小さい閉殻分子で opt-in) |
 | `thermo` | GoodVibes 4.3.0 の API による qRRHO、整合ゲート、会合量、感度の幅 |
 | `report` | 順位付け、探索の被覆率、手法パネルの表と HTML |
 
@@ -34,11 +34,11 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 |---|---|---|
 | `configs/pipelines/discover.yaml` | structures → conformers → screen → explore → dft → paths → thermo → report | 単量体と組成から反応を探す |
 | `configs/pipelines/known_endpoints.yaml` | structures → dft → paths → thermo → report | system に宣言した反応の端点から、経路と熱化学を求める |
-| `configs/pipelines/method_panel.yaml` | panel_sp → panel_report | 既存の run に `--run-dir` で追記し、停留点を複数の手法で比べる |
+| `configs/pipelines/method_panel.yaml` | panel_sp → panel_report | 既存の run に `--run-dir` で追記し、停留点を PBE0/def2-TZVPD と ωB97X-D3/def2-TZVPD で比べる。CCSD(T)/def2-TZVPD は小さい閉殻分子のときだけ `methods` に足す。追記した後は panel_report の順位が最終 |
 
 ## 設定(4 分割)
 
-4 つの層は中身が重ならないので、マージも優先順位もない。手法を変えるときは別の method ファイルを使う。
+4 つの層は中身が重ならないので、マージも優先順位もない。手法を変えるときは別の method ファイルを使う。停留点の手法は minima(dft)と reaction-paths の 2 か所に書き、食い違えば読み込み時に拒否される。宣言反応の端点は xyz で与える(SMILES では原子の対応と配座を決められない)。system と pipeline の YAML は未知のキーを実行前に拒否する。温度は `conditions` だけで指定し、thermo の settings のスケール因子は `vib_scale` の 1 つだけである。
 
 | 層 | 置き場所 | 中身 |
 |---|---|---|
@@ -83,7 +83,7 @@ hfauto run known_endpoints --system configs/systems/hcn.yaml --site configs/site
 
 ## 検証済みのベンチマーク
 
-WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD での実測値である。7 項目の全体と、撤回した旧値は [docs/validation.md](docs/validation.md) にある。
+WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD での実測値である。7 項目の全体と、撤回した旧値は [docs/validation.md](docs/validation.md) にある。順位は PBE0-D3BJ/def2-SVPD の ΔG‡ の序数として読み、約 1.5 kcal/mol 未満の差は手法誤差の範囲と見る(根拠は [docs/design.md](docs/design.md) §7)。
 
 | 系 | pipeline | 結果 | 所要時間 |
 |---|---|---|---|
