@@ -69,14 +69,14 @@ HONO の TS は別の Hessian(v2 は DFT、v3 は xTB)から精密化したの�
 
 - **C2(CCSD の maxiter 50)**: `u0_c2` で NWChem を実エンジンで呼んだ。デッキは `ccsd / freeze atomic / maxiter 50 / end`、出力のエコーは `maxit = 50`。CCSD(T)/def2-TZVPD は HNC で 11/50 反復・17 秒、v3 の HONO の TS で 18/50 反復・447 秒(同時負荷あり)で収束した。HONO の CCSD(T) の ΔE‡ は 11.65 kcal/mol で、SVPD − CCSD(T) = +2.02(design.md §7 の「HONO +2.0」の出典)。
 - **S23(composite G)**: `u7_assess/hcn_tz` で、design.md §7 の手順どおりに v3 の HCN の run の複製へ sp_tz(def2-TZVPD、`all_minima`)→ thermo_tz → report_tz を追記した。全体 1 分 26 秒(SP 3 本・83 秒、GoodVibes は 3/3 再利用)、ΔE‡ 46.43、ΔG‡ 41.99 kcal/mol、rank 1。TMA·(HF)₂ では、`tma_tz`(TZVPD//SVPD)の ΔG_assoc が −9.04 kcal/mol(SVPD の −11.53 より +2.49。どちらも BSSE 未補正)、`tma_d`(sp の既定の targets)では単量体が `energy_layer_missing` になり ΔG_assoc は None だった。
-- **手法パネル(M5・S8)**: v2 の run の複製に既定の method_panel を追記した(v2 のプローブ)。HCN は 6 SP・36 秒。HONO は panel_report と report の ranking.csv がどちらも rank 1(ΔG‡ 12.22、`method_sign_disagreement` なし)で一致した。HCN の CCSD(T)/def2-TZVPD の ΔE‡ は 47.81 kcal/mol(SVPD − CCSD(T) = −1.2、design.md §7 の出典)。
+- **手法パネル(M5・S8)**: v2 の run の複製に既定の method_panel を追記した(v2 のプローブ)。HCN は 6 SP・36 秒。HONO は panel_report と report の ranking.csv がどちらも rank 1(ΔG‡ 12.22、`method_sign_disagreement` なし)で一致した。続けて methods に ccsd-t_def2-tzvpd を opt-in で足した別の実行(C2 より前の maxiter 20、11〜13 反復で収束)で、HCN の CCSD(T)/def2-TZVPD の ΔE‡ は 47.81 kcal/mol(SVPD − CCSD(T) = −1.2、design.md §7 の出典)。
 
 ## 4. 第1ラウンドの比較(W7 → v2)
 
 | 系 | 所要時間 | ジョブ数(再利用) | 主な差と原因 |
 |---|---|---|---|
 | HCN | 1:40 → 1:41 | 29(2)→ 29(2) | QRC は 19 / 24 → 24 / 20 ステップで、S7 の効果はほぼない |
-| HONO | 7:22 → 9:32 | 29(2)→ 17(0) | SCREEN の GS が発散して失敗し、DFT string(200 秒)と鞍点(NWChem の AUTOZ 失敗からの再試行を含め 106 秒)が加わった。QRC は 127(maxiter で継続)/ 17 = 144 ステップ・311 秒 → 34 / 36 = 70 ステップ・162 秒(S7) |
+| HONO | 7:22 → 9:32 | 29(2)→ 17(0) | SCREEN の GS が発散して失敗し、DFT string(200 秒)と鞍点(NWChem の AUTOZ 失敗からの再試行を含め 106 秒)が加わった。QRC は 126(maxiter で継続)/ 17 = 143 ステップ・311 秒 → 34 / 36 = 70 ステップ・162 秒(S7) |
 | NH3 | 2:08 → 1:55 | 28(1)→ 27(1) | QRC 50 / 50 → 45 / 45 ステップ(S7)。dft の freq 2 → 1 本(S1: nh3_up が既知の basin に入る) |
 | 水 | 0:15 → 0:11 | 5 → 4 | dft の freq 2 → 1 本(S1) |
 | TMA·(HF)₂ | 52:33 → 31:15(−41%) | 72(3)→ 60(2) | dft stage 3,050 → 1,771 秒(−42%): opt 4 → 3、freq 4 → 3 本(M3 で偽の AFIR 生成物が消えた)。screen の xTB freq 7 → 3 本(S1)。explore 37 → 31 attempt |
@@ -98,7 +98,7 @@ HONO の TS は FIND_PATH の HEI から精密化したので虚振動が −681
 ## 5. 第1ラウンドの改良項目ごとの確認(v2)
 
 - **M2・S5(FIND_PATH)**: 初めて実計算で通った。HONO では GS の失敗から行 16 の FIND_PATH に入り、IDPP から 1 チャンク(20 反復)で bead エネルギーが落ち着いた(最後の 3 反復の HEI の変化 0.004 kcal/mol)。NWChem は未収束を報告したが、形は `single_max`(HEI は面内の経路で trans から 34.4 kcal/mol)で、HEI の種から正しい TS に到達した。HCN(STO-3G、#8)でも 2 チャンクで `single_max` になった(このときの 2 チャンク目は端点がずれていた。M8 で解消、§3)。
-- **M3・S6(explore)**: TMA·(HF)₂ の neutral からの AFIR は、W7 の「未収束 7・出発に戻る 2・生成物 1」から「未収束 2・出発に戻る 8・生成物 0」になった。W7 で `irc_not_connected_to_source` だった −289i の TS は、グラフの一致で `same_as_source` と判定された。
+- **M3・S6(explore)**: TMA·(HF)₂ の neutral からの AFIR は、W7 の「未収束 7・出発に戻る 2・生成物 1」から「未収束 2・出発に戻る 8・生成物 0」になった。W7 で `irc_not_connected_to_source` だった −289i の TS が `same_as_source` と判定されたのは、M3(screen の最適化構造から出発)の効果である。IRC の両端は source の置換コピーで、縮退した HF 交換(ΔE‡ 44.05 kJ/mol)だった。
 - **M4・S13・C7(conformers)**: tma_hf2 は W7 と同じ 2 配座(エネルギー差 2e-5 Eh 以内)に、1.48 kcal/mol 上の 1 配座が加わった(3 配座とも screen で同じ basin に入る)。(HF)₃ は、レビューのプローブ(`--noopt` なし)で失敗していた NH3·(HF)₃ を含め 2 組成とも成功し、TMA·(HF)₃ の最安はイオン対だった(#9)。
 - **S1(その場の登録)**: 1 basin に freq 1 本になった。screen の xTB freq(TMA·(HF)₂ 7 → 3、amine 7 → 5)、dft の DFT freq(NH3・水 2 → 1)。A/B(§8)では AFIR 生成物の構造が既知の basin に入り、17 原子の freq(約 15 分)を省いた。
 - **S7・C19(QRC)**: 3 反応とも `trajectory_above_ts` は出ず、接続の判定は W7 と同じだった。HONO の maxiter での継続はなくなった。
@@ -144,7 +144,7 @@ HONO の TS は FIND_PATH の HEI から精密化したので虚振動が −681
 1. **HONO の SCREEN(GS)の発散**: pysisyphus の GS(DLC 座標)が約 10 サイクル目から発散し、H–O–N の変角が内部座標から落ちた後、座標数の不一致(66 → 55)で例外終了する。v3・v4 でも同じだった(8 秒、`screen:unavailable:screen_path:nonzero_exit`)。同じ入力では決定的に再現し、W7 の入力(端点の差 1e-6 Å 程度)では収束したので、平面 4 原子での GS の数値的な不安定であり、コードの回帰ではない。v2 で挙げた対策案(小さな分子の GS を Cartesian 座標にする、1 回だけ再試行する)は、レビューのプローブで無効と分かった(Cartesian では面内の経路で HEI 26.56 kcal/mol になり TSOpt も例外、再試行は同じ失敗)ので取り下げる。S18 で FIND_PATH の退避経路がねじれ機構を捉えるようになり、HONO の所要時間は W7(GS 成功、7 分 22 秒)より短い 5 分 23 秒になった。最初の例外は、ジョブの `stderr.txt` に連鎖として残る。
 2. S4 の回収は、TS 最適化ではなく GS 自体が例外で終わった場合にも GS を 1 回再実行する(HONO で 4 秒)。害はないので残した。
 3. 17 原子・PBE0/def2-SVPD の解析 Hessian は 4 rank で 1 本約 15 分かかり、discover の所要時間の大半(TMA·(HF)₂ の dft stage 1,754 秒のうち 898 秒)を占める。
-4. FIND_PATH の HEI は bead の最大なので、鞍点をわずかに下回ることがある(HONO で HEI 13.5、鞍点 13.67 kcal/mol)。種としては問題ない。v3 の 1 チャンク目の端点のずれ(STO-3G で 0.074 Å)は初期経路の整列の仕方によるもので(§3 の M8)、M9 で初期経路を逐次整列にした(v4 の実 run で STO-3G 0.0008 Å・端点の持ち上がり +0.002 kcal/mol、HONO 0.0016 Å・+0.012 kcal/mol。§11)。ずれは引き続き note で監視するだけで、ゲートにはしない。M9 で string の JobStore キー(初期経路の sha256)が変わるので、M9 より前の run dir で再開すると string を 1 回計算し直す。
+4. FIND_PATH の HEI は bead エネルギーの放物線補間の最大(offset は ±0.5 でクリップ、座標は隣の bead との線形補間)なので、鞍点をわずかに下回ることがある(HONO で bead の最大 13.47、HEI 13.63、鞍点 13.67 kcal/mol)。種としては問題ない。v3 の 1 チャンク目の端点のずれ(STO-3G で 0.074 Å)は初期経路の整列の仕方によるもので(§3 の M8)、M9 で初期経路を逐次整列にした(v4 の実 run で STO-3G 0.0008 Å・端点の持ち上がり +0.002 kcal/mol、HONO 0.0016 Å・+0.012 kcal/mol。§11)。ずれは引き続き note で監視するだけで、ゲートにはしない。M9 で string の JobStore キー(初期経路の sha256)が変わったが、完了した paths stage は code_version を config_sha に含まないので再開では飛ばされる。`--from paths` などで paths を再実行すると(未完了の場合も)、string と、FIND_PATH の種から始まる U6 のジョブ(種の Hessian、saddle、TS freq、QRC)と、その TS の thermo が 1 回ずつ計算し直される(同じ TS に着く)。
 5. S21 の trust はジョブキーに入らない(§3)。
 6. 検証の run で通していない経路: 手法パネル(M5・S8・C2。レビューのプローブでだけ確認、§3)、陰性結果ゲートの削除(M1)、15 bead 確認の撤廃(S3)、負モード 2 本以上の鞍点(S20 の Cartesian 分岐)、電荷のある系・開殻系。
 7. 設計(WP7.1)では run を `runs/validation_<system>_<date>` に置くことになっているが、過去の run を守るため、WSL の ext4 上に置いた。
@@ -167,7 +167,7 @@ HONO の TS は FIND_PATH の HEI から精密化したので虚振動が −681
 | FIND_PATH(STO-3G、HCN→HNC) | 1:17 → 1:19 | 15(0)→ 15(0) | string 3 チャンクで `single_max`(3 チャンク目の最大 66.73 → 66.81)。HEI から鞍点 −1223.9i・3 ステップ、`elementary_step`。QRC 14 / 15 → 14 / 14 | 62.1678 → 62.1677(−0.0001) |
 
 - ΔG の差は 0.001 kcal/mol 以下で、順位の付く 4 反応(STO-3G を含む)はすべて rank 1 のままだった。ΔE‡ と ΔE_rxn は v3 と 1e-5 kcal/mol 以内で一致した。
-- HONO の +9 秒は string の 1 チャンクの時間(162.9 → 175.4 秒、反復数は同じ 20)による。原因は特定していない。
+- HONO の +9 秒は string の 1 チャンクの時間(162.9 → 175.4 秒、反復数は同じ 20)による。v3 も 4 反復目で damped Verlet に 1 回切り替えたが、v4 は 5 反復目と 11 反復目の 2 回切り替え、2 回目で bead の評価が 1 回り(7 本、11 反復目は 15.7 s)増えた(評価 149 → 156)。STO-3G でもチャンクごとの評価数は揺れており、M9 の系統的なコストではない。
 - QRC 3 反応(HCN・HONO・NH3)の合計は 107 → 105 ステップ。
 
 ### M9(FIND_PATH の初期経路の逐次整列)の確認
