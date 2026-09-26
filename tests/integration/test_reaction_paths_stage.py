@@ -44,7 +44,7 @@ def dft_view(root, pes, points=ENDS):
                           geometry=geo, source="input",
                           composition_id=composition_key(pes.symbols, 0, 1))
         out = relax_to_minimum(pes.molecule(point), DFT, qm, load_xyz=load)
-        record, _ = registry.add(out, s, tier="dft")
+        record = registry.add(out, s, tier="dft")
         basins[record.basin_id] = record
         arts += [(sid, T.SPECIES, s), (calc_id(out.opt), T.CALCULATION, out.opt),
                  (calc_id(out.freq), T.CALCULATION, out.freq)]

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from typing import Literal
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
@@ -118,25 +117,19 @@ def mapped_rmsd(a: np.ndarray, b: np.ndarray) -> float:
     return _rmsd(xb @ _rotation(xb, xa), xa)
 
 
-def compare_minima(
+def same_minimum(
     symbols: Sequence[str],
     a: np.ndarray,
     b: np.ndarray,
     ea: float,
     eb: float,
     *,
-    same_rmsd_A: float = 0.02,
-    same_de_hartree: float = 1.0e-5,
-    distinct_rmsd_A: float = 0.05,
-    distinct_de_hartree: float = 5.0e-5,
-) -> Literal["same", "distinct", "ambiguous"]:
-    rmsd, _ = permutation_invariant_rmsd(symbols, a, b)
-    de = abs(ea - eb)
-    if rmsd <= same_rmsd_A and de <= same_de_hartree:
-        return "same"
-    if rmsd > distinct_rmsd_A or de > distinct_de_hartree:
-        return "distinct"
-    return "ambiguous"
+    rmsd_A: float = 0.05,
+    de_hartree: float = 5.0e-5,
+) -> bool:
+    """One minimum: |ΔE| <= de_hartree and permutation-invariant RMSD <= rmsd_A (as assign)."""
+
+    return abs(ea - eb) <= de_hartree and permutation_invariant_rmsd(symbols, a, b)[0] <= rmsd_A
 
 
 def assign(

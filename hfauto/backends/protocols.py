@@ -130,8 +130,8 @@ class QMEngine(Engine, Protocol):
         mol: Molecule,
         method: MethodSpec,
         *,
-        tight: bool = False,
-        init_hessian: Evidence | None = None,  # freq Evidence whose final geometry is mol
+        # freq Evidence at mol or within 0.5 Å per atom of it (same atom order and frame)
+        init_hessian: Evidence | None = None,
         deadline: Deadline | None = None,
     ) -> Evidence | Failure: ...
 

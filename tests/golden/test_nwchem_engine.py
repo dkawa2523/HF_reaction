@@ -88,8 +88,13 @@ def test_frequencies_cache_and_input_checks(nwchem, golden):
     assert len(ev.imaginary_modes) == 1
     assert np.load(jobs.store.run_dir / ev.hessian.path).shape == (9, 9)
     assert engine.frequencies(mol, FINE) == ev and jobs.stats().hits == 1
-    moved = Molecule(XYZ(mol.xyz.symbols, mol.xyz.coords + 0.1), 0, 1)
-    failure = engine.optimize(moved, FINE, init_hessian=ev)
+    near, far = (Molecule(XYZ(mol.xyz.symbols, mol.xyz.coords + [d, 0, 0]), 0, 1)
+                 for d in (0.1, 0.6))
+    side = engine.optimize(near, FINE, init_hessian=ev)  # a QRC side from its TS Hessian
+    assert isinstance(side, Evidence) and side.task == "opt"
+    deck = (jobs.store.attempt_dir(side.job_key, 0) / "job.nw").read_text()
+    assert "inhess 2" in deck and "trust 0.1" in deck
+    failure = engine.optimize(far, FINE, init_hessian=ev)  # beyond 0.5 Å per atom
     assert failure.kind is FailureKind.INPUT_INVALID
     assert failure.reason == "hessian_geometry_mismatch"
     triplet = engine.frequencies(Molecule(mol.xyz, 0, 3), FINE)  # ported K case: state conflict

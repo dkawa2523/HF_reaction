@@ -9,6 +9,7 @@ input geometry equals the input within 1e-4 Å; anything else is a Failure.
 
 from __future__ import annotations
 
+import math
 import shutil
 from collections.abc import Mapping
 from dataclasses import replace
@@ -22,7 +23,7 @@ from hfauto.backends.nwchem import input as nw_in
 from hfauto.backends.nwchem import output as nw_out
 from hfauto.backends.protocols import Requirements
 from hfauto.chemistry.vibrations import projected_frequencies
-from hfauto.chemistry.xyz import Molecule, geometry_fingerprint, read_xyz, write_xyz
+from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz, write_xyz
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
 from hfauto.core.evidence import (
     Evidence,
@@ -39,6 +40,7 @@ from hfauto.execution.process import STDOUT_NAME, Command, CommandResult, resolv
 
 NAME = "job"  # NWChem file prefix: job.nw, job.movecs, job.hess, job.drv.hess
 FRAME_TOL_A = 1.0e-4
+HESSIAN_NEAR_A = 0.5  # optimize: largest per-atom distance to the init_hessian's structure
 _TASK: dict[str, Literal["sp", "opt", "freq", "saddle"]] = {
     "energy": "sp", "optimize": "opt", "frequencies": "freq", "saddle": "saddle"}
 _DRIVER_JOBS = frozenset({"optimize", "saddle"})
@@ -70,6 +72,14 @@ def _written_fingerprint(mol: Molecule) -> str:
     return geometry_fingerprint(mol.xyz.symbols, written)
 
 
+def _max_shift_A(xyz: XYZ, mol: Molecule) -> float:
+    """Largest per-atom distance between two structures in one frame; inf for other atoms."""
+    if list(xyz.symbols) != list(mol.xyz.symbols):
+        return math.inf
+    delta = np.asarray(xyz.coords, dtype=float) - np.asarray(mol.xyz.coords, dtype=float)
+    return float(np.linalg.norm(delta.reshape(-1, 3), axis=1).max())
+
+
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
 
@@ -81,7 +91,7 @@ def _render(task: Task, setup: nw_in.Setup) -> str:
         render = nw_in.render_wft if method.kind == "wft" else nw_in.render_energy
         return render(mol, method, setup)
     if task.kind == "optimize":
-        return nw_in.render_optimize(mol, method, setup, tight=i["tight"], init_hessian=hessian)
+        return nw_in.render_optimize(mol, method, setup, init_hessian=hessian)
     if task.kind == "frequencies":
         return nw_in.render_frequencies(mol, method, setup)
     if task.kind == "saddle":
@@ -116,12 +126,16 @@ class _NWChem:
                     execution=self._site.execution, inputs=inputs)
         return self._jobs.run(task, self, deadline=deadline)
 
-    def _hessian_file(self, freq: Evidence, mol: Molecule) -> Path | Failure:
-        """The canonical .npy of a freq Evidence computed at exactly ``mol`` (any Level)."""
-        if (freq.task != "freq" or freq.hessian is None
-                or freq.final.fingerprint != _written_fingerprint(mol)):
+    def _hessian_file(self, freq: Evidence, mol: Molecule, *, near_A: float | None = None
+                      ) -> Path | Failure:
+        """The canonical .npy of a freq Evidence (any Level) computed at exactly ``mol`` or,
+        with ``near_A``, at the same atoms in the same frame within ``near_A`` per atom."""
+        run_dir = self._jobs.store.run_dir
+        if freq.task != "freq" or freq.hessian is None:
             return _invalid("hessian_geometry_mismatch")
-        return self._jobs.store.run_dir / freq.hessian.path
+        at = (freq.final.fingerprint == _written_fingerprint(mol) if near_A is None
+              else _max_shift_A(read_xyz(run_dir / freq.final.file.path), mol) <= near_A)
+        return run_dir / freq.hessian.path if at else _invalid("hessian_geometry_mismatch")
 
     # --- Adapter side ------------------------------------------------------------------
 
@@ -304,16 +318,18 @@ class NWChemEngine(_NWChem):
             return _invalid("wft_closed_shell_only")
         return self._qm("energy", mol, method, deadline)
 
-    def optimize(self, mol: Molecule, method: MethodSpec, *, tight: bool = False,
+    def optimize(self, mol: Molecule, method: MethodSpec, *,
                  init_hessian: Evidence | None = None,
                  deadline: Deadline | None = None) -> Evidence | Failure:
-        hessian = None if init_hessian is None else self._hessian_file(init_hessian, mol)
+        """``init_hessian`` may come from a nearby structure (a QRC side from its TS)."""
+        hessian = None if init_hessian is None else self._hessian_file(
+            init_hessian, mol, near_A=HESSIAN_NEAR_A)
         if isinstance(hessian, Failure):
             return hessian
         sha = None if init_hessian is None or init_hessian.hessian is None else (
             init_hessian.hessian.sha256)
-        return self._qm("optimize", mol, method, deadline, payload={"tight": tight, "hessian": sha},
-                        tight=tight, hessian=hessian)
+        return self._qm("optimize", mol, method, deadline, payload={"hessian": sha},
+                        hessian=hessian)
 
     def frequencies(self, mol: Molecule, method: MethodSpec, *,
                     deadline: Deadline | None = None) -> Evidence | Failure:

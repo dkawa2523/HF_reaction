@@ -114,15 +114,14 @@ def render_energy(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) ->
 
 
 def render_optimize(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, *,
-                    tight: bool = False, init_hessian: bool = False) -> str:
-    """Default driver thresholds (``tight`` on request); ``init_hessian`` reads <name>.hess.
+                    init_hessian: bool = False) -> str:
+    """Default driver thresholds; ``init_hessian`` reads <name>.hess.
 
     ``trust 0.1`` (default 0.3): from a QRC or mode-follow displacement the default steps
     overshoot back above the TS energy (HCN->HNC in NWChem 7.2.3), which the connection
     gate rejects.
     """
-    options = ["  trust 0.1", *(["  tight"] if tight else []),
-               *(["  inhess 2"] if init_hessian else [])]
+    options = ["  trust 0.1", *(["  inhess 2"] if init_hessian else [])]
     return _deck(setup, _system(mol, method, setup), _dft(mol, method, setup),
                  _driver(setup, OPT_MAXITER, options), ["task dft optimize"])
 

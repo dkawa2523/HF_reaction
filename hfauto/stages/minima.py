@@ -1,10 +1,12 @@
 """minima stage (design §4.1 #3, §7.2, §8.2): selection → relax_to_minimum → Registry.
 
-``level: screen`` relaxes every input species (xTB on threads); ``level: dft`` serially refines
-a selection (``chemistry.selection``) started from the screen minima's optimized structures.
-Registration follows species-id order once all are relaxed; an ambiguous verdict is re-judged
-once after a tight re-optimization (CH-17). A saddle whose ± displacements reach two distinct
-minima gives two ``mode_follow`` species, their minima and a ``mode_follow`` discovery.
+``level: screen`` relaxes every input species; ``level: dft`` refines a selection
+(``chemistry.selection``) started from the screen minima's optimized structures. Jobs run
+serially in species-id order and each is registered as soon as it is relaxed, so a later job
+that falls into a registered basin is ``known`` and skips its freq job (one identity
+criterion: identity.assign). A saddle whose ± displacements reach two distinct minima gives
+two ``mode_follow`` species, relaxed and registered right after it, their minima and a
+``mode_follow`` discovery.
 """
 
 from __future__ import annotations
@@ -17,7 +19,6 @@ from typing import ClassVar, Literal, cast
 from pydantic import BaseModel, ConfigDict
 
 from hfauto.backends.protocols import Capability, QMEngine
-from hfauto.chemistry.gates import is_minimum, spin_ok
 from hfauto.chemistry.selection import Candidate, rerank, select_for_refinement
 from hfauto.chemistry.topology import fragments, state_label
 from hfauto.chemistry.xyz import Molecule
@@ -79,6 +80,8 @@ class _Run:
     calcs: dict[str, Evidence] = field(default_factory=dict)
     minima: dict[str, MinimumRecord] = field(default_factory=dict)  # latest record per basin
     extra: list[Artifact] = field(default_factory=list)  # discoveries and failed minima
+    records: dict[str, MinimumRecord | None] = field(default_factory=dict)  # per species id
+    history: dict[str, list[str]] = field(default_factory=dict)  # diagnostics.json
 
     def molecule(self, species: SpeciesRecord, geometry: Geometry) -> Molecule:
         return Molecule(self.rt.load_xyz(geometry), species.charge, species.multiplicity)
@@ -86,10 +89,13 @@ class _Run:
     def keep(self, *evidence: Evidence | None) -> None:
         self.calcs.update((driver.calc_id(ev), ev) for ev in evidence if ev is not None)
 
-    def relax_all(self, jobs: Sequence[_Job]) -> list[_Relaxed]:
-        if self.method.kind not in ("dft", "wft"):  # semiempirical: one thread per job
-            return self.rt.thread_map(self.relax, jobs, threads_per_item=1)
-        return [self.relax(job) for job in jobs]
+    def settle(self, job: _Job) -> _Relaxed:
+        """relax, then register at once: a later job in this basin is known (no freq job)."""
+        done = self.relax(job)
+        sid = job.species.species_id
+        self.records[sid] = self.register(done)
+        self.history[sid] = [done[1].status, *done[1].history]
+        return done
 
     def relax(self, job: _Job) -> _Relaxed:
         mol = self.molecule(job.species, job.start)
@@ -117,9 +123,7 @@ class _Run:
         job, outcome = done
         self.keep(outcome.opt, outcome.freq, *(outcome.ts_candidate or ()))
         if outcome.status in ("minimum", "soft_minimum", "known"):
-            record, verdict = self.registry.add(outcome, job.species, tier=self.cfg.level)
-            if verdict == "ambiguous":
-                record = self.rejudge(job, outcome) or record
+            record = self.registry.add(outcome, job.species, tier=self.cfg.level)
             self.minima[record.basin_id] = record
             return record
         if outcome.ts_candidate is None:  # a TS candidate is reported as a discovery instead
@@ -129,24 +133,6 @@ class _Run:
                 artifact_id=f"min_{job.species.species_id}_{self.rt.stage_id}", type=T.MINIMUM,
                 status="failed", failure=failure, parents=(f"species_{job.species.species_id}",)))
         return None
-
-    def rejudge(self, job: _Job, outcome: driver.MinimumOutcome) -> MinimumRecord | None:
-        """Tight re-optimization and a new freq, then one more Registry.add."""
-        start = self.molecule(job.species, cast(Evidence, outcome.opt).final)
-        opt = self.qm.optimize(start, self.method, tight=True)
-        if isinstance(opt, Failure):
-            return None
-        freq = self.qm.frequencies(self.molecule(job.species, opt.final), self.method)
-        if isinstance(freq, Failure):
-            return None
-        gate = is_minimum(freq, opt=opt, policy=self.rt.policy)
-        if not gate:
-            return None
-        self.keep(opt, freq)
-        notes = gate.notes + spin_ok(freq, self.rt.policy).reasons
-        history = (*outcome.history, "tight")
-        tight = driver.MinimumOutcome("minimum", opt, freq, history, notes=notes)
-        return self.registry.add(tight, job.species, tier=self.cfg.level)[0]
 
     def sides(self, done: _Relaxed) -> list[_Job]:
         """New species at the two minima reached from a TS candidate."""
@@ -160,11 +146,10 @@ class _Run:
             jobs.append(_Job(species, freq.start))
         return jobs
 
-    def discovery(self, done: _Relaxed, records: dict[str, MinimumRecord | None]
-                  ) -> DiscoveryRecord | None:
+    def discovery(self, done: _Relaxed) -> DiscoveryRecord | None:
         """source_minimum = side 1's minimum, product_species = side 2, ts = the saddle."""
         parent, saddle, freq = done[0].species.species_id, done[1].opt, done[1].freq
-        a, b = records.get(f"{parent}_mf1"), records.get(f"{parent}_mf2")
+        a, b = self.records.get(f"{parent}_mf1"), self.records.get(f"{parent}_mf2")
         if a is None or b is None or saddle is None or freq is None:
             return None
         return DiscoveryRecord(
@@ -234,15 +219,17 @@ class MinimaStage:
         method = rt.method(cfg.method)
         qm = cast(QMEngine, rt.engine(Capability.QM, cfg.engine))
         run = _Run(rt, cfg, qm, method, _known(inputs, cfg, rt, qm, method))
-        relaxed = run.relax_all(_jobs(inputs, cfg, run))
-        side_jobs = [job for done in relaxed for job in run.sides(done)]
-        everything = sorted([*relaxed, *run.relax_all(side_jobs)],
-                            key=lambda done: done[0].species.species_id)
-        records = {job.species.species_id: run.register((job, out)) for job, out in everything}
-        found = [d for d in (run.discovery(done, records) for done in relaxed) if d is not None]
-        run.extra += [_artifact(d.discovery_id, d) for d in found]
-        history = {job.species.species_id: [out.status, *out.history] for job, out in everything}
-        (rt.stage_dir / "diagnostics.json").write_text(json.dumps(history, indent=1))
+        side_jobs: list[_Job] = []
+        for job in sorted(_jobs(inputs, cfg, run), key=lambda j: j.species.species_id):
+            done = run.settle(job)
+            sides = run.sides(done)  # mode-follow sides right after their parent
+            for side in sides:
+                run.settle(side)
+            side_jobs += sides
+            found = run.discovery(done)
+            if found is not None:
+                run.extra.append(_artifact(found.discovery_id, found))
+        (rt.stage_dir / "diagnostics.json").write_text(json.dumps(run.history, indent=1))
         return [*(_artifact(k, ev) for k, ev in run.calcs.items()),
                 *(_artifact(f"species_{j.species.species_id}", j.species) for j in side_jobs),
                 *(_artifact(m.minimum_id, m) for m in run.minima.values()), *run.extra]

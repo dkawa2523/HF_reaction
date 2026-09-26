@@ -27,13 +27,6 @@ class SoftQM(fakes.FakeQM):
                                      "imaginary_modes": (tuple(np.eye(9)[3]),)})
 
 
-class ShiftedQM(fakes.FakeQM):
-    def optimize(self, mol, method, *, tight=False, **kw):  # "b" ends 3e-5 Eh high unless tight
-        ev = super().optimize(mol, method, tight=tight, **kw)
-        high = not tight and mol.xyz.coords[0, 0] > 0.005
-        return ev.model_copy(update={"energy_hartree": ev.energy_hartree + 3e-5}) if high else ev
-
-
 def species(root, pes, sid, point, shift=0.0):
     x = pes.points[point] + shift
     record = SpeciesRecord(species_id=sid, composition_id=composition_key(pes.symbols, 0, 1),
@@ -59,18 +52,24 @@ def stage(fake_runtime, tmp_run, pes, low=fakes.FakeQM):  # run(id, view, **conf
     return run, xtb, dft
 
 
-def test_ambiguous_duplicate_is_rejudged_into_one_basin_and_tiers_split(fake_runtime, tmp_run):
+def test_one_basin_gets_one_freq_job_per_tier_and_dft_starts_from_screen(fake_runtime, tmp_run):
     pes = fakes.harmonic()
-    run, _, dft = stage(fake_runtime, tmp_run, pes, low=ShiftedQM)
+    run, xtb, dft = stage(fake_runtime, tmp_run, pes)
     inputs = [species(tmp_run, pes, "a", "start"), species(tmp_run, pes, "b", "start", 0.01)]
     screen = run("screen", inputs, **SCREEN)
     (low,) = screen.records(T.MINIMUM, MinimumRecord)
     assert low.tier == "screen" and low.members == ("a", "b")
-    assert [ev.task for ev in screen.records(T.CALCULATION, Evidence)].count("opt") == 3  # tight
-    both = run("dft", screen.artifacts, **DFT)
+    assert xtb.calls == ["optimize", "frequencies", "optimize"]  # b is known: no second freq
+    tasks = [ev.task for ev in screen.records(T.CALCULATION, Evidence)]
+    assert (tasks.count("opt"), tasks.count("freq")) == (2, 1)
+    both = run("dft", screen.artifacts, **DFT, select={"include": "all"})
     (high,) = [m for m in both.records(T.MINIMUM, MinimumRecord) if m.tier == "dft"]
+    assert high.members == ("a", "b") and dft.calls == ["optimize", "frequencies", "optimize"]
+    dft.calls.clear()
+    window = run("dft_window", screen.artifacts, **DFT)
+    (high,) = [m for m in window.records(T.MINIMUM, MinimumRecord) if m.tier == "dft"]
     assert high.species_id == "a" and dft.calls == ["optimize", "frequencies"]
-    start = both.evidence(high.opt_calc).start  # dft starts from the screen structure
+    start = window.evidence(high.opt_calc).start  # dft starts from the screen structure
     assert start.fingerprint == screen.evidence(low.opt_calc).final.fingerprint
 
 

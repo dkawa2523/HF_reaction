@@ -20,9 +20,8 @@ def test_opt_and_saddle_never_compute_hessians():
     for deck in (opt, saddle):
         assert "frequencies" not in deck and "hessian" not in deck
         assert "inhess 2" in deck and "xyz final" in deck and deck.count("task ") == 1
-    assert "maxiter 100" in opt and "task dft optimize" in opt and "tight" not in opt
+    assert "maxiter 100" in opt and "task dft optimize" in opt
     assert "trust 0.1" in opt  # QRC / mode-follow starts must not overshoot above the TS
-    assert "  tight" in nw.render_optimize(WATER, PBE0, tight=True)
     assert "inhess" not in nw.render_optimize(WATER, PBE0)
     freq = nw.render_frequencies(WATER, PBE0)
     assert "task dft frequencies" in freq and freq.count("task ") == 1 and "driver" not in freq

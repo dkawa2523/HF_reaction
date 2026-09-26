@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from hfauto.chemistry.gates import Policy, imaginary_tier, is_minimum, spin_ok
-from hfauto.chemistry.identity import assign, compare_minima
+from hfauto.chemistry.identity import assign, same_minimum
 from hfauto.chemistry.modes import classify_mode_follow, displace
 from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.xyz import XYZ, Molecule
@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from hfauto.backends.protocols import QMEngine
 
 Status = Literal["minimum", "soft_minimum", "saddle", "known", "failed"]
-Verdict = Literal["new", "same", "ambiguous"]
 LoadXYZ = Callable[[Geometry], XYZ]
 
 
@@ -108,9 +107,8 @@ def _labels(source: _Point, sides: list[_Point | None]) -> list[str | None]:
     """Identity labels (source, plus, minus): equal labels mean the same structure."""
 
     def same(a: _Point, b: _Point) -> bool:
-        verdict = compare_minima(a.xyz.symbols, a.xyz.coords, b.xyz.coords,
-                                 a.opt.energy_hartree, b.opt.energy_hartree)
-        return verdict != "distinct"
+        return same_minimum(a.xyz.symbols, a.xyz.coords, b.xyz.coords,
+                            a.opt.energy_hartree, b.opt.energy_hartree)
 
     seen: list[tuple[_Point, str]] = [(source, "source")]
     labels: list[str | None] = ["source"]
@@ -213,7 +211,7 @@ class _Entry:
 
 
 class Registry:
-    """Minima per composition × level_key, judged with identity.compare_minima and assign.
+    """Minima per composition × level_key; one identity criterion, identity.assign.
 
     ``minima`` pairs each existing record with the geometry of its representative
     (MinimumRecord itself carries no geometry).
@@ -226,45 +224,37 @@ class Registry:
             record.basin_id: _Entry(record, load_xyz(geometry)) for record, geometry in minima
         }
 
-    def find(self, symbols: Sequence[str], coords: np.ndarray, energy: float) -> str | None:
-        """Basin id uniquely matching the structure (identity.assign), else None."""
+    def find(self, symbols: Sequence[str], coords: np.ndarray, energy: float, *,
+             composition_id: str | None = None, level_key: str | None = None) -> str | None:
+        """Basin id uniquely matching the structure (identity.assign) among the basins with
+        the same element list (and the given composition_id / level_key), else None."""
         candidates = {basin: (entry.xyz.coords, entry.record.energy_hartree)
                       for basin, entry in self._basins.items()
-                      if list(entry.xyz.symbols) == list(symbols)}
+                      if list(entry.xyz.symbols) == list(symbols)
+                      and composition_id in (None, entry.record.composition_id)
+                      and level_key in (None, entry.record.level_key)}
         return assign(symbols, coords, energy, candidates)
 
     def members(self, basin_id: str) -> tuple[str, ...]:
         return self._basins[basin_id].record.members
 
     def add(self, outcome: MinimumOutcome, species: SpeciesRecord, *,
-            tier: Literal["screen", "dft"]) -> tuple[MinimumRecord, Verdict]:
-        """Merge into a "same" basin, else register a new basin ("new" or "ambiguous").
-
-        An ambiguous structure is never merged. Adding a species again replaces its own
-        single-member basin, so the caller can re-judge it after a tight re-optimization.
-        """
+            tier: Literal["screen", "dft"]) -> MinimumRecord:
+        """Join the known basin, or the basin of the same composition_id and level_key that
+        identity.assign uniquely matches; else register a new basin."""
         if outcome.status == "known" and outcome.known_basin is not None:
-            return self._join(outcome.known_basin, species.species_id), "same"
+            return self._join(outcome.known_basin, species.species_id)
         opt, freq = outcome.opt, outcome.freq
         if outcome.status not in ("minimum", "soft_minimum") or opt is None or freq is None:
             raise ValueError(f"cannot register a {outcome.status!r} outcome")
-        self._forget(species.species_id)
         xyz = self.load_xyz(opt.final)
-        level_key = opt.level.full_key()
-        verdicts = {
-            basin: compare_minima(xyz.symbols, xyz.coords, entry.xyz.coords,
-                                  opt.energy_hartree, entry.record.energy_hartree)
-            for basin, entry in self._basins.items()
-            if entry.record.composition_id == species.composition_id
-            and entry.record.level_key == level_key
-            and list(entry.xyz.symbols) == list(xyz.symbols)
-        }
-        same = next((basin for basin, verdict in verdicts.items() if verdict == "same"), None)
-        if same is not None:
-            return self._join(same, species.species_id), "same"
+        basin = self.find(xyz.symbols, xyz.coords, opt.energy_hartree,
+                          composition_id=species.composition_id, level_key=opt.level.full_key())
+        if basin is not None:
+            return self._join(basin, species.species_id)
         record = _new_record(opt, freq, outcome.notes, species, tier, xyz)
         self._basins[record.basin_id] = _Entry(record, xyz)
-        return record, "ambiguous" if "ambiguous" in verdicts.values() else "new"
+        return record
 
     def _join(self, basin_id: str, species_id: str) -> MinimumRecord:
         entry = self._basins[basin_id]
@@ -272,13 +262,6 @@ class Registry:
             members = (*entry.record.members, species_id)
             entry.record = entry.record.model_copy(update={"members": members})
         return entry.record
-
-    def _forget(self, species_id: str) -> None:
-        for basin, entry in list(self._basins.items()):
-            if entry.record.members == (species_id,) and entry.record.species_id == species_id:
-                del self._basins[basin]
-            elif species_id in entry.record.members:
-                raise ValueError(f"{species_id} is already a member of {basin}")
 
 
 def _new_record(opt: Evidence, freq: Evidence, notes: tuple[str, ...], species: SpeciesRecord,

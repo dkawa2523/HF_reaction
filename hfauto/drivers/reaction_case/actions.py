@@ -13,7 +13,13 @@ import numpy as np
 
 from hfauto.chemistry import profile
 from hfauto.chemistry import xyz_trajectory as trajectory
-from hfauto.chemistry.gates import barrier_verdict, connection, is_first_order_saddle, spin_ok
+from hfauto.chemistry.gates import (
+    barrier_verdict,
+    connection,
+    is_first_order_saddle,
+    qrc_drop,
+    spin_ok,
+)
 from hfauto.chemistry.identity import mapped_equivalent, mapped_rmsd, periodic_nearest
 from hfauto.chemistry.interpolation import align_mapped, align_sequential, idpp
 from hfauto.chemistry.modes import displace, overlap, qrc_amplitude
@@ -354,7 +360,7 @@ def _register(ctx: Ctx, coords: np.ndarray, name: str,
         state_label=state_label(ctx.symbols, x), energy_hartree=opt.energy_hartree,
         level_key=opt.level.full_key(),
     )
-    record, _ = rt.registry.add(out, species, tier="dft")
+    record = rt.registry.add(out, species, tier="dft")
     ctx.keep(opt)
     ctx.keep(out.freq)
     ctx.work.species[species.species_id] = rt.species[species.species_id] = species
@@ -384,13 +390,12 @@ def connect(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     state = replace(state, connection_attempts=attempt)
     if freq is None or freq.hessian is None or not freq.imaginary_modes:
         return replace(state, connection="failed")
-    drop = max(p.gates.qrc_min_drop_hartree, p.gates.scf_noise_factor * (freq.level.scf_tol or 0.0))
-    mode = np.asarray(freq.imaginary_modes[0])
-    amplitude = qrc_amplitude(np.load(rt.resolve(freq.hessian)), mode,
-                              target_hartree=max(3.0 * drop, p.qrc_target_hartree),
-                              bounds_A=p.qrc_bounds_A) * p.qrc_retry_factor ** (attempt - 1)
-    runs = [rt.qm.optimize(ctx.mol(y), rt.method, deadline=ctx.deadline)
-            for y in displace(ctx.coords(freq.final), mode, amplitude)]
+    mode, target = np.asarray(freq.imaginary_modes[0]), 3.0 * qrc_drop(freq.level, p.gates)
+    first = qrc_amplitude(np.load(rt.resolve(freq.hessian)), mode, bounds_A=p.qrc_bounds_A,
+                          target_hartree=max(target, p.qrc_target_hartree))
+    amplitude = min(first * p.qrc_retry_factor ** (attempt - 1), p.qrc_bounds_A[1])
+    runs = [rt.qm.optimize(ctx.mol(y), rt.method, init_hessian=freq, deadline=ctx.deadline)
+            for y in displace(ctx.coords(freq.final), mode, amplitude)]  # the TS Hessian
     plus, minus = runs
     if isinstance(plus, Failure) or isinstance(minus, Failure):
         ctx.note(f"qrc{attempt}:side_failed")

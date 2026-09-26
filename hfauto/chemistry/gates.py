@@ -69,6 +69,11 @@ def _noise_floor(default: float, level: Level, policy: Policy) -> float:
     return max(default, policy.scf_noise_factor * (level.scf_tol or 0.0))
 
 
+def qrc_drop(level: Level, policy: Policy = _DEFAULT) -> float:
+    """Smallest energy drop a QRC side must show below the TS: max(minimum, SCF noise)."""
+    return _noise_floor(policy.qrc_min_drop_hartree, level, policy)
+
+
 def zpe_hartree(freqs_cm1: Sequence[float], *, scale: float = 1.0) -> float:
     """0.5 x scale x sum(nu) over nu > 0."""
     return 0.5 * scale * sum(nu for nu in freqs_cm1 if nu > 0.0) * CM1_TO_HARTREE
@@ -252,7 +257,7 @@ def connection(
     sides_distinct: bool = True,
     policy: Policy = _DEFAULT,
 ) -> tuple[Gate, ConnectionLabel]:
-    drop = _noise_floor(policy.qrc_min_drop_hartree, ts_freq.level, policy)
+    drop = qrc_drop(ts_freq.level, policy)
     ceiling = ts_freq.energy_hartree - drop
     reasons = [
         r for i, side in enumerate(sides)

@@ -53,22 +53,23 @@ def test_mode_follow_from_a_transition_state(tmp_run, name, status, last) -> Non
         assert sorted(ev.energy_hartree for ev in out.ts_candidate) == pytest.approx(ends)
 
 
-def test_registry_known_new_same_ambiguous_and_init_hessian(tmp_run) -> None:
+def test_registry_known_new_joined_and_init_hessian(tmp_run) -> None:
     pes, load = fakes.double_well(), fakes.xyz_loader(tmp_run)
     qm, registry = fakes.FakeQM(tmp_run, pes), Registry([], load)
     a, b = relax(tmp_run, pes, "reactant", qm), relax(tmp_run, pes, "product", qm)
-    (ra, va), (rb, vb) = add(registry, a, "a"), add(registry, b, "b")
-    assert (va, vb) == ("new", "new") and ra.members == ("a",)
+    ra, rb = add(registry, a, "a"), add(registry, b, "b")
+    assert ra.basin_id != rb.basin_id and ra.members == ("a",)
     hess = qm.frequencies(pes.molecule("reactant"), M)
     known = relax_to_minimum(pes.molecule("reactant"), M, qm, known=registry, init_hessian=hess)
     assert known.status == "known" and known.known_basin == ra.basin_id
     assert qm.calls[-1] == "optimize+init_hessian"  # used, and no freq job after it
-    assert add(registry, known, "a2")[1] == "same"
+    assert add(registry, known, "a2").basin_id == ra.basin_id
     assert relax(tmp_run, pes, "product", qm, init_hessian=hess).failure.kind == "input_invalid"
-    shifted = replace(a, opt=a.opt.model_copy(update={"energy_hartree": ra.energy_hartree + 3e-5}))
-    rc, vc = add(registry, shifted, "c")
-    assert vc == "ambiguous" and rc.basin_id not in (ra.basin_id, rb.basin_id)
-    assert add(registry, a, "c")[1] == "same"  # re-judged after a (here: no) re-optimization
+    energy = ra.energy_hartree
+    shifted = replace(a, opt=a.opt.model_copy(update={"energy_hartree": energy + 3e-5}))
+    assert add(registry, shifted, "c").basin_id == ra.basin_id  # one criterion: assign
+    far = replace(a, opt=a.opt.model_copy(update={"energy_hartree": energy + 6e-5}))
+    assert add(registry, far, "d").basin_id not in (ra.basin_id, rb.basin_id)
     assert registry.members(ra.basin_id) == ("a", "a2", "c")
     x, rebuilt = load(b.opt.final), Registry([(rb, b.opt.final)], load)  # (record, geometry)
     assert rebuilt.find(x.symbols, x.coords, rb.energy_hartree) == rb.basin_id

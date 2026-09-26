@@ -113,6 +113,16 @@ def test_connection_trajectory_checks():
     assert "side0:no_initial_descent" in gate.reasons
 
 
+def test_qrc_drop_is_the_scf_noise_floor():
+    assert g.qrc_drop(LEVEL) == pytest.approx(1e-5)  # 20 x 1e-7 is below the minimum
+    loose = LEVEL.model_copy(update={"scf_tol": 1e-5})
+    assert g.qrc_drop(loose) == pytest.approx(2e-4)
+    side = ev("opt", traj=(E_TS - 3e-4, E_TS - 4e-4), level=loose)  # drop 1e-4 < 2e-4
+    gate, _ = g.connection(ev(freqs=modes(-700.0), level=loose), (side, side), ("A", "B"), AB,
+                           degenerate=False)
+    assert gate.reasons == ("side0:no_descent", "side1:no_descent")
+
+
 def test_connection_assignment():
     assert connect(assigned=("B", "A"))[1] == "elementary"
     one = frozenset({"M"})

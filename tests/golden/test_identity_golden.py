@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from hfauto.chemistry.identity import compare_minima, permutation_invariant_rmsd
+from hfauto.chemistry.identity import permutation_invariant_rmsd, same_minimum
 from hfauto.chemistry.xyz import read_xyz
 
 pytestmark = pytest.mark.golden
@@ -17,4 +17,4 @@ def test_g21_water_structures_are_same(golden):
     energies = [float(re.findall(r"Total DFT energy =\s+(\S+)", out)[-1]) for out in outputs]
     rmsd, _ = permutation_invariant_rmsd(ref.symbols, ref.coords, other.coords)
     assert rmsd == pytest.approx(8e-6, abs=2e-6)
-    assert compare_minima(ref.symbols, ref.coords, other.coords, *energies) == "same"
+    assert same_minimum(ref.symbols, ref.coords, other.coords, *energies)

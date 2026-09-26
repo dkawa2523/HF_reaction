@@ -6,8 +6,8 @@ method asks for them. An optimization counts as converged only with return code 
 ``FAILED TO CONVERGE`` in the output and no ``NOT_CONVERGED`` file (BUG-07, CH-20); a
 continuation restarts from ``xtbopt.xyz``. The ``hessian`` file (Eh/bohr², input frame)
 becomes the canonical ``.npy`` and the frequencies come from ``chemistry.vibrations``.
-``tight`` and ``init_hessian`` are accepted and ignored: every optimization is vtight and
-xTB builds its own model Hessian.
+``init_hessian`` is accepted and ignored: every optimization is vtight and xTB builds its
+own model Hessian.
 """
 
 from __future__ import annotations
@@ -233,7 +233,7 @@ class XTBEngine:
                ) -> Evidence | Failure:
         return self.jobs.run(self.task("energy", mol, method), self.adapter, deadline=deadline)
 
-    def optimize(self, mol: Molecule, method: MethodSpec, *, tight: bool = False,
+    def optimize(self, mol: Molecule, method: MethodSpec, *,
                  init_hessian: Evidence | None = None, deadline: Deadline | None = None
                  ) -> Evidence | Failure:
         return self.jobs.run(self.task("optimize", mol, method), self.adapter, deadline=deadline)

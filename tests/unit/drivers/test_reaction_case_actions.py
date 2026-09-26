@@ -42,7 +42,7 @@ def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None):
                                       multiplicity=1, geometry=geo, source="input",
                                       composition_id=composition_key(pes.symbols, 0, 1))
         out = relax_to_minimum(pes.molecule(name), DFT, qm, load_xyz=load)
-        record, _ = registry.add(out, species[name], tier="dft")
+        record = registry.add(out, species[name], tier="dft")
         minima[record.minimum_id] = (record, out.opt.final)
     rt = CaseRuntime(
         qm=qm, saddle=saddle or fakes.FakeSaddle(root, pes), path=fakes.FakePath(root, pes, script),
@@ -92,8 +92,15 @@ def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path) -> None:
     state = act(ctx, state, Action.CONNECT)
     claim = ctx.work.connection
     assert state.connection == "elementary" and set(claim.minima) == set(ctx.case.minima)
+    assert ctx.rt.qm.calls[-2:] == ["optimize+init_hessian"] * 2  # both sides: the TS Hessian
     state = act(ctx, replace(state, connection=None), Action.CONNECT)  # 2nd amplitude: × 2
     assert ctx.work.connection.amplitude_A == pytest.approx(2 * claim.amplitude_A)
+    ctx.policy = replace(ctx.policy, qrc_bounds_A=(0.03, 0.05))  # the first one is capped
+    state, amplitudes = replace(state, connection_attempts=0), []
+    for _ in range(2):  # C19: × 2, then clipped, so the 2nd amplitude equals the 1st
+        state = act(ctx, replace(state, connection=None), Action.CONNECT)
+        amplitudes.append((state.connection, ctx.work.connection.amplitude_A))
+    assert amplitudes == [("elementary", pytest.approx(0.05))] * 2
 
 
 def test_higher_order_retry_and_failed_saddle_routing(tmp_path) -> None:

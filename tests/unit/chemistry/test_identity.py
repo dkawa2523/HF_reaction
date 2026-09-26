@@ -20,14 +20,14 @@ def _proper_rotation(seed: int) -> np.ndarray:
 
 
 def test_ammonia_inversion_is_a_degenerate_pair():
-    assert idn.compare_minima(NH3_SYMBOLS, NH3, INVERTED, -56.5, -56.5) == "same"
+    assert idn.same_minimum(NH3_SYMBOLS, NH3, INVERTED, -56.5, -56.5)
     assert idn.mapped_equivalent(NH3_SYMBOLS, NH3, INVERTED)
     assert not idn.mapped_equivalent(NH3_SYMBOLS, NH3, NH3)
 
 
 def test_enantiomers_stay_distinct():
     mirror = CHFCLBR * [-1.0, 1.0, 1.0]
-    assert idn.compare_minima(CHFCLBR_SYMBOLS, CHFCLBR, mirror, -1.0, -1.0) == "distinct"
+    assert not idn.same_minimum(CHFCLBR_SYMBOLS, CHFCLBR, mirror, -1.0, -1.0)
 
 
 def test_rotated_permuted_copy_is_recovered():
@@ -39,7 +39,9 @@ def test_rotated_permuted_copy_is_recovered():
 
 
 def test_thresholds_and_assignment():
-    assert idn.compare_minima(NH3_SYMBOLS, NH3, NH3, 0.0, 3e-5) == "ambiguous"
+    assert idn.same_minimum(NH3_SYMBOLS, NH3, NH3, 0.0, 3e-5)  # assign's 5e-5 Eh
+    assert not idn.same_minimum(NH3_SYMBOLS, NH3, NH3, 0.0, 6e-5)
+    assert not idn.same_minimum(NH3_SYMBOLS, NH3, NH3 * [1.0, 1.0, 0.5], 0.0, 0.0)
     squeezed = NH3 * [1.0, 1.0, 0.5]
     candidates = {"up": (NH3, 0.0), "flat": (squeezed, 0.0)}
     assert idn.assign(NH3_SYMBOLS, NH3 + 1e-4, 1e-6, candidates) == "up"

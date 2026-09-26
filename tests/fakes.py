@@ -196,8 +196,13 @@ class _Surface(_Fake):
         return write_geometry(self.root, f"fake/{key[:16]}/start.xyz", mol.xyz.symbols,
                               mol.xyz.coords)
 
-    def _hessian(self, ev: Evidence, start: Geometry, key: str) -> np.ndarray | Failure:
-        if ev.hessian is None or ev.final.fingerprint != start.fingerprint:
+    def _hessian(self, ev: Evidence, start: Geometry, key: str, near_A: float = 0.0
+                 ) -> np.ndarray | Failure:
+        """The freq Hessian at ``start``, or at most ``near_A`` per atom from it (same frame)."""
+        at, here = (read_xyz(self.root / g.file.path) for g in (ev.final, start))
+        same_atoms = list(at.symbols) == list(here.symbols)
+        shift = np.linalg.norm(at.coords - here.coords, axis=1).max() if same_atoms else np.inf
+        if ev.hessian is None or (ev.final.fingerprint != start.fingerprint and shift > near_A):
             return Failure(kind=Kind.INPUT_INVALID, reason="hessian_geometry_mismatch", job_key=key)
         return np.load(self.root / ev.hessian.path)
 
@@ -216,13 +221,13 @@ class FakeQM(_Surface):  # calls: "energy", "optimize" / "optimize+init_hessian"
         key = self._key("sp", mol.fingerprint(), method.signature())
         return self._evidence("sp", mol, method, key, self._start(mol, key))
 
-    def optimize(self, mol, method, *, tight=False, init_hessian: Evidence | None = None,
-                 deadline=None) -> Evidence | Failure:
+    def optimize(self, mol, method, *, init_hessian: Evidence | None = None,
+                 deadline=None) -> Evidence | Failure:  # init_hessian: within 0.5 Å, like NWChem
         self.calls.append("optimize+init_hessian" if init_hessian else "optimize")
-        key = self._key("opt", mol.fingerprint(), method.signature(), tight,
+        key = self._key("opt", mol.fingerprint(), method.signature(),
                         init_hessian and init_hessian.job_key)
         start = self._start(mol, key)
-        h0 = None if init_hessian is None else self._hessian(init_hessian, start, key)
+        h0 = None if init_hessian is None else self._hessian(init_hessian, start, key, 0.5)
         if isinstance(h0, Failure):
             return h0
         x, energies, ok = _minimize(self.pes, mol.xyz.coords, h0)
