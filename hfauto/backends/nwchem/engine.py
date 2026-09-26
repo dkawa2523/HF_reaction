@@ -284,7 +284,7 @@ class _NWChem:
 
 
 class NWChemEngine(_NWChem):
-    """QM: DFT energy / optimize / frequencies; MP2 and CCSD(T) energies."""
+    """QM: DFT energy / optimize / frequencies; closed-shell MP2 and CCSD(T) energies."""
 
     name: ClassVar[str] = "nwchem"
 
@@ -300,8 +300,8 @@ class NWChemEngine(_NWChem):
 
     def energy(self, mol: Molecule, method: MethodSpec, *,
                deadline: Deadline | None = None) -> Evidence | Failure:
-        if method.wft_method == "ccsd(t)" and mol.multiplicity > 1:
-            return _invalid("ccsd(t)_closed_shell_only")
+        if method.kind == "wft" and mol.multiplicity > 1:
+            return _invalid("wft_closed_shell_only")
         return self._qm("energy", mol, method, deadline)
 
     def optimize(self, mol: Molecule, method: MethodSpec, *, tight: bool = False,

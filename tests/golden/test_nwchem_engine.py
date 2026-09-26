@@ -98,6 +98,15 @@ def test_frequencies_cache_and_input_checks(nwchem, golden):
     assert grid.kind is FailureKind.METHOD_MISMATCH and "grid" in grid.reason
 
 
+def test_open_shell_wft_is_rejected_without_a_job(nwchem, golden):
+    jobs, site = nwchem
+    mp2 = MethodSpec(id="mp2", kind="wft", wft_method="mp2", basis="def2-svp")
+    doublet = Molecule(_hcn_ts(golden).xyz, 1, 2)
+    failure = NWChemEngine(jobs=jobs, site=site).energy(doublet, mp2)
+    assert (failure.kind, failure.reason) == (FailureKind.INPUT_INVALID, "wft_closed_shell_only")
+    assert (jobs.stats().hits, jobs.stats().misses) == (0, 0)
+
+
 def test_g01_two_vibrational_blocks_are_not_a_freq_evidence(nwchem, golden):
     symbols, coords = geometry_block(golden.text("nwchem/G01/nwchem.out"))
     mol = Molecule(XYZ(list(symbols), coords), 0, 1)

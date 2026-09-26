@@ -48,6 +48,7 @@ _PES_FIELDS = (
     "program", "version", "method", "basis", "dispersion", "solvation",
     "charge", "multiplicity", "electronic_temperature_K",
 )
+_STATE_FIELDS = ("charge", "multiplicity")
 _NUMERICS_FIELDS = ("grid", "scf_tol")
 _RANKABLE_OUTCOMES = frozenset(
     {CaseOutcome.ELEMENTARY_STEP, CaseOutcome.DEGENERATE, CaseOutcome.REASSIGNED}
@@ -68,14 +69,9 @@ def _noise_floor(default: float, level: Level, policy: Policy) -> float:
     return max(default, policy.scf_noise_factor * (level.scf_tol or 0.0))
 
 
-def zpe_hartree(
-    freqs_cm1: Sequence[float], *, scale: float = 1.0, invert_cm1: float | None = None
-) -> float:
-    """0.5 x scale x sum(nu) over nu > 0 plus |nu| of inverted modes (-invert_cm1 < nu < 0)."""
-    total = sum(nu for nu in freqs_cm1 if nu > 0.0)
-    if invert_cm1 is not None:
-        total += sum(-nu for nu in freqs_cm1 if -invert_cm1 < nu < 0.0)
-    return 0.5 * scale * total * CM1_TO_HARTREE
+def zpe_hartree(freqs_cm1: Sequence[float], *, scale: float = 1.0) -> float:
+    """0.5 x scale x sum(nu) over nu > 0."""
+    return 0.5 * scale * sum(nu for nu in freqs_cm1 if nu > 0.0) * CM1_TO_HARTREE
 
 
 def imaginary_tier(
@@ -91,11 +87,13 @@ def imaginary_tier(
     return "noise" if lowest < 0.0 else "none"
 
 
-def same_pes(*levels: Level, numerics: bool = True) -> Gate:
+def same_pes(*levels: Level, numerics: bool = True, state: bool = True) -> Gate:
+    """state=False skips charge and multiplicity (a complex against its monomers)."""
     fields = _PES_FIELDS + (_NUMERICS_FIELDS if numerics else ())
     reasons = [
         f"pes_mismatch:{name}" for name in fields
-        if len({getattr(level, name) for level in levels}) > 1
+        if (state or name not in _STATE_FIELDS)
+        and len({getattr(level, name) for level in levels}) > 1
     ]
     return _gate(reasons)
 
@@ -273,20 +271,17 @@ def connection(
 def thermo_consistent(
     freq: Evidence,
     *,
+    frequencies_cm1: Sequence[float],
     gv_zpe_hartree: float,
     gv_energy_hartree: float,
     gv_n_real: int,
-    zpe_scale: float,
-    invert_cm1: float | None,
+    scale: float,
     policy: Policy = _DEFAULT,
 ) -> Gate:
-    freqs = freq.frequencies_cm1
-    if freqs is None:
-        return Gate(False, ("missing_frequencies",))
-    n_inverted = 0 if invert_cm1 is None else sum(1 for nu in freqs if -invert_cm1 < nu < 0.0)
-    n_real = sum(1 for nu in freqs if nu > 0.0) + n_inverted
+    """GoodVibes' output against the frequencies it was given (chemistry.thermo_frequencies)."""
+    n_real = sum(1 for nu in frequencies_cm1 if nu > 0.0)
     reasons = [] if gv_n_real == n_real else [f"n_real:{gv_n_real}!={n_real}"]
-    reference = zpe_hartree(freqs, scale=zpe_scale, invert_cm1=invert_cm1)
+    reference = zpe_hartree(frequencies_cm1, scale=scale)
     if not abs(gv_zpe_hartree - reference) < policy.thermo_zpe_tol_hartree:
         reasons.append("zpe_mismatch")
     if not abs(gv_energy_hartree - freq.energy_hartree) < policy.thermo_energy_tol_hartree:

@@ -3,9 +3,10 @@ sensitivity band, association thermochemistry and basin populations.
 
 Subjects: every dft minimum (monomers included) and SaddleClaim freq calc; one engine call
 each covers the main settings and the qs x cutoff variants at the conditions' temperatures.
-A failed call or gate gives G = None (thermo_unavailable), never retried. Species values are
+Modes follow chemistry.thermo.thermo_frequencies (a TS drops its reaction coordinate). A
+failed call or gate gives G = None (thermo_unavailable), never retried. Species values are
 1 atm; reactions get one record per standard state. With energy_method, G = E_SP + (G_GV -
-E_GV) from the sp on the same geometry; without it a subject keeps its freq level.
+E_GV) from the sp on the same geometry; a subject without that sp is energy_layer_missing.
 """
 
 from __future__ import annotations
@@ -34,7 +35,8 @@ from hfauto.core.records import (
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
 _QS, _CUTOFFS_CM1 = ("grimme", "truhlar"), (50.0, 100.0, 150.0)
-Key = tuple[str, int]  # (Hill formula, charge) of a structure
+Key = tuple[str, int, int]  # (Hill formula, charge, multiplicity) of a structure
+Monomers = dict[tuple[str, int], list[tuple[Key, int]]]  # complex (Hill, charge) -> parts
 Table = dict[str, SpeciesThermo]  # subject -> thermo at one temperature and one settings
 
 
@@ -54,6 +56,7 @@ class _Subject:
     composition: str | None  # None for a TS
     notes: tuple[str, ...]  # of the MinimumRecord / SaddleClaim
     key: Key
+    layer_missing: bool  # energy_method set but no sp on this geometry
 
 
 def _variants(settings: ThermoSettings) -> list[ThermoSettings]:
@@ -73,8 +76,9 @@ def _subjects(inputs: Manifest, method: MethodSpec | None) -> dict[str, _Subject
     def make(sid: str, calc: str, composition: str | None, notes: tuple[str, ...]) -> _Subject:
         freq = inputs.evidence(calc)
         sp_calc, sp = layer.get(freq.final.fingerprint, (None, freq))
-        key = (hill_formula(freq.final.symbols), freq.level.charge)
-        return _Subject(sid, calc, freq, sp_calc, sp, composition, notes, key)
+        key = (hill_formula(freq.final.symbols), freq.level.charge, freq.level.multiplicity)
+        return _Subject(sid, calc, freq, sp_calc, sp, composition, notes, key,
+                        layer_missing=method is not None and sp_calc is None)
 
     out = {m.minimum_id: make(m.minimum_id, m.freq_calc, m.composition_id, m.notes)
            for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord) if m.tier == "dft"}
@@ -86,32 +90,32 @@ def _subjects(inputs: Manifest, method: MethodSpec | None) -> dict[str, _Subject
 
 
 def _species(sub: _Subject, engine: ThermoEngine, variants: Sequence[ThermoSettings],
-             policy: Policy) -> dict[float, list[SpeciesThermo]]:
+             temperatures: Sequence[float], policy: Policy) -> dict[float, list[SpeciesThermo]]:
     """Per temperature, the thermo of every variant (index 0 = main settings)."""
-    soft = "soft_imaginary_mode" in sub.notes  # inversion applies to soft minima only
-    settings = [s if soft else s.model_copy(update={"invert_soft_cm1": None}) for s in variants]
-    main, shas = settings[0], [th.settings_sha(s) for s in settings]
-    _, zpe_scale, scale_notes = th.resolve_scales(main, sub.freq.level)
-    out = engine.thermo(sub.freq, settings)
+    shas, saddle = [th.settings_sha(s) for s in variants], sub.composition is None  # TS
+    out = [] if sub.layer_missing else engine.thermo(
+        sub.freq, variants, temperatures_K=temperatures, saddle=saddle)
     found = {} if isinstance(out, Failure) else {(r.settings_sha, r.T_K): r for r in out}
-    missing = (str(out.kind),) if isinstance(out, Failure) else ("no_thermo_result",)
+    missing = (str(out.kind),) if isinstance(out, Failure) else (
+        "energy_layer_missing" if sub.layer_missing else "no_thermo_result",)
+    modes = th.thermo_frequencies(sub.freq.frequencies_cm1 or (), saddle=saddle)
     rows: dict[float, list[SpeciesThermo]] = {}
-    for T in main.temperatures_K:
+    for T in temperatures:
         results = [found.get((sha, T)) for sha in shas]
         r0 = results[0]
         gate = Gate(False, missing) if r0 is None else thermo_consistent(
-            sub.freq, gv_zpe_hartree=r0.zpe_hartree, gv_energy_hartree=r0.E_hartree,
-            gv_n_real=r0.n_real, zpe_scale=zpe_scale, invert_cm1=main.invert_soft_cm1,
+            sub.freq, frequencies_cm1=modes, gv_zpe_hartree=r0.zpe_hartree,
+            gv_energy_hartree=r0.E_hartree, gv_n_real=r0.n_real, scale=variants[0].vib_scale,
             policy=policy)
         base = SpeciesThermo(
             subject=sub.id, freq_calc=sub.freq_calc, energy_calc=sub.energy_calc, T_K=T,
             G_hartree=None, H_hartree=None, zpe_hartree=None, settings_sha=shas[0],
-            notes=(*sub.notes, *scale_notes, "thermo_unavailable", *gate.reasons))
+            notes=(*sub.notes, "thermo_unavailable", *gate.reasons))
         rows[T] = [base if not gate or r is None else base.model_copy(update={
             "G_hartree": th.composite(sub.energy.energy_hartree, r.G_hartree, r.E_hartree),
             "H_hartree": th.composite(sub.energy.energy_hartree, r.H_hartree, r.E_hartree),
             "zpe_hartree": r.zpe_hartree,
-            "notes": tuple(dict.fromkeys((*sub.notes, *scale_notes, *r.notes))),
+            "notes": tuple(dict.fromkeys((*sub.notes, *r.notes))),
         }) for r in results]
     return rows
 
@@ -129,41 +133,43 @@ def _populated(table: Table, subjects: dict[str, _Subject], T: float) -> Table:
                          strict=True)}
 
 
-def _monomers(inputs: Manifest, rt: StageRuntime) -> dict[Key, list[tuple[Key, int]]]:
-    """Key of each system composition -> (monomer key, count) of its components."""
+def _monomers(inputs: Manifest, rt: StageRuntime) -> Monomers:
+    """(Hill, charge) of each system composition -> (monomer key, count) of its components."""
     species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)}
-    out: dict[Key, list[tuple[Key, int]]] = {}
+    out: Monomers = {}
     for comp in rt.system.compositions:
         parts = [(species[i], n) for i, n in comp.components.items() if i in species]
         if len(parts) == len(comp.components) and sum(comp.components.values()) > 1:
             symbols = [x for s, n in parts for x in s.geometry.symbols * n]
             key = (hill_formula(symbols), sum(s.charge * n for s, n in parts))
-            out[key] = [((hill_formula(s.geometry.symbols), s.charge), n) for s, n in parts]
+            out[key] = [((hill_formula(s.geometry.symbols), s.charge, s.multiplicity), n)
+                        for s, n in parts]
     return out
 
 
-def _same_level(subs: Sequence[_Subject]) -> bool:
-    return bool(same_pes(*[s.freq.level for s in subs])) and bool(
-        same_pes(*[s.energy.level for s in subs]))
+def _same_level(subs: Sequence[_Subject], *, state: bool = True) -> bool:
+    return bool(same_pes(*[s.freq.level for s in subs], state=state)) and bool(
+        same_pes(*[s.energy.level for s in subs], state=state))
 
 
-def _association(names: tuple[str, ...], subjects: dict[str, _Subject],
-                 monomers: dict[Key, list[tuple[Key, int]]], table: Table, T: float,
-                 state: th.StandardState, with_ts: bool) -> tuple[float | None, float | None]:
-    """dG_assoc and dG_act_vs_separated against the monomers' ensemble G (same LOT only)."""
+def _association(names: tuple[str, ...], subjects: dict[str, _Subject], monomers: Monomers,
+                 table: Table, T: float, state: th.StandardState, with_ts: bool
+                 ) -> tuple[float | None, float | None]:
+    """dG_assoc and dG_act_vs_separated against the monomers' ensemble G (same LOT apart from
+    charge and multiplicity; a monomer without G fails closed)."""
     complex_ = subjects.get(names[0])
-    parts = monomers.get(complex_.key) if complex_ is not None else None
+    parts = monomers.get(complex_.key[:2]) if complex_ is not None else None
     if complex_ is None or not parts:
         return None, None
     energies, used = [], [complex_]
     for key, _ in parts:
-        subs = [s for s in subjects.values() if s.composition is not None and s.key == key
-                and table[s.id].G_hartree is not None]
-        if not subs:
+        subs = [s for s in subjects.values() if s.composition is not None and s.key == key]
+        G = [table[s.id].G_hartree for s in subs]
+        if not G or None in G:
             return None, None
-        energies.append(th.ensemble_G([cast(float, table[s.id].G_hartree) for s in subs], T))
+        energies.append(th.ensemble_G(cast(list[float], G), T))
         used += subs
-    if not _same_level(used):
+    if not _same_level(used, state=False):
         return None, None
     G_ts = table[names[2]].G_hartree if with_ts else None
     return th.association(table[names[0]].G_hartree, G_ts, energies, [n for _, n in parts],
@@ -187,9 +193,8 @@ def _kcal(subjects: dict[str, _Subject], a: str, b: str) -> float | None:
         sa.energy.energy_hartree - sb.energy.energy_hartree) * HARTREE_TO_KCAL_MOL
 
 
-def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject],
-              monomers: dict[Key, list[tuple[Key, int]]], T: float, state: th.StandardState,
-              tables: Sequence[Table]) -> ReactionThermo:
+def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject], monomers: Monomers, T: float,
+              state: th.StandardState, tables: Sequence[Table]) -> ReactionThermo:
     """tables: the thermo of every settings variant at T (index 0 = main settings)."""
     names, table = th.participants(rx), tables[0]
     dG_act, dG_rxn, dzpe = th.reaction_delta(rx, table)
@@ -224,9 +229,8 @@ class ThermoStage:
         engine = cast(ThermoEngine, rt.engine(Capability.THERMO, cfg.engine))
         method = None if cfg.energy_method is None else rt.method(cfg.energy_method)
         subjects = _subjects(inputs, method)
-        temperatures = rt.conditions.temperatures_K
-        variants = _variants(cfg.settings.model_copy(update={"temperatures_K": temperatures}))
-        rows = rt.thread_map(lambda s: _species(s, engine, variants, rt.policy),
+        temperatures, variants = rt.conditions.temperatures_K, _variants(cfg.settings)
+        rows = rt.thread_map(lambda s: _species(s, engine, variants, temperatures, rt.policy),
                              list(subjects.values()), threads_per_item=1)
         monomers = _monomers(inputs, rt)
         out: list[Artifact] = []

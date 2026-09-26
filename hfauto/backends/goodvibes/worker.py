@@ -7,8 +7,9 @@ QCData fields that ``calc_bbe`` (goodvibes/thermo.py of 4.3.0, checked in the WS
 actually reads for the numbers:
 
 - ``scf_energy``: E in H and G; ``multiplicity``: S_elec; ``molecular_mass`` (amu): S_trans.
-- ``frequency_wn`` / ``im_frequency_wn``: only ``frequency_wn`` (plus modes inverted by
-  ``invert``) enters ZPE, U_vib and S_vib; imaginary modes are dropped.
+- ``frequency_wn`` / ``im_frequency_wn``: only ``frequency_wn`` enters ZPE, U_vib and S_vib.
+  The engine sends ``chemistry.thermo.thermo_frequencies`` (no negative mode) and ``invert``
+  stays None.
 - ``rotemp`` (K): S_rot and the calculation gate (empty -> no thermochemistry);
   ``linear_mol`` selects the linear formula, which uses ``rotemp[0]``; ``symmno``: sigma in
   S_rot (kept 1: ``symm=True`` adds -R ln sigma from pymsym itself).
@@ -42,7 +43,7 @@ def qcdata_fields(job: dict[str, Any]) -> dict[str, Any]:
     """Keyword arguments of ``goodvibes.io.QCData`` for the freq job described by ``job``.
 
     ``job`` holds symbols, coords (Å, input frame), energy_hartree, charge, multiplicity,
-    frequencies_cm1 (projected, imaginary < 0) and n_external of one freq Evidence.
+    frequencies_cm1 (projected; imaginary < 0 if any) and n_external of one freq Evidence.
     """
     symbols: Sequence[str] = job["symbols"]
     coords = np.asarray(job["coords"], dtype=float).reshape(-1, 3)
@@ -76,7 +77,7 @@ def _error(kind: str, reason: str) -> dict[str, Any]:
 
 
 def compute(job: dict[str, Any], workdir: Path) -> dict[str, Any]:
-    """One result per (settings, temperature); scale factors always arrive explicitly."""
+    """One result per (settings, temperature); vib_scale scales the frequencies and the ZPE."""
     import goodvibes
     from goodvibes.api import compute_thermo
     from goodvibes.constants import J_TO_AU
@@ -89,8 +90,7 @@ def compute(job: dict[str, Any], workdir: Path) -> dict[str, Any]:
     fields = qcdata_fields(job)
     results = []
     for s in job["settings"]:
-        invert = None if s["invert_soft_cm1"] is None else -float(s["invert_soft_cm1"])
-        for T in s["temperatures_K"]:
+        for T in job["temperatures_K"]:
             s_rot = calc_rotational_entropy(T, fields["rotemp"], symmno=1,
                                             linear=fields["linear_mol"]) / J_TO_AU
             if not s_rot > 0.0:
@@ -98,7 +98,7 @@ def compute(job: dict[str, Any], workdir: Path) -> dict[str, Any]:
             r = compute_thermo(
                 qcdata=QCData(**fields), QS=s["qs"], s_freq_cutoff=s["cutoff_cm1"],
                 temperature=T, freq_scale_factor=s["vib_scale"],
-                zpe_scale_factor=s["zpe_scale"], invert=invert, symm=s["symmetry"],
+                zpe_scale_factor=s["vib_scale"], invert=None, symm=s["symmetry"],
             )
             results.append({
                 "settings_sha": s["sha"], "T_K": T, "G_hartree": r.qh_gibbs_free_energy,

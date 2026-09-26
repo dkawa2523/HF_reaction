@@ -12,7 +12,7 @@ from scipy.spatial.distance import pdist
 from hfauto.backends.protocols import Capability as Cap
 from hfauto.backends.protocols import ConformerEnsemble, DiscoveryResult, ThermoResult
 from hfauto.chemistry.gates import zpe_hartree
-from hfauto.chemistry.thermo import resolve_scales, settings_sha
+from hfauto.chemistry.thermo import settings_sha, thermo_frequencies
 from hfauto.core import records as R
 from hfauto.core.evidence import Evidence
 from hfauto.core.manifest import load_manifest
@@ -47,13 +47,13 @@ def pipeline(tmp_path, tmp_run, override_engine):
             ts=geo["ts"] if ok else None, ts_imag_cm1=-1e3, barrier_kj_mol=30.0,
             reaction_kj_mol=10.0, irc_connected_to_source=ok, electronic_temperature_K=300.0)
 
-    def goodvibes(freq, settings):  # consistent stand-in: G = E + scaled ZPE
-        e, nu = freq.energy_hartree, freq.frequencies_cm1
-        z = zpe_hartree(nu, scale=resolve_scales(settings[0], freq.level)[1])
+    def goodvibes(freq, settings, temperatures, saddle):  # consistent: G = E + scaled ZPE
+        e, nu = freq.energy_hartree, thermo_frequencies(freq.frequencies_cm1, saddle=saddle)
+        z = zpe_hartree(nu, scale=settings[0].vib_scale)
         return [ThermoResult(settings_sha=settings_sha(s), T_K=t, E_hartree=e, H_hartree=e,
                              G_hartree=e + z, zpe_hartree=z, S_rot=1.0, notes=(), job_key="gv",
                              n_real=sum(f > 0 for f in nu))
-                for s in settings for t in s.temperatures_K]
+                for s in settings for t in temperatures]
 
     qm, path, saddle = (c(tmp_run, pes) for c in (fakes.FakeQM, fakes.FakePath, fakes.FakeSaddle))
     fake = {(Cap.QM, "nwchem"): qm, (Cap.QM, "xtb"): qm, (Cap.SADDLE, "nwchem_saddle"): saddle,

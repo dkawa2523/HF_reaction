@@ -200,7 +200,9 @@ class ThermoEngine(Engine, Protocol):
         freq: Evidence,
         settings: Sequence[ThermoSettings],
         *,
+        temperatures_K: Sequence[float],
+        saddle: bool = False,
         deadline: Deadline | None = None,
     ) -> list[ThermoResult] | Failure:
-        """One result per (settings, temperature)."""
+        """One result per (settings, temperature); modes as chemistry.thermo_frequencies."""
         ...

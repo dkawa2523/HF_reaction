@@ -48,6 +48,7 @@ def test_overrides_nest_restore_and_check_the_protocol(tmp_run, override_engine)
         create(C.QM, "nwchem")
     override_engine(C.THERMO, "goodvibes", fakes.FakeThermo(["scripted"]))
     thermo = create(C.THERMO, "goodvibes")
-    assert thermo.thermo(None, ()) == "scripted" and thermo.calls == [(None, ())]
+    assert thermo.thermo(None, (), temperatures_K=()) == "scripted"
+    assert thermo.calls == [(None, (), (), False)]
     with pytest.raises(AssertionError, match="script exhausted"):
-        thermo.thermo(None, ())
+        thermo.thermo(None, (), temperatures_K=())

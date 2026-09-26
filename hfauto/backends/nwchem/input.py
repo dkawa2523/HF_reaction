@@ -156,16 +156,15 @@ def render_string(start: Molecule, end: Molecule, method: MethodSpec, setup: Set
 
 
 def render_wft(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:
-    """MP2 or CCSD(T) single point with frozen atomic cores (UHF reference if open shell)."""
+    """MP2 or CCSD(T) single point with frozen atomic cores; closed shell only (RHF reference).
+
+    The scf block is written only to restart from <name>.movecs.
+    """
     if method.kind != "wft" or method.wft_method is None:
         raise ValueError(f"method {method.id!r} is not a wave-function method")
-    scf = ["scf"]
-    if mol.multiplicity > 1:
-        scf += [f"  nopen {mol.multiplicity - 1}", "  uhf"]
-    if setup.restart_vectors:
-        scf.append(f"  vectors input {setup.name}.movecs")
+    scf = ["scf", f"  vectors input {setup.name}.movecs", "end"] if setup.restart_vectors else []
     module = "mp2" if method.wft_method == "mp2" else "ccsd"
-    return _deck(setup, _system(mol, method, setup), [*scf, "end"] if len(scf) > 1 else [],
+    return _deck(setup, _system(mol, method, setup), scf,
                  [module, "  freeze atomic", "end"], [f"task {method.wft_method} energy"])
 
 

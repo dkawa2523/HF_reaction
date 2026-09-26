@@ -1,5 +1,5 @@
-"""Thermochemistry arithmetic (design §8.2 thermo): scale factors, composite G, standard
-states, ensembles, association and reaction deltas.
+"""Thermochemistry arithmetic (design §8.2 thermo): the frequencies GoodVibes gets, composite
+G, standard states, ensembles, association and reaction deltas.
 
 Pure functions. Energies are in Hartree unless a name ends in ``_kcal``; free energies of
 single species are gas-phase 1 atm values (GoodVibes' default reference) and are moved to
@@ -13,22 +13,12 @@ from collections.abc import Mapping, Sequence
 from typing import Literal
 
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
-from hfauto.core.evidence import Level
 from hfauto.core.hashing import fingerprint_dict
 from hfauto.core.method import ThermoSettings
 from hfauto.core.records import CaseOutcome, ReactionRecord, SpeciesThermo
 
 StandardState = Literal["1atm", "1bar", "1M"]
 
-# Truhlar database v5 as shipped with GoodVibes 4.3.0 (goodvibes/scaling_factors.json;
-# Alecu et al., JCTC 2010, 6, 2872): (functional, basis) -> (label, harmonic, zpe).
-# The database has no PBE0/def2 entry; PBE0 falls back to PBE0/MG3S.
-_SCALE_DB: dict[tuple[str, str], tuple[str, float, float]] = {
-    ("pbe0", "mg3s"): ("PBE0/MG3S", 0.989, 0.975),
-    ("wb97xd", "def2tzvp"): ("wB97XD/def2TZVP", 0.989, 0.975),
-    ("b3lyp", "def2tzvp"): ("B3LYP/def2TZVP", 0.999, 0.985),
-}
-_ALIASES = {"pbe1pbe": "pbe0", "wb97xd3": "wb97xd"}  # GoodVibes' FUNCTIONAL_ALIASES subset
 _L_ATM_PER_MOL_K = 0.082057366080960  # gas constant in L atm / (mol K), CODATA 2018
 _ATM_PER_BAR = 1.0 / 1.01325
 _TS_OUTCOMES = frozenset(
@@ -36,34 +26,11 @@ _TS_OUTCOMES = frozenset(
 )
 
 
-def _canonical(name: str | None) -> str:
-    key = (name or "").lower().replace("-", "").replace("_", "")
-    return _ALIASES.get(key, key)
-
-
-def scale_factors(level: Level) -> tuple[float, float, str | None]:
-    """(harmonic, zpe, note): exact functional/basis match, else the same functional with
-    note ``scale_factor_from:<level>``, else (1.0, 1.0) with ``scale_factor_unverified``."""
-    functional, basis = _canonical(level.method), _canonical(level.basis)
-    if (functional, basis) in _SCALE_DB:
-        _, vib, zpe = _SCALE_DB[functional, basis]
-        return vib, zpe, None
-    for (entry_functional, _), (label, vib, zpe) in _SCALE_DB.items():
-        if entry_functional == functional:
-            return vib, zpe, f"scale_factor_from:{label}"
-    return 1.0, 1.0, "scale_factor_unverified"
-
-
-def resolve_scales(settings: ThermoSettings, level: Level) -> tuple[float, float, tuple[str, ...]]:
-    """Explicit (harmonic, zpe) factors: the settings' values, the table for the missing ones."""
-    vib, zpe, note = scale_factors(level)
-    if settings.vib_scale is not None and settings.zpe_scale is not None:
-        return settings.vib_scale, settings.zpe_scale, ()
-    return (
-        vib if settings.vib_scale is None else settings.vib_scale,
-        zpe if settings.zpe_scale is None else settings.zpe_scale,
-        (note,) if note else (),
-    )
+def thermo_frequencies(freqs_cm1: Sequence[float], *, saddle: bool) -> tuple[float, ...]:
+    """The modes that enter ZPE, U and S, sorted: a minimum keeps every mode as |nu|; a saddle
+    drops its lowest mode (the reaction coordinate) and keeps the others as |nu|."""
+    modes = sorted(freqs_cm1)[1:] if saddle else freqs_cm1
+    return tuple(sorted(abs(nu) for nu in modes))
 
 
 def settings_sha(settings: ThermoSettings) -> str:

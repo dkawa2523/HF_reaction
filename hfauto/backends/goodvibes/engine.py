@@ -1,8 +1,9 @@
 """GoodVibes thermochemistry engine (design §6.3): the Python API run in a worker process.
 
-The engine hands the worker its own projected frequencies, isotopic masses and rotational
-constants from a freq Evidence; it never reads GoodVibes text output. The cache key is the
-freq job_key, the Hessian sha and the full settings with explicit scale factors.
+The engine hands the worker its own projected frequencies (as ``thermo_frequencies``: no
+negative mode reaches GoodVibes), isotopic masses and rotational constants from a freq
+Evidence; it never reads GoodVibes text output. The cache key is the freq job_key, the Hessian
+sha, the frequencies sent, the temperatures and the full settings.
 """
 
 from __future__ import annotations
@@ -11,12 +12,12 @@ import json
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from hfauto.backends.protocols import Requirements, ThermoResult
-from hfauto.chemistry.thermo import resolve_scales, settings_sha
+from hfauto.chemistry.thermo import settings_sha, thermo_frequencies
 from hfauto.chemistry.xyz import geometry_fingerprint, read_xyz
 from hfauto.core.evidence import Evidence, Failure, FailureKind
 from hfauto.core.method import Deadline, EngineSite, MethodSpec, ThermoSettings
@@ -35,12 +36,6 @@ class ThermoBatch(BaseModel):
     kind: Literal["thermo_batch"] = "thermo_batch"
     results: tuple[ThermoResult, ...]
     job_key: str = ""
-
-
-def _worker_settings(settings: ThermoSettings, freq: Evidence) -> tuple[dict[str, Any], list[str]]:
-    vib, zpe, notes = resolve_scales(settings, freq.level)
-    explicit = settings.model_dump(mode="json") | {"vib_scale": vib, "zpe_scale": zpe}
-    return explicit | {"sha": settings_sha(settings)}, list(notes)
 
 
 def _tail(path: Path, n: int = 300) -> str:
@@ -69,11 +64,8 @@ class _Adapter:
         data = json.loads(path.read_text(encoding="utf-8"))
         if "error" in data:
             return Failure(kind=FailureKind(data["error"]["kind"]), reason=data["error"]["reason"])
-        notes = task.inputs["notes"]
         return ThermoBatch(results=tuple(
-            ThermoResult(**r, notes=tuple(notes[r["settings_sha"]]), job_key="")
-            for r in data["results"]
-        ))
+            ThermoResult(**r, notes=(), job_key="") for r in data["results"]))
 
     def monitor(self, task: Task) -> Callable[[Path], str | None] | None:
         return None
@@ -106,6 +98,8 @@ class GoodVibesEngine:
         freq: Evidence,
         settings: Sequence[ThermoSettings],
         *,
+        temperatures_K: Sequence[float],
+        saddle: bool = False,
         deadline: Deadline | None = None,
     ) -> list[ThermoResult] | Failure:
         if freq.task != "freq" or freq.frequencies_cm1 is None or freq.hessian is None:
@@ -113,20 +107,20 @@ class GoodVibesEngine:
         xyz = read_xyz(self._jobs.store.run_dir / freq.final.file.path)
         if geometry_fingerprint(xyz.symbols, xyz.coords) != freq.final.fingerprint:
             return Failure(kind=FailureKind.INPUT_INVALID, reason="geometry_mismatch")
-        worker = [_worker_settings(s, freq) for s in settings]
         job = {
             "version_pin": self._site.version,
             "symbols": xyz.symbols, "coords": xyz.coords.tolist(),
-            "energy_hartree": freq.energy_hartree, "frequencies_cm1": freq.frequencies_cm1,
+            "energy_hartree": freq.energy_hartree,
+            "frequencies_cm1": list(thermo_frequencies(freq.frequencies_cm1, saddle=saddle)),
             "n_external": freq.n_external, "charge": freq.level.charge,
-            "multiplicity": freq.level.multiplicity, "settings": [w for w, _ in worker],
+            "multiplicity": freq.level.multiplicity, "temperatures_K": list(temperatures_K),
+            "settings": [s.model_dump(mode="json") | {"sha": settings_sha(s)} for s in settings],
         }
         task = Task(
             engine=self.name, version_pin=self._site.version, kind="thermo",
-            key_payload={"freq": freq.job_key, "hessian_sha": freq.hessian.sha256,
-                         "settings": job["settings"]},
-            execution=self._site.execution,
-            inputs={"job": job, "notes": {w["sha"]: notes for w, notes in worker}},
+            key_payload={"freq": freq.job_key, "hessian_sha": freq.hessian.sha256} | {
+                k: job[k] for k in ("frequencies_cm1", "temperatures_K", "settings")},
+            execution=self._site.execution, inputs={"job": job},
         )
         out = self._jobs.run(task, _Adapter(self._site.python or sys.executable),
                              deadline=deadline)

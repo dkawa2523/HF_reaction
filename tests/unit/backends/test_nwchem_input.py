@@ -69,9 +69,12 @@ def test_charge_multiplicity_dispersion_solvation_and_frame():
 def test_wft_single_points_and_hess_round_trip(tmp_path):
     mp2 = nw.render_wft(WATER, MP2)
     assert "task mp2 energy" in mp2 and "freeze atomic" in mp2 and "dft" not in mp2
+    assert "scf" not in mp2
     ccsd_t = MP2.model_copy(update={"wft_method": "ccsd(t)"})
-    ccsd = nw.render_wft(Molecule(WATER.xyz, 1, 2), ccsd_t)
-    assert "task ccsd(t) energy" in ccsd and "nopen 1" in ccsd and "freeze atomic" in ccsd
+    ccsd = nw.render_wft(WATER, ccsd_t, nw.Setup(restart_vectors=True))
+    assert "task ccsd(t) energy" in ccsd and "freeze atomic" in ccsd
+    assert "scf\n  vectors input job.movecs\nend" in ccsd
+    assert "nopen" not in ccsd and "uhf" not in ccsd
     h = np.arange(81.0).reshape(9, 9) * 1e-3
     (tmp_path / "job.hess").write_text(nw.hess_text(h + h.T))
     assert np.allclose(read_hess(tmp_path / "job.hess", 3), h + h.T, rtol=1e-10)

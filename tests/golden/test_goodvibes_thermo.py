@@ -32,8 +32,9 @@ def test_g02_doubled_zpe_fails_the_gate_so_24_kcal_is_not_reproduced(golden, tmp
     freq = FakeQM(tmp_run, pes).frequencies(pes.molecule("minimum"), MethodSpec(id="m", kind="dft"))
     freq = freq.model_copy(update={"energy_hartree": e_ts, "frequencies_cm1": (  # G01, last block
         -680.11, 630.77, 844.57, 1088.20, 1861.46, 3808.08)})
-    gate = thermo_consistent(freq, gv_zpe_hartree=ts.zpe_hartree, gv_energy_hartree=e_ts,
-                             gv_n_real=10, zpe_scale=0.985, invert_cm1=None)
+    sent = th.thermo_frequencies(freq.frequencies_cm1, saddle=True)
+    gate = thermo_consistent(freq, frequencies_cm1=sent, gv_zpe_hartree=ts.zpe_hartree,
+                             gv_energy_hartree=e_ts, gv_n_real=10, scale=0.985)
     assert not gate and "zpe_mismatch" in gate.reasons  # 0.0375115 = 0.985 x (both blocks)
     assert th.reaction_delta(RX, {"a": trans, "ts": _st(golden, "ts", None)})[0] is None
 

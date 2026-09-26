@@ -1,4 +1,4 @@
-"""chemistry.thermo: textbook values and the scale-factor lookup order."""
+"""chemistry.thermo: textbook values and the fixed rule for negative modes."""
 
 import math
 
@@ -7,8 +7,6 @@ import pytest
 from hfauto.chemistry import thermo as th
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL as H2K
 from hfauto.core.constants import R_KCAL_MOL_K
-from hfauto.core.evidence import Level
-from hfauto.core.method import ThermoSettings
 
 RT = R_KCAL_MOL_K * 298.15
 
@@ -26,13 +24,15 @@ def test_standard_states_populations_and_association():  # + port of test_basin_
     assert th.composite(-2.0, -0.95, -1.0) == pytest.approx(-1.95)
 
 
-@pytest.mark.parametrize(("method", "basis", "expected"), [
-    ("wb97x-d", "def2-TZVP", (0.989, 0.975, None)),
-    ("pbe0", "def2-svpd", (0.989, 0.975, "scale_factor_from:PBE0/MG3S")),
-    ("wb97x-d3", "def2-tzvpd", (0.989, 0.975, "scale_factor_from:wB97XD/def2TZVP")),
-    ("gfn2", None, (1.0, 1.0, "scale_factor_unverified")),
-])
-def test_scale_factor_lookup_order(method, basis, expected):
-    level = Level(program="p", version="1", method=method, basis=basis, charge=0, multiplicity=1)
-    assert th.scale_factors(level) == expected
-    assert th.resolve_scales(ThermoSettings(vib_scale=0.97), level)[:2] == (0.97, expected[1])
+def test_minimum_keeps_every_negative_mode_as_its_magnitude():  # noise (-4) and soft (-30)
+    assert th.thermo_frequencies((500.0, -4.0, -30.0), saddle=False) == (4.0, 30.0, 500.0)
+
+
+def test_saddle_drops_the_lowest_mode_and_flips_the_others():  # incl. an unannotated -8
+    assert th.thermo_frequencies((600.0, -8.0, -700.0, -30.0), saddle=True) == (
+        8.0, 30.0, 600.0)
+
+
+def test_positive_or_empty_modes_pass_unchanged():
+    assert th.thermo_frequencies((900.0, 300.0), saddle=False) == (300.0, 900.0)
+    assert th.thermo_frequencies((), saddle=False) == th.thermo_frequencies((), saddle=True) == ()

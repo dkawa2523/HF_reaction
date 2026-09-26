@@ -124,16 +124,13 @@ class EngineSite(BaseModel):
 
 
 class ThermoSettings(BaseModel):
-    """Typed GoodVibes settings."""
+    """Typed GoodVibes settings; temperatures come from the run's Conditions."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    temperatures_K: tuple[float, ...] = (298.15,)
     qs: Literal["grimme", "truhlar"] = "grimme"
     cutoff_cm1: float = 100.0
-    vib_scale: float | None = None  # None means chemistry.thermo.scale_factors(level)
-    zpe_scale: float | None = None
+    vib_scale: float = 1.0  # one factor for the frequencies and the ZPE
     symmetry: bool = True
-    invert_soft_cm1: float | None = None  # soft minima only, never TS
     sensitivity: bool = True  # qs x cutoff{50, 100, 150} band
 
 

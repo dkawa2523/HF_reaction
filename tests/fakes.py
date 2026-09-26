@@ -325,5 +325,6 @@ class FakeDiscovery(_Scripted):
 
 
 class FakeThermo(_Scripted):
-    def thermo(self, freq, settings, *, deadline=None) -> list[bp.ThermoResult] | Failure:
-        return self._next(freq, settings)
+    def thermo(self, freq, settings, *, temperatures_K, saddle=False, deadline=None
+               ) -> list[bp.ThermoResult] | Failure:
+        return self._next(freq, settings, temperatures_K, saddle)

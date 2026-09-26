@@ -14,7 +14,7 @@ from hfauto.execution.process import Command, run_command
 pytestmark = pytest.mark.real
 PBE0 = MethodSpec(id="pbe0-d3bj_def2-svp", kind="dft", functional="pbe0", basis="def2-svp",
                   dispersion="d3bj", grid="fine", scf_energy_tol=1e-7)
-UNSCALED = ThermoSettings(vib_scale=1.0, zpe_scale=1.0)
+UNSCALED = ThermoSettings(vib_scale=1.0)
 MOLECULES = {"h2o": (["O", "H", "H"], [[0, 0, 0.12], [0, 0.76, -0.47], [0, -0.76, -0.47]]),
              "hnc": (["H", "N", "C"], [[0, 0, -1.0], [0, 0, 0], [0, 0, 1.17]])}
 
@@ -24,7 +24,8 @@ def test_api_thermo_matches_the_cli(real_engine, real_site, tmp_path, name, symb
     qm, run = real_engine(Capability.QM, "nwchem"), tmp_path / "run"
     opt = qm.optimize(Molecule(XYZ(symbols, np.array(coords, dtype=float)), 0, 1), PBE0)
     freq = qm.frequencies(Molecule(read_xyz(run / opt.final.file.path), 0, 1), PBE0)
-    [api] = real_engine(Capability.THERMO, "goodvibes").thermo(freq, [UNSCALED])
+    [api] = real_engine(Capability.THERMO, "goodvibes").thermo(freq, [UNSCALED],
+                                                                temperatures_K=(298.15,))
     assert api.S_rot > 0 and freq.n_external == (5 if name == "hnc" else 6)
     if name == "h2o":  # NWChem prints no finite A for a linear molecule, so the CLI reads H2O
         (tmp_path / "freq.out").write_bytes((run / freq.output.path).read_bytes())  # CLI: *.out
