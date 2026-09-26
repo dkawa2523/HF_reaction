@@ -2,6 +2,7 @@
 # the reaction stationary points at every panel method, then the panel report.
 # Add ccsd-t_def2-tzvpd to methods only for small closed-shell molecules (about four heavy
 # atoms; HCN / HONO take seconds to minutes per point, larger systems hours).
+# conditions must match the original run; otherwise every reaction becomes thermo_unavailable.
 pipeline_id: method_panel
 conditions: {temperatures_K: [298.15], standard_states: [1atm]}
 stages:

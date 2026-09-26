@@ -34,7 +34,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 |---|---|---|
 | `configs/pipelines/discover.yaml` | structures → conformers → screen → explore → dft → paths → thermo → report | 単量体と組成から反応を探す |
 | `configs/pipelines/known_endpoints.yaml` | structures → dft → paths → thermo → report | system に宣言した反応の端点から、経路と熱化学を求める |
-| `configs/pipelines/method_panel.yaml` | panel_sp → panel_report | 既存の run に `--run-dir` で追記し、停留点を PBE0/def2-TZVPD と ωB97X-D3/def2-TZVPD で比べる。CCSD(T)/def2-TZVPD は小さい閉殻分子のときだけ `methods` に足す。追記した後は panel_report の順位が最終 |
+| `configs/pipelines/method_panel.yaml` | panel_sp → panel_report | 既存の run に `--run-dir` で追記し、停留点を PBE0/def2-TZVPD と ωB97X-D3/def2-TZVPD で比べる。CCSD(T)/def2-TZVPD は小さい閉殻分子のときだけ `methods` に足す。追記した後は panel_report の順位が最終(`conditions` を元の run とそろえること。違えば全反応が thermo_unavailable になる) |
 
 ## 設定(4 分割)
 
@@ -83,7 +83,7 @@ hfauto run known_endpoints --system configs/systems/hcn.yaml --site configs/site
 
 ## 検証済みのベンチマーク
 
-WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD での実測値(改良後の再検証 v2)である。9 項目の全体、改良前(W7)との比較と、撤回した旧値は [docs/validation.md](docs/validation.md) にある。順位は PBE0-D3BJ/def2-SVPD の ΔG‡ の序数として読み、約 1.5 kcal/mol 未満の差は手法誤差の範囲と見る(根拠は [docs/design.md](docs/design.md) §7)。
+WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD での実測値(改良後の再検証 v2)である。9 項目の全体、改良前(W7)との比較と、撤回した旧値は [docs/validation.md](docs/validation.md) にある。順位は PBE0-D3BJ/def2-SVPD の ΔG‡ の序数として読み、約 2 kcal/mol 未満の差は手法誤差の範囲と見る(根拠は [docs/design.md](docs/design.md) §7)。
 
 | 系 | pipeline | 結果 | 所要時間 |
 |---|---|---|---|
