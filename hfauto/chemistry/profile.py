@@ -1,19 +1,16 @@
-"""Path profiles: shape, highest energy image, convergence and stagnation (§5.5).
+"""Path profiles: shape, highest energy image and settled string energies (§5.5).
 
-Convergence is judged from the gradient history only; the program's own "converged"
-message is never used (CH-08).
+A string is continued until its bead energies settle; neither the gradient history (the
+unprojected gmax never vanishes on a sloped path) nor the program's own "converged"
+message is used (CH-08).
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from itertools import pairwise
 from typing import Literal
 
 import numpy as np
-
-# Xmax below this (the engine's step unit) counts as a zero step; exact zeros are rare.
-_XMAX_ZERO = 1.0e-6
 
 
 def interior_maxima(energies: Sequence[float], resolution: float) -> tuple[int, ...]:
@@ -78,33 +75,16 @@ def hei(
     return k + offset, float(energy), coords
 
 
-def string_converged(
-    gmax_history: Sequence[float], gmax_tol: float = 1.0e-3, non_worsening: int = 3
+def energies_settled(
+    history: Sequence[Sequence[float]], tol_hartree: float, window: int = 3
 ) -> bool:
-    """Final gmax ≤ tol and no increase over the last `non_worsening` iterations."""
+    """True when the last `window` iterations exist and no bead energy changed by `tol_hartree`
+    or more between consecutive ones."""
 
-    if not gmax_history or gmax_history[-1] > gmax_tol:
+    if len(history) < window:
         return False
-    tail = list(gmax_history[-(non_worsening + 1) :])
-    return all(later <= earlier for earlier, later in pairwise(tail))
-
-
-def stagnated(
-    gmax_history: Sequence[float],
-    xmax_history: Sequence[float] = (),
-    window: int = 10,
-    min_improvement: float = 0.05,
-    xmax_zero_run: int = 5,
-) -> bool:
-    """True when the last `window` iterations improved the best gmax by less than
-    `min_improvement` (relative), or the last `xmax_zero_run` steps were zero."""
-
-    if len(gmax_history) > window:
-        best_before = min(gmax_history[:-window])
-        if min(gmax_history[-window:]) > (1.0 - min_improvement) * best_before:
-            return True
-    tail = list(xmax_history[-xmax_zero_run:])
-    return len(tail) == xmax_zero_run and all(abs(x) < _XMAX_ZERO for x in tail)
+    steps = np.diff(np.asarray(history[-window:], dtype=float), axis=0)
+    return bool(np.abs(steps).max(initial=0.0) < tol_hartree)
 
 
 def max_node_spacing(coords_list: Sequence[np.ndarray]) -> float:

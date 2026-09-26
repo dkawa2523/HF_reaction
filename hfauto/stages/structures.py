@@ -2,15 +2,16 @@
 
 xyz files are copied into the stage directory and SMILES are embedded once (RDKit ETKDG).
 Charge and multiplicity are checked with ``check_electronic_state``; both ends of a
-declared reaction must list the same elements in the same order. Every problem becomes a
-failed artifact with ``INPUT_INVALID``.
+declared reaction must share composition id (formula, charge, multiplicity) and atom order,
+and its coordinate indices must fall inside the molecule. Every problem becomes a failed
+artifact with ``INPUT_INVALID``.
 """
 
 from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, cast
 
 from hfauto.chemistry.electronic_state import check_electronic_state
 from hfauto.chemistry.smiles import smiles_to_molecule
@@ -46,13 +47,11 @@ def _failed(species_id: str, kind: FailureKind, reason: str) -> Artifact:
 
 def _write(species: SpeciesInput, target: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
-    if species.xyz is not None and species.smiles is None:
+    if species.xyz is not None:  # SpeciesInput guarantees exactly one of xyz and smiles
         shutil.copyfile(species.xyz, target)
         return target
-    if species.smiles is not None and species.xyz is None:
-        mol = smiles_to_molecule(species.smiles, species.charge, species.multiplicity)
-        return mol.write(target)
-    raise ValueError("give exactly one of xyz or smiles")
+    mol = smiles_to_molecule(cast(str, species.smiles), species.charge, species.multiplicity)
+    return mol.write(target)
 
 
 def _species(species: SpeciesInput, rt: StageRuntime) -> Artifact:
@@ -83,8 +82,13 @@ class StructuresStage:
             a, b = out[reaction.reactant].payload, out[reaction.product].payload
             if not (isinstance(a, SpeciesRecord) and isinstance(b, SpeciesRecord)):
                 continue  # a failed endpoint already carries its reason
-            if a.geometry.symbols != b.geometry.symbols:
-                reason = f"reaction {reaction.id}: endpoints differ in atom order"
-                for end in (reaction.reactant, reaction.product):
-                    out[end] = _failed(end, FailureKind.INPUT_INVALID, reason)
+            if a.composition_id != b.composition_id or a.geometry.symbols != b.geometry.symbols:
+                reason = (f"reaction {reaction.id}: endpoints differ in charge, multiplicity "
+                          "or atom order")
+            elif any(i >= len(a.geometry.symbols) for t in reaction.coordinate for i in t.atoms):
+                reason = f"reaction {reaction.id}: coordinate atom index out of range"
+            else:
+                continue
+            for end in (reaction.reactant, reaction.product):
+                out[end] = _failed(end, FailureKind.INPUT_INVALID, reason)
         return list(out.values())

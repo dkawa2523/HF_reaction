@@ -1,6 +1,7 @@
 """CREST conformer engine (design §6.3): ConformerSettings and Molecule → CLI → ConformerEnsemble.
 
-One JobRunner task per search. The attempt directory receives ``input.xyz``; the parser
+One JobRunner task per search on the site's execution threads (``-T``, ``OMP_NUM_THREADS``);
+``--nci`` searches add ``--noopt``. The attempt directory receives ``input.xyz``; the parser
 reads ``crest_conformers.xyz`` (energies from the comment lines, a missing one stays None,
 BUG-08), sums the CREGEN topology-based removals, and turns a stop on
 'Change in topology detected' into ``topology_stops`` (the last ``crestopt.log`` frame).
@@ -41,19 +42,20 @@ _REMOVALS = re.compile(r"CREGEN> number of topology-based structure removals:\s*
 _FLOAT = re.compile(r"[-+]?\d+\.\d*(?:[Ee][-+]?\d+)?")
 
 
-def command(mol: Molecule, method: MethodSpec, settings: ConformerSettings, *,
+def command(mol: Molecule, method: MethodSpec, settings: ConformerSettings, *, threads: int,
             executable: str = "crest") -> tuple[str, ...]:
-    """``--gfnN [--nci] [--quick] -T n --ewin e --chrg q --uhf m-1 [--notopo atoms]
+    """``--gfnN [--nci] [--quick] -T n --ewin e --chrg q --uhf m-1 [--notopo atoms] [--noopt]
     [--noreftopo] [--alpb solvent]``; atoms are 1-based on the CLI."""
     argv = [executable, INPUT, f"--gfn{method.gfn}"]
     argv += ["--nci"] if settings.nci else []
     argv += ["--quick"] if settings.quick else []
-    argv += ["-T", str(settings.threads), "--ewin", f"{settings.ewin_kcal:g}",
+    argv += ["-T", str(threads), "--ewin", f"{settings.ewin_kcal:g}",
              "--chrg", str(mol.charge), "--uhf", str(mol.multiplicity - 1)]
-    if settings.topology == "off":
-        argv.append("--notopo")
-    elif settings.notopo_atoms:
+    if settings.notopo_atoms:
         argv += ["--notopo", ",".join(str(i + 1) for i in settings.notopo_atoms)]
+    # CREST 3.0.2's initial topology check after the pre-optimization ignores --notopo
+    # (setuptest.f90), so acid-base and anion complexes stopped there; --noopt skips it.
+    argv += ["--noopt"] if settings.nci else []
     argv += ["--noreftopo"] if settings.topology == "noref" else []
     if method.solvation:
         argv += ["--alpb", method.solvation.split(":", 1)[1]]
@@ -118,10 +120,10 @@ class _Adapter:
         mol: Molecule = task.inputs["molecule"]
         mol.write(workdir / INPUT)
         exe = resolve_executable("crest", self.site.executables.get("crest")) or "crest"
-        settings: ConformerSettings = task.inputs["settings"]
-        env = {"OMP_NUM_THREADS": f"{settings.threads},1", "OMP_STACKSIZE": "4G",
-               **task.execution.env}
-        argv = command(mol, task.inputs["method"], settings, executable=exe)
+        threads = task.execution.threads
+        env = {"OMP_NUM_THREADS": f"{threads},1", "OMP_STACKSIZE": "4G", **task.execution.env}
+        argv = command(mol, task.inputs["method"], task.inputs["settings"], threads=threads,
+                       executable=exe)
         return Command(argv=argv, cwd=workdir, env=env)
 
     def parse(self, task: Task, workdir: Path, result: CommandResult
@@ -175,8 +177,8 @@ class CRESTEngine:
         task = Task(
             engine=self.name, version_pin=self.site.version, kind="conformers",
             key_payload={"molecule": mol.fingerprint(), "method": method.signature(),
-                         "settings": settings.model_dump(mode="json", exclude={"threads"})},
-            execution=self.site.execution.model_copy(update={"threads": settings.threads}),
+                         "settings": settings.model_dump(mode="json"), "noopt": settings.nci},
+            execution=self.site.execution,
             inputs={"molecule": mol, "method": method, "settings": settings},
         )
         return self.jobs.run(task, self._adapter, deadline=deadline)

@@ -184,14 +184,9 @@ def test_barrier_proceed():
     assert low_max.verdict == "proceed"
 
 
-def test_barrierless_negative_and_unavailable():
+def test_barrierless_and_unavailable():
     v = g.barrier_verdict(MONOTONIC, dft_endpoints=ENDS, low_profile=MONOTONIC,
                           tangent_mode_cm1=1000.0, max_node_spacing_A=0.12)
     assert (v.verdict, v.below_zpe, v.max_node_spacing_A, v.n_dft_points, v.seed) == (
         "barrierless", True, 0.12, 4, None)
-    neg = ("monotonic_uphill",)
-    v = g.barrier_verdict(MONOTONIC, dft_endpoints=ENDS, negative_evidence=neg)
-    assert v.verdict == "negative_evidence" and v.reasons == neg
-    v = g.barrier_verdict(MONOTONIC, dft_endpoints=ENDS, negative_evidence=neg, override=True)
-    assert v.verdict == "barrierless"
     assert g.barrier_verdict((0.0, 5 * K), dft_endpoints=ENDS).verdict == "unavailable"

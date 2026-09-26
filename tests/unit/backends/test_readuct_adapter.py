@@ -28,9 +28,11 @@ def test_worker_helpers():
     opened = np.array([[0, 0, 0], [0.96, 0, 0], [-0.6, 0.77, 0]])  # same graph, RMSD > 0.1
     moved = np.array([[0, 0, 0], [0.96, 0, 0], [1.7, 0, 0]])  # H–H bond: another graph
     assert worker.matches_source(symbols, x, swapped)
-    assert not worker.matches_source(symbols, x, opened)
+    assert worker.matches_source(symbols, x, opened)  # a conformer is the source (state label)
+    assert not worker.matches_source(symbols, x, moved)
     assert worker.irc_product(symbols, x, [swapped, moved]) == (1, None)
-    assert worker.irc_product(symbols, x, [moved, opened]) == (None, "irc_not_connected_to_source")
+    assert worker.irc_product(symbols, x, [moved, opened]) == (0, None)
+    assert worker.irc_product(symbols, x, [moved, moved]) == (None, "irc_not_connected_to_source")
     assert worker.irc_product(symbols, x, [x, swapped]) == (None, "same_as_source")
     # after an SCC retry at 1000 K the window energies are the base-temperature ones
     found = worker.Found("product", structures={"source": 0, "ts": 0, "product": 0},

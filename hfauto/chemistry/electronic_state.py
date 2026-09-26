@@ -15,17 +15,16 @@ _ATOMIC_NUMBERS = {symbol.upper(): number for number, symbol in enumerate(_ELEME
 
 
 def check_electronic_state(symbols: Iterable[str], charge: int, multiplicity: int) -> None:
-    """Raise ValueError for a non-positive multiplicity or one the electron count cannot have.
-
-    Elements outside the table skip the parity check rather than assume an atomic number.
-    """
+    """Raise ValueError for an unknown element, a non-positive multiplicity or one the electron
+    count cannot have."""
 
     if multiplicity < 1:
         raise ValueError(f"Multiplicity must be positive, got {multiplicity}")
-    normalized = [symbol.strip().upper() for symbol in symbols]
-    if not all(symbol in _ATOMIC_NUMBERS for symbol in normalized):
-        return
-    electron_count = sum(_ATOMIC_NUMBERS[symbol] for symbol in normalized) - charge
+    names = [symbol.strip() for symbol in symbols]
+    unknown = sorted({name for name in names if name.upper() not in _ATOMIC_NUMBERS})
+    if unknown:
+        raise ValueError(f"unknown element(s): {', '.join(unknown)}")
+    electron_count = sum(_ATOMIC_NUMBERS[name.upper()] for name in names) - charge
     unpaired = multiplicity - 1
     if electron_count < unpaired or (electron_count - unpaired) % 2:
         raise ValueError(

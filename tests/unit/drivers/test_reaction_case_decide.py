@@ -79,13 +79,9 @@ ROW_CASES = [  # (row, id, case, state, policy, expected decision)
      Decision(A.SCREEN, "screen")),
     (12, "barrierless", CASE, replace(S, screen=BV(verdict="barrierless"), seeds=(SEED,)), POLICY,
      Decision(A.COMPLETE, "screen:barrierless", C.BARRIERLESS)),
-    (12, "negative", CASE, replace(S, screen=BV(verdict="negative_evidence")), POLICY,
-     Decision(A.COMPLETE, "screen:negative_evidence", C.NO_PRODUCT)),
     (13, "multi_max", CASE, replace(S, path_runs=("multi_max",), seeds=(SEED,)), POLICY,
      Decision(A.VALIDATE_INTERMEDIATE, "path_multi_max")),
-    (14, "confirm", CASE, replace(S, path_runs=("monotonic",)), POLICY,
-     Decision(A.FIND_PATH, "confirm_monotonic")),
-    (14, "confirmed", CASE, replace(S, path_runs=("monotonic", "monotonic")), POLICY,
+    (14, "monotonic", CASE, replace(S, path_runs=("monotonic",)), POLICY,
      Decision(A.COMPLETE, "dft_path_monotonic", C.BARRIERLESS)),
     (15, "seed", CASE, replace(S, seeds=(SEED,)), POLICY,
      Decision(A.REFINE_SADDLE, "seed:screen_ts")),
@@ -124,16 +120,6 @@ def test_hei_seed_only_from_a_single_max_path():
     assert record_path(S, "single_max", hei).seeds == (hei,)
     for shape in ("multi_max", "monotonic", "failed"):
         assert record_path(S, shape, hei).seeds == ()  # type: ignore[arg-type]
-
-
-def test_two_monotonic_paths_are_barrierless():
-    once = record_path(S, "monotonic")
-    assert decide(CASE, once, POLICY) == Decision(A.FIND_PATH, "confirm_monotonic")
-    twice = record_path(once, "monotonic")
-    assert decide(CASE, twice, POLICY) == Decision(A.COMPLETE, "dft_path_monotonic",
-                                                   C.BARRIERLESS)
-    mixed = record_path(record_path(S, "single_max"), "monotonic")
-    assert decide(CASE, mixed, POLICY).outcome is C.UNRESOLVED
 
 
 def test_higher_order_retry_until_attempts_run_out():

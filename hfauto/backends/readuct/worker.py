@@ -6,10 +6,11 @@ frequencies, match with the source, choice of the IRC end, result assembly) are 
 Flow (design §6.3): the source is relaxed first (reference energy and structure; linear
 sources arrive perturbed). NT2 → Bofill TS optimization with
 ``automatic_mode_selection = sorted(associations ∪ dissociations)`` → projected frequencies
-(exactly one ν < −cutoff) → IRC → both ends optimized with n_imag = 0 → one end must match the
-source, the other is the product. AFIR (γ, then the retry γ once) → unbiased optimization.
-An SCC failure reruns the attempt once at the retry electronic temperature; the energies of the
-source, TS and product are then recomputed at the base temperature (chem 11).
+(exactly one ν < −cutoff) → IRC → both ends optimized with n_imag = 0 → one end must have the
+source's state label (bond graph), the other is the product. AFIR (γ, then the retry γ once) →
+unbiased optimization. An SCC failure reruns the attempt once at the retry electronic
+temperature; the energies of the source, TS and product are then recomputed at the base
+temperature (chem 11).
 """
 
 from __future__ import annotations
@@ -22,13 +23,11 @@ from typing import Any
 
 import numpy as np
 
-from hfauto.chemistry.identity import permutation_invariant_rmsd
-from hfauto.chemistry.topology import bonds
+from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.vibrations import projected_frequencies
 from hfauto.chemistry.xyz import XYZ, write_xyz
 from hfauto.core.constants import BOHR_TO_ANGSTROM, HARTREE_TO_KJ_MOL
 
-SOURCE_RMSD_A = 0.1
 PRODUCT_FILE, TS_FILE = "product.xyz", "ts.xyz"
 # scine-xtb-wrapper 3.0.2 accepts only "any" and "restricted_open_shell"; the latter is xTB's
 # own treatment (unpaired electrons from the multiplicity), so it is set explicitly.
@@ -48,10 +47,8 @@ def imaginary_count(freqs_cm1: Sequence[float] | np.ndarray, cutoff_cm1: float) 
 
 
 def matches_source(symbols: Sequence[str], source: np.ndarray, end: np.ndarray) -> bool:
-    """Same bond graph and permutation-invariant RMSD below 0.1 Å."""
-    rmsd, perm = permutation_invariant_rmsd(symbols, source, end)
-    mapped = np.asarray(end, dtype=float).reshape(-1, 3)[perm]
-    return rmsd < SOURCE_RMSD_A and bonds(symbols, mapped) == bonds(symbols, source)
+    """Same state label (bond graph up to permutation); conformers of the source match."""
+    return state_label(symbols, end) == state_label(symbols, source)
 
 
 def irc_product(symbols: Sequence[str], source: np.ndarray,

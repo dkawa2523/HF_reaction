@@ -88,12 +88,22 @@ def test_load_system_resolves_relative_xyz(tmp_path):
     assert config.reactions[0].coordinate[0].atoms == (0, 1, 2)
 
 
-@pytest.mark.parametrize(("old", "new"), [
-    ("{id: hf, smiles: F}", "{id: hcn, smiles: F}"),  # duplicate species id
-    ("product: hnc", "product: hf"),  # product is a monomer
-    ("product: hnc", "product: missing"),  # unknown species
-    ("{hcn: 1, hf: 1}", "{hcn: 1, hcl: 1}"),  # unknown composition component
+@pytest.mark.parametrize(("old", "new", "match"), [
+    ("{id: hf, smiles: F}", "{id: hcn, smiles: F}", "duplicate species"),
+    ("{id: hcn_hf,", "{id: hf,", "duplicate species/composition"),  # would collide in conformers
+    ("reactions:\n", "reactions:\n  - {id: iso, reactant: hnc, product: hcn}\n", "duplicate reac"),
+    ("product: hnc", "product: hf", "not an endpoint"),  # product is a monomer
+    ("product: hnc", "product: missing", "not an endpoint"),  # unknown species
+    ("{hcn: 1, hf: 1}", "{hcn: 1, hcl: 1}", "unknown species"),
+    ("{hcn: 1, hf: 1}", "{hcn: 1, hf: 0}", "greater than 0"),
+    ("{id: hf, smiles: F}", "{id: hf}", "exactly one"),
+    ("{id: hf, smiles: F}", "{id: hf, smiles: F, xyz: xyz/hf.xyz}", "exactly one"),
+    ("{id: hnc, xyz: xyz/hnc.xyz,", "{id: hnc, smiles: '[C-]#[NH+]',", "must be given as xyz"),
+    ("atoms: [0, 1, 2]", "atoms: [0, 1]", "distinct atom"),  # an angle needs three atoms
+    ("atoms: [0, 1, 2]", "atoms: [0, -1, 2]", "distinct atom"),
+    ("atoms: [0, 1, 2]", "atoms: [0, 1, 1]", "distinct atom"),
 ])
-def test_load_system_rejects_bad_references(tmp_path, old, new):
-    with pytest.raises(ValidationError):
+def test_load_system_rejects_bad_input(tmp_path, old, new, match):
+    assert old in SYSTEM
+    with pytest.raises(ValidationError, match=match):
         load_system(write_system(tmp_path, SYSTEM.replace(old, new)))

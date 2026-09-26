@@ -93,7 +93,7 @@ def test_known_endpoints_then_method_panel_appended_to_the_run(pipeline):
     layout = pipeline("method_panel")
     view = layout.view("panel_report")  # includes the known_endpoints stages
     panel = {e.level.basis for e in view.records(T.CALCULATION, Evidence) if e.task == "sp"}
-    assert panel >= {"def2-svp", "def2-tzvp", "def2-tzvpd"}
+    assert panel >= {"def2-tzvpd"} and "def2-svp" not in panel
     report = load_manifest(layout.manifest_path("panel_report")).records(T.REPORT, R.ReportRecord)
     assert [row.reaction_id for row in report[0].rows] == ["rx"]  # the paths stage's reaction
     with pytest.raises(ValueError, match="already belongs"):

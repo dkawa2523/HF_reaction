@@ -1,6 +1,7 @@
 from dataclasses import astuple
 
 from hfauto.core import records as rec
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, Geometry, Level
 from hfauto.core.manifest import Artifact
 from hfauto.reporting.summary import coverage, method_panel, participant_notes, rank_rows
@@ -86,3 +87,13 @@ def test_panel_keys_by_full_level_and_sign_disagreement_blocks_ranking():
     assert notes["x"] == ("soft_imaginary_mode", "method_sign_disagreement")
     lost, x = rank_rows(reactions, [th("x", 5.0), th("lost", 6.0)], notes, 298.15, "1atm")
     assert (lost.rank, x.rank, x.blockers) == (1, None, ("method_sign_disagreement",))
+
+
+def test_panel_sign_deadband_ignores_near_zero_reaction_energies():
+    d_rxn = (0.13, -0.03, 0.33, 0.47, -0.64)  # HONO trans->cis panel, kcal/mol
+    calcs = {f"{fp}{i}": ev(fp.upper(), d / HARTREE_TO_KCAL_MOL if fp == "p" else 0.0, f"g{i}")
+             for i, d in enumerate(d_rxn) for fp in "rp"}
+    minima = {"mr": mini("mr", "r0"), "mp": mini("mp", "p0")}
+    rows, disagreements = method_panel(calcs, [rxn("hono")], minima=minima)
+    assert len(rows) == 5 and not disagreements and not any(r.sign_disagreement for r in rows)
+    assert (round(rows[0].dE_rxn_min_kcal, 2), round(rows[0].dE_rxn_max_kcal, 2)) == (-0.64, 0.47)

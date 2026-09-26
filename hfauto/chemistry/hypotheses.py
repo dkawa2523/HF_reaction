@@ -4,6 +4,7 @@ Priority: declared reactions, discovery products (low-level TS first), mode-foll
 conformer pairs.  Declared reactions are always kept so that decide() classifies them (blocked,
 same basin, out of window); the others must join two DFT basins of one level inside the window
 and show a change (CH-07).  ``minima`` includes the screen minima that discoveries start from.
+Negative discoveries never veto a hypothesis (review X1); only the summary reports them.
 """
 
 from __future__ import annotations
@@ -36,7 +37,6 @@ from hfauto.core.system import ReactionInput
 LoadXYZ = Callable[[Geometry], XYZ]
 Source = Literal["declared", "discovery", "mode_follow", "conformer"]
 Candidate = tuple[Source, MinimumRecord | None, MinimumRecord | None, Geometry | None]
-Bonds = frozenset[topology.Bond]
 
 
 def pick_endpoints(
@@ -93,16 +93,11 @@ def _stoich(species: SpeciesRecord | None) -> tuple[StoichTerm, ...]:
     return (StoichTerm(composition_id=key, coefficient=1),)
 
 
-def _pairs(atoms: Iterable[tuple[int, int]]) -> Bonds:
-    return frozenset((min(p), max(p)) for p in atoms)
-
-
 @dataclass(frozen=True)
 class _Pool:
     species: dict[str, SpeciesRecord]
     minima: dict[str, MinimumRecord]  # every tier, by minimum_id
     basin_of: dict[str, MinimumRecord]  # species id -> minimum holding it (DFT first)
-    negatives: tuple[DiscoveryRecord, ...]
     load: LoadXYZ
     window_kcal: float
     min_distance_A: float
@@ -130,18 +125,6 @@ class _Pool:
             return own
         return self.dft_basin(own.minimum_id) or own
 
-    def negative_evidence(self, composition: str, formed: Bonds, broken: Bonds) -> tuple[str, ...]:
-        """Negative discoveries of the same composition and bond change (either direction)."""
-        wanted = {(formed, broken), (broken, formed)} if formed or broken else set()
-        found = []
-        for d in self.negatives:
-            source = self.minima.get(d.source_minimum)
-            if d.trial is None or source is None or source.composition_id != composition:
-                continue
-            if (_pairs(d.trial.associations), _pairs(d.trial.dissociations)) in wanted:
-                found.append(f"{d.discovery_id}:{d.reason or 'negative'}")
-        return tuple(found)
-
 
 def _record(pool: _Pool, rid: str, source: Source, minima: tuple[MinimumRecord, MinimumRecord],
             ends: tuple[SpeciesRecord, SpeciesRecord], *,
@@ -158,7 +141,6 @@ def _record(pool: _Pool, rid: str, source: Source, minima: tuple[MinimumRecord, 
         degenerate=ma.basin_id == mb.basin_id and identity.mapped_equivalent(symbols, xa, xb),
         coordinate=coordinate, torsional=not (formed or broken) if torsional is None else torsional,
         n_h_transferred=topology.transferred_hydrogens(symbols, xa, xb), low_level_ts=low_level_ts,
-        negative_evidence=pool.negative_evidence(ma.composition_id, formed, broken),
     )
 
 
@@ -216,16 +198,14 @@ def _auto(pool: _Pool, source: Source, ma: MinimumRecord, mb: MinimumRecord,
     return _record(pool, rid, source, (ma, mb), (sa, sb), low_level_ts=ts)
 
 
-def _pool(minima: Iterable[MinimumRecord], species: Iterable[SpeciesRecord],
-          discoveries: Sequence[DiscoveryRecord], load_xyz: LoadXYZ, window_kcal: float,
-          min_distance_A: float, min_angle_deg: float) -> _Pool:
+def _pool(minima: Iterable[MinimumRecord], species: Iterable[SpeciesRecord], load_xyz: LoadXYZ,
+          window_kcal: float, min_distance_A: float, min_angle_deg: float) -> _Pool:
     by_id = {m.minimum_id: m for m in minima}
     basin_of: dict[str, MinimumRecord] = {}
     for m in sorted(by_id.values(), key=lambda m: m.tier != "dft"):  # DFT minima first
         for s in (m.species_id, *m.members):
             basin_of.setdefault(s, m)
     return _Pool(species={s.species_id: s for s in species}, minima=by_id, basin_of=basin_of,
-                 negatives=tuple(d for d in discoveries if d.outcome == "negative"),
                  load=load_xyz, window_kcal=window_kcal, min_distance_A=min_distance_A,
                  min_angle_deg=min_angle_deg)
 
@@ -244,7 +224,7 @@ def select(minima: Iterable[MinimumRecord], species: Iterable[SpeciesRecord],
            max_per_composition: int = 6) -> list[ReactionRecord]:
     """One ReactionRecord per hypothesis; a repeated minima pair keeps the first hypothesis."""
     found = list(discoveries)
-    pool = _pool(minima, species, found, load_xyz, window_kcal, min_distance_A, min_angle_deg)
+    pool = _pool(minima, species, load_xyz, window_kcal, min_distance_A, min_angle_deg)
     records = [_declared(pool, r) for r in declared]
     index = {frozenset(r.minima): i for i, r in enumerate(records)}
     per_composition = Counter(r.reactants[0].composition_id for r in records if r.reactants)

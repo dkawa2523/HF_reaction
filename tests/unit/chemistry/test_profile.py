@@ -1,4 +1,4 @@
-"""Path shape, HEI, string convergence and stagnation (design §5.5, CH-08)."""
+"""Path shape, HEI and settled string energies (design §5.5, CH-08)."""
 
 import numpy as np
 import pytest
@@ -29,18 +29,13 @@ def test_hei_interpolates_parabola_and_coordinates():
     assert coords == pytest.approx(np.array([[2.3, 0.0, 0.0]]))
 
 
-def test_string_converged():
-    assert prof.string_converged([5e-3, 2e-3, 9e-4, 8e-4, 7e-4])
-    assert not prof.string_converged([5e-3, 7e-4, 8e-4, 7e-4])  # worsened within the last 3
-    assert not prof.string_converged([2e-3])
-    assert not prof.string_converged([])
-
-
-def test_stagnated():
-    assert prof.stagnated([1.0] + [0.5] * 11)
-    assert not prof.stagnated([0.9**i for i in range(20)])
-    assert prof.stagnated([], [1e-3] + [1e-8] * 5)
-    assert not prof.stagnated([], [1e-8] * 4)
+def test_energies_settled():
+    settled = [(0.0, 5.0, 1.0), (0.0, 3.0, 1.0), (0.0, 3.06, 1.0), (0.0, 3.0, 1.02)]
+    assert prof.energies_settled(settled, 0.1)  # the first step lies outside the window
+    assert not prof.energies_settled(settled, 0.05)
+    assert not prof.energies_settled([*settled, (0.0, 3.2, 1.0)], 0.1)  # still moving
+    assert not prof.energies_settled(settled[-2:], 0.1)  # fewer than 3 iterations
+    assert not prof.energies_settled([], 0.1)
 
 
 def test_spacing_and_tangent():

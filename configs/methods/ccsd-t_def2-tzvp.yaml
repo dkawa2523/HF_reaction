@@ -1,5 +1,0 @@
-# Reference single points for small molecules only (closed shell).
-id: ccsd-t_def2-tzvp
-kind: wft
-wft_method: ccsd(t)
-basis: def2-tzvp

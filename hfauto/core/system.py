@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, PositiveInt, model_validator
 
 from hfauto.core.records import CoordinateTerm
+
+_ATOMS_PER_TERM = {"distance": 2, "angle": 3, "dihedral": 4}
 
 
 class SpeciesInput(BaseModel):
@@ -21,11 +24,17 @@ class SpeciesInput(BaseModel):
     multiplicity: int = 1
     role: Literal["monomer", "endpoint"] = "monomer"
 
+    @model_validator(mode="after")
+    def _one_source(self) -> SpeciesInput:
+        if (self.xyz is None) == (self.smiles is None):
+            raise ValueError(f"species {self.id}: give exactly one of xyz or smiles")
+        return self
+
 
 class CompositionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
-    components: dict[str, int]  # species id -> count; charge and multiplicity follow from them
+    components: dict[str, PositiveInt]  # species id -> count; charge and multiplicity follow
 
 
 class ReactionInput(BaseModel):
@@ -35,6 +44,19 @@ class ReactionInput(BaseModel):
     product: str
     coordinate: list[CoordinateTerm] = []
     torsional: bool | None = None  # None means True when no bond changes
+
+    @model_validator(mode="after")
+    def _check_coordinate(self) -> ReactionInput:
+        for term in self.coordinate:
+            atoms, n = term.atoms, _ATOMS_PER_TERM[term.kind]
+            if len(atoms) != n or min(atoms) < 0 or len(set(atoms)) != n:
+                raise ValueError(f"reaction {self.id}: a {term.kind} needs {n} distinct atom "
+                                 f"indices >= 0, got {list(atoms)}")
+        return self
+
+
+def _duplicate_ids(items: Sequence[SpeciesInput | CompositionInput | ReactionInput]) -> list[str]:
+    return sorted(k for k, n in Counter(item.id for item in items).items() if n > 1)
 
 
 class SystemConfig(BaseModel):
@@ -46,21 +68,27 @@ class SystemConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_references(self) -> SystemConfig:
-        counts = Counter(s.id for s in self.species)
-        duplicated = sorted(k for k, n in counts.items() if n > 1)
-        if duplicated:
-            raise ValueError(f"duplicate species ids: {duplicated}")
-        roles = {s.id: s.role for s in self.species}
+        named = [*self.species, *self.compositions]  # conformers keys artifacts by these ids
+        for what, items in (("species/composition", named), ("reaction", self.reactions)):
+            duplicated = _duplicate_ids(items)
+            if duplicated:
+                raise ValueError(f"duplicate {what} ids: {duplicated}")
+        species = {s.id: s for s in self.species}
         for composition in self.compositions:
-            unknown = sorted(set(composition.components) - set(roles))
+            unknown = sorted(set(composition.components) - set(species))
             if unknown:
                 raise ValueError(f"composition {composition.id}: unknown species {unknown}")
         for reaction in self.reactions:
             for species_id in (reaction.reactant, reaction.product):
-                if roles.get(species_id) != "endpoint":
+                endpoint = species.get(species_id)
+                if endpoint is None or endpoint.role != "endpoint":
                     raise ValueError(
                         f"reaction {reaction.id}: {species_id!r} is not an endpoint species"
                     )
+                if endpoint.xyz is None:
+                    raise ValueError(f"reaction {reaction.id}: endpoint {species_id!r} must be "
+                                     "given as xyz; SMILES cannot fix the atom mapping or the "
+                                     "conformer")
         return self
 
 

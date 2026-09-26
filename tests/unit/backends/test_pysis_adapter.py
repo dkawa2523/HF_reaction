@@ -3,12 +3,14 @@
 import json
 import os
 import sys
+from types import ModuleType
 from types import SimpleNamespace as NS
 
 import numpy as np
+import pytest
 
 from hfauto.backends.pysis.engine import PysisGrowingString, gs_input
-from hfauto.backends.pysis.worker import summarize
+from hfauto.backends.pysis.worker import run_growing_string, summarize
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
 from hfauto.core.constants import BOHR_TO_ANGSTROM
 from hfauto.core.method import EngineSite, MethodSpec
@@ -59,9 +61,11 @@ def test_worker_command_path_and_linear_ends_moved_off_axis(tmp_run):
     assert np.allclose(moved - HCN.xyz.coords, [[0.01, 0, 0], [-0.01, 0, 0], [0.01, 0, 0]])
 
 
+def image(coords, energy):  # a pysisyphus Geometry: Cartesian bohr and energy
+    return NS(cart_coords=np.ravel(coords) / BOHR_TO_ANGSTROM, energy=energy)
+
+
 def test_run_result_becomes_a_path_profile(tmp_run):
-    def image(coords, energy):  # a pysisyphus Geometry: Cartesian bohr and energy
-        return NS(cart_coords=np.ravel(coords) / BOHR_TO_ANGSTROM, energy=energy)
     work, mid = tmp_run / "attempt_00", (HCN.xyz.coords + BENT.xyz.coords) / 2
     (work / "qm_calcs").mkdir(parents=True)
     (work / "qm_calcs" / "calculator_000.000.xtb.out").write_text("   * xtb version 6.7.1 (x)")
@@ -83,3 +87,36 @@ def test_run_result_becomes_a_path_profile(tmp_run):
     assert profile.ts_energy_hartree == -5.387 and (tmp_run / profile.ts.file.path).is_file()
     assert profile.program_converged and profile.gmax_history == (1e-2, 1e-3)
     assert gs.adapter.parse(task, work, crashed).reason.endswith("RuntimeError: boom")
+
+
+def fake_pysisyphus(monkeypatch, run_from_dict):
+    module = ModuleType("pysisyphus.run")
+    module.run_from_dict = run_from_dict
+    monkeypatch.setitem(sys.modules, "pysisyphus.run", module)
+
+
+def test_tsopt_failure_keeps_the_growing_string_and_gs_failures_propagate(tmp_run, monkeypatch):
+    gs_only = NS(cos=NS(images=[image(HCN.xyz.coords, -5.50), image(HNC.xyz.coords, -5.47)]),
+                 cos_opt=NS(max_forces=[1e-3], is_converged=True), ts_geom=None, ts_opt=None)
+    calls = []
+
+    def tsopt_raises(run_dict, cwd):
+        calls.append(sorted(run_dict))
+        if "tsopt" in run_dict:
+            raise RuntimeError("TS optimization diverged")
+        return gs_only
+
+    job = {"run_dict": {"cos": {"type": "gs"}, "tsopt": {"type": "rsirfo"}}}
+    fake_pysisyphus(monkeypatch, tsopt_raises)
+    data = run_growing_string(job, tmp_run)
+    assert calls == [["cos", "tsopt"], ["cos"]] and data["ts"] is None
+    assert data["tsopt_error"] == "RuntimeError: TS optimization diverged"
+    assert len(data["images"]) == 2 and data["converged"]
+
+    def always_raises(run_dict, cwd):
+        raise ValueError("growing string failed")
+
+    fake_pysisyphus(monkeypatch, always_raises)
+    for failing in (job, {"run_dict": {"cos": {"type": "gs"}}}):
+        with pytest.raises(ValueError, match="growing string failed"):
+            run_growing_string(failing, tmp_run)

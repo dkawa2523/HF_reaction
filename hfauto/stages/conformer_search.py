@@ -1,11 +1,13 @@
 """conformers stage (design §4.1 #2, §8.2): conformer search of monomers, placement seeds and
-``--nci`` search of compositions, de-duplication, state labels and the lowest per state.
+``--nci`` search of compositions, de-duplication, state labels and per state label the
+``keep_per_state`` lowest structures (no energy window: the screen stage selects).
 
 Small rigid monomers skip the search and pass their input through. A topology-change stop is
 kept as a ``crest_topology`` species and the search runs once more with ``--noreftopo``.
 Compositions take the summed charge and the high-spin multiplicity of their components and
 get ``--notopo`` on labile H and acceptor atoms when they have both. When a search fails its
-input (monomer) or placement seeds (composition) are output instead.
+input (monomer) or placement seeds (composition) are output instead. Users set only ``quick``
+and ``ewin_kcal``; CREST threads come from the site.
 """
 
 from __future__ import annotations
@@ -46,10 +48,10 @@ DUPLICATE_DE_KCAL = 0.1
 class ConformersConfig(StageConfig):
     engine: str
     method: str
-    settings: bp.ConformerSettings = bp.ConformerSettings(nci=False)
+    quick: bool = True
+    ewin_kcal: float = 6.0
     seeds_per_composition: int = 6
     keep_per_state: int = 6
-    window_kcal: float = 4.0
 
 
 @dataclass
@@ -113,9 +115,9 @@ def _same(a: _Cand, b: _Cand) -> bool:
     return rmsd < DUPLICATE_RMSD_A
 
 
-def _select(cands: list[_Cand], cfg: ConformersConfig) -> list[_Cand]:
-    """Unique structures; per state label the lowest ``keep_per_state`` within the window.
-    A missing energy is never inside a window; a state without energies keeps input order."""
+def _select(cands: list[_Cand], keep_per_state: int) -> list[_Cand]:
+    """Unique structures; per state label the lowest ``keep_per_state``. A missing energy is
+    dropped when the state has energies (BUG-08); a state without energies keeps input order."""
     unique: list[_Cand] = []
     for c in sorted(cands, key=lambda c: (c.energy is None, c.energy or 0.0)):
         if not any(_same(c, u) for u in unique):
@@ -124,9 +126,7 @@ def _select(cands: list[_Cand], cfg: ConformersConfig) -> list[_Cand]:
     for label in dict.fromkeys(c.label for c in unique):
         group = [c for c in unique if c.label == label]
         lowest = group[0].energy
-        inside = [c for c in group if lowest is None or (
-            c.energy is not None and (c.energy - lowest) * HARTREE_TO_KCAL_MOL <= cfg.window_kcal)]
-        kept += inside[: cfg.keep_per_state]
+        kept += [c for c in group if lowest is None or c.energy is not None][:keep_per_state]
     return kept
 
 
@@ -137,7 +137,7 @@ def _artifacts(found: _Found, rt: StageRuntime, cfg: ConformersConfig) -> list[A
     for geometry, energy, source in found.candidates:
         xyz = rt.load_xyz(geometry)
         cands.append(_Cand(geometry, energy, source, xyz, state_label(xyz.symbols, xyz.coords)))
-    for k, c in enumerate(_select(cands, cfg)):
+    for k, c in enumerate(_select(cands, cfg.keep_per_state)):
         record = SpeciesRecord(
             species_id=f"{item.base}_{_TAG[c.source]}{k:02d}",
             composition_id=composition_key(c.xyz.symbols, charge, mult), charge=charge,
@@ -151,7 +151,7 @@ def _artifacts(found: _Found, rt: StageRuntime, cfg: ConformersConfig) -> list[A
 
 def _monomer(sp: SpeciesRecord, rt: StageRuntime, cfg: ConformersConfig) -> _Item:
     xyz = rt.load_xyz(sp.geometry)
-    settings = cfg.settings.model_copy(update={"nci": False})
+    settings = bp.ConformerSettings(quick=cfg.quick, ewin_kcal=cfg.ewin_kcal)
     return _Item(sp.species_id, (artifact_id(sp.species_id),),
                  Molecule(xyz, sp.charge, sp.multiplicity), settings,
                  ((sp.geometry, None, "conformer"),),
@@ -210,7 +210,8 @@ def _composition(comp: CompositionInput, species: dict[str, SpeciesRecord],
         return reject(FailureKind.GATE_REJECTED, "no_collision_free_seed")
     geoms = _seed_geometries(comp.id, seeds, rt)
     first = rt.load_xyz(geoms[0])
-    settings = cfg.settings.model_copy(update={"nci": True, "notopo_atoms": _notopo(first)})
+    settings = bp.ConformerSettings(nci=True, quick=cfg.quick, ewin_kcal=cfg.ewin_kcal,
+                                    notopo_atoms=_notopo(first))
     parents = tuple(dict.fromkeys(artifact_id(sid) for sid, _ in parts))
     return _Item(comp.id, parents, Molecule(first, charge, mult), settings,
                  tuple((g, None, "placement") for g in geoms))
@@ -228,12 +229,12 @@ class ConformersStage:
         search = partial(_search, engine, rt.method(cfg.method))
         species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)
                    if s.source == "input"}
-        found = rt.thread_map(search, _monomers(species, rt, cfg),
-                              threads_per_item=cfg.settings.threads)
+        # the JobRunner core semaphore limits concurrent CREST jobs by the site threads
+        found = rt.thread_map(search, _monomers(species, rt, cfg), threads_per_item=1)
         best = {f.item.base: _lowest(f, rt) for f in found}
         built = [_composition(c, species, best, rt, cfg) for c in rt.system.compositions]
         items = [b for b in built if isinstance(b, _Item)]
-        found += rt.thread_map(search, items, threads_per_item=cfg.settings.threads)
+        found += rt.thread_map(search, items, threads_per_item=1)
         diagnostics = json.dumps({f.item.base: f.diagnostics for f in found}, indent=1)
         (rt.stage_dir / "diagnostics.json").write_text(diagnostics, encoding="utf-8")
         failed = [b for b in built if isinstance(b, Artifact)]

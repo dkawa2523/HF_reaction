@@ -1,4 +1,4 @@
-"""Mapped endpoint alignment and IDPP initial paths (§5.5, CH-09).
+"""Mapped alignment of endpoints and paths, and IDPP initial paths (§5.5, CH-09).
 
 IDPP (Smidstrup et al., JCP 140, 214106 (2014)): every image is pulled toward the linearly
 interpolated interatomic distances, S = Σ_{i<j} d⁻⁴ (d_target − d)², with nudged-elastic-band
@@ -27,6 +27,16 @@ def align_mapped(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """b rigidly aligned onto a with the identity atom mapping (proper rotation)."""
 
     return align_coordinates(np.asarray(a, dtype=float), np.asarray(b, dtype=float))
+
+
+def align_sequential(frames: Sequence[np.ndarray]) -> list[np.ndarray]:
+    """Each frame aligned onto the already aligned previous one (the first is kept), so a
+    path from internal coordinates carries no rigid jumps between neighbouring images."""
+
+    aligned = [np.asarray(frames[0], dtype=float)]
+    for frame in frames[1:]:
+        aligned.append(align_mapped(aligned[-1], frame))
+    return aligned
 
 
 def _distances(x: np.ndarray) -> np.ndarray:

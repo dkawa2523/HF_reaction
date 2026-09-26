@@ -1,8 +1,0 @@
-# Energy layer of the composite G (thermo energy_method) and method panel.
-id: pbe0-d3bj_def2-tzvp
-kind: dft
-functional: pbe0
-basis: def2-tzvp
-dispersion: d3bj
-grid: fine
-scf_energy_tol: 1.0e-7

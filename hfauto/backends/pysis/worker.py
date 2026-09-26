@@ -16,10 +16,23 @@ _XTB_VERSION = re.compile(r"xtb version (\S+)")
 
 
 def run_growing_string(job: dict[str, Any], workdir: Path) -> dict[str, Any]:
-    """Run the pysisyphus input ``job["run_dict"]`` (cos + optional tsopt) in ``workdir``."""
+    """Run the pysisyphus input ``job["run_dict"]`` (cos + optional tsopt) in ``workdir``.
+
+    When the run with a TS optimization raises, the growing string alone is rerun and
+    returned with ``ts`` None and ``tsopt_error``; a failing growing string propagates.
+    """
     from pysisyphus.run import run_from_dict
 
-    return summarize(run_from_dict(job["run_dict"], cwd=workdir), workdir)
+    run_dict = job["run_dict"]
+    try:
+        result = run_from_dict(run_dict, cwd=workdir)
+    except Exception as exc:
+        if "tsopt" not in run_dict:
+            raise
+        gs_only = {key: value for key, value in run_dict.items() if key != "tsopt"}
+        summary = summarize(run_from_dict(gs_only, cwd=workdir), workdir)
+        return {**summary, "tsopt_error": f"{type(exc).__name__}: {exc}"}
+    return summarize(result, workdir)
 
 
 def summarize(result: Any, workdir: Path) -> dict[str, Any]:

@@ -5,16 +5,24 @@ PBE0-D3BJ/def2-SVP its Hessian has exactly two negative eigenvalues (NH2 inversi
 -1019 cm-1, OH torsion near -666 cm-1), and ``mode_index=1`` follows the torsion (moddir 2).
 """
 
+import shutil
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from hfauto.backends.protocols import Capability
 from hfauto.chemistry.gates import is_first_order_saddle, is_minimum
+from hfauto.chemistry.profile import energies_settled, shape
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
-from hfauto.core.evidence import Evidence
+from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL
+from hfauto.core.evidence import Evidence, FileRef, PathProfile
+from hfauto.core.hashing import sha256_file
 from hfauto.core.method import MethodSpec
 
 pytestmark = pytest.mark.real
+DATA = Path(__file__).parent / "data"
 PBE0 = MethodSpec(id="pbe0-d3bj_def2-svp", kind="dft", functional="pbe0", basis="def2-svp",
                   dispersion="d3bj", grid="fine", scf_energy_tol=1e-7)
 
@@ -72,3 +80,21 @@ def test_mp2_single_point_and_the_wb97x_d3_level(real_engine):
     ev = qm.energy(WATER, wb97)
     assert isinstance(ev, Evidence), ev
     assert (ev.level.method, ev.level.dispersion, ev.level.grid) == ("wb97x-d3", None, "fine")
+
+
+def test_string_bead_energies_settle_hcn_sto3g(real_engine, tmp_path):
+    """HCN -> HNC ZTS from a GS path (9 beads, 20 iterations, about 80 s): gmax stays near
+    0.05 Eh/bohr, yet the bead energies settle into a single maximum (2026-09-26 review U5)."""
+    run = tmp_path / "run"
+    run.mkdir(parents=True, exist_ok=True)
+    path = Path(shutil.copy(DATA / "hcn_zts_initial.xyz", run / "hcn_zts_initial.xyz"))
+    frames = read_xyz_trajectory(path)
+    start, end = (Molecule(frames[i], 0, 1) for i in (0, -1))
+    sto3g = MethodSpec(id="pbe0_sto-3g", kind="dft", functional="pbe0", basis="sto-3g",
+                       scf_energy_tol=1e-7)
+    initial = FileRef(path=path.name, sha256=sha256_file(path))
+    string = real_engine(Capability.PATH, "nwchem_string")
+    profile = string.find_path(start, end, sto3g, images=9, initial_path=initial)
+    assert isinstance(profile, PathProfile), profile
+    assert energies_settled(profile.energy_history, 0.1 / HARTREE_TO_KCAL_MOL)
+    assert shape(profile.energies_hartree, 1 / HARTREE_TO_KCAL_MOL) == "single_max"

@@ -1,0 +1,5 @@
+# Opt-in method-panel reference for small closed-shell molecules (not in the default panel).
+id: ccsd-t_def2-tzvpd
+kind: wft
+wft_method: ccsd(t)
+basis: def2-tzvpd

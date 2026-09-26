@@ -1,8 +1,0 @@
-# Method panel: basis-set sensitivity without diffuse functions.
-id: pbe0-d3bj_def2-svp
-kind: dft
-functional: pbe0
-basis: def2-svp
-dispersion: d3bj
-grid: fine
-scf_energy_tol: 1.0e-7

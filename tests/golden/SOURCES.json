@@ -265,7 +265,7 @@
     "method": "nwchem"
    }
   ],
-  "expect": "gmax が 9.14e-4 から 9.15e-3 に悪化している → `string_converged` は False",
+  "expect": "gmax は 9.14e-4 から 9.15e-3 に悪化するが、bead エネルギーは 3 反復で最大 0.095 kcal/mol しか動かない → `energies_settled`（0.1 kcal/mol）は True",
   "refs": [
    "CH-08"
   ]
@@ -277,10 +277,12 @@
     "golden": "nwchem/G14/hfauto_neb.neb_epath.gz",
     "source": "hono_isomerization_v3/06_ts-search/rxn_candidate_dft_998cc65513/attempt_00_nwchem_neb/neb/hfauto_neb.neb_epath",
     "source_sha256": "a5b63a770d2923302d629f63b910c5b22191fbd3f88dea17a315f649cd9499f5",
-    "method": "copy"
+    "method": "copy",
+    "missing": true,
+    "reason": "stagnated() removed (2026-09-26 review M2): gmax stagnation is no longer a criterion"
    }
   ],
-  "expect": "最後の 58 反復で Xmax = 0 → `stagnated` は True",
+  "expect": "（廃止）最後の 58 反復で Xmax = 0 → 旧 `stagnated` は True。停滞は判定に使わなくなったので、データは削除した",
   "refs": [
    "CH-09"
   ]

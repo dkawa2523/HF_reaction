@@ -1,8 +1,9 @@
 """explore stage (design §4.1 #4, §8.2): reaction trials on screen minima with a discovery engine.
 
-Sources are the ``sources_per_state`` lowest screen minima of each composition × state label.
-Every trial runs NT2 first and falls back to AFIR on the same drive when NT2 gives no product
-(an out-of-window product counts as found). Seeds that relaxed into another state become
+Sources are the ``sources_per_state`` lowest screen minima of each composition × state label,
+each started from its screen-optimized structure (the final geometry of ``opt_calc``). Every
+trial runs NT2 first and falls back to AFIR on the same drive when NT2 gives no product (an
+out-of-window product counts as found). Seeds that relaxed into another state become
 ``relaxation`` discoveries. Every attempt is recorded: product, negative or failed.
 """
 
@@ -62,8 +63,9 @@ class _Explorer:
         self.engine = cast(DiscoveryEngine, rt.engine(Capability.DISCOVERY, config.engine))
         self.method: MethodSpec = rt.method(config.method)
 
-    def source(self, minimum: MinimumRecord, species: SpeciesRecord) -> list[Artifact]:
-        xyz = self.rt.load_xyz(species.geometry)
+    def source(self, minimum: MinimumRecord, species: SpeciesRecord,
+               optimized: Geometry) -> list[Artifact]:
+        xyz = self.rt.load_xyz(optimized)
         start, drives = trials.generate(minimum.minimum_id, xyz.symbols, xyz.coords,
                                         max_trials=self.config.max_trials_per_source)
         mol = Molecule(XYZ(list(xyz.symbols), start), species.charge, species.multiplicity)
@@ -144,5 +146,6 @@ class ExploreStage:
                for d in trials.relaxation_discoveries(species.values(), screen)]
         explorer = _Explorer(cfg, rt)
         for minimum in _sources(screen, cfg.sources_per_state):
-            out += explorer.source(minimum, species[minimum.species_id])
+            out += explorer.source(minimum, species[minimum.species_id],
+                                   inputs.evidence(minimum.opt_calc).final)
         return out

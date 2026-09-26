@@ -1,9 +1,10 @@
 # Appends to an existing run (hfauto run method_panel ... --run-dir <run>): single points of
 # the reaction stationary points at every panel method, then the panel report.
-# ccsd-t_def2-tzvp is for small closed-shell molecules only; drop it for larger systems.
+# Add ccsd-t_def2-tzvpd to methods only for small closed-shell molecules (about four heavy
+# atoms; HCN / HONO take seconds to minutes per point, larger systems hours).
 pipeline_id: method_panel
 conditions: {temperatures_K: [298.15], standard_states: [1atm]}
 stages:
   - {id: panel_sp, stage: sp, engine: nwchem, targets: reaction_stationary_points,
-     methods: [pbe0-d3bj_def2-svp, pbe0-d3bj_def2-tzvp, wb97x-d3_def2-tzvpd, ccsd-t_def2-tzvp]}
+     methods: [pbe0-d3bj_def2-tzvpd, wb97x-d3_def2-tzvpd]}
   - {id: panel_report, stage: report}

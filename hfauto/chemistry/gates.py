@@ -178,8 +178,6 @@ def barrier_verdict(
     dft_endpoints: tuple[float, float],
     low_profile: Sequence[float] | None = None,
     low_endpoints: tuple[float, float] | None = None,
-    negative_evidence: Sequence[str] = (),
-    override: bool = False,
     tangent_mode_cm1: float | None = None,
     seed: Geometry | None = None,
     max_node_spacing_A: float | None = None,
@@ -194,10 +192,6 @@ def barrier_verdict(
         n_dft_points=len(dft_profile),
         max_node_spacing_A=max_node_spacing_A,
     )
-    if negative_evidence and not override:
-        return base.model_copy(
-            update={"verdict": "negative_evidence", "reasons": tuple(negative_evidence)}
-        )
     if rel_dft is None:
         return base.model_copy(update={"reasons": ("too_few_dft_points",)})
     limit = policy.barrier_proceed_kcal

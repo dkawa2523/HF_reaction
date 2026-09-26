@@ -1,6 +1,7 @@
 """sp -> thermo with FakeQM / FakeThermo: energy layer, band, association, mixed LOT."""
 
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -54,7 +55,8 @@ def test_sp_then_thermo(fake_runtime, tmp_run):
                              energy_hartree=0.0))
     rx2 = rx1.model_copy(update={"reaction_id": "rx2", "minima": ("m_reactant", "m_p2")})
     arts += [Artifact(artifact_id=r.reaction_id, type=T.REACTION, payload=r) for r in (rx1, rx2)]
-    system = SystemConfig(system_id="s", species=[SpeciesInput(id="nh"), SpeciesInput(id="o")],
+    system = SystemConfig(system_id="s", species=[SpeciesInput(id=t, xyz=Path(f"{t}.xyz"))
+                                                  for t in ("nh", "o")],  # never read
                           compositions=[CompositionInput(id="c", components={"nh": 1, "o": 1})])
     rt = replace(fake_runtime(system, {(Capability.QM, "nwchem"): qm, (
         Capability.THERMO, "goodvibes"): FakeThermo(_gv)}, methods={"svp": DFT, "tzvp": BIG}),

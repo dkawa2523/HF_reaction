@@ -25,15 +25,12 @@ def scalars(node):  # every key and leaf value of a YAML tree
 
 
 @pytest.mark.parametrize("path", files("pipelines"), ids=lambda p: p.stem)
-def test_pipeline_stages_validate_and_stationary_points_share_one_method(path):
+def test_pipeline_stages_and_their_methods_validate(path):
     pipeline = config.PipelineConfig.model_validate(yaml.safe_load(path.read_text("utf-8")))
     for entry in pipeline.stages:
         catalog.get(entry.stage).spec.config.model_validate(entry.settings())
     assert config.method_ids([e.settings() for e in pipeline.stages]) <= {
         p.stem for p in files("methods")}
-    stationary = {e.settings()["method"] for e in pipeline.stages if e.stage == "reaction-paths"
-                  or (e.stage == "minima" and e.settings()["level"] == "dft")}
-    assert len(stationary) <= 1
 
 
 def test_sites_and_methods_validate():

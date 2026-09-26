@@ -64,11 +64,17 @@ class PipelineConfig(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _unique_ids(self) -> PipelineConfig:
+    def _check_stages(self) -> PipelineConfig:
         counts = Counter(entry.id for entry in self.stages)
         duplicated = sorted(k for k, n in counts.items() if n > 1)
         if duplicated:
             raise ValueError(f"duplicate stage ids: {duplicated}")
+        # DFT minima and reaction paths must share one stationary-point level of theory
+        stationary = {e.id: e.settings().get("method") for e in self.stages
+                      if e.stage == "reaction-paths"
+                      or (e.stage == "minima" and e.settings().get("level") == "dft")}
+        if len(set(stationary.values())) > 1:
+            raise ValueError(f"stationary-point stages use different methods: {stationary}")
         return self
 
     def entry(self, stage_id: str) -> StageEntry:

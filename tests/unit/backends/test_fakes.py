@@ -4,7 +4,7 @@ import fakes
 import numpy as np
 import pytest
 
-from hfauto.chemistry.profile import shape
+from hfauto.chemistry.profile import energies_settled, shape
 from hfauto.chemistry.xyz import Molecule
 from hfauto.core.evidence import FailureKind
 from hfauto.core.method import MethodSpec
@@ -42,7 +42,11 @@ def test_paths_follow_the_pes_or_the_script(tmp_run, name, want) -> None:
     ends = pes.molecule("reactant"), pes.molecule("product")
     profile = path.find_path(*ends, M, images=11, refine_ts=want == "single_max")
     assert shape(profile.energies_hartree, 1e-4) == want
+    # Like a real ZTS: gmax stays flat, the bead energies settle (not for "unconverged").
+    assert energies_settled(profile.energy_history, 1e-4) and min(profile.gmax_history) > 1e-3
     if profile.ts is not None:
         assert profile.ts_energy_hartree == pytest.approx(pes.energy(pes.points["ts"]))
     assert shape(path.find_path(*ends, M, images=11).energies_hartree, 1e-4) == "monotonic"
     assert path.find_path(*ends, M, images=11).kind is FailureKind.NONZERO_EXIT
+    stuck = fakes.FakePath(tmp_run, pes, script=["unconverged"]).find_path(*ends, M, images=11)
+    assert not energies_settled(stuck.energy_history, 1e-3)

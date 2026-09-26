@@ -1,5 +1,7 @@
 """reaction-paths stage on fake engines (§7.3, §8.2), including the CH-05 regression."""
 
+from pathlib import Path
+
 import fakes
 import pytest
 
@@ -18,8 +20,9 @@ pytestmark = pytest.mark.integration
 DFT = MethodSpec(id="pbe0", kind="dft", functional="pbe0", basis="def2-svp")
 XTB = MethodSpec(id="gfn2", kind="xtb", gfn=2)
 ENDS = {"reactant": "reactant", "product": "product"}  # species id -> PES point
-SYSTEM = SystemConfig(system_id="t", species=[SpeciesInput(id=n, role="endpoint") for n in ENDS],
-                      reactions=[ReactionInput(id="rx", reactant="reactant", product="product")])
+SYSTEM = SystemConfig(  # declared endpoints name an xyz, which this stage never reads
+    system_id="t", reactions=[ReactionInput(id="rx", reactant="reactant", product="product")],
+    species=[SpeciesInput(id=n, role="endpoint", xyz=Path(f"{n}.xyz")) for n in ENDS])
 FAKES = {(Cap.QM, "nwchem"): fakes.FakeQM, (Cap.PATH, "nwchem_string"): fakes.FakePath,
          (Cap.QM, "xtb"): fakes.FakeQM, (Cap.PATH, "pysis_gs"): fakes.FakePath}
 
@@ -104,7 +107,8 @@ def test_collapsed_saddle_is_validated_as_an_intermediate(tmp_run, fake_runtime)
     assert '"saddle_collapsed"' in (tmp_run / "stage" / reactions["rx"].log).read_text()
 
 
-def test_walltime_low_level_ts_shortcut_and_negative_evidence(tmp_run, fake_runtime) -> None:
+def test_walltime_low_level_ts_shortcut_and_negative_discoveries_do_not_veto(
+        tmp_run, fake_runtime) -> None:
     pes = fakes.double_well()
     view, source = dft_view(tmp_run, pes)
     rx = run_stage(fake_runtime, tmp_run, pes, view, walltime_h=0.0)[0]["rx"]
@@ -116,9 +120,9 @@ def test_walltime_low_level_ts_shortcut_and_negative_evidence(tmp_run, fake_runt
                           associations=((1, 2),), dissociations=((0, 1),))
     negative = DiscoveryRecord(discovery_id="d2", source_minimum=source, mechanism="afir",
                                outcome="negative", reason="monotonic_uphill", trial=trial)
-    for record, outcome in ((found, O.ELEMENTARY_STEP), (negative, O.NO_PRODUCT)):
+    for record in (found, negative):  # X1: a matching negative discovery changes nothing
         view.artifacts.append(Artifact(artifact_id=record.discovery_id, type=T.DISCOVERY,
                                        payload=record))
         reactions, _, engines = run_stage(fake_runtime, tmp_run, pes, view)
-        assert reactions["rx"].outcome is outcome and not engines[Cap.PATH, "pysis_gs"].calls
-    assert reactions["rx"].negative_evidence == ("d2:monotonic_uphill",)
+        assert reactions["rx"].outcome is O.ELEMENTARY_STEP
+        assert not engines[Cap.PATH, "pysis_gs"].calls  # the low-level TS shortcut

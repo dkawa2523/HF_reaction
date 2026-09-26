@@ -3,7 +3,9 @@
 from functools import partial
 
 import numpy as np
+import pytest
 from fakes import FakeConformers, write_geometry
+from pydantic import ValidationError
 
 from hfauto.backends.protocols import Capability, ConformerEnsemble
 from hfauto.chemistry.xyz import XYZ, write_xyz
@@ -40,8 +42,9 @@ def test_structures_then_conformers(tmp_path, fake_runtime):
     assert nh3.geometry.file.path == "s/xyz/nh3.xyz" and nh3.composition_id == "H3N_q0_m1"
 
     def script(mol, method, settings):  # HONO stops once on a proton shift; HF·HF fails
-        x, sym, key = mol.xyz.coords, mol.xyz.symbols, f"f/{len(calls)}"
-        calls.append(settings)
+        x, sym = mol.xyz.coords, mol.xyz.symbols
+        key = f"f/{len(sym)}{settings.topology}"
+        calls.append((len(sym), settings))
         if sym == ["H", "F", "H", "F"]:
             return Failure(kind=FailureKind.NONZERO_EXIT, reason="scripted")
         if settings.topology == "on" and not settings.nci:  # H moved from O to N
@@ -53,11 +56,15 @@ def test_structures_then_conformers(tmp_path, fake_runtime):
     calls = []
     rt = fake_runtime(system, {(Capability.CONFORMERS, "crest"): FakeConformers(script)},
                       methods={"gfn2": MethodSpec(id="gfn2", kind="xtb", gfn=2)}, stage_id="c")
+    with pytest.raises(ValidationError):  # no energy window, no engine settings
+        ConformersConfig(engine="crest", method="gfn2", window_kcal=4.0)
     out = ConformersStage().run(Manifest(run_id="r", stage_id="s", created_at="", artifacts=arts),
-                                ConformersConfig(engine="crest", method="gfn2"), rt)
+                                ConformersConfig(engine="crest", method="gfn2", ewin_kcal=5.0), rt)
     got = sorted(a.payload.species_id for a in out if a.payload)  # tags: c/t/p = source
-    assert [k for k in got if not k.startswith("hf2_p")] == [
-        "hf_c00", "hono_c00", "hono_t01", "nh3_c00", "nh_c00"] and len(got) > 5
-    assert [a.artifact_id for a in out if a.failure] == ["conformers_hf2"]
-    assert [s.topology for s in calls[:2]] == ["on", "noref"] and not calls[0].nci
-    assert calls[2].nci and calls[2].notopo_atoms == (0, 1, 2, 3, 4, 5)
+    assert [k for k in got if not k.startswith("hf2_p")] == [  # +6.3 kcal/mol kept (c01)
+        "hf_c00", "hono_c00", "hono_c01", "hono_t02", "nh3_c00", "nh_c00", "nh_c01"]
+    assert len(got) > 7 and [a.artifact_id for a in out if a.failure] == ["conformers_hf2"]
+    assert [s.topology for _, s in calls[:2]] == ["on", "noref"] and not calls[0][1].nci
+    compositions = dict(calls[2:])  # searched concurrently: keyed by atom count
+    assert compositions[6].nci and compositions[6].notopo_atoms == (0, 1, 2, 3, 4, 5)
+    assert compositions[4].nci and {s.ewin_kcal for _, s in calls} == {5.0}

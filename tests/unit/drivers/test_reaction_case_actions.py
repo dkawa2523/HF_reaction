@@ -60,18 +60,17 @@ def act(ctx, state, action, reason="test"):
     return HANDLERS[action](ctx, state, Decision(action, reason))
 
 
-def test_monotonic_string_is_confirmed_by_a_second_discretization(tmp_path) -> None:
-    ctx, state = case_ctx(tmp_path, fakes.flat_uphill())
+def test_one_monotonic_string_with_settled_energies_is_barrierless(tmp_path) -> None:
+    ctx, state = case_ctx(tmp_path, fakes.flat_uphill())  # gmax flat, bead energies settled
     state = act(ctx, state, Action.FIND_PATH, "no_dft_path")
-    assert decide(ctx.case, state, ctx.policy) == Decision(Action.FIND_PATH, "confirm_monotonic")
-    state = act(ctx, state, Action.FIND_PATH, "confirm_monotonic")
-    assert len(ctx.work.path[0]) == ctx.policy.confirm_barrierless_beads == 15
+    assert state.path_runs == ("monotonic",) and ctx.rt.path.calls == ["find_path:pes"]
+    assert len(ctx.work.path[0]) == ctx.policy.string_beads and not state.seeds
     assert decide(ctx.case, state, ctx.policy).reason == "dft_path_monotonic"
 
 
-@pytest.mark.parametrize("pes,runs", [(fakes.flat_uphill, ("failed",)),
+@pytest.mark.parametrize("pes,runs", [(fakes.flat_uphill, ("monotonic",)),
                                       (fakes.double_well, ("single_max",))])
-def test_unconverged_string_runs_in_chunks_and_its_maximum_is_only_a_seed(tmp_path, pes, runs):
+def test_unsettled_string_runs_in_chunks_and_its_maximum_is_only_a_seed(tmp_path, pes, runs):
     ctx, state = case_ctx(tmp_path, pes(), script=["unconverged"] * 3)
     state = act(ctx, state, Action.FIND_PATH)
     assert state.path_runs == runs and ctx.rt.path.calls == ["find_path:unconverged"] * 3

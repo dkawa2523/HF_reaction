@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 
 from hfauto.backends.nwchem import output as nw
-from hfauto.chemistry.profile import string_converged
+from hfauto.chemistry.profile import energies_settled
 from hfauto.chemistry.vibrations import external_basis, projected_frequencies
 from hfauto.chemistry.xyz import read_xyz
-from hfauto.core.constants import BOHR_TO_ANGSTROM
+from hfauto.core.constants import BOHR_TO_ANGSTROM, HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import FailureKind as Kind
 from hfauto.core.method import MethodSpec, level_mismatches
 
@@ -70,12 +70,13 @@ def test_g10_grid_mismatch_and_frame_change(golden):
     assert nw.frame_shift(text, *nw.geometry_block(text, 0)) == 0.0
 
 
-def test_g13_gmax_history_is_not_converged(golden):
-    text = golden.text("nwchem/G13/nwchem_string.out")
-    gmax, xmax = nw.string_history(text)
-    assert gmax == pytest.approx((9.143e-4, 9.150e-3, 9.150e-3), rel=1e-3) and len(xmax) == 3
-    assert nw.string_converged_by_program(text) and not string_converged(gmax)
-    assert len(nw.string_energies(text)) == 11
+def test_g13_bead_energies_settle_although_gmax_rose(golden):
+    text = golden.text("nwchem/G13/nwchem_string.out")  # gmax 9.1e-4 -> 9.2e-3
+    history = nw.string_path_energies(text)
+    assert [len(energies) for energies in history] == [11] * 3
+    assert history[-1] == pytest.approx(nw.string_energies(text), abs=1e-9)
+    assert energies_settled(history, 0.1 / HARTREE_TO_KCAL_MOL)
+    assert nw.program_converged(text)  # recorded only
 
 
 def test_g22_g23_g24_and_other_failures(golden):

@@ -29,6 +29,7 @@ from hfauto.core.records import (
 
 Metric = Literal["dG_act", "dG_rxn"]
 SIGN_DISAGREEMENT = "method_sign_disagreement"
+_SIGN_DEADBAND_KCAL = 1.0  # a dE_rxn within +-1 kcal/mol has no sign to disagree on
 _DEFAULT = Policy()
 
 
@@ -207,7 +208,8 @@ def _panel_rows(
         "dE_rxn_max_kcal": max(rxn, default=0.0),
         "dE_act_min_kcal": min(act, default=None),
         "dE_act_max_kcal": max(act, default=None),
-        "sign_disagreement": any(v > 0 for v in rxn) and any(v < 0 for v in rxn),
+        "sign_disagreement": any(v > _SIGN_DEADBAND_KCAL for v in rxn)
+        and any(v < -_SIGN_DEADBAND_KCAL for v in rxn),
     }
     return [
         PanelRow(reaction_id, key, _label(level), d_rxn, d_act, **spread)
@@ -223,7 +225,8 @@ def method_panel(
 ) -> tuple[list[PanelRow], frozenset[str]]:
     """dE_rxn and dE_act of each reaction at every level with energies at its stationary
     points, keyed by ``Level.full_key`` (CH-25), and the reactions whose dE_rxn changes sign
-    between levels.
+    between levels: above +1 kcal/mol at one level and below -1 at another
+    (``_SIGN_DEADBAND_KCAL``), so near-zero reaction energies never block ranking.
 
     A calculation contributes its energy at ``final`` to the stationary point with the same
     geometry fingerprint: fixed-geometry single points, and the opt / saddle / freq jobs that

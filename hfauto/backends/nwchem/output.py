@@ -35,6 +35,10 @@ _BASIS = re.compile(
 _AUTOZ = re.compile(r"AUTOZ failed|regeneration of autoz failed")
 _SCF = re.compile(r"Calculation failed to converge|SCF not converged")
 _GEOMETRY_MAXITER = re.compile("Failed to converge in maximum number of steps")
+_PATH_ENERGY = re.compile(  # a Path Energy block: one 'string: <bead> <energy>' row per bead
+    r"^[ \t]*string: Path Energy #.*\n((?:[ \t]*string:[ \t]+\d+[ \t]+\S+[ \t]*\n)+)",
+    re.MULTILINE,
+)
 _WFT_ENERGY = {
     "ccsd(t)": r"Total CCSD\(T\) energy:\s+(\S+)",
     "mp2": r"Total MP2 energy:?\s+(\S+)",
@@ -199,11 +203,10 @@ def final_xyz(workdir: Path, symbols: Sequence[str]) -> Path | None:
         return None
 
 
-def string_history(text: str) -> tuple[tuple[float, ...], tuple[float, ...]]:
-    """(gmax, xmax) per string iteration from ``string: gmax,grms,xrms,xmax=`` lines."""
-    found = re.findall(r"^\s*string: gmax,grms,xrms,xmax=(.*)$", text, re.MULTILINE)
-    rows = [row.split() for row in found if len(row.split()) == 4]
-    return tuple(_number(r[0]) for r in rows), tuple(_number(r[3]) for r in rows)
+def string_path_energies(text: str) -> tuple[tuple[float, ...], ...]:
+    """Bead energies per string iteration, from the ``string: Path Energy #n`` blocks."""
+    return tuple(tuple(_number(row.split()[2]) for row in block.splitlines())
+                 for block in _PATH_ENERGY.findall(text))
 
 
 def string_energies(text: str) -> tuple[float, ...]:
@@ -214,7 +217,7 @@ def string_energies(text: str) -> tuple[float, ...]:
     return tuple(beads[n] for n in sorted(beads))
 
 
-def string_converged_by_program(text: str) -> bool:
+def program_converged(text: str) -> bool:
     return "@zts The string calculation converged" in text
 
 

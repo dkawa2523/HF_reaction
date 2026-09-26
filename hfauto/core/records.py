@@ -100,7 +100,7 @@ class CoordinateTerm(BaseModel):
 
 class BarrierVerdict(BaseModel):
     model_config = _FROZEN
-    verdict: Literal["proceed", "barrierless", "negative_evidence", "unavailable"]
+    verdict: Literal["proceed", "barrierless", "unavailable"]
     max_rel_low_kcal: float | None = None
     max_rel_dft_kcal: float | None = None
     n_dft_points: int = 0
@@ -135,7 +135,6 @@ class CaseOutcome(StrEnum):
     MULTI_STEP = "multi_step"
     BARRIERLESS = "barrierless_at_resolution"
     SAME_BASIN = "same_basin"
-    NO_PRODUCT = "no_product_basin"
     OUT_OF_WINDOW = "out_of_window"
     UNRESOLVED = "unresolved_within_budget"
     BLOCKED = "blocked_upstream"
@@ -155,7 +154,6 @@ class ReactionRecord(BaseModel):
     torsional: bool = False
     n_h_transferred: int = 0
     low_level_ts: Geometry | None = None
-    negative_evidence: tuple[str, ...] = ()
     barrier: BarrierVerdict | None = None
     saddle: SaddleClaim | None = None
     connection: ConnectionClaim | None = None

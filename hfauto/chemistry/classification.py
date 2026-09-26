@@ -87,7 +87,7 @@ def split(
     """Fresh child cases R→I and I→P of a multi-step case.
 
     Stoichiometry, ``torsional`` and ``n_h_transferred`` are inherited from the parent; the
-    declared coordinate, negative evidence and low-level TS describe the whole step and are not.
+    declared coordinate and low-level TS describe the whole step and are not.
     """
     compositions = {t.composition_id for t in (*parent.reactants, *parent.products)}
     if intermediate.composition_id not in compositions:

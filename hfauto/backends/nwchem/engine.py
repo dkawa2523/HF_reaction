@@ -10,7 +10,7 @@ input geometry equals the input within 1e-4 Å; anything else is a Failure.
 from __future__ import annotations
 
 import shutil
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, ClassVar, Literal
@@ -21,7 +21,6 @@ from pydantic import BaseModel
 from hfauto.backends.nwchem import input as nw_in
 from hfauto.backends.nwchem import output as nw_out
 from hfauto.backends.protocols import Requirements
-from hfauto.chemistry.profile import stagnated
 from hfauto.chemistry.vibrations import projected_frequencies
 from hfauto.chemistry.xyz import Molecule, geometry_fingerprint, read_xyz, write_xyz
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
@@ -73,12 +72,6 @@ def _written_fingerprint(mol: Molecule) -> str:
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
-
-
-def _string_monitor(workdir: Path) -> str | None:
-    """Stops a string whose gmax / xmax history has stagnated (design §8.2)."""
-    gmax, xmax = nw_out.string_history(_read(workdir / STDOUT_NAME))
-    return "stagnated" if stagnated(gmax, xmax) else None
 
 
 def _render(task: Task, setup: nw_in.Setup) -> str:
@@ -160,8 +153,8 @@ class _NWChem:
             return self._path(task, workdir, text, level)
         return self._evidence(task, workdir, text, level)
 
-    def monitor(self, task: Task) -> Callable[[Path], str | None] | None:
-        return _string_monitor if task.kind == "string" else None
+    def monitor(self, task: Task) -> None:
+        return None  # a string runs its chunk to the end: find_path judges the bead energies
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
         """autoz -> Cartesian coordinates; SCF -> the old vectors with damping and level shift;
@@ -286,8 +279,8 @@ class _NWChem:
             return _incomplete("string_path_images")
         return PathProfile(engine=task.engine, level=level,
                            images=self._jobs.store.file_ref(images), energies_hartree=energies,
-                           gmax_history=nw_out.string_history(text)[0],
-                           program_converged=nw_out.string_converged_by_program(text), job_key="")
+                           energy_history=nw_out.string_path_energies(text),
+                           program_converged=nw_out.program_converged(text), job_key="")
 
 
 class NWChemEngine(_NWChem):

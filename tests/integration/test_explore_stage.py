@@ -1,12 +1,14 @@
 """explore stage with FakeDiscovery (§8.2): product, NT2 → AFIR fallback, out of window, failed
-attempts, relaxation discovery (legacy relaxation K case) and two lowest sources per state."""
+attempts, relaxation discovery (legacy relaxation K case), two lowest sources per state and the
+screen-optimized start structure."""
 
 import numpy as np
 from fakes import FakeDiscovery, write_geometry
 
 from hfauto.backends.protocols import Capability, DiscoveryResult
 from hfauto.chemistry.topology import state_label
-from hfauto.core.evidence import Failure, FailureKind
+from hfauto.chemistry.trials import perturb_linear
+from hfauto.core.evidence import Evidence, Failure, FailureKind, Level
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
 from hfauto.core.records import ArtifactType, MinimumRecord, SpeciesRecord
@@ -17,19 +19,30 @@ SYMBOLS, SPECIES, MINIMUM = ["H", "C", "N"], ArtifactType.SPECIES, ArtifactType.
 HCN = np.array([[0, 0, -1.066], [0, 0, 0], [0, 0, 1.156]])
 HNC = np.array([[0, 0, 2.17], [0, 0, 0], [0, 0, 1.17]])
 LABEL = state_label(SYMBOLS, HCN)
+LEVEL = Level(program="fake", version="0", method="gfn2", charge=0, multiplicity=1)
+
+
+def _optimized(i):  # the screen-optimized HCN of m{i}: the input displaced by 0.02 (i + 1) Å
+    return HCN + 0.02 * (i + 1)
 
 
 def _inputs(root):
-    """Three HCN screen minima of one state; m0 also holds a seed that relaxed from HNC."""
+    """Three HCN screen minima of one state (each with its opt calculation); m0 also holds a
+    seed that relaxed from HNC."""
     geo = write_geometry(root, "in/hcn.xyz", SYMBOLS, HCN)
     out = [Artifact(artifact_id=sid, type=SPECIES, payload=SpeciesRecord(
         species_id=sid, composition_id="CHN_q0_m1", charge=0, multiplicity=1,
         geometry=geo, source="conformer", state_label=state_label(SYMBOLS, x)))
         for sid, x in (("seed", HNC), ("s0", HCN), ("s1", HCN), ("s2", HCN))]
+    for i in range(3):
+        final = write_geometry(root, f"opt/m{i}.xyz", SYMBOLS, _optimized(i))
+        out.append(Artifact(artifact_id=f"opt{i}", type=ArtifactType.CALCULATION, payload=Evidence(
+            engine="fake", task="opt", level=LEVEL, start=geo, final=final, energy_hartree=i / 10,
+            output=final.file, job_key=f"opt{i}")))
     return Manifest(run_id="r", stage_id="screen", created_at="t", artifacts=out + [
         Artifact(artifact_id=f"m{i}", type=MINIMUM, payload=MinimumRecord(
             minimum_id=f"m{i}", basin_id=f"b{i}", composition_id="CHN_q0_m1", species_id=f"s{i}",
-            tier="screen", level_key="k", opt_calc="o", freq_calc="f", energy_hartree=i / 10,
+            tier="screen", level_key="k", opt_calc=f"opt{i}", freq_calc="f", energy_hartree=i / 10,
             state_label=LABEL, members=(f"s{i}", "seed")[: 2 - min(i, 1)]))
         for i in range(3)])
 
@@ -48,7 +61,7 @@ def test_explore_records_every_attempt(fake_runtime, tmp_run):
             irc_connected_to_source=ok, electronic_temperature_K=300.0, job_key="j")
 
     fake = FakeDiscovery(script)
-    rt = fake_runtime(SystemConfig(system_id="t", species=[SpeciesInput(id="hcn")]),
+    rt = fake_runtime(SystemConfig(system_id="t", species=[SpeciesInput(id="hcn", smiles="C#N")]),
                       {(Capability.DISCOVERY, "readuct"): fake},
                       methods={"gfn2": MethodSpec(id="gfn2", kind="xtb", gfn=2)})
     out = ExploreStage().run(_inputs(tmp_run), ExploreConfig(engine="readuct", method="gfn2"), rt)
@@ -63,6 +76,9 @@ def test_explore_records_every_attempt(fake_runtime, tmp_run):
     assert got[("m0", None, "relaxation")] == ("negative", f"collapsed_to:{LABEL}")
     assert {c[1].source_minimum for c in fake.calls} == {"m0", "m1"}  # m2 is the third lowest
     assert all(c[1].perturbed for c in fake.calls)  # linear HCN starts bent
+    for source, trial, *_ in fake.calls:  # from the opt final, not from species.geometry
+        i = int(trial.source_minimum[1:])
+        assert np.allclose(source.xyz.coords, perturb_linear(_optimized(i)))
     [species] = [a.payload for a in out if a.type == SPECIES]
     assert (species.source, species.state_label) == ("discovery", state_label(SYMBOLS, HNC))
     assert found[("m0", "h_shift", "nt2")].payload.product_species == species.species_id

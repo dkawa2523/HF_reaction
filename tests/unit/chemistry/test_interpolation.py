@@ -30,3 +30,15 @@ def test_idpp_rejects_short_contacts():
     squeezed = np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]])
     with pytest.raises(ValueError, match="0.7"):
         itp.idpp(["H", "H"], squeezed, squeezed + [0.0, 0.1, 0.0], 5)
+
+
+def test_align_sequential_removes_a_rigid_jump_inside_a_path():
+    inverted = NH3 * [1.0, 1.0, -1.0]
+    path = [NH3 + t * (inverted - NH3) for t in np.linspace(0.0, 1.0, 7)]
+    path = [x - x.mean(axis=0) for x in path]  # each frame already aligned onto its neighbours
+    rotated = list(path)
+    rotated[3] = path[3] @ np.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]).T
+    assert max_node_spacing(rotated) > 1.0
+    aligned = itp.align_sequential(rotated)
+    assert np.array_equal(aligned[0], rotated[0])
+    assert max_node_spacing(aligned) == pytest.approx(max_node_spacing(path), abs=1e-10)

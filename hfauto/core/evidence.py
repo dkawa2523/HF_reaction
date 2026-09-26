@@ -97,8 +97,9 @@ class PathProfile(BaseModel):
     level: Level
     images: FileRef  # multi-frame xyz
     energies_hartree: tuple[float, ...]
-    gmax_history: tuple[float, ...] = ()  # max gradient per iteration (Eh/bohr)
-    program_converged: bool  # the program's own claim; profile.string_converged decides
+    gmax_history: tuple[float, ...] = ()  # max gradient per iteration (Eh/bohr), recorded only
+    energy_history: tuple[tuple[float, ...], ...] = ()  # bead energies per string iteration
+    program_converged: bool  # the program's own claim, recorded only
     climbing_image: int | None = None
     ts: Geometry | None = None  # TS optimized within the same input (pysis_gs)
     ts_energy_hartree: float | None = None

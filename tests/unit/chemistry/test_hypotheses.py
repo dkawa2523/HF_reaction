@@ -61,8 +61,7 @@ def test_declared_reaction_comes_first_and_borrows_the_discovery_ts():
     assert rec.minima == ("m_hcn", "m_hnc") and rec.endpoints == ("hcn", "hnc")
     assert rec.reactants[0].composition_id == rec.products[0].composition_id == "CHN_q0_m1"
     assert rec.coordinate == (term,) and not rec.torsional and not rec.degenerate
-    assert rec.n_h_transferred == 1 and rec.low_level_ts == hnc.geometry
-    assert rec.negative_evidence == ("d2:monotonic_uphill",)
+    assert rec.n_h_transferred == 1 and rec.low_level_ts == hnc.geometry  # d2 vetoes nothing
 
     [auto] = select(minima, [hcn, hnc], found, [], load)
     assert auto.source == "discovery" and auto.reaction_id.startswith("rxn_discovery_")

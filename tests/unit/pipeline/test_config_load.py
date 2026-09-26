@@ -36,3 +36,13 @@ def test_unknown_keys_are_errors():
     assert config.model_validate({"level": "dft"}).level == "dft"
     with pytest.raises(ValidationError):
         config.model_validate({"level": "dft", "no_such_key": True})
+
+
+def test_stationary_point_stages_must_share_one_method():
+    stages = [{"id": "screen", "stage": "minima", "level": "screen", "method": "gfn2"},
+              {"id": "dft", "stage": "minima", "level": "dft", "method": "a"},
+              {"id": "paths", "stage": "reaction-paths", "method": "b"}]
+    with pytest.raises(ValidationError, match=r"different methods: \{'dft': 'a', 'paths': 'b'\}"):
+        PipelineConfig.model_validate({"pipeline_id": "p", "stages": stages})
+    stages[2]["method"] = "a"  # the xTB screen level is not a stationary-point level
+    assert len(PipelineConfig.model_validate({"pipeline_id": "p", "stages": stages}).stages) == 3

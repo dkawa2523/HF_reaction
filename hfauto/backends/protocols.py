@@ -41,13 +41,12 @@ class Requirements:
     version_command: tuple[str, ...] = ()  # preflight runs this to read the version
 
 
-class ConformerSettings(BaseModel):
+class ConformerSettings(BaseModel):  # threads: the site's engines.crest.execution
     model_config = _FROZEN
-    nci: bool
+    nci: bool = False
     quick: bool = True
-    threads: int = 4
     ewin_kcal: float = 6.0
-    topology: Literal["on", "off", "noref"] = "on"
+    topology: Literal["on", "noref"] = "on"
     notopo_atoms: tuple[int, ...] = ()
 
 

@@ -262,7 +262,10 @@ class FakeSaddle(_Surface):
 
 class FakePath(_Surface):
     """Linear interpolation on the PES. Each call takes the next ``script`` entry: "pes" (also
-    once empty), "monotonic" / "single_max" / "multi_max", "unconverged" or "failed"."""
+    once empty), "monotonic" / "single_max" / "multi_max", "unconverged" or "failed".
+
+    Like a real ZTS, gmax stays flat; the bead energies settle within a few iterations except
+    for "unconverged", whose bead energies never settle (the final profile is the PES)."""
 
     def __init__(self, root: Path, pes: PES, script: Sequence[str] = ()) -> None:
         super().__init__(root, pes)
@@ -287,10 +290,12 @@ class FakePath(_Surface):
                                    folder / "images.xyz")
         x, _, ok = _saddle(self.pes, hei(frames, e)[2], None) if refine_ts else (None, [], False)
         ts = write_geometry(self.root, folder / "ts.xyz", start.xyz.symbols, x) if ok else None
-        gmax = (1e-2, 9e-3, 9.5e-3, 1e-2) if shape == "unconverged" else (1e-2, 5e-4, 4e-4, 3e-4)
+        drift = (0.0, 2e-3, 0.0, 2e-3, 0.0) if shape == "unconverged" else (1e-2, 1e-4, 1e-5, 0.0)
         return PathProfile(engine=self.name, level=fake_level(method, start), ts=ts,
                            images=_ref(self.root, xyz), energies_hartree=tuple(e.tolist()),
-                           gmax_history=gmax, program_converged=shape != "unconverged",
+                           gmax_history=(1e-2, 9e-3, 9.5e-3, 1e-2),
+                           energy_history=tuple(tuple((e + d).tolist()) for d in drift),
+                           program_converged=shape != "unconverged",
                            ts_energy_hartree=self.pes.energy(x) if ok else None, job_key=key)
 
 

@@ -126,4 +126,4 @@ def test_g13_string_profile(nwchem, golden):
     engine = NWChemString(jobs=nwchem[0], site=nwchem[1])
     profile = engine.find_path(start, end, XFINE, images=11)
     assert isinstance(profile, PathProfile) and len(profile.energies_hartree) == 11
-    assert profile.program_converged and len(profile.gmax_history) == 3 and profile.ts is None
+    assert len(profile.energy_history) == 3 and profile.gmax_history == () and profile.ts is None

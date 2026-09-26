@@ -46,15 +46,12 @@ class CasePolicy:
     max_saddle_attempts: int = 2
     string_beads: int = 9
     string_chunks: int = 3
-    confirm_barrierless_beads: int = 15  # multi-resolution confirmation
-    max_path_runs: int = 2  # one DFT string plus one confirmation
     screen_images: int = 11  # GS nodes including both ends
     qrc_target_hartree: float = 3.0e-4  # displacement energy target: max(3 x drop, this)
     qrc_bounds_A: tuple[float, float] = (0.05, 0.4)
     qrc_retry_factor: float = 2.0
     walltime_s: float = 6 * 3600
     max_split_depth: int = 2
-    override_negative_evidence: bool = False
     gates: Policy = field(default_factory=Policy)
 
 
@@ -184,16 +181,10 @@ def _r11_screen(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision |
     return Decision(Action.SCREEN, "screen") if p.screen and s.screen is None else None
 
 
-_SCREENED = {
-    "barrierless": CaseOutcome.BARRIERLESS,
-    "negative_evidence": CaseOutcome.NO_PRODUCT,
-}
-
-
 def _r12_screened(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
-    if s.screen is None or s.screen.verdict not in _SCREENED:
-        return None  # proceed / unavailable continue below
-    return _complete(_SCREENED[s.screen.verdict], f"screen:{s.screen.verdict}")
+    if s.screen is not None and s.screen.verdict == "barrierless":
+        return _complete(CaseOutcome.BARRIERLESS, "screen:barrierless")
+    return None  # proceed / unavailable continue below
 
 
 def _r13_multi_max(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
@@ -203,12 +194,9 @@ def _r13_multi_max(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decisio
 
 
 def _r14_monotonic(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
-    if s.path_runs[-1:] != ("monotonic",):
-        return None
-    if s.path_runs[-2:] == ("monotonic", "monotonic"):
+    # Any continuous DFT path bounds the saddle from above: one monotonic string suffices.
+    if s.path_runs[-1:] == ("monotonic",):
         return _complete(CaseOutcome.BARRIERLESS, "dft_path_monotonic")
-    if len(s.path_runs) < p.max_path_runs:
-        return Decision(Action.FIND_PATH, "confirm_monotonic")  # confirm_barrierless_beads
     return None
 
 
