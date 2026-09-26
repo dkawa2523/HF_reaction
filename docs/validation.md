@@ -1,4 +1,6 @@
-# 実計算による検証(v3: 第2ラウンド改良後の再検証、2026-09-26)
+# 実計算による検証(v3・v4: 第2・第3ラウンド改良後の再検証、2026-09-26)
+
+第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。
 
 - 環境: WSL2 Ubuntu(4 vCPU / 11 GB)、`configs/sites/wsl_local.yaml`(NWChem 7.2.3 を 4 rank × 1,200 MB、xTB 6.7.1、CREST 3.0.2、SCINE ReaDuct 6.1.0、pysisyphus 1.0、GoodVibes 4.3.0)。
 - 手法: DFT は `pbe0-d3bj_def2-svpd`(grid fine、SCF 1e-7)、低レベルは GFN2-xTB。設定は `configs/` のまま使い、amine パイロット・(HF)₃ の配座・FIND_PATH・A/B だけ一時 system / pipeline を使った(v2 の `/home/user/hfauto_v2/configs/` を `/home/user/hfauto_v3/configs/` に複製。内容は同じ)。
@@ -52,7 +54,7 @@ HONO の TS は別の Hessian(v2 は DFT、v3 は xTB)から精密化したの�
 
 ## 3. 第2ラウンドの改良項目ごとの確認
 
-- **M8(FIND_PATH の端点を DFT 極小に戻す)**: STO-3G の HCN で、各チャンクの string の両端のエネルギーは DFT 極小(HCN −92.1083949、HNC −92.0683634 Eh)と 1e-8 Eh 以内で一致した。v2 では 2 チャンク目の HNC 側の端点が −92.0542667 Eh(+8.85 kcal/mol)だった。2 チャンク目の初期経路 `string0_c1.xyz` の両端は DFT 極小である。ずれの note は `string0:c1:end_drift:0.074`、`c2:0.001`、`c3:0.002`(Å)で、端点が大きく動いたのは 1 チャンク目だけだった。HONO は 1 チャンクで `string0:c1:end_drift:0.022`。1 チャンク目のずれの原因は IDPP ではなく、初期経路の中間画像を 1 枚ずつ端点へ整列していたことである(画像の間に剛体の跳びが入り、NWChem が凍結端点を回してゆがめる。ゆがんだ端点は極小より STO-3G で +13.6、HONO で +1.09 kcal/mol 高い)。レビュー v3 で分かり(U5-N8)、M9 で逐次整列にした。
+- **M8(FIND_PATH の端点を DFT 極小に戻す)**: STO-3G の HCN で、各チャンクの string の両端のエネルギーは DFT 極小(HCN −92.1083949、HNC −92.0683634 Eh)と 1e-8 Eh 以内で一致した。v2 では 2 チャンク目の HNC 側の端点が −92.0542667 Eh(+8.85 kcal/mol)だった。2 チャンク目の初期経路 `string0_c1.xyz` の両端は DFT 極小である。ずれの note は `string0:c1:end_drift:0.074`、`c2:0.001`、`c3:0.002`(Å)で、端点が大きく動いたのは 1 チャンク目だけだった。HONO は 1 チャンクで `string0:c1:end_drift:0.022`。1 チャンク目のずれの原因は IDPP ではなく、初期経路の中間画像を 1 枚ずつ端点へ整列していたことである(画像の間に剛体の跳びが入り、NWChem が凍結端点を回してゆがめる。ゆがんだ端点は極小より STO-3G で +13.6、HONO で +1.09 kcal/mol 高い)。レビュー v3 で分かり(U5-N8)、M9 で逐次整列にした。v4 では 1 チャンク目のずれが STO-3G 0.0008 Å、HONO 0.0016 Å、端点の持ち上がりが +0.002、+0.012 kcal/mol になった(§11)。
 - **S18(IDPP の反復上限 5,000)**: HONO の初期経路は、H–O–N=O の二面角が 180° → 160° → 141° → 119° → 96° → 80° → 48° → 24° → 0° と単調にねじれた。v2 は 180° → 178° → 7° と面内に崩れていた。string は 1 チャンクで落ち着き、bead エネルギーの最大は trans から 13.5 kcal/mol(v2 は面内の経路で 34.4)で、HEI の二面角は 89° だった。HEI の xTB Hessian は虚振動 1 本で接線に沿うので採用され、DFT Hessian と AUTOZ の失敗(v2 で約 110 秒)がなくなった。
 - **S19(画像の逐次整列)**: STO-3G の HCN で、v2 の鞍点に付いていた `mode_overlap_below_0.3` の note が消えた(レビューのプローブの重なりは 0.118 → 0.651)。
 - **S20(moddir の明示)**: 4 つの鞍点(HCN、HONO、NH3、STO-3G)はどれも虚振動 1 本で、`moddir 1` を書いた。AUTOZ の再試行はどの run にもない。負モード 2 本以上の Cartesian・P·H·P の分岐は、実 run では通っていない(プローブ `/home/user/hfauto_v3_probe/w1b_moddir` でだけ確認)。
@@ -135,14 +137,60 @@ HONO の TS は FIND_PATH の HEI から精密化したので虚振動が −681
 ## 9. 修正
 
 - **F1**(W7、`hfauto/chemistry/hypotheses.py`): 宣言反応の端点が screen の basin に崩壊した seed(members の 1 つ)の場合、その端点は screen の極小に割り付き、`blocked_upstream`(`endpoints_not_on_one_pes`)になっていた(TMA·(HF)₂ の shared_proton)。端点の basin がその screen basin の DFT 極小であればそちらを使うように変えた。回帰テストは `tests/unit/chemistry/test_hypotheses.py::test_declared_endpoint_collapsed_at_screen_takes_the_dft_basin`。
-- v2・v3 の再検証では、コードの修正が必要な不具合は出なかった。
+- v2・v3・v4 の再検証では、コードの修正が必要な不具合は出なかった。
 
 ## 10. 未解決事項
 
-1. **HONO の SCREEN(GS)の発散**: pysisyphus の GS(DLC 座標)が約 10 サイクル目から発散し、H–O–N の変角が内部座標から落ちた後、座標数の不一致(66 → 55)で例外終了する。v3 でも同じだった(8 秒、`screen:unavailable:screen_path:nonzero_exit`)。同じ入力では決定的に再現し、W7 の入力(端点の差 1e-6 Å 程度)では収束したので、平面 4 原子での GS の数値的な不安定であり、コードの回帰ではない。v2 で挙げた対策案(小さな分子の GS を Cartesian 座標にする、1 回だけ再試行する)は、レビューのプローブで無効と分かった(Cartesian では面内の経路で HEI 26.56 kcal/mol になり TSOpt も例外、再試行は同じ失敗)ので取り下げる。S18 で FIND_PATH の退避経路がねじれ機構を捉えるようになり、HONO の所要時間は W7(GS 成功、7 分 22 秒)より短い 5 分 23 秒になった。最初の例外は、ジョブの `stderr.txt` に連鎖として残る。
+1. **HONO の SCREEN(GS)の発散**: pysisyphus の GS(DLC 座標)が約 10 サイクル目から発散し、H–O–N の変角が内部座標から落ちた後、座標数の不一致(66 → 55)で例外終了する。v3・v4 でも同じだった(8 秒、`screen:unavailable:screen_path:nonzero_exit`)。同じ入力では決定的に再現し、W7 の入力(端点の差 1e-6 Å 程度)では収束したので、平面 4 原子での GS の数値的な不安定であり、コードの回帰ではない。v2 で挙げた対策案(小さな分子の GS を Cartesian 座標にする、1 回だけ再試行する)は、レビューのプローブで無効と分かった(Cartesian では面内の経路で HEI 26.56 kcal/mol になり TSOpt も例外、再試行は同じ失敗)ので取り下げる。S18 で FIND_PATH の退避経路がねじれ機構を捉えるようになり、HONO の所要時間は W7(GS 成功、7 分 22 秒)より短い 5 分 23 秒になった。最初の例外は、ジョブの `stderr.txt` に連鎖として残る。
 2. S4 の回収は、TS 最適化ではなく GS 自体が例外で終わった場合にも GS を 1 回再実行する(HONO で 4 秒)。害はないので残した。
 3. 17 原子・PBE0/def2-SVPD の解析 Hessian は 4 rank で 1 本約 15 分かかり、discover の所要時間の大半(TMA·(HF)₂ の dft stage 1,754 秒のうち 898 秒)を占める。
-4. FIND_PATH の HEI は bead の最大なので、鞍点をわずかに下回ることがある(HONO で HEI 13.5、鞍点 13.67 kcal/mol)。種としては問題ない。v3 の 1 チャンク目の端点のずれ(STO-3G で 0.074 Å)は初期経路の整列の仕方によるもので(§3 の M8)、M9 で初期経路を逐次整列にした(レビューのプローブでは 0.004 Å、端点の持ち上がり +0.04 kcal/mol)。ずれは引き続き note で監視するだけで、ゲートにはしない。M9 で string の JobStore キー(初期経路の sha256)が変わるので、M9 より前の run dir で再開すると string を 1 回計算し直す。
+4. FIND_PATH の HEI は bead の最大なので、鞍点をわずかに下回ることがある(HONO で HEI 13.5、鞍点 13.67 kcal/mol)。種としては問題ない。v3 の 1 チャンク目の端点のずれ(STO-3G で 0.074 Å)は初期経路の整列の仕方によるもので(§3 の M8)、M9 で初期経路を逐次整列にした(v4 の実 run で STO-3G 0.0008 Å・端点の持ち上がり +0.002 kcal/mol、HONO 0.0016 Å・+0.012 kcal/mol。§11)。ずれは引き続き note で監視するだけで、ゲートにはしない。M9 で string の JobStore キー(初期経路の sha256)が変わるので、M9 より前の run dir で再開すると string を 1 回計算し直す。
 5. S21 の trust はジョブキーに入らない(§3)。
 6. 検証の run で通していない経路: 手法パネル(M5・S8・C2。レビューのプローブでだけ確認、§3)、陰性結果ゲートの削除(M1)、15 bead 確認の撤廃(S3)、負モード 2 本以上の鞍点(S20 の Cartesian 分岐)、電荷のある系・開殻系。
 7. 設計(WP7.1)では run を `runs/validation_<system>_<date>` に置くことになっているが、過去の run を守るため、WSL の ext4 上に置いた。
+
+## 11. v4(第3ラウンド改良後の再検証、2026-09-26)
+
+- コード: `00680e0`(第3ラウンドの改良 R3。M9・C38・S26)。環境・手法・一時 system / pipeline は v3 と同じ(`/home/user/hfauto_v3/configs/` を `/home/user/hfauto_v4/configs/` に複製)。run は `/home/user/hfauto_v4/<run>`(すべて新しい run dir)、M9 のプローブは `/home/user/hfauto_v4_probe/m9`。
+- `hfauto doctor --site wsl_local`: 8 エンジンすべて ok。実エンジンの smoke: 12 passed(71 秒。v3 も 71 秒)。
+- 再実行したのは、M9・C38 が通る 5 run(#1〜#4、#8)である。TMA·(HF)₂(#5)、A/B(#7)、amine パイロット(#6)、(HF)₃(#9)は第3ラウンドの改良が通らないので再実行していない。
+- v4 の再検証でもコードの修正は要らなかった。
+
+### v3 → v4
+
+| 系 | 所要時間 v3 → v4 | ジョブ数(再利用) | v4 の結果(v3 との差) | ΔG‡ v3 → v4(kcal/mol) |
+|---|---|---|---|---|
+| HCN→HNC | 1:24 → 1:24 | 29(2)→ 29(2) | `elementary_step`、TS −1128.5i、鞍点 4 ステップ、QRC 12 / 15。すべて v3 と同じ | 42.1783 → 42.1783(0.000) |
+| HONO trans→cis | 5:23 → 5:32 | 16(0)→ 16(0) | GS は v3 と同じく失敗し、FIND_PATH の 1 チャンク(20 反復)で `single_max`(bead の最大 13.47 で同じ)。鞍点 3 ステップ。TS −681.0i → −681.5i(W7 は −681.5i)、ΔE‡ 13.67 は同じ。QRC 15 / 15 → 15 / 13 | 12.2256 → 12.2267(+0.001) |
+| NH3 反転 | 1:25 → 1:25 | 27(1)→ 27(1) | `degenerate_rearrangement`、TS −757.7i、鞍点 2 ステップ、QRC 25 / 25。すべて v3 と同じ | 3.8395 → 3.8395(0.000) |
+| 水(同一 basin) | 0:12 → 0:11 | 4 → 4 | `same_basin`、blocker は `outcome:same_basin` だけ | — |
+| FIND_PATH(STO-3G、HCN→HNC) | 1:17 → 1:19 | 15(0)→ 15(0) | string 3 チャンクで `single_max`(3 チャンク目の最大 66.73 → 66.81)。HEI から鞍点 −1223.9i・3 ステップ、`elementary_step`。QRC 14 / 15 → 14 / 14 | 62.1678 → 62.1677(−0.0001) |
+
+- ΔG の差は 0.001 kcal/mol 以下で、順位の付く 4 反応(STO-3G を含む)はすべて rank 1 のままだった。ΔE‡ と ΔE_rxn は v3 と 1e-5 kcal/mol 以内で一致した。
+- HONO の +9 秒は string の 1 チャンクの時間(162.9 → 175.4 秒、反復数は同じ 20)による。原因は特定していない。
+- QRC 3 反応(HCN・HONO・NH3)の合計は 107 → 105 ステップ。
+
+### M9(FIND_PATH の初期経路の逐次整列)の確認
+
+1 チャンク目の凍結端点のずれ(`job.string_final.xyz` と初期経路の端点の写像 RMSD)と、その端点の実エネルギーの持ち上がり(初期経路の端点 = DFT 極小と、ずれた端点を、string と同じデッキで DFT SP した差)を、v3 と v4 の run に同じスクリプト(`m9_ends.py`)を当てて測った。
+
+| run(ずれる端点) | 1 チャンク目の端点のずれ v3 → v4(Å) | 端点の持ち上がり v3 → v4(kcal/mol) | レビューのプローブの予測 |
+|---|---|---|---|
+| STO-3G HCN→HNC(HNC 側) | 0.0737 → 0.0008 | +13.57 → +0.002 | 0.004 Å、+0.04 |
+| HONO(cis 側) | 0.0220 → 0.0016 | +1.09 → +0.012 | 0.0014 Å、+0.009 |
+
+- v3 の run での値(+13.569、+1.092)はレビュー v3 のプローブ(`u5_assess`)と一致した。始点側(bead 1)のずれと持ち上がりは v3・v4 とも 0.0000 Å・0.000 kcal/mol。
+- 初期経路 `string0_initial.xyz` の隣り合う画像では、直接の RMS と写像付き RMSD の差の最大が v3 の 0.27 Å(STO-3G)・0.50 Å(HONO)から、v4 では 1e-13 Å 未満になった(剛体の跳びがなくなった。M9 のテストの判定と同じ量)。
+- note `string0:c<k>:end_drift` は、STO-3G で 0.074 / 0.001 / 0.002 → 0.001 / 0.000 / 0.000、HONO で 0.022 → 0.002(Å)。
+- チャンク数(STO-3G 3、HONO 1)、形(`single_max`)、HEI の位置(bead 4)、鞍点と接続の判定は v3 と同じだった。STO-3G の 1 チャンク目の bead の最大は 69.74 → 71.75 kcal/mol で、2・3 チャンク目の最大は v3 と 0.2 kcal/mol 以内だった。NWChem が報告する凍結端点のエネルギーは nstep 0 の値のままなので、端点のゆがみは bead のプロファイルには現れない(持ち上がりは SP でだけ分かる)。
+- string の JobStore キー(初期経路の sha256)は変わった。v4 はすべて新しい run dir なので、再計算の影響はない。
+
+### C38(code_version)の確認
+
+- v4 の 5 run の `resolved_config.yaml` の code_version は `00680e0fa52527fa1e18ec72a33db492cdb14a0c`(`-dirty` なし)。v3 は 7 run すべて `dc82145…-dirty` だった。`hfauto doctor` の表示も `-dirty` なし。
+- Windows 側で `git status` を実行した直後、WSL の `git status --porcelain --untracked-files=no` は 83 行、`-c core.autocrlf=input` 付きは 0 行だった。WSL で後者が index を更新すると、付けない status も 0 行になるが、Windows 側で git を使うたびに 83 行に戻る。C38 により、どちらの順序でも clean な tree は `-dirty` にならない。
+
+### v4 で残る事項
+
+- HONO の GS の発散(§10 の 1)は v4 でも同じだった(`screen:unavailable:screen_path:nonzero_exit`)。
+- 検証の run で通していない経路(§10 の 6)は v4 でも変わらない。
