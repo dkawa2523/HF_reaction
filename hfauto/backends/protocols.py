@@ -163,7 +163,7 @@ class SaddleRefiner(Engine, Protocol):
         method: MethodSpec,
         *,
         hessian: Evidence,  # freq Evidence whose final geometry is seed (any Level)
-        mode_index: int | None = None,
+        mode_index: int | None = None,  # into imaginary_modes (ascending); engine maps it
         deadline: Deadline | None = None,
     ) -> Evidence | Failure: ...
 

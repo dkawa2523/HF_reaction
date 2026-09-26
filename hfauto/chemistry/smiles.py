@@ -12,7 +12,7 @@ def smiles_to_molecule(smiles: str, charge: int, multiplicity: int, *,
     """One ETKDG embedding with explicit hydrogens.
 
     A multi-fragment SMILES ('.') is rejected: complexes are compositions (CH-23). The SMILES
-    formal charge must equal ``charge``. ImportError when RDKit is not installed.
+    formal charge must equal ``charge`` and isotopes are rejected. ImportError without RDKit.
     """
     if "." in smiles:
         raise ValueError(f"multi-fragment SMILES {smiles!r}: declare a composition instead")
@@ -25,6 +25,9 @@ def smiles_to_molecule(smiles: str, charge: int, multiplicity: int, *,
     formal = Chem.GetFormalCharge(mol)
     if formal != charge:
         raise ValueError(f"SMILES {smiles!r} has formal charge {formal}, declared {charge}")
+    if any(a.GetIsotope() for a in mol.GetAtoms()):
+        raise ValueError(f"SMILES {smiles!r} specifies isotopes; "
+                         "hfauto uses natural-abundance masses")
     mol = Chem.AddHs(mol)
     params = rdDistGeom.ETKDGv3()
     params.randomSeed = random_seed

@@ -301,18 +301,20 @@ def rankable(
     participant_notes: Sequence[str] = (),
     policy: Policy = _DEFAULT,
 ) -> Gate:
-    reasons = [] if reaction.outcome in _RANKABLE_OUTCOMES else [f"outcome:{reaction.outcome}"]
-    if thermo is None or thermo.dG_act_kcal is None:
-        reasons.append("thermo_unavailable")
+    """Unrankable outcomes give their reason and real blockers only (no dG_act or dzpe check)."""
     flags = set(participant_notes) | set(thermo.blockers if thermo is not None else ())
-    reasons += [b for b in _RANK_BLOCKERS if b in flags and b not in reasons]
+    real = [b for b in _RANK_BLOCKERS if b in flags]
+    if reaction.outcome not in _RANKABLE_OUTCOMES:
+        return _gate([f"outcome:{reaction.outcome}", *real])
+    if (thermo is None or thermo.dG_act_kcal is None) and "thermo_unavailable" not in real:
+        real.insert(0, "thermo_unavailable")
     tolerance = policy.rank_dzpe_base_kcal + policy.rank_dzpe_per_h_kcal * max(
         1, reaction.n_h_transferred
     )
     dzpe = thermo.dzpe_act_kcal if thermo is not None else None
-    if dzpe is None or abs(dzpe) > tolerance:
-        reasons.append("dzpe_out_of_tolerance")
-    return _gate(reasons)
+    if dzpe is not None and abs(dzpe) > tolerance:
+        real.append("dzpe_out_of_tolerance")
+    return _gate(real)
 
 
 Tier = Literal["screening", "minima", "saddle", "connected"]

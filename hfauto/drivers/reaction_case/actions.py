@@ -224,8 +224,7 @@ def _screen_seed(ctx: Ctx, prof: PathProfile, frames: list[np.ndarray], dft: lis
 
 def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
     """Steps 2-4: xTB endpoints, then GS with TSOpt, DFT single points on every node."""
-    rt = ctx.rt
-    qm, path, method = rt.screen_qm, rt.screen_path, rt.screen_method
+    qm, path, method = ctx.rt.screen_qm, ctx.rt.screen_path, ctx.rt.screen_method
     if qm is None or path is None or method is None:
         return _unavailable("no_screen_engines"), None
     ea, eb = (qm.optimize(ctx.mol(x), method, deadline=ctx.deadline) for x in ctx.ends)
@@ -443,7 +442,7 @@ def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> Cas
     return replace(state, intermediate="same_as_endpoint", seeds=seeds)
 
 
-def _initial_frames(ctx: Ctx, beads: int) -> list[np.ndarray] | None:
+def _initial_path(ctx: Ctx, beads: int, name: str) -> FileRef | None:
     """Screen GS path (or screen IDPP) resampled onto the DFT endpoints, else a new IDPP."""
     frames = ctx.work.initial
     if frames is None:
@@ -453,33 +452,34 @@ def _initial_frames(ctx: Ctx, beads: int) -> list[np.ndarray] | None:
             ctx.note(f"idpp:{exc}")
             return None
     images = trajectory.resample_xyz_trajectory([ctx.mol(f).xyz for f in frames], beads)
-    coords = [align_mapped(ctx.ends[0], np.asarray(i.coords, dtype=float)) for i in images]
-    coords[0], coords[-1] = ctx.ends
-    return coords
+    inner = [align_mapped(ctx.ends[0], np.asarray(i.coords, dtype=float)) for i in images[1:-1]]
+    return ctx.path_file(name, [ctx.ends[0], *inner, ctx.ends[1]])
 
 
 def find_path(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """DFT string in chunks until its bead energies settle (at most string_chunks); the shape
-    is recorded as found and only a single_max profile yields a seed."""
-    rt, p = ctx.rt, ctx.policy
-    beads, run_name = p.string_beads, f"string{len(state.path_runs)}"
-    frames = _initial_frames(ctx, beads)
-    initial = None if frames is None else ctx.path_file(f"{run_name}_initial", frames)
+    is recorded as found and only a single_max profile yields a seed. NWChem freezeN moves the
+    frozen ends: seams and the final path get the DFT minima back, drift in a chunk is a note."""
+    rt, p, run_name = ctx.rt, ctx.policy, f"string{len(state.path_runs)}"
+    initial = _initial_path(ctx, p.string_beads, f"{run_name}_initial")
     start, end = (ctx.mol(x) for x in ctx.ends)
     last = None
-    for _ in range(p.string_chunks):
-        run = rt.path.find_path(start, end, rt.method, images=beads, initial_path=initial,
-                                deadline=ctx.deadline)
+    for i in range(1, p.string_chunks + 1):
+        run = rt.path.find_path(start, end, rt.method, images=p.string_beads,
+                                initial_path=initial, deadline=ctx.deadline)
         if isinstance(run, Failure):
             ctx.note(f"{run_name}:{run.kind.value}")
             break
-        last, initial = run, run.images
+        beads = ctx.frames(run.images)
+        drift = max(mapped_rmsd(beads[0], ctx.ends[0]), mapped_rmsd(beads[-1], ctx.ends[1]))
+        ctx.note(f"{run_name}:c{i}:end_drift:{drift:.3f}")  # monitored, never a gate
+        last = align_sequential([ctx.ends[0], *beads[1:-1], ctx.ends[1]]), run.energies_hartree
+        initial = ctx.path_file(f"{run_name}_c{i}", last[0])  # true minima, no rigid jumps
         if profile.energies_settled(run.energy_history, _SETTLED * ctx.resolution):
             break
     if last is None:
         return case_state.record_path(state, "failed")
-    frames, energies = ctx.frames(last.images), last.energies_hartree
-    ctx.work.path = (frames, energies)
+    frames, energies = ctx.work.path = last
     shape = profile.shape(energies, ctx.resolution)  # a path maximum bounds the saddle
     if shape != "single_max":
         return case_state.record_path(state, shape)

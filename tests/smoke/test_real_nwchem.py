@@ -2,7 +2,8 @@
 
 The moddir case uses planar hydroxylamine (N, O and all three H in one plane): at
 PBE0-D3BJ/def2-SVP its Hessian has exactly two negative eigenvalues (NH2 inversion near
--1019 cm-1, OH torsion near -666 cm-1), and ``mode_index=1`` follows the torsion (moddir 2).
+-1019 cm-1, OH torsion near -666 cm-1), and ``mode_index=1`` follows the torsion in Cartesian
+coordinates, with moddir set by its place among the negative P·H·P eigenvectors.
 """
 
 import shutil

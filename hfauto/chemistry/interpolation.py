@@ -14,7 +14,7 @@ import numpy as np
 from hfauto.chemistry.geometry import align_coordinates
 
 MIN_DISTANCE_A = 0.7
-_MAX_ITERATIONS = 500
+_MAX_ITERATIONS = 5000
 _FORCE_TOL = 1.0e-3
 _SPRING = 1.0
 _STEP = 0.1

@@ -1,13 +1,17 @@
 """Reaction-case actions on fake surfaces (§7.3); K cases of the old path/decision tests."""
 
 from dataclasses import replace
+from itertools import pairwise
 from pathlib import Path
 
 import fakes
 import numpy as np
 import pytest
 
-from hfauto.chemistry.xyz import composition_key
+from hfauto.chemistry.identity import mapped_rmsd
+from hfauto.chemistry.interpolation import align_mapped
+from hfauto.chemistry.xyz import XYZ, composition_key
+from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.method import Deadline, MethodSpec
 from hfauto.core.records import ReactionRecord, SpeciesRecord
@@ -31,6 +35,23 @@ class HigherOrderQM(fakes.FakeQM):  # every freq job also reports a second imagi
 class FailingSaddle(fakes.FakeSaddle):
     def refine(self, seed, method, **kw):
         return Failure(kind=FailureKind.GEOMETRY_MAXITER, reason="maxiter")
+
+
+class DriftingPath(fakes.FakePath):  # like NWChem freezeN: the last bead moves, image 3 rotates
+    def __init__(self, root, pes, script):
+        super().__init__(root, pes, script)
+        self.initial = []
+
+    def find_path(self, start, end, method, *, initial_path=None, **kw):
+        self.initial.append(initial_path)
+        run = super().find_path(start, end, method, initial_path=initial_path, **kw)
+        x = [i.coords for i in read_xyz_trajectory(self.root / run.images.path)]
+        x[-1][1] += [0.1, 0.0, 0.0]
+        c, s = np.cos(np.pi / 6), np.sin(np.pi / 6)
+        x[3] = x[3] @ np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]).T
+        path = self.root / f"drift{len(self.initial)}.xyz"
+        write_xyz_trajectory([XYZ(list(start.xyz.symbols), f) for f in x], path)
+        return run.model_copy(update={"images": fakes._ref(self.root, path)})
 
 
 def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None):
@@ -75,6 +96,22 @@ def test_unsettled_string_runs_in_chunks_and_its_maximum_is_only_a_seed(tmp_path
     state = act(ctx, state, Action.FIND_PATH)
     assert state.path_runs == runs and ctx.rt.path.calls == ["find_path:unconverged"] * 3
     assert [s.source for s in state.seeds] == (["path_hei"] if runs == ("single_max",) else [])
+
+
+def test_string_chunks_restore_the_frozen_ends_and_align_the_images(tmp_path) -> None:
+    ctx, state = case_ctx(tmp_path, fakes.double_well())
+    ctx.rt = replace(ctx.rt, path=DriftingPath(tmp_path, ctx.rt.qm.pes, ["unconverged"]))
+    logged = []
+    ctx.log = logged.append
+    state = act(ctx, state, Action.FIND_PATH)
+    _, second = ctx.rt.path.initial  # the 2nd chunk starts from the true minima
+    seam = ctx.frames(second)
+    assert np.allclose(seam[0], ctx.ends[0], atol=1e-6) and mapped_rmsd(seam[-1], ctx.ends[1]) < 1e-6
+    notes = [r["note"] for r in logged if r["note"].startswith("string0:c")]
+    assert notes[0].startswith("string0:c1:end_drift:0.0") and float(notes[0][-5:]) > 0
+    frames = ctx.work.path[0]  # the final path too, without the rigid rotation of image 3
+    assert mapped_rmsd(frames[-1], ctx.ends[1]) < 1e-6 and state.path_runs == ("single_max",)
+    assert all(np.allclose(align_mapped(a, b), b, atol=1e-6) for a, b in pairwise(frames))
 
 
 def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path) -> None:

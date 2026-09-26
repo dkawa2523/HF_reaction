@@ -48,6 +48,21 @@ def test_rotational_constants_of_linear_hcn():
     assert a == 0.0 and b == pytest.approx(c) and b == pytest.approx(44.5, abs=0.2)
 
 
+def test_cartesian_mode_number_follows_the_projected_order():
+    x = np.array([[0.0, 0.0, 0.0], [1.45, 0.0, 0.0], [-0.3, 0.9, 0.1], [1.8, 0.2, 0.9]])
+    c = x - x.mean(axis=0)
+    rigid = [np.tile(a, 4) for a in np.eye(3)] + [np.cross(a, c).ravel() for a in np.eye(3)]
+    noise = np.random.default_rng(3).standard_normal((12, 6))
+    q, _ = np.linalg.qr(np.hstack([np.array(rigid).T, noise]))  # q[:, :6] spans rigid motion
+    u1, u2, rest = q[:, 6], q[:, 7], q[:, 8:]
+    positive = rest @ np.diag([0.3, 0.4, 0.5, 0.6]) @ rest.T
+    rotation = -0.3 * np.outer(q[:, 5], q[:, 5])  # projected out, though lowest unprojected
+    h = -0.2 * np.outer(u1, u1) - 0.1 * np.outer(u2, u2) + positive + rotation
+    modes = (u1, u2, u2 + 0.1 * q[:, 5])  # the last one mixed with a rigid motion
+    assert [vib.cartesian_mode_number(h, x, m) for m in modes] == [1, 2, 2]
+    assert vib.cartesian_mode_number(positive, x, u1) == 1  # no negative eigenvector
+
+
 def test_canonical_npy(tmp_path):
     h = np.diag([0.5] + [0.0] * 5)  # Eh/bohr², atom 0 along x
     out = vib.to_canonical_npy(h, tmp_path / "freq" / "hessian.npy")

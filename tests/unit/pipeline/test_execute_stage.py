@@ -8,7 +8,7 @@ import yaml
 import hfauto.execution.jobs as jobs_module
 from hfauto.backends import engines
 from hfauto.backends.protocols import Capability
-from hfauto.core.evidence import Geometry
+from hfauto.core.evidence import Failure, FailureKind, Geometry
 from hfauto.core.manifest import Artifact
 from hfauto.core.method import EngineSite
 from hfauto.core.records import ArtifactType, ReportRecord
@@ -46,11 +46,20 @@ class Bad(Emit):
     spec = StageSpec("bad", Ids, consumes=(), produces=(ArtifactType.SPECIES,))
 
 
+class Fail(Emit):  # leaves only failed artifacts
+    spec = StageSpec("fail", Ids, consumes=(), produces=(REPORT,))
+
+    def run(self, inputs, config, rt):
+        why = Failure(kind=FailureKind.INPUT_INVALID, reason="reaction iso: atom index out of range")
+        return [Artifact(artifact_id=f"{rt.stage_id}.{i}", type=REPORT, status="failed",
+                         failure=why) for i in config.ids]
+
+
 @pytest.fixture(autouse=True)
 def dummy_stages():
     CALLS.clear()
     with catalog.override("emit", Emit), catalog.override("collect", Collect):  # noqa: SIM117
-        with catalog.override("bad", Bad):
+        with catalog.override("bad", Bad), catalog.override("fail", Fail):
             yield
 
 
@@ -88,6 +97,14 @@ def test_consumes_and_produces_are_checked(tmp_path):
     assert RunLayout(tmp_path / "r1").state("c").status == "failed" and CALLS == []
     with pytest.raises(ValueError, match="produced"):
         run_pipeline(resolved(tmp_path, "p", {"id": "b", "stage": "bad"}), tmp_path / "r2")
+
+
+def test_missing_input_names_up_to_three_upstream_failures(tmp_path):
+    fail = {"id": "f", "stage": "fail", "ids": ["a", "b", "c", "d"]}
+    with pytest.raises(ValueError, match="upstream failures: f.a: reaction iso: atom") as exc:
+        run_pipeline(resolved(tmp_path, "p", fail, C), tmp_path / "r")
+    assert "f.c: reaction iso: atom index out of range" in str(exc.value)
+    assert "f.d" not in str(exc.value)
 
 
 class StubQM:  # structurally a QMEngine

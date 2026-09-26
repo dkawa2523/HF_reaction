@@ -21,18 +21,21 @@ def test_opt_and_saddle_never_compute_hessians():
         assert "frequencies" not in deck and "hessian" not in deck
         assert "inhess 2" in deck and "xyz final" in deck and deck.count("task ") == 1
     assert "maxiter 100" in opt and "task dft optimize" in opt
-    assert "trust 0.1" in opt  # QRC / mode-follow starts must not overshoot above the TS
-    assert "inhess" not in nw.render_optimize(WATER, PBE0)
+    assert "trust 0.3" in opt  # a QRC side from its TS Hessian (S21)
+    plain = nw.render_optimize(WATER, PBE0)  # mode-follow starts must not overshoot the TS
+    assert "inhess" not in plain and "trust 0.1" in plain
     freq = nw.render_frequencies(WATER, PBE0)
     assert "task dft frequencies" in freq and freq.count("task ") == 1 and "driver" not in freq
 
 
 def test_saddle_keywords_and_mode_following():
-    lowest = nw.render_saddle(WATER, PBE0, mode_index=0)
+    free = nw.render_saddle(WATER, PBE0, moddir=0)
     for key in ("trust 0.1", "sadstp 0.1", "maxiter 50", "inhess 2", "task dft saddle"):
-        assert key in lowest
-    assert "moddir" not in lowest and "noautoz" not in lowest
-    second = nw.render_saddle(WATER, PBE0, mode_index=1)
+        assert key in free
+    assert "moddir" not in free and "noautoz" not in free
+    lowest = nw.render_saddle(WATER, PBE0, moddir=1)
+    assert "  moddir 1" in lowest and "noautoz" not in lowest
+    second = nw.render_saddle(WATER, PBE0, moddir=2, cartesian=True)
     assert "  moddir 2" in second and "noautosym noautoz" in second
 
 
@@ -68,10 +71,10 @@ def test_charge_multiplicity_dispersion_solvation_and_frame():
 def test_wft_single_points_and_hess_round_trip(tmp_path):
     mp2 = nw.render_wft(WATER, MP2)
     assert "task mp2 energy" in mp2 and "freeze atomic" in mp2 and "dft" not in mp2
-    assert "scf" not in mp2
+    assert "scf" not in mp2 and "maxiter" not in mp2
     ccsd_t = MP2.model_copy(update={"wft_method": "ccsd(t)"})
     ccsd = nw.render_wft(WATER, ccsd_t, nw.Setup(restart_vectors=True))
-    assert "task ccsd(t) energy" in ccsd and "freeze atomic" in ccsd
+    assert "task ccsd(t) energy" in ccsd and "freeze atomic\n  maxiter 50\nend" in ccsd
     assert "scf\n  vectors input job.movecs\nend" in ccsd
     assert "nopen" not in ccsd and "uhf" not in ccsd
     h = np.arange(81.0).reshape(9, 9) * 1e-3

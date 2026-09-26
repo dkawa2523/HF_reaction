@@ -101,6 +101,18 @@ def projected_frequencies(
     return freqs, modes, k
 
 
+def cartesian_mode_number(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray,
+                          mode: np.ndarray) -> int:
+    """1-based place of ``mode`` among the negative eigenvectors of P·H·P (ascending), P the
+    unweighted rigid-motion projector: the order of a Cartesian driver. 1 if none is negative."""
+    n = np.size(coords_A) // 3
+    rigid = external_basis(["H"] * n, coords_A)  # equal masses: unweighted, about the centroid
+    p = np.eye(3 * n) - rigid @ rigid.T
+    values, vectors = np.linalg.eigh(p @ _square_hessian(hessian_eh_bohr2, n) @ p)
+    cosines = np.abs(vectors[:, values < -1.0e-6].T @ np.ravel(mode))
+    return int(np.argmax(cosines)) + 1 if len(cosines) else 1
+
+
 def rotational_constants_ghz(symbols: Sequence[str], coords: np.ndarray) -> tuple[float, ...]:
     """(A, B, C) in GHz from ascending principal moments; 0.0 marks a vanishing moment.
 

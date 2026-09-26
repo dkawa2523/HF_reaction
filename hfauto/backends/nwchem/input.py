@@ -117,11 +117,11 @@ def render_optimize(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, 
                     init_hessian: bool = False) -> str:
     """Default driver thresholds; ``init_hessian`` reads <name>.hess.
 
-    ``trust 0.1`` (default 0.3): from a QRC or mode-follow displacement the default steps
-    overshoot back above the TS energy (HCN->HNC in NWChem 7.2.3), which the connection
-    gate rejects.
+    ``trust 0.3`` (the NWChem default) with an initial Hessian (a QRC side from its TS, a
+    complex from xTB), ``trust 0.1`` without: from a mode-follow displacement the diagonal
+    guess overshoots back above the TS energy (HCN->HNC in NWChem 7.2.3).
     """
-    options = ["  trust 0.1", *(["  inhess 2"] if init_hessian else [])]
+    options = ["  trust 0.3", "  inhess 2"] if init_hessian else ["  trust 0.1"]
     return _deck(setup, _system(mol, method, setup), _dft(mol, method, setup),
                  _driver(setup, OPT_MAXITER, options), ["task dft optimize"])
 
@@ -133,13 +133,12 @@ def render_frequencies(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAUL
 
 
 def render_saddle(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, *,
-                  mode_index: int | None = None, init_hessian: bool = True) -> str:
-    """Eigenvector following from <name>.hess; a mode other than the lowest (0-based
-    ``mode_index``) is followed with ``moddir`` in Cartesian coordinates."""
+                  moddir: int = 0, cartesian: bool = False, init_hessian: bool = True) -> str:
+    """Eigenvector following from <name>.hess along the driver's mode ``moddir`` (1-based;
+    0 leaves the choice to NWChem); ``cartesian`` when that number counts Cartesian modes."""
     options = ["  trust 0.1", "  sadstp 0.1"] + (["  inhess 2"] if init_hessian else [])
-    options += [f"  moddir {mode_index + 1}"] if mode_index else []
-    system = _system(mol, method, setup, cartesian=bool(mode_index))
-    return _deck(setup, system, _dft(mol, method, setup),
+    options += [f"  moddir {moddir}"] if moddir > 0 else []
+    return _deck(setup, _system(mol, method, setup, cartesian=cartesian), _dft(mol, method, setup),
                  _driver(setup, SADDLE_MAXITER, options), ["task dft saddle"])
 
 
@@ -157,14 +156,15 @@ def render_string(start: Molecule, end: Molecule, method: MethodSpec, setup: Set
 def render_wft(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:
     """MP2 or CCSD(T) single point with frozen atomic cores; closed shell only (RHF reference).
 
-    The scf block is written only to restart from <name>.movecs.
+    CCSD may take 50 iterations (default 20); the scf block only restarts from <name>.movecs.
     """
     if method.kind != "wft" or method.wft_method is None:
         raise ValueError(f"method {method.id!r} is not a wave-function method")
     scf = ["scf", f"  vectors input {setup.name}.movecs", "end"] if setup.restart_vectors else []
     module = "mp2" if method.wft_method == "mp2" else "ccsd"
     return _deck(setup, _system(mol, method, setup), scf,
-                 [module, "  freeze atomic", "end"], [f"task {method.wft_method} energy"])
+                 [module, "  freeze atomic", *(["  maxiter 50"] if module == "ccsd" else []),
+                  "end"], [f"task {method.wft_method} energy"])
 
 
 def hess_text(hessian: np.ndarray) -> str:

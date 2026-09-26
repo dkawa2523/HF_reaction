@@ -7,12 +7,12 @@ import sys
 import numpy as np
 import pytest
 
-from hfauto.backends.nwchem.engine import NWChemEngine, NWChemString
+from hfauto.backends.nwchem.engine import NWChemEngine, NWChemSaddle, NWChemString
 from hfauto.backends.nwchem.output import geometry_block
-from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
-from hfauto.core.evidence import Evidence, FailureKind, PathProfile
+from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz, write_xyz
+from hfauto.core.evidence import Evidence, Failure, FailureKind, PathProfile
 from hfauto.core.method import EngineSite, MethodSpec
-from hfauto.execution.jobs import JobRunner
+from hfauto.execution.jobs import JobRunner, Task
 from hfauto.execution.jobstore import JobStore
 
 pytestmark = pytest.mark.golden
@@ -93,7 +93,7 @@ def test_frequencies_cache_and_input_checks(nwchem, golden):
     side = engine.optimize(near, FINE, init_hessian=ev)  # a QRC side from its TS Hessian
     assert isinstance(side, Evidence) and side.task == "opt"
     deck = (jobs.store.attempt_dir(side.job_key, 0) / "job.nw").read_text()
-    assert "inhess 2" in deck and "trust 0.1" in deck
+    assert "inhess 2" in deck and "trust 0.3" in deck
     failure = engine.optimize(far, FINE, init_hessian=ev)  # beyond 0.5 Å per atom
     assert failure.kind is FailureKind.INPUT_INVALID
     assert failure.reason == "hessian_geometry_mismatch"
@@ -131,6 +131,18 @@ def test_timeout_continues_from_the_latest_frame(nwchem, golden):
     final = read_xyz(jobs.store.run_dir / ev.final.file.path)
     assert np.allclose(final.coords, mol.xyz.coords + 0.01, atol=1e-7)
     assert read_xyz(jobs.store.run_dir / ev.start.file.path).coords == pytest.approx(mol.xyz.coords)
+
+
+def test_saddle_continuation_follows_at_most_mode_1(nwchem, golden, tmp_path):
+    jobs, site = nwchem
+    mol = _hcn_ts(golden)
+    write_xyz(mol.xyz, tmp_path / "final-000.xyz")
+    task = Task(engine="nwchem_saddle", version_pin="7.2.3", kind="saddle", key_payload={},
+                execution=site.execution, inputs={"mol": mol, "moddir": 3, "cartesian": True})
+    timeout = Failure(kind=FailureKind.TIMEOUT, reason="timeout")
+    resumed = NWChemSaddle(jobs=jobs, site=site).continuation(task, tmp_path, timeout)
+    assert resumed is not None and resumed.inputs["hessian"] is None
+    assert (resumed.inputs["moddir"], resumed.inputs["cartesian"]) == (1, True)
 
 
 def test_g13_string_profile(nwchem, golden):

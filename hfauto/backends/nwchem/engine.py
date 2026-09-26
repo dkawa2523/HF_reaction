@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from hfauto.backends.nwchem import input as nw_in
 from hfauto.backends.nwchem import output as nw_out
 from hfauto.backends.protocols import Requirements
-from hfauto.chemistry.vibrations import projected_frequencies
+from hfauto.chemistry.vibrations import cartesian_mode_number, projected_frequencies
 from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz, write_xyz
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
 from hfauto.core.evidence import (
@@ -84,6 +84,17 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
 
 
+def _moddir(hessian: Path, coords: np.ndarray, modes: tuple[tuple[float, ...], ...],
+            mode_index: int | None) -> tuple[int, bool]:
+    """(moddir, Cartesian) of a saddle: NWChem's choice with no mode below noise, 1 in autoz
+    with one imaginary mode, else the P·H·P place of ``modes[mode_index]`` in Cartesian."""
+    if mode_index is None or not modes:
+        return 0, False
+    if len(modes) == 1:
+        return 1, False
+    return cartesian_mode_number(np.load(hessian), coords, np.ravel(modes[mode_index])), True
+
+
 def _render(task: Task, setup: nw_in.Setup) -> str:
     i = task.inputs
     mol, method, hessian = i["mol"], i["method"], i.get("hessian") is not None
@@ -95,8 +106,8 @@ def _render(task: Task, setup: nw_in.Setup) -> str:
     if task.kind == "frequencies":
         return nw_in.render_frequencies(mol, method, setup)
     if task.kind == "saddle":
-        return nw_in.render_saddle(mol, method, setup, mode_index=i["mode_index"],
-                                   init_hessian=hessian)
+        return nw_in.render_saddle(mol, method, setup, moddir=i["moddir"],
+                                   cartesian=i["cartesian"], init_hessian=hessian)
     return nw_in.render_string(mol, i["end"], method, setup, nbeads=i["images"],
                                initial_path=i.get("initial_path") is not None)
 
@@ -171,9 +182,9 @@ class _NWChem:
         return None  # a string runs its chunk to the end: find_path judges the bead energies
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
-        """autoz -> Cartesian coordinates; SCF -> the old vectors with damping and level shift;
-        timeout / maxiter of a driver job -> its latest frame with the old vectors and driver
-        Hessian (design §7.1). A driver job always resumes from its latest frame."""
+        """autoz -> Cartesian coordinates from the same start; SCF -> the old vectors with damping
+        and level shift; timeout / maxiter of a driver job -> its latest frame with the old
+        vectors and driver Hessian (design §7.1), a saddle then with moddir 1 at most."""
         if failure.kind is FailureKind.INPUT_INVALID and failure.reason == "autoz":
             execution = task.execution.model_copy(update={"coordinates": "cartesian"})
             return replace(task, execution=execution)
@@ -192,6 +203,8 @@ class _NWChem:
                        "hessian": None,
                        "trajectory": (*task.inputs.get("trajectory", ()),
                                       *nw_out.trajectory_energies(_read(workdir / STDOUT_NAME)))}
+            if task.kind == "saddle":
+                inputs["moddir"] = min(task.inputs["moddir"], 1)  # k > 1 counted the seed's
         return replace(task, inputs=inputs)
 
     def _scratch(self, workdir: Path) -> Path:
@@ -326,8 +339,7 @@ class NWChemEngine(_NWChem):
             init_hessian, mol, near_A=HESSIAN_NEAR_A)
         if isinstance(hessian, Failure):
             return hessian
-        sha = None if init_hessian is None or init_hessian.hessian is None else (
-            init_hessian.hessian.sha256)
+        sha = init_hessian and init_hessian.hessian and init_hessian.hessian.sha256
         return self._qm("optimize", mol, method, deadline, payload={"hessian": sha},
                         hessian=hessian)
 
@@ -349,11 +361,11 @@ class NWChemSaddle(_NWChem):
         path = self._hessian_file(hessian, seed)
         if isinstance(path, Failure):
             return path
-        mode = mode_index or 0
+        moddir, cartesian = _moddir(path, seed.xyz.coords, hessian.imaginary_modes, mode_index)
         payload = {"molecule": seed.fingerprint(), "hessian": hessian.hessian and
-                   hessian.hessian.sha256, "mode_index": mode}
+                   hessian.hessian.sha256, "moddir": moddir, "cartesian": cartesian}
         inputs = {"mol": seed, "start": seed, "method": method, "hessian": path,
-                  "mode_index": mode}
+                  "moddir": moddir, "cartesian": cartesian}
         return self._run("saddle", payload, inputs, deadline)
 
 

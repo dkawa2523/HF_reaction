@@ -5,9 +5,16 @@ import pytest
 
 from hfauto.chemistry import interpolation as itp
 from hfauto.chemistry.profile import max_node_spacing
+from hfauto.chemistry.topology import declared_coordinate
+from hfauto.core.records import CoordinateTerm
 
 SYMBOLS = ["N", "H", "H", "H"]
 NH3 = np.array([[0.0, 0.0, 0.38], [0.94, 0.0, 0.0], [-0.47, 0.814, 0.0], [-0.47, -0.814, 0.0]])
+# PBE0-D3BJ/def2-SVPD minima of HONO (H O N O), flattened to z = 0
+CIS_HONO = np.array([[-0.32417822, -0.09440887, 0.0], [0.39510676, -0.75997798, 0.0],
+                     [1.56130940, -0.07839078, 0.0], [1.42966204, 1.09297763, 0.0]])
+TRANS_HONO = np.array([[-0.19774781, -0.94387557, 0.0], [0.02491128, -0.00145366, 0.0],
+                       [1.40706589, 0.00832925, 0.0], [1.82767063, 1.09719998, 0.0]])
 
 
 def test_align_mapped_undoes_rigid_motion():
@@ -42,3 +49,14 @@ def test_align_sequential_removes_a_rigid_jump_inside_a_path():
     aligned = itp.align_sequential(rotated)
     assert np.array_equal(aligned[0], rotated[0])
     assert max_node_spacing(aligned) == pytest.approx(max_node_spacing(path), abs=1e-10)
+
+
+def test_idpp_leaves_the_plane_between_planar_cis_trans_hono():
+    # S18: a converged IDPP twists out of the plane (an unconverged one inverts H-O-N in-plane)
+    path = itp.idpp(["H", "O", "N", "O"], CIS_HONO, TRANS_HONO, 11)
+    hon = CoordinateTerm(kind="angle", atoms=(0, 1, 2))
+    hono = CoordinateTerm(kind="dihedral", atoms=(0, 1, 2, 3))
+    angle, dihedral = ([abs(declared_coordinate([t], x)) for x in path] for t in (hon, hono))
+    assert max(angle[1:-1]) < 120.0
+    assert dihedral[0] < 1.0 and dihedral[-1] > 179.0 and np.all(np.diff(dihedral) > 0.0)
+    assert any(30.0 < d < 150.0 for d in dihedral[1:-1])

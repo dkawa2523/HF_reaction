@@ -14,3 +14,5 @@ def test_smiles_embeds_one_structure_and_rejects_fragments():
     assert (mol.charge, mol.multiplicity, mol.xyz.coords.shape) == (1, 1, (8, 3))
     with pytest.raises(ValueError, match="formal charge"):
         smiles_to_molecule("C[NH3+]", 0, 1)
+    with pytest.raises(ValueError, match="isotopes"):
+        smiles_to_molecule("[2H]O[2H]", 0, 1)  # D2O would silently get 1H masses

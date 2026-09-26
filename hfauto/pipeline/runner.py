@@ -139,7 +139,8 @@ def _job_counts(before: JobStats, after: JobStats) -> JobCounts:
 def execute_stage(
     entry: StageEntry, resolved: ResolvedConfig, layout: RunLayout, runtime: Runtime
 ) -> Manifest:
-    """The only way a stage runs: validate, check consumes, run, check produces, save, record."""
+    """The only way a stage runs: validate, check consumes (a missing type names up to 3 failed
+    upstream artifacts and why), run, check produces, save, record."""
     pipeline_id = resolved.pipeline.pipeline_id
     layout.begin(entry.id, pipeline_id)
     before = runtime.jobs.stats()
@@ -150,7 +151,10 @@ def execute_stage(
         inputs = layout.view(entry.id)
         missing = [t.value for t in spec.consumes if not inputs.of(t)]
         if missing:
-            raise ValueError(f"stage {entry.id!r} ({spec.name}) has no input of type {missing}")
+            failed = sorted({f"{a.artifact_id}: {a.failure.reason}" for t in spec.consumes
+                             for a in inputs.of(t, ok_only=False) if a.failure is not None})[:3]
+            why = f"; upstream failures: {', '.join(failed)}" if failed else ""
+            raise ValueError(f"stage {entry.id!r} ({spec.name}) has no input of type {missing}{why}")
         stage_dir = layout.stage_dir(entry.id)
         stage_dir.mkdir(parents=True, exist_ok=True)
         artifacts = stage_cls().run(inputs, config, runtime.bind(entry.id, stage_dir))

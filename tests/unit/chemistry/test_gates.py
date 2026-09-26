@@ -175,8 +175,14 @@ def test_rankable():
     assert not g.rankable(reaction(n_h_transferred=0), thermo(5.5))
     assert not g.rankable(reaction(), thermo(1.0, ("spin_contaminated",)))
     assert not g.rankable(reaction(), thermo(1.0), participant_notes=("mixed_level_of_theory",))
-    assert "thermo_unavailable" in g.rankable(reaction(), None).reasons
+    assert g.rankable(reaction(), None).reasons == ("thermo_unavailable",)  # no dzpe blocker
+    lost = thermo(1.0, ("thermo_unavailable",)).model_copy(update={"dG_act_kcal": None})
+    assert g.rankable(reaction(), lost).reasons == ("thermo_unavailable",)  # not repeated
     assert not g.rankable(reaction(outcome=CaseOutcome.BARRIERLESS), thermo(1.0))
+    same = reaction(outcome=CaseOutcome.SAME_BASIN)  # no TS: only the outcome and real blockers
+    assert g.rankable(same, None).reasons == ("outcome:same_basin",)
+    assert g.rankable(same, None, participant_notes=("spin_contaminated",)).reasons == (
+        "outcome:same_basin", "spin_contaminated")
 
 
 def test_reaction_tier():
