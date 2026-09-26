@@ -22,6 +22,13 @@ from hfauto.drivers.reaction_case.state import Action, CasePolicy, CaseState, De
 
 DFT = MethodSpec(id="pbe0", kind="dft", functional="pbe0", basis="def2-svp")
 XTB = MethodSpec(id="gfn2", kind="xtb", gfn=2)
+# Ill-conditioned ends for Kabsch: linear HCN -> HNC (C N H), planar cis -> trans HONO (H O N O)
+LINEAR = ("CNH", [[0, 0, 0], [0, 0, 1.156], [0, 0, -1.066]],
+          [[0, 0, 0], [0, 0, 1.17], [0, 0, 2.17]])
+PLANAR = ("HONO", [[-0.324178, -0.094409, 0], [0.395107, -0.759978, 0], [1.561309, -0.078391, 0],
+                   [1.429662, 1.092978, 0]],
+          [[-0.197748, -0.943876, 0], [0.024911, -0.001454, 0], [1.407066, 0.008329, 0],
+           [1.827671, 1.097200, 0]])
 
 
 class HigherOrderQM(fakes.FakeQM):  # every freq job also reports a second imaginary mode
@@ -45,6 +52,8 @@ class DriftingPath(fakes.FakePath):  # like NWChem freezeN: the last bead moves,
     def find_path(self, start, end, method, *, initial_path=None, **kw):
         self.initial.append(initial_path)
         run = super().find_path(start, end, method, initial_path=initial_path, **kw)
+        if isinstance(run, Failure):
+            return run
         x = [i.coords for i in read_xyz_trajectory(self.root / run.images.path)]
         x[-1][1] += [0.1, 0.0, 0.0]
         c, s = np.cos(np.pi / 6), np.sin(np.pi / 6)
@@ -112,6 +121,19 @@ def test_string_chunks_restore_the_frozen_ends_and_align_the_images(tmp_path) ->
     frames = ctx.work.path[0]  # the final path too, without the rigid rotation of image 3
     assert mapped_rmsd(frames[-1], ctx.ends[1]) < 1e-6 and state.path_runs == ("single_max",)
     assert all(np.allclose(align_mapped(a, b), b, atol=1e-6) for a, b in pairwise(frames))
+
+
+@pytest.mark.parametrize("symbols,a,b", [LINEAR, PLANAR])
+def test_first_string_chunk_starts_from_an_idpp_without_rigid_jumps(tmp_path, symbols, a, b):
+    ctx, state = case_ctx(tmp_path, fakes.double_well())  # M9: NWChem rotates frozen bead N
+    ctx.rt = replace(ctx.rt, path=DriftingPath(tmp_path, ctx.rt.qm.pes, ["failed"]))
+    ctx.symbols, a = list(symbols), np.array(a, dtype=float)
+    ctx.ends = (a, align_mapped(a, np.array(b, dtype=float)))
+    act(ctx, state, Action.FIND_PATH)
+    frames = ctx.frames(ctx.rt.path.initial[0])
+    assert np.allclose(frames[0], a, atol=1e-6) and mapped_rmsd(frames[-1], ctx.ends[1]) < 1e-6
+    rms = [np.sqrt(np.mean(np.sum((y - x) ** 2, axis=1))) for x, y in pairwise(frames)]
+    assert rms == pytest.approx([mapped_rmsd(x, y) for x, y in pairwise(frames)], abs=1e-6)
 
 
 def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path) -> None:

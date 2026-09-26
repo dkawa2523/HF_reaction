@@ -159,7 +159,8 @@ def code_version() -> str:
         return "unknown"
     with tempfile.TemporaryDirectory(prefix="hfauto_git_") as tmp:
         sha = _git(Path(tmp), git, "rev-parse", "HEAD")
-        status = _git(Path(tmp), git, "status", "--porcelain", "--untracked-files=no")
+        status = _git(Path(tmp), git, "-c", "core.autocrlf=input",
+                      "status", "--porcelain", "--untracked-files=no")
     if not sha or status is None:
         return "unknown"
     return f"{sha}-dirty" if status else sha

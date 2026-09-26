@@ -15,7 +15,7 @@
 | 2 | HONO trans→cis | known_endpoints | TS −681.0i、ΔE‡ 13.67、ΔG‡ 12.23、ΔG_rxn 0.08 kcal/mol、`elementary_step`。SCREEN の GS は v2 と同じく失敗し、FIND_PATH(DFT string)の経路で到達した(§3) | 合格 | 5 分 23 秒(9 分 32 秒) | `hono_known_endpoints` |
 | 3 | NH3 反転 | known_endpoints | TS −757.7i、ΔE‡ 4.26、ΔG‡ 3.84 kcal/mol、`degenerate_rearrangement` | 合格(※1) | 1 分 25 秒(1 分 55 秒) | `nh3_inversion_known_endpoints` |
 | 4 | 水(同一 basin) | known_endpoints | `same_basin`。reaction-paths のジョブ 0 件。ranking.csv の blocker は `outcome:same_basin` だけ(S22) | 合格 | 12 秒(11 秒) | `water_same_basin_known_endpoints` |
-| 5 | TMA·(HF)₂ | discover | `same_basin`(paths 0 秒・0 件)。explore の生成物 0 件。DFT の極小 3 つ(−374.7574786 Eh ほか)は v2 と同じ。ΔG_assoc −11.53 kcal/mol | 合格 | 30 分 58 秒(31 分 15 秒)。dft stage 1,754 秒(1,771 秒) | `tma_hf2_discover` |
+| 5 | TMA·(HF)₂ | discover | `same_basin`(paths 0 秒・0 件)。explore の生成物 0 件。DFT の極小 3 つ(−374.7574786 Eh ほか)は v2 と同じ。ΔG_assoc −11.53 kcal/mol(SVPD、BSSE 未補正。TZVPD//SVPD では −9.04、§3 のプローブ) | 合格 | 30 分 58 秒(31 分 15 秒)。dft stage 1,754 秒(1,771 秒) | `tma_hf2_discover` |
 | 6 | amine パイロット(NH3·HF、TMA·HF) | discover `--to explore` | v3 では再実行していない(第2ラウンドの改良が通らない範囲)。v2: 40 attempt、TS 22 件はすべて虚振動 1 本、生成物 0 件 | — | v2: 1 分 54 秒 | `/home/user/hfauto_v2/amine_pilot2_discover` |
 | 7 | xTB 初期 Hessian の A/B | minima(dft)、初期 Hessian は GFN2 | A の opt 27 点・854 s(v2 は 27 点・899 s)。最終エネルギーは v2 と 3e-8 Eh 以内で一致(§8) | 記録済み | A: 39 分 51 秒(40 分 34 秒) | `ab_init_hessian` |
 | 8 | FIND_PATH | known_endpoints から screen を外した一時 pipeline、PBE0/STO-3G | HCN→HNC。IDPP から string 3 チャンクで bead エネルギーが落ち着き `single_max`。各チャンクの端点は DFT 極小のまま(M8)。HEI から鞍点 −1223.9i、`elementary_step` | 合格 | 1 分 17 秒(1 分 03 秒) | `find_path_sto3g` |
@@ -46,20 +46,28 @@ QRC 3 反応(HCN・HONO・NH3)の合計は 204 → 107 ステップ、266 → 12
 | HCN ΔG‡ / ΔG_rxn | 42.18 / 12.68 | 42.18 / 12.68 | −0.001 / 0.000 |
 | HONO ΔG‡ / ΔG_rxn | 12.22 / 0.08 | 12.23 / 0.08 | +0.002 / 0.000 |
 | NH3 ΔG‡ | 3.84 | 3.84 | −0.001 |
-| TMA·(HF)₂ ΔG_assoc | −11.53 | −11.53 | 0.00 |
+| TMA·(HF)₂ ΔG_assoc(SVPD、BSSE 未補正) | −11.53 | −11.53 | 0.00 |
 
 HONO の TS は別の Hessian(v2 は DFT、v3 は xTB)から精密化したので、虚振動は −678.1i → −681.0i(W7 は −681.5i)に変わったが、ΔE‡ は 13.67 で同じだった。
 
 ## 3. 第2ラウンドの改良項目ごとの確認
 
-- **M8(FIND_PATH の端点を DFT 極小に戻す)**: STO-3G の HCN で、各チャンクの string の両端のエネルギーは DFT 極小(HCN −92.1083949、HNC −92.0683634 Eh)と 1e-8 Eh 以内で一致した。v2 では 2 チャンク目の HNC 側の端点が −92.0542667 Eh(+8.85 kcal/mol)だった。2 チャンク目の初期経路 `string0_c1.xyz` の両端は DFT 極小である。ずれの note は `string0:c1:end_drift:0.074`、`c2:0.001`、`c3:0.002`(Å)で、NWChem が端点を大きく動かすのは IDPP から始める 1 チャンク目だけだった。HONO は 1 チャンクで `string0:c1:end_drift:0.022`。
+- **M8(FIND_PATH の端点を DFT 極小に戻す)**: STO-3G の HCN で、各チャンクの string の両端のエネルギーは DFT 極小(HCN −92.1083949、HNC −92.0683634 Eh)と 1e-8 Eh 以内で一致した。v2 では 2 チャンク目の HNC 側の端点が −92.0542667 Eh(+8.85 kcal/mol)だった。2 チャンク目の初期経路 `string0_c1.xyz` の両端は DFT 極小である。ずれの note は `string0:c1:end_drift:0.074`、`c2:0.001`、`c3:0.002`(Å)で、端点が大きく動いたのは 1 チャンク目だけだった。HONO は 1 チャンクで `string0:c1:end_drift:0.022`。1 チャンク目のずれの原因は IDPP ではなく、初期経路の中間画像を 1 枚ずつ端点へ整列していたことである(画像の間に剛体の跳びが入り、NWChem が凍結端点を回してゆがめる。ゆがんだ端点は極小より STO-3G で +13.6、HONO で +1.09 kcal/mol 高い)。レビュー v3 で分かり(U5-N8)、M9 で逐次整列にした。
 - **S18(IDPP の反復上限 5,000)**: HONO の初期経路は、H–O–N=O の二面角が 180° → 160° → 141° → 119° → 96° → 80° → 48° → 24° → 0° と単調にねじれた。v2 は 180° → 178° → 7° と面内に崩れていた。string は 1 チャンクで落ち着き、bead エネルギーの最大は trans から 13.5 kcal/mol(v2 は面内の経路で 34.4)で、HEI の二面角は 89° だった。HEI の xTB Hessian は虚振動 1 本で接線に沿うので採用され、DFT Hessian と AUTOZ の失敗(v2 で約 110 秒)がなくなった。
 - **S19(画像の逐次整列)**: STO-3G の HCN で、v2 の鞍点に付いていた `mode_overlap_below_0.3` の note が消えた(レビューのプローブの重なりは 0.118 → 0.651)。
 - **S20(moddir の明示)**: 4 つの鞍点(HCN、HONO、NH3、STO-3G)はどれも虚振動 1 本で、`moddir 1` を書いた。AUTOZ の再試行はどの run にもない。負モード 2 本以上の Cartesian・P·H·P の分岐は、実 run では通っていない(プローブ `/home/user/hfauto_v3_probe/w1b_moddir` でだけ確認)。
-- **S21(初期 Hessian ありの opt は trust 0.3)**: job.nw は、QRC の両側と錯体の opt が `trust 0.3` と `inhess 2`、それ以外の opt が `trust 0.1` だった。QRC は §2 のとおり約半分になった。xTB の初期 Hessian を渡す錯体の opt(A/B の A と TMA·(HF)₂)は、点数が 4 構造とも v2 と同じで、時間は 5% 減った。trust 0.1 でも歩幅が上限に届いていなかったためで、この系では効果が小さい。trust はジョブキーに入らないので、v2 のキャッシュが残る run dir で再開すると trust 0.1 の結果が再利用される(同じ極小なので害はない)。
+- **S21(初期 Hessian ありの opt は trust 0.3)**: job.nw は、QRC の両側と錯体の opt が `trust 0.3` と `inhess 2`、それ以外の opt が `trust 0.1` だった。QRC は §2 のとおり約半分になった。xTB の初期 Hessian を渡す錯体の opt(A/B の A と TMA·(HF)₂)は、点数が 4 構造とも v2 と同じで、時間は 5% 減った。v2(trust 0.1)でも、4 錯体の opt の 1〜5 歩目で NWChem は歩幅を制限していた(`Restricting large step` 計 34 回、全体の縮小 計 7 回。v3 は 3 回と 2 回)。歩数が同じなのは、line search が制限された歩みを伸ばして補っていたことと、TMA·(HF)₂ の 4〜8 歩目が勾配の収束後に XMAX / XRMS を満たすための小さな歩みであることによる。5% の短縮は同じ軌跡の run どうしの差(約 2%)より大きいが、n = 2〜3 の比較での観測で、その原因(後半の歩みの SCF が軽くなった)は推定である。trust はジョブキーに入らないので、v2 のキャッシュが残る run dir で再開すると trust 0.1 の結果が再利用される(同じ極小なので害はない)。
 - **S22(rankable の理由)**: 順位を付けない `same_basin`(水、TMA·(HF)₂)の blocker は `outcome:same_basin` だけになった。順位の付く 3 反応は v2 と同じ rank 1。
 - **S24・S25(同位体と上流の理由)**: 一時 system(`/home/user/hfauto_v3_probe/s24_s25`、scratch を分けた一時 site)で確かめた。SMILES `[2H]O[2H]` の species は `INPUT_INVALID`(`SMILES '[2H]O[2H]' specifies isotopes; hfauto uses natural-abundance masses`)になり、次の stage が `stage 'dft' (minima) has no input of type ['species']; upstream failures: species_d2o: SMILES '[2H]O[2H]' specifies isotopes; ...` で止まった(終了コード 1)。xyz の `D` は `unknown element(s): D` になった。CLI はこのメッセージの前に Rich のトレースバックを表示する(従来どおり)。
-- 実計算で通っていない改良: C2(CCSD の maxiter 50)は `method_panel` を実行していないので未確認。S23 は文書だけ。
+- v3 の run で通っていない改良: C2(CCSD の maxiter 50)と S23(composite G の手順)は v3 の run では実行していない。どちらも下の「レビューのプローブ」で確認した。
+
+### レビューのプローブ
+
+検証の run の外で、レビュー(v2・v3)が v2・v3 の run の複製への追記か、エンジンの直接の呼び出しで確かめた。置き場所はリポジトリの外(WSL の `/home/user/hfauto_v3_probe/`、v2 は `/home/user/hfauto_review2_probe/`)なので、要点の数値だけを記す。多くは同時負荷のもとで測ったので、所要時間は参考値である。
+
+- **C2(CCSD の maxiter 50)**: `u0_c2` で NWChem を実エンジンで呼んだ。デッキは `ccsd / freeze atomic / maxiter 50 / end`、出力のエコーは `maxit = 50`。CCSD(T)/def2-TZVPD は HNC で 11/50 反復・17 秒、v3 の HONO の TS で 18/50 反復・447 秒(同時負荷あり)で収束した。HONO の CCSD(T) の ΔE‡ は 11.65 kcal/mol で、SVPD − CCSD(T) = +2.02(design.md §7 の「HONO +2.0」の出典)。
+- **S23(composite G)**: `u7_assess/hcn_tz` で、design.md §7 の手順どおりに v3 の HCN の run の複製へ sp_tz(def2-TZVPD、`all_minima`)→ thermo_tz → report_tz を追記した。全体 1 分 26 秒(SP 3 本・83 秒、GoodVibes は 3/3 再利用)、ΔE‡ 46.43、ΔG‡ 41.99 kcal/mol、rank 1。TMA·(HF)₂ では、`tma_tz`(TZVPD//SVPD)の ΔG_assoc が −9.04 kcal/mol(SVPD の −11.53 より +2.49。どちらも BSSE 未補正)、`tma_d`(sp の既定の targets)では単量体が `energy_layer_missing` になり ΔG_assoc は None だった。
+- **手法パネル(M5・S8)**: v2 の run の複製に既定の method_panel を追記した(v2 のプローブ)。HCN は 6 SP・36 秒。HONO は panel_report と report の ranking.csv がどちらも rank 1(ΔG‡ 12.22、`method_sign_disagreement` なし)で一致した。HCN の CCSD(T)/def2-TZVPD の ΔE‡ は 47.81 kcal/mol(SVPD − CCSD(T) = −1.2、design.md §7 の出典)。
 
 ## 4. 第1ラウンドの比較(W7 → v2)
 
@@ -73,9 +81,9 @@ HONO の TS は別の Hessian(v2 は DFT、v3 は xTB)から精密化したの�
 | amine パイロット | 1:56 → 1:54 | 65(4)→ 56(2) | attempt 44 → 40(TMA 単量体の trial が 14 → 11。出発構造が xTB の最適化構造になったため、M3)。TS 19 → 22 件、すべて虚振動 1 本 |
 | smoke | 59 秒 → 72 秒 | 10 → 12 件 | 新しい 2 件の分 |
 
-ΔG の変化(M6・S15: 振動数と ZPE のスケールを 0.989 / 0.975 から 1.0 / 1.0 に 1 本化)は、予測(ΔG‡ で 0.04 以下、ΔG_assoc で 0.07 以下)の範囲に収まった。
+ΔG の変化(S15: 振動数と ZPE のスケールを 0.989 / 0.975 から 1.0 / 1.0 に 1 本化。M6 の寄与は 0 で、反応座標以外の負モードはどの freq にもなかった)は、予測(ΔG‡ で 0.04 以下、ΔG_assoc で 0.07 以下)の範囲に収まった。
 
-| 量 | W7 | v2 | 差 |
+| 量 | W7 | v2 | 差(S15) |
 |---|---:|---:|---:|
 | HCN ΔG‡ / ΔZPE‡ | 42.22 / −3.34 | 42.18 / −3.42 | −0.04 / −0.09 |
 | HCN ΔG_rxn | 12.68 | 12.68 | 0.00 |
@@ -93,7 +101,7 @@ HONO の TS は FIND_PATH の HEI から精密化したので虚振動が −681
 - **S1(その場の登録)**: 1 basin に freq 1 本になった。screen の xTB freq(TMA·(HF)₂ 7 → 3、amine 7 → 5)、dft の DFT freq(NH3・水 2 → 1)。A/B(§8)では AFIR 生成物の構造が既知の basin に入り、17 原子の freq(約 15 分)を省いた。
 - **S7・C19(QRC)**: 3 反応とも `trajectory_above_ts` は出ず、接続の判定は W7 と同じだった。HONO の maxiter での継続はなくなった。
 - **S4(GS の回収)**: HONO で GS 自体が例外で終わったため、GS だけの再実行も同じ例外で終わり、`nonzero_exit` として SCREEN が unavailable になった(GS の失敗は握りつぶさない、の設計どおり)。
-- 実計算で通っていない改良: M1(陰性結果ゲートの削除)、S3(行 14 の 15 bead 確認の撤廃)は、今回の系に単調な経路や陰性結果で止まる宣言反応がなく、経路に入らなかった(v3 も同じ)。M5・S8(手法パネル)は `method_panel` を実行していない。
+- 実計算で通っていない改良: M1(陰性結果ゲートの削除)、S3(行 14 の 15 bead 確認の撤廃)は、今回の系に単調な経路や陰性結果で止まる宣言反応がなく、経路に入らなかった(v3 も同じ)。M5・S8(手法パネル)は `method_panel` を実行していない(v3 も同じ。レビューのプローブでだけ確認した、§3)。
 
 ## 6. 撤回する値
 
@@ -134,7 +142,7 @@ HONO の TS は FIND_PATH の HEI から精密化したので虚振動が −681
 1. **HONO の SCREEN(GS)の発散**: pysisyphus の GS(DLC 座標)が約 10 サイクル目から発散し、H–O–N の変角が内部座標から落ちた後、座標数の不一致(66 → 55)で例外終了する。v3 でも同じだった(8 秒、`screen:unavailable:screen_path:nonzero_exit`)。同じ入力では決定的に再現し、W7 の入力(端点の差 1e-6 Å 程度)では収束したので、平面 4 原子での GS の数値的な不安定であり、コードの回帰ではない。v2 で挙げた対策案(小さな分子の GS を Cartesian 座標にする、1 回だけ再試行する)は、レビューのプローブで無効と分かった(Cartesian では面内の経路で HEI 26.56 kcal/mol になり TSOpt も例外、再試行は同じ失敗)ので取り下げる。S18 で FIND_PATH の退避経路がねじれ機構を捉えるようになり、HONO の所要時間は W7(GS 成功、7 分 22 秒)より短い 5 分 23 秒になった。最初の例外は、ジョブの `stderr.txt` に連鎖として残る。
 2. S4 の回収は、TS 最適化ではなく GS 自体が例外で終わった場合にも GS を 1 回再実行する(HONO で 4 秒)。害はないので残した。
 3. 17 原子・PBE0/def2-SVPD の解析 Hessian は 4 rank で 1 本約 15 分かかり、discover の所要時間の大半(TMA·(HF)₂ の dft stage 1,754 秒のうち 898 秒)を占める。
-4. FIND_PATH の HEI は bead の最大なので、鞍点をわずかに下回ることがある(HONO で HEI 13.5、鞍点 13.67 kcal/mol)。種としては問題ない。1 チャンク目の中の端点のずれ(STO-3G で 0.074 Å)は note による監視だけである(M8 の設計どおり)。
+4. FIND_PATH の HEI は bead の最大なので、鞍点をわずかに下回ることがある(HONO で HEI 13.5、鞍点 13.67 kcal/mol)。種としては問題ない。v3 の 1 チャンク目の端点のずれ(STO-3G で 0.074 Å)は初期経路の整列の仕方によるもので(§3 の M8)、M9 で初期経路を逐次整列にした(レビューのプローブでは 0.004 Å、端点の持ち上がり +0.04 kcal/mol)。ずれは引き続き note で監視するだけで、ゲートにはしない。M9 で string の JobStore キー(初期経路の sha256)が変わるので、M9 より前の run dir で再開すると string を 1 回計算し直す。
 5. S21 の trust はジョブキーに入らない(§3)。
-6. 実計算で通していない経路: 手法パネル(M5・S8・C2)、陰性結果ゲートの削除(M1)、15 bead 確認の撤廃(S3)、負モード 2 本以上の鞍点(S20 の Cartesian 分岐)、電荷のある系・開殻系。
+6. 検証の run で通していない経路: 手法パネル(M5・S8・C2。レビューのプローブでだけ確認、§3)、陰性結果ゲートの削除(M1)、15 bead 確認の撤廃(S3)、負モード 2 本以上の鞍点(S20 の Cartesian 分岐)、電荷のある系・開殻系。
 7. 設計(WP7.1)では run を `runs/validation_<system>_<date>` に置くことになっているが、過去の run を守るため、WSL の ext4 上に置いた。

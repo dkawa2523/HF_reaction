@@ -452,8 +452,8 @@ def _initial_path(ctx: Ctx, beads: int, name: str) -> FileRef | None:
             ctx.note(f"idpp:{exc}")
             return None
     images = trajectory.resample_xyz_trajectory([ctx.mol(f).xyz for f in frames], beads)
-    inner = [align_mapped(ctx.ends[0], np.asarray(i.coords, dtype=float)) for i in images[1:-1]]
-    return ctx.path_file(name, [ctx.ends[0], *inner, ctx.ends[1]])
+    inner = [np.asarray(i.coords, dtype=float) for i in images[1:-1]]
+    return ctx.path_file(name, align_sequential([ctx.ends[0], *inner, ctx.ends[1]]))
 
 
 def find_path(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
