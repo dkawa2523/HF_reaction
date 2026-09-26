@@ -776,3 +776,40 @@ v3 §5.5 の方針はすべて維持します（既定の流れを重くする�
 - **表示だけのための配管と定期的な書き換え**: report.html と ranking.csv に code_version を出す、README のベンチマーク表を毎ラウンド更新する。README は「v3」と明記していて正確で、v4 は validation.md §11 にあります。
 - **重い実計算の追加**: M9 の U6 への効果を確かめるための大きな錯体の run、U0 の目的での method_panel・composite の実行。前者は該当する case がなく数時間かかり、後者は記録が validation.md §3 に入りました（正式な実行は C43 の範囲）。
 - **不要な削除**: string デッキの endgeom と impose。使われないので削っても挙動は変わらず、文書で実態を書けば足ります。
+
+---
+
+## 追補: 第4ラウンド（C45, C39′, C25, C28, C40, C41, C37, C27′, C34）
+
+§5.4 の順の 1 と 2 を実施した。C43（手法パネルの正式な実行）と C14′ はこのラウンドに含めていない。コミットは `e73adc9`（文書だけ: C45、C39′ の (a)〜(h)・(j)）、`13a4340`（コードと付随する文書）、`fb8728a`（WSL での退行確認、validation.md §12）で、push はしていない。受け入れの確認は `git diff 35cb094 fb8728a`、テスト、v5 の run（`/home/user/hfauto_v5`）とプローブ（`/home/user/hfauto_v5_probe/c34`、`c41`）で行った。
+
+### 項目ごとの状態
+
+| 項目 | コミット | 状態 | 確認したこと |
+|---|---|---|---|
+| C45 | e73adc9 | 完了 | 5 か所とも指定の文面。「原因は特定していない」「HEI 13.5」「HEI は bead の最大」「M9 より前の run dir で再開すると…」は validation.md から消えた。M9 で string のキーが変わった事実は残した。コードは不変 |
+| C39′ | e73adc9、(i) は 13a4340 | 完了（注記 2 点） | (a)〜(j) すべて入った。validation.md の QRC は 126 / 143。(b) は「converged は使わない。経路の形は…」と 2 文に分けたが意味は指定どおり。(f) は M3 の効果と明記し、S6 とは書いていない（「S6 ではない」は明示しない） |
+| C25 | 13a4340 | 完了 | RankRow に既定 None の 3 フィールド、ranking.csv の列順は指定どおり。古い行（3 キーなし）が検証を通るテストあり。v5 の 4 run で T_K 298.15、`1atm`、dG_rxn が熱化学と一致（水の行にも値）。rank_rows の循環的複雑度は 14 → 15（上限ちょうど） |
+| C28 | 13a4340 | 完了 | `_kcal` が layer_missing の subject を含む ΔE を None にする。S9 に assert 1 件。design.md の thermo 行に「その subject を含む ΔE も None」。実 run では通っていない |
+| C40 | 13a4340 | 完了 | 文言は `hfauto uses most-abundant-isotope masses`。validation.md:63 は観測した旧文言を残し、変更の注記を追加 |
+| C41 | 13a4340 | 完了 | SCC 以外の RuntimeError で `<run>: <message>` を stderr に出し、False を返す。v3 の TMA·(HF)₂ の失敗 3 件を再実行し、判定は同じで stderr.txt に原因が 1 行ずつ出た（v3 では 2 件が空） |
+| C37 | 13a4340 | 完了 | monitor 経路、`CommandResult.stopped`、sidecar の stopped、FailureKind.STAGNATED（10 種に）を削除。`_supervise` は `wait(timeout)` 1 回と、TimeoutExpired・例外時の木ごとの kill だけ。孫プロセスが timeout で止まるテストあり。v5 の 73 個の command_result.json に stopped はない |
+| C27′ | 13a4340 | 完了 | SiteConfig.memory_mb、wsl_local.yaml の値と誤解を招くコメントを削除（拡張の目安は memory_mb_per_rank で残した）。テストの fixture 6 か所、design.md・environment.md も更新。doctor は 8 エンジンすべて ok |
+| C34 | 13a4340 | 完了 | 停止構造から同じ設定で 1 回だけ再実行し、2 回目の停止は `topology_stop_repeated`（INCOMPLETE_OUTPUT）。`_lowest` は二重失敗で停止構造を選ぶ。ConformerSettings.topology、`--noreftopo`、TOPOLOGY_CONTINUED を削除。fake のテストは再実行の分子 = 停止構造・同じ設定・二重停止を確認。実 CREST のプローブでグリシンと β-アラニンの両性イオンが 1 回停止し、再実行で 4 / 9 配座（5.3 / 8.7 s）。CREST の JobStore キーが変わる（settings から topology が消える）ので、conformers を再実行すると CREST は計算し直しになる |
+
+全体: pytest 293 passed（12.4 s）、ruff clean、pyrefly 0 errors、lint-imports 5 kept、`radon cc -n D` は出力なし、最大ファイルは actions.py の 500 行（今回は変更なし）。hfauto/ と configs/ の正味は +61 / −112（−51 行）で、C37 が約 −45、C27′ −2、C34 −2（削減項目はすべて行数を減らした）。v5 の退行確認では 4 run の ΔE‡・ΔE_rxn の差が 1e-5 kcal/mol 以内、順位の付く 3 反応は rank 1 のまま、code_version は `-dirty` なしだった。各項目の実装に、指定を超える分岐や knob の追加、挙動の逸脱は見つからなかった。
+
+### 評価の変化
+
+| 単位 | v4 | 第4ラウンド後 | 理由 |
+|---|---|---|---|
+| U8 | ◎ / ○（上側）/ ○ | **◎ / ○（上側）/ ◎** | 複雑さ ◎ の条件（C37 + C27′）が満たされた。到達しない監視経路、失敗の種類 1 つ、効かない site の knob が消えた。有用性 ◎ の条件は C25 + C43 で、C25 は済んだが **C43 は未実施なので ○（上側）のまま** |
+| U2 | ○ / ○ / ◎（但し書き付き） | ○ / ○ / ◎ | 但し書きのうち C34 と C39′ の U2 分（(g)、(i)）が片づいた。C8 が残るので但し書きは完全には外れない。C34 で実 CREST の両性イオンの失敗がなくなったが、妥当性の記号は動かさない（配座探索の run は再実行していない） |
+| U0 | ○ / ◎ / ○ | 据え置き | 妥当性の条件のうちコード側の C28 は済んだ。電荷のある系・開殻系の実 run が残る |
+| U1、U4、U7 | ◎/◎/◎、○/○（下限）/○、◎/○/○ | 据え置き | C40 は文言だけ。C41 は診断性の改善で、U4 有用性の下限の条件（C12、C14′）は残る。C28 は U7 の出力を正しくする 1 行で、U7 の条件（C20、C29、C44）は残る |
+
+### 残るもの
+
+- **C43**（手法パネルを v4 の run の複製で正式に実行し、validation.md に記録。計算数分）: U8 有用性を ◎ に上げる残りの条件。
+- **実計算で通っていない経路**（§2.8）: 行 14（monotonic → BARRIERLESS）と multi_max、負モードが 2 本以上ある鞍点、電荷のある系・開殻系。C28 と C34 の経路も v5 の 4 run では通っていない（C28 はテスト、C34 は実 CREST のプローブだけ）。評価の上限を決めているのは、引き続きこの検証の空白である。
+- そのほかの could: C8、C12、C14′、C16（【複雑さ増】）、C20、C29、C44。medium の課題は HONO の GS の失敗（コストだけ）の 1 件のまま。
