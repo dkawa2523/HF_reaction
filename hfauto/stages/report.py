@@ -23,7 +23,6 @@ from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 class ReportConfig(StageConfig):
     T_K: float | None = None  # None: the first of conditions.temperatures_K
     standard_state: Literal["1atm", "1bar", "1M"] | None = None  # None: the first state
-    metric: Literal["dG_act", "dG_rxn"] = "dG_act"
 
 
 class ReportStage:
@@ -39,15 +38,12 @@ class ReportStage:
             for a in inputs.of(ArtifactType.CALCULATION)
             if isinstance(a.payload, Evidence)
         }
-        panel, disagreements = summary.method_panel(calculations, reactions, minima=minima)
+        panel = summary.method_panel(calculations, reactions, minima=minima)
         rows = summary.rank_rows(
             reactions,
             inputs.records(ArtifactType.REACTION_THERMO, ReactionThermo),
-            summary.participant_notes(reactions, minima, disagreements),
             config.T_K if config.T_K is not None else rt.conditions.temperatures_K[0],
             config.standard_state or rt.conditions.standard_states[0],
-            metric=config.metric,
-            policy=rt.policy,
         )
         counts = summary.coverage(
             inputs.records(ArtifactType.DISCOVERY, DiscoveryRecord),

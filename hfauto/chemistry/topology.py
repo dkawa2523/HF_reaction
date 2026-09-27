@@ -25,7 +25,6 @@ _FD_STEP_A = 1.0e-4  # central-difference step of a declared coordinate's gradie
 
 BOND_MAX_RATIO = 1.15
 NONBOND_MIN_RATIO = 1.45
-PROTON_Q_MIN_A = 0.3
 _WL_ITERATIONS = 3
 
 _LABILE_PARTNERS = frozenset({"N", "O", "F", "S", "Cl", "Br", "I", "P"})
@@ -98,13 +97,6 @@ def bond_changes(
     return after - before, before - after
 
 
-def proton_coordinate(coords: np.ndarray, d: int, h: int, a: int) -> float:
-    """q = r(D–H) − r(A–H) in Å."""
-
-    x = np.asarray(coords, dtype=float).reshape(-1, 3)
-    return float(np.linalg.norm(x[d] - x[h]) - np.linalg.norm(x[a] - x[h]))
-
-
 def declared_coordinate(terms: Sequence[CoordinateTerm], x: np.ndarray) -> float:
     """Σ coefficient × (distance Å | angle ° | dihedral °)."""
     total = 0.0
@@ -131,29 +123,6 @@ def declared_coordinate_gradient(terms: Sequence[CoordinateTerm], x: np.ndarray)
         delta = declared_coordinate(terms, flat + step) - declared_coordinate(terms, flat - step)
         grad[i] = ((delta + 180.0) % 360.0 - 180.0) / (2 * _FD_STEP_A)
     return grad
-
-
-def transferred_hydrogens(symbols: Sequence[str], a: np.ndarray, b: np.ndarray) -> int:
-    """Number of H whose covalent partners change.
-
-    An H that swaps one donor D for one acceptor A counts only if q flips sign with
-    |q| ≥ 0.3 Å at both ends.
-    """
-
-    formed, broken = bond_changes(symbols, a, b)
-    count = 0
-    for h in (i for i, s in enumerate(symbols) if s == "H"):
-        gained = [i + j - h for i, j in formed if h in (i, j)]
-        lost = [i + j - h for i, j in broken if h in (i, j)]
-        if not gained and not lost:
-            continue
-        if len(gained) == 1 and len(lost) == 1:
-            qa = proton_coordinate(a, lost[0], h, gained[0])
-            qb = proton_coordinate(b, lost[0], h, gained[0])
-            if min(abs(qa), abs(qb)) < PROTON_Q_MIN_A or qa * qb > 0:
-                continue
-        count += 1
-    return count
 
 
 def labile_hydrogens(symbols: Sequence[str], coords: np.ndarray) -> tuple[int, ...]:

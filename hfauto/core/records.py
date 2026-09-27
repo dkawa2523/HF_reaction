@@ -152,7 +152,6 @@ class ReactionRecord(BaseModel):
     source: Literal["declared", "discovery", "mode_follow", "conformer", "split", "reassigned"]
     coordinate: tuple[CoordinateTerm, ...] = ()
     torsional: bool = False
-    n_h_transferred: int = 0
     low_level_ts: Geometry | None = None
     barrier: BarrierVerdict | None = None
     saddle: SaddleClaim | None = None
@@ -173,7 +172,6 @@ class SpeciesThermo(BaseModel):
     H_hartree: float | None
     zpe_hartree: float | None
     settings_sha: str
-    population: float | None = None  # Boltzmann weight within the composition
     notes: tuple[str, ...] = ()
 
 
@@ -185,13 +183,15 @@ class ReactionThermo(BaseModel):
     standard_state: Literal["1atm", "1bar", "1M"]
     dE_act_kcal: float | None
     dE_rxn_kcal: float | None
-    dzpe_act_kcal: float | None  # dE0(act) - dE(act), used by rankable
-    dG_act_kcal: float | None
+    dzpe_act_kcal: float | None  # dE0(act) - dE(act)
+    dG_act_kcal: float | None  # TST barrier seen from the reaction's own reactant minimum
     dG_rxn_kcal: float | None
     dG_assoc_kcal: float | None = None
     dG_act_vs_separated_kcal: float | None = None
-    band_kcal: tuple[float, float] | None = None
+    band_kcal: tuple[float, float] | None = None  # dG_eff over the qs x cutoff variants
     blockers: tuple[str, ...] = ()
+    dG_eff_kcal: float | None = None  # the ranking quantity (chemistry.thermo.effective_barrier)
+    notes: tuple[str, ...] = ()  # submerged_barrier
 
 
 class RankRow(BaseModel):
@@ -201,13 +201,17 @@ class RankRow(BaseModel):
     tier: Literal["screening", "minima", "saddle", "connected"]
     rankable: bool
     rank: int | None
-    dG_act_kcal: float | None
-    band_kcal: tuple[float, float] | None
     blockers: tuple[str, ...]
     # rank_rows always sets these; the defaults keep reports of older manifests valid
+    dG_act_kcal: float | None = None
+    band_kcal: tuple[float, float] | None = None
     T_K: float | None = None
     standard_state: str | None = None
     dG_rxn_kcal: float | None = None
+    dG_eff_kcal: float | None = None
+    dG_act_vs_separated_kcal: float | None = None
+    torsional: bool = False
+    notes: tuple[str, ...] = ()
 
 
 class ReportRecord(BaseModel):

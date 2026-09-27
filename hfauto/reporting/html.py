@@ -1,8 +1,8 @@
 """Static HTML report (design §4.1 #8, §7.4 ``report``): ``render(view, out_dir, load_xyz=)``.
 
-One self-contained page per view: a summary row per reaction (ΔE‡, ΔG‡, ν_imag, connection,
-outcome, blockers and the association quantities), an inline-SVG energy diagram per reaction
-and the TS imaginary mode animated by 3Dmol.js. The module does not know the run layout
+One self-contained page per view: a summary row per reaction (δG_eff, ΔE‡, ΔG‡, ν_imag,
+connection, outcome, blockers and the association quantities), an inline-SVG energy diagram
+per reaction and the TS imaginary mode animated by 3Dmol.js. The module does not know the run layout
 (eng P0-1): geometries are reached only through ``load_xyz``. Standard library, numpy and
 hfauto.core only; no plotting or templating package.
 """
@@ -189,6 +189,7 @@ def _summary_cells(reaction: ReactionRecord, thermo: ReactionThermo | None,
         f"<a href='#rxn-{rid}'>{rid}</a>",
         escape(reaction.outcome.value if reaction.outcome else _DASH),
         _DASH if rank is None else str(rank),
+        _num(thermo.dG_eff_kcal if thermo else None),
         _num(thermo.dE_act_kcal if thermo else None),
         _num(thermo.dG_act_kcal if thermo else None),
         _imag(saddle.imag_cm1) if saddle is not None else _DASH,
@@ -199,17 +200,19 @@ def _summary_cells(reaction: ReactionRecord, thermo: ReactionThermo | None,
     ]
 
 
-_SUMMARY_HEADER = ("reaction", "outcome", "rank", "ΔE‡", "ΔG‡", "ν<sub>imag</sub> (cm⁻¹)",
-                   "connection", "ΔG<sub>assoc</sub>", "ΔG‡ vs separated", "blockers")
-_THERMO_HEADER = ("T (K)", "state", "ΔE‡", "ΔE<sub>rxn</sub>", "ΔG‡", "ΔG<sub>rxn</sub>",
-                  "ΔG‡ band", "ΔG<sub>assoc</sub>", "ΔG‡ vs separated", "blockers")
+_SUMMARY_HEADER = ("reaction", "outcome", "rank", "δG<sub>eff</sub>", "ΔE‡", "ΔG‡",
+                   "ν<sub>imag</sub> (cm⁻¹)", "connection", "ΔG<sub>assoc</sub>",
+                   "ΔG‡ vs separated", "blockers")
+_THERMO_HEADER = ("T (K)", "state", "ΔE‡", "ΔE<sub>rxn</sub>", "δG<sub>eff</sub>", "ΔG‡",
+                  "ΔG<sub>rxn</sub>", "δG<sub>eff</sub> band", "ΔG<sub>assoc</sub>",
+                  "ΔG‡ vs separated", "blockers", "notes")
 
 
 def _thermo_cells(t: ReactionThermo) -> list[str]:
-    values = (t.dE_act_kcal, t.dE_rxn_kcal, t.dG_act_kcal, t.dG_rxn_kcal)
+    values = (t.dE_act_kcal, t.dE_rxn_kcal, t.dG_eff_kcal, t.dG_act_kcal, t.dG_rxn_kcal)
     return [f"{t.T_K:g}", t.standard_state, *map(_num, values), _band(t),
             _num(t.dG_assoc_kcal), _num(t.dG_act_vs_separated_kcal),
-            escape(", ".join(t.blockers)) or _DASH]
+            escape(", ".join(t.blockers)) or _DASH, escape(", ".join(t.notes)) or _DASH]
 
 
 def _section(reaction: ReactionRecord, thermo: Sequence[ReactionThermo],
@@ -229,7 +232,7 @@ def _section(reaction: ReactionRecord, thermo: Sequence[ReactionThermo],
         figures.append(f"<figure><div class='mol' data-xyz='{escape(xyz)}'></div><figcaption>"
                        f"TS imaginary mode, ν = {_imag(reaction.saddle.imag_cm1)} cm⁻¹"
                        "</figcaption></figure>")
-    table = (_table(_THERMO_HEADER, map(_thermo_cells, thermo), set(range(2, 9))) if thermo
+    table = (_table(_THERMO_HEADER, map(_thermo_cells, thermo), set(range(2, 10))) if thermo
              else "<p class='meta'>No reaction thermochemistry in this view.</p>")
     return (f"<section id='rxn-{rid}'><h2>{rid}</h2><p class='meta'>{' · '.join(meta)}</p>"
             f"<div class='figs'>{''.join(figures)}</div>{table}</section>")
@@ -257,7 +260,7 @@ def render(view: Manifest, out_dir: Path, *, load_xyz: Callable[[Geometry], XYZ]
     run = escape(view.run_id)
     intro = (f"<h1>hfauto report</h1><p class='meta'>run {run} · view of stage "
              f"{escape(view.stage_id)} · {len(reactions)} reaction(s) · energies in kcal/mol</p>")
-    body = [intro, _table(_SUMMARY_HEADER, summary, {2, 3, 4, 5, 7, 8}) if reactions
+    body = [intro, _table(_SUMMARY_HEADER, summary, {2, 3, 4, 5, 6, 8, 9}) if reactions
             else "<p>No reactions with an outcome in this view.</p>"]
     body += [_section(r, thermo[r.reaction_id], modes[r.reaction_id]) for r in reactions]
     with_mol = any(xyz is not None for xyz in modes.values())

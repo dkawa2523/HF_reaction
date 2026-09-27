@@ -1,8 +1,10 @@
-"""Report tables (design §8.2 report): ranking with ties, discovery coverage, method panel.
+"""Report tables (design §8.2 report): ranking by dG_eff with ties, discovery coverage,
+method panel.
 
 Imports only hfauto.core, hfauto.chemistry.gates and the standard library. Everything is a
 pure function over typed records except ``write_tables``. No confidence score is produced
-(AR-27): a reaction is either rankable by ``gates.rankable`` or listed with its blockers.
+(AR-27): a reaction is either rankable by ``gates.rankable`` or listed with its blockers; the
+method panel's dE_act spread is shown as columns, never as a blocker.
 """
 
 from __future__ import annotations
@@ -10,12 +12,11 @@ from __future__ import annotations
 import csv
 import math
 from collections import Counter, defaultdict
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import astuple, dataclass, fields
 from pathlib import Path
-from typing import Literal
 
-from hfauto.chemistry.gates import Policy, rankable, reaction_tier
+from hfauto.chemistry.gates import rankable, reaction_tier
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Level
 from hfauto.core.manifest import Artifact
@@ -27,10 +28,8 @@ from hfauto.core.records import (
     ReactionThermo,
 )
 
-Metric = Literal["dG_act", "dG_rxn"]
-SIGN_DISAGREEMENT = "method_sign_disagreement"
-_SIGN_DEADBAND_KCAL = 1.0  # a dE_rxn within +-1 kcal/mol has no sign to disagree on
-_DEFAULT = Policy()
+_FROM_THERMO = {"dG_eff_kcal", "dG_act_kcal", "dG_rxn_kcal", "dG_act_vs_separated_kcal",
+                "band_kcal", "notes"}  # RankRow fields copied from the ReactionThermo
 
 
 @dataclass(frozen=True)
@@ -53,18 +52,6 @@ class PanelRow:
     dE_rxn_max_kcal: float
     dE_act_min_kcal: float | None
     dE_act_max_kcal: float | None
-    sign_disagreement: bool
-
-
-def _value(thermo: ReactionThermo, metric: Metric) -> float | None:
-    return thermo.dG_act_kcal if metric == "dG_act" else thermo.dG_rxn_kcal
-
-
-def _interval(thermo: ReactionThermo, value: float, metric: Metric) -> tuple[float, float]:
-    """The sensitivity band (absolute dG_act interval) or the point value itself."""
-    if metric == "dG_act" and thermo.band_kcal is not None:
-        return thermo.band_kcal
-    return value, value
 
 
 def _tie_ranks(intervals: Mapping[str, tuple[float, float]]) -> dict[str, int]:
@@ -84,72 +71,30 @@ def _tie_ranks(intervals: Mapping[str, tuple[float, float]]) -> dict[str, int]:
     return ranks
 
 
-def rank_rows(
-    reactions: Iterable[ReactionRecord],
-    reaction_thermo: Iterable[ReactionThermo],
-    participant_notes: Mapping[str, Sequence[str]],
-    T: float,
-    state: str,
-    *,
-    metric: Metric = "dG_act",
-    policy: Policy = _DEFAULT,
-) -> list[RankRow]:
-    """Rank the rankable reactions by ``metric`` at (T, state); the rest keep rank None.
+def _row(reaction: ReactionRecord, thermo: ReactionThermo | None, T: float, state: str
+         ) -> RankRow:
+    gate = rankable(reaction, thermo)
+    values = thermo.model_dump(include=_FROM_THERMO) if thermo is not None else {}
+    return RankRow(reaction_id=reaction.reaction_id, outcome=reaction.outcome,
+                   tier=reaction_tier(reaction), rankable=gate.ok, rank=None,
+                   blockers=gate.reasons, T_K=T, standard_state=state,
+                   torsional=reaction.torsional, **values)
 
-    Reactions without an outcome are unprocessed hypotheses and are not listed.
-    """
-    thermo = {
-        t.reaction_id: t
-        for t in reaction_thermo
-        if math.isclose(t.T_K, T, abs_tol=1e-6) and t.standard_state == state
-    }
-    rows: list[RankRow] = []
-    values: dict[str, float] = {}
-    intervals: dict[str, tuple[float, float]] = {}
-    for reaction in reactions:
-        if reaction.outcome is None:
-            continue
-        rid, t = reaction.reaction_id, thermo.get(reaction.reaction_id)
-        notes = participant_notes.get(rid, ())
-        gate = rankable(reaction, t, participant_notes=notes, policy=policy)
-        value = _value(t, metric) if t is not None else None
-        if gate and t is not None and value is not None:
-            values[rid], intervals[rid] = value, _interval(t, value, metric)
-        rows.append(
-            RankRow(
-                reaction_id=rid,
-                outcome=reaction.outcome,
-                tier=reaction_tier(reaction),
-                rankable=rid in values,
-                rank=None,
-                dG_act_kcal=t.dG_act_kcal if t is not None else None,
-                band_kcal=t.band_kcal if t is not None else None,
-                blockers=gate.reasons,
-                T_K=T,
-                standard_state=state,
-                dG_rxn_kcal=t.dG_rxn_kcal if t is not None else None,
-            )
-        )
-    ranks = _tie_ranks(intervals)
-    order = {rid: (ranks[rid], values[rid]) for rid in ranks}
+
+def rank_rows(reactions: Iterable[ReactionRecord], reaction_thermo: Iterable[ReactionThermo],
+              T: float, state: str) -> list[RankRow]:
+    """Rank the rankable reactions by dG_eff at (T, state), sharing a rank where sensitivity
+    bands overlap; the rest keep rank None. Reactions without an outcome are unprocessed
+    hypotheses and are not listed."""
+    thermo = {t.reaction_id: t for t in reaction_thermo
+              if math.isclose(t.T_K, T, abs_tol=1e-6) and t.standard_state == state}
+    rows = [_row(r, thermo.get(r.reaction_id), T, state) for r in reactions
+            if r.outcome is not None]
+    ranks = _tie_ranks({r.reaction_id: r.band_kcal or (value, value) for r in rows
+                        if r.rankable and (value := r.dG_eff_kcal) is not None})
     rows = [row.model_copy(update={"rank": ranks.get(row.reaction_id)}) for row in rows]
-    return sorted(rows, key=lambda r: (order.get(r.reaction_id, (math.inf, 0.0)), r.reaction_id))
-
-
-def participant_notes(
-    reactions: Iterable[ReactionRecord],
-    minima: Mapping[str, MinimumRecord],
-    disagreements: Collection[str] = (),
-) -> dict[str, tuple[str, ...]]:
-    """Notes of each reaction's minima and saddle, plus the method-panel sign blocker."""
-    out: dict[str, tuple[str, ...]] = {}
-    for reaction in reactions:
-        notes = [n for m in dict.fromkeys(reaction.minima) if m in minima for n in minima[m].notes]
-        notes += reaction.saddle.notes if reaction.saddle is not None else ()
-        if reaction.reaction_id in disagreements:
-            notes.append(SIGN_DISAGREEMENT)
-        out[reaction.reaction_id] = tuple(dict.fromkeys(notes))
-    return out
+    return sorted(rows, key=lambda r: (
+        (r.rank, r.dG_eff_kcal or 0.0) if r.rank else (math.inf, 0.0), r.reaction_id))
 
 
 def coverage(
@@ -211,8 +156,6 @@ def _panel_rows(
         "dE_rxn_max_kcal": max(rxn, default=0.0),
         "dE_act_min_kcal": min(act, default=None),
         "dE_act_max_kcal": max(act, default=None),
-        "sign_disagreement": any(v > _SIGN_DEADBAND_KCAL for v in rxn)
-        and any(v < -_SIGN_DEADBAND_KCAL for v in rxn),
     }
     return [
         PanelRow(reaction_id, key, _label(level), d_rxn, d_act, **spread)
@@ -225,11 +168,9 @@ def method_panel(
     reactions: Iterable[ReactionRecord],
     *,
     minima: Mapping[str, MinimumRecord],
-) -> tuple[list[PanelRow], frozenset[str]]:
+) -> list[PanelRow]:
     """dE_rxn and dE_act of each reaction at every level with energies at its stationary
-    points, keyed by ``Level.full_key`` (CH-25), and the reactions whose dE_rxn changes sign
-    between levels: above +1 kcal/mol at one level and below -1 at another
-    (``_SIGN_DEADBAND_KCAL``), so near-zero reaction energies never block ranking.
+    points, keyed by ``Level.full_key`` (CH-25).
 
     A calculation contributes its energy at ``final`` to the stationary point with the same
     geometry fingerprint: fixed-geometry single points, and the opt / saddle / freq jobs that
@@ -249,31 +190,34 @@ def method_panel(
         deltas = {key: _deltas(energies[key], points) for key in sorted(energies)}
         found = [(key, levels[key], *d) for key, d in deltas.items() if d is not None]
         rows += _panel_rows(reaction.reaction_id, found)
-    disagreements = frozenset(r.reaction_id for r in rows if r.sign_disagreement)
-    return rows, disagreements
+    return rows
 
 
 _RANK_HEADER = (
-    "rank",
-    "reaction_id",
-    "outcome",
-    "tier",
-    "rankable",
-    "T_K",
-    "standard_state",
-    "dG_act_kcal",
-    "band_low_kcal",
-    "band_high_kcal",
-    "dG_rxn_kcal",
-    "blockers",
+    "rank", "reaction_id", "outcome", "tier", "rankable", "T_K", "standard_state", "dG_eff_kcal",
+    "band_low_kcal", "band_high_kcal", "dG_act_kcal", "dG_rxn_kcal", "dG_act_vs_separated_kcal",
+    "torsional", "blockers", "notes",
 )
+_PANEL_COLUMNS = ("dE_act_panel_min_kcal", "dE_act_panel_max_kcal")
 
 
 def _rank_cells(row: RankRow) -> tuple[object, ...]:
     low, high = row.band_kcal or (None, None)
-    cells = (row.rank, row.reaction_id, row.outcome.value, row.tier, row.rankable, row.T_K,
-             row.standard_state)
-    return (*cells, row.dG_act_kcal, low, high, row.dG_rxn_kcal, ";".join(row.blockers))
+    return (row.rank, row.reaction_id, row.outcome.value, row.tier, row.rankable, row.T_K,
+            row.standard_state, row.dG_eff_kcal, low, high, row.dG_act_kcal, row.dG_rxn_kcal,
+            row.dG_act_vs_separated_kcal, row.torsional, ";".join(row.blockers),
+            ";".join(row.notes))
+
+
+def _ranking(rows: Sequence[RankRow], panel_rows: Sequence[PanelRow]
+             ) -> tuple[tuple[str, ...], list[tuple[object, ...]]]:
+    """ranking.csv; with a method panel (energies at two levels or more) each row also gets
+    the dE_act min and max over the levels."""
+    if len({p.level_key for p in panel_rows}) < 2:
+        return _RANK_HEADER, [_rank_cells(row) for row in rows]
+    spread = {p.reaction_id: (p.dE_act_min_kcal, p.dE_act_max_kcal) for p in panel_rows}
+    return _RANK_HEADER + _PANEL_COLUMNS, [
+        (*_rank_cells(row), *spread.get(row.reaction_id, (None, None))) for row in rows]
 
 
 def write_tables(
@@ -284,7 +228,7 @@ def write_tables(
 ) -> dict[str, Path]:
     """Write ranking.csv, coverage.csv and method_panel.csv; None becomes an empty cell."""
     tables = {
-        "ranking.csv": (_RANK_HEADER, map(_rank_cells, rows)),
+        "ranking.csv": _ranking(rows, panel_rows),
         "coverage.csv": ([f.name for f in fields(CoverageRow)], map(astuple, coverage_rows)),
         "method_panel.csv": ([f.name for f in fields(PanelRow)], map(astuple, panel_rows)),
     }

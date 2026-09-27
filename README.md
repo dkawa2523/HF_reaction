@@ -27,8 +27,8 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 | `explore` | 元素に依らない結合変化のテンプレート(移動 / リレー / 形成 / 切断)で反応 trial を作り、ReaDuct の NT2 / AFIR で生成物を探す(陰性結果も記録する) |
 | `reaction-paths` | 反応仮説ごとに、障壁の事前判定 → saddle → TS の振動数検証 → QRC → 分類 |
 | `sp` | 停留点での一点計算(手法パネル。CCSD(T) は小さい閉殻分子で opt-in) |
-| `thermo` | GoodVibes 4.3.0 の API による qRRHO、キラリティ(m = 2)、整合ゲート、会合量、感度の幅 |
-| `report` | 順位付け、探索の被覆率、手法パネルの表と HTML |
+| `thermo` | GoodVibes 4.3.0 の API による qRRHO、キラリティ(m = 2)、整合ゲート、会合量、順位の量 δG_eff と感度の幅 |
+| `report` | δG_eff による順位付け(ranking.csv)、探索の被覆率、手法パネルの表と HTML |
 
 パイプラインは 3 本である。
 
@@ -85,7 +85,7 @@ hfauto run known_endpoints --system configs/systems/hcn.yaml --site configs/site
 
 ## 検証済みのベンチマーク
 
-WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD での実測値(第2ラウンド改良後の再検証 v3)である。9 項目の全体、改良前(W7)・v2 との比較と、撤回した旧値は [docs/validation.md](docs/validation.md) にある。順位は PBE0-D3BJ/def2-SVPD の ΔG‡ の序数として読む。手法誤差の符号は反応で異なり(HCN −1.2、HONO +2.0 kcal/mol。2 系での見積もり)、2 反応の ΔG‡ の差が約 3 kcal/mol 未満なら、順序は手法誤差で入れ替わり得る(根拠は [docs/design.md](docs/design.md) §7)。
+WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD での実測値(第2ラウンド改良後の再検証 v3)である。9 項目の全体、改良前(W7)・v2 との比較と、撤回した旧値は [docs/validation.md](docs/validation.md) にある。順位の量は δG_eff = max(G_TS, G_R, G_P) − G_R で、G_R・G_P は反応物・生成物と同じ状態の最小 G である。障壁なし(barrierless_at_resolution)と、ZPE で障壁が沈む反応(順方向か逆方向の ΔE‡ + ΔZPE‡ ≤ 0。注記 `submerged_barrier`)は max(ΔG_rxn, 0) で同じ表に並ぶ。ranking.csv の `torsional` 列は結合変化のないねじれの段を示し、手法パネルを追記すると ΔE‡ の最小・最大の列が付く。順位は PBE0-D3BJ/def2-SVPD の δG_eff の序数として読む。手法誤差の符号は反応で異なり(HCN −1.2、HONO +2.0 kcal/mol。2 系での見積もり)、2 反応の δG_eff の差が約 3 kcal/mol 未満なら、順序は手法誤差で入れ替わり得る(根拠は [docs/design.md](docs/design.md) §7)。
 
 | 系 | pipeline | 結果 | 所要時間 |
 |---|---|---|---|

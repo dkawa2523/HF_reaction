@@ -1,5 +1,6 @@
 """Thermochemistry arithmetic (design §8.2 thermo): the frequencies GoodVibes gets, composite
-G, the optical isomer term, standard states, ensembles, association and reaction deltas.
+G, the optical isomer term, standard states, ensembles, association, reaction deltas and the
+ranking quantity dG_eff.
 
 Pure functions. Energies are in Hartree unless a name ends in ``_kcal``; free energies of
 single species are gas-phase 1 atm values (GoodVibes' default reference) and are moved to
@@ -63,16 +64,6 @@ def chiral_G(T: float) -> float:
     return -_rt_hartree(T) * math.log(2.0)
 
 
-def boltzmann_populations(G_hartree: Sequence[float], T: float) -> list[float]:
-    """Normalized Boltzmann weights of a finite ensemble (conditional on its completeness)."""
-    if not G_hartree:
-        return []
-    rt, low = _rt_hartree(T), min(G_hartree)
-    weights = [math.exp(-(g - low) / rt) for g in G_hartree]
-    total = sum(weights)
-    return [w / total for w in weights]
-
-
 def ensemble_G(G_hartree: Sequence[float], T: float) -> float:
     """-RT ln sum exp(-G_i / RT): the free energy of the ensemble (<= its lowest member)."""
     if not G_hartree:
@@ -117,8 +108,7 @@ def reaction_delta(
 ) -> tuple[float | None, float | None, float | None]:
     """(dG_act, dG_rxn, dzpe_act) in kcal/mol at 1 atm from the thermo of each subject.
 
-    dG_act and dzpe_act exist only when ``participants`` includes the TS; a degenerate
-    rearrangement has dG_rxn = 0 by symmetry."""
+    dG_act and dzpe_act exist only when ``participants`` includes the TS."""
 
     def value(subject: str, field: str) -> float | None:
         thermo = species_thermo.get(subject)
@@ -126,8 +116,6 @@ def reaction_delta(
 
     reactant, product, *ts = participants(reaction)
     dG_rxn = _kcal(value(product, "G_hartree"), value(reactant, "G_hartree"))
-    if reaction.degenerate and dG_rxn is not None:
-        dG_rxn = 0.0
     if not ts:
         return None, dG_rxn, None
     return (
@@ -135,3 +123,12 @@ def reaction_delta(
         dG_rxn,
         _kcal(value(ts[0], "zpe_hartree"), value(reactant, "zpe_hartree")),
     )
+
+
+def effective_barrier(G_ts: float | None, G_R: float, G_P: float) -> float:
+    """dG_eff = max(G_TS, G_R, G_P) - G_R, in the units of the arguments: the highest free
+    energy met between the reactant and product states. A TS below either state is no
+    bottleneck (microscopic reversibility; Truhlar, Garrett, Klippenstein, J. Phys. Chem. 100,
+    12771 (1996)); without a TS (barrierless, or a barrier submerged by ZPE) it is
+    max(dG_rxn, 0)."""
+    return max(G_R, G_P, G_R if G_ts is None else G_ts) - G_R

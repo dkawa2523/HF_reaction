@@ -1,5 +1,5 @@
 """thermo stage (design §4.1 #7, §8.2 thermo): GoodVibes, consistency gate, composite G,
-sensitivity band, association thermochemistry and basin populations.
+sensitivity band, association thermochemistry and the ranking quantity dG_eff.
 
 Subjects: every dft minimum (monomers included) and SaddleClaim freq calc; one engine call
 each covers the main settings and the qs x cutoff variants at the conditions' temperatures.
@@ -9,11 +9,15 @@ failed call or gate gives G = None (thermo_unavailable), never retried. Species 
 E_GV) from the sp on the same geometry; a subject without that sp is energy_layer_missing. A
 chiral subject (MinimumRecord.chiral, or a chiral TS geometry) gets -RT ln 2 in G: its mirror
 image is the same basin or saddle, counted once with m = 2 (in ensembles too).
+
+A state is a composition and a topology.state_label. dG_eff (thermo.effective_barrier) refers
+to the lowest G of the reactant's and the product's state on the same freq and energy LOT
+(fast conformer equilibria make one reactant state); the TS drops out, with the note
+submerged_barrier, when its forward or reverse dE0 = dE + dZPE is <= 0.
 """
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import ClassVar, cast
@@ -29,6 +33,7 @@ from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec, ThermoSettings, level_mismatches
 from hfauto.core.records import (
     ArtifactType,
+    CaseOutcome,
     MinimumRecord,
     ReactionRecord,
     ReactionThermo,
@@ -38,8 +43,8 @@ from hfauto.core.records import (
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
 _QS, _CUTOFFS_CM1 = ("grimme", "truhlar"), (50.0, 100.0, 150.0)
-Key = tuple[str, int, int]  # (Hill formula, charge, multiplicity) of a structure
-Monomers = dict[tuple[str, int], list[tuple[Key, int]]]  # complex (Hill, charge) -> parts
+State = tuple[str, str]  # (composition_id, state_label)
+Monomers = dict[tuple[str, int], list[tuple[State, int]]]  # complex (Hill, charge) -> parts
 Table = dict[str, SpeciesThermo]  # subject -> thermo at one temperature and one settings
 
 
@@ -56,9 +61,10 @@ class _Subject:
     freq: Evidence
     energy_calc: str | None  # sp at energy_method on the same geometry
     energy: Evidence  # that sp, else the freq itself
-    composition: str | None  # None for a TS
+    state: State | None  # None for a TS
     notes: tuple[str, ...]  # of the MinimumRecord / SaddleClaim
-    key: Key
+    formula: tuple[str, int]  # (Hill formula, charge): finds a complex's monomers
+    lot: tuple[str, str]  # full keys of the freq and energy levels
     layer_missing: bool  # energy_method set but no sp on this geometry
     chiral: bool  # the mirror image is the same basin or saddle: -RT ln 2 in G
 
@@ -78,15 +84,17 @@ def _subjects(inputs: Manifest, method: MethodSpec | None, load: Callable[[Geome
         and not level_mismatches(method, a.payload.level, version_pin=a.payload.level.version)
     }
 
-    def make(sid: str, calc: str, composition: str | None, notes: tuple[str, ...],
+    def make(sid: str, calc: str, state: State | None, notes: tuple[str, ...],
              chiral: bool) -> _Subject:
         freq = inputs.evidence(calc)
         sp_calc, sp = layer.get(freq.final.fingerprint, (None, freq))
-        key = (hill_formula(freq.final.symbols), freq.level.charge, freq.level.multiplicity)
-        return _Subject(sid, calc, freq, sp_calc, sp, composition, notes, key,
+        return _Subject(sid, calc, freq, sp_calc, sp, state, notes,
+                        (hill_formula(freq.final.symbols), freq.level.charge),
+                        (freq.level.full_key(), sp.level.full_key()),
                         layer_missing=method is not None and sp_calc is None, chiral=chiral)
 
-    out = {m.minimum_id: make(m.minimum_id, m.freq_calc, m.composition_id, m.notes, m.chiral)
+    out = {m.minimum_id: make(m.minimum_id, m.freq_calc, (m.composition_id, m.state_label),
+                              m.notes, m.chiral)
            for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord) if m.tier == "dft"}
     for r in inputs.records(ArtifactType.REACTION, ReactionRecord):
         if r.saddle is not None:
@@ -99,7 +107,7 @@ def _subjects(inputs: Manifest, method: MethodSpec | None, load: Callable[[Geome
 def _species(sub: _Subject, engine: ThermoEngine, variants: Sequence[ThermoSettings],
              temperatures: Sequence[float], policy: Policy) -> dict[float, list[SpeciesThermo]]:
     """Per temperature, the thermo of every variant (index 0 = main settings)."""
-    shas, saddle = [th.settings_sha(s) for s in variants], sub.composition is None  # TS
+    shas, saddle = [th.settings_sha(s) for s in variants], sub.state is None  # TS
     out = [] if sub.layer_missing else engine.thermo(
         sub.freq, variants, temperatures_K=temperatures, saddle=saddle)
     found = {} if isinstance(out, Failure) else {(r.settings_sha, r.T_K): r for r in out}
@@ -129,21 +137,8 @@ def _species(sub: _Subject, engine: ThermoEngine, variants: Sequence[ThermoSetti
     return rows
 
 
-def _populated(table: Table, subjects: dict[str, _Subject], T: float) -> Table:
-    """Boltzmann weights of the minima within each composition and level of theory."""
-    groups: dict[tuple, list[SpeciesThermo]] = defaultdict(list)
-    for sid, st in table.items():
-        s = subjects[sid]
-        if s.composition is not None and st.G_hartree is not None:
-            groups[s.composition, s.freq.level.full_key(), s.energy.level.full_key()].append(st)
-    return table | {
-        st.subject: st.model_copy(update={"population": w}) for sts in groups.values()
-        for st, w in zip(sts, th.boltzmann_populations([cast(float, x.G_hartree) for x in sts], T),
-                         strict=True)}
-
-
 def _monomers(inputs: Manifest, rt: StageRuntime) -> Monomers:
-    """(Hill, charge) of each system composition -> (monomer key, count) of its components."""
+    """(Hill, charge) of each system composition -> (state, count) of its components."""
     species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)}
     out: Monomers = {}
     for comp in rt.system.compositions:
@@ -151,8 +146,7 @@ def _monomers(inputs: Manifest, rt: StageRuntime) -> Monomers:
         if len(parts) == len(comp.components) and sum(comp.components.values()) > 1:
             symbols = [x for s, n in parts for x in s.geometry.symbols * n]
             key = (hill_formula(symbols), sum(s.charge * n for s, n in parts))
-            out[key] = [((hill_formula(s.geometry.symbols), s.charge, s.multiplicity), n)
-                        for s, n in parts]
+            out[key] = [((s.composition_id, s.state_label), n) for s, n in parts]
     return out
 
 
@@ -164,15 +158,15 @@ def _same_level(subs: Sequence[_Subject], *, state: bool = True) -> bool:
 def _association(names: tuple[str, ...], subjects: dict[str, _Subject], monomers: Monomers,
                  table: Table, T: float, state: th.StandardState, with_ts: bool
                  ) -> tuple[float | None, float | None]:
-    """dG_assoc and dG_act_vs_separated against the monomers' ensemble G (same LOT apart from
-    charge and multiplicity; a monomer without G fails closed)."""
+    """dG_assoc and dG_act_vs_separated against the ensemble G of each monomer's state (same
+    LOT apart from charge and multiplicity; a monomer without G fails closed)."""
     complex_ = subjects.get(names[0])
-    parts = monomers.get(complex_.key[:2]) if complex_ is not None else None
+    parts = monomers.get(complex_.formula) if complex_ is not None else None
     if complex_ is None or not parts:
         return None, None
     energies, used = [], [complex_]
-    for key, _ in parts:
-        subs = [s for s in subjects.values() if s.composition is not None and s.key == key]
+    for part, _ in parts:
+        subs = [s for s in subjects.values() if s.state == part]
         G = [table[s.id].G_hartree for s in subs]
         if not G or None in G:
             return None, None
@@ -203,29 +197,62 @@ def _kcal(subjects: dict[str, _Subject], a: str, b: str) -> float | None:
     return (sa.energy.energy_hartree - sb.energy.energy_hartree) * HARTREE_TO_KCAL_MOL
 
 
+def _state_G(sid: str, subjects: dict[str, _Subject], table: Table) -> float | None:
+    """Lowest G of the state of minimum ``sid`` on its freq and energy LOT (Curtin-Hammett);
+    None without its own G."""
+    own = subjects.get(sid)
+    if own is None or table[sid].G_hartree is None:
+        return None
+    return min(cast(float, table[s.id].G_hartree) for s in subjects.values()
+               if s.state == own.state and s.lot == own.lot and table[s.id].G_hartree is not None)
+
+
+def _submerged(names: tuple[str, ...], subjects: dict[str, _Subject], table: Table) -> bool:
+    """Forward or reverse dE0 = dE + dZPE <= 0 on the energy layer: the saddle is no
+    bottleneck and its TST barrier has no meaning."""
+    e0 = [subjects[n].energy.energy_hartree + st.zpe_hartree for n in names
+          if (st := table.get(n)) is not None and st.zpe_hartree is not None]
+    return len(names) == len(e0) == 3 and e0[2] <= max(e0[:2])
+
+
+def _effective(rx: ReactionRecord, names: tuple[str, ...], subjects: dict[str, _Subject],
+               table: Table, shifts: tuple[float, float], submerged: bool) -> float | None:
+    """dG_eff in kcal/mol from one settings variant: defined with a TS participant or for a
+    barrierless outcome; a submerged TS drops out."""
+    with_ts = len(names) == 3 and not submerged
+    if len(names) < 3 and rx.outcome is not CaseOutcome.BARRIERLESS:
+        return None
+    G_R, G_P = (_state_G(name, subjects, table) for name in names[:2])
+    G_ts = table[names[2]].G_hartree if with_ts else None
+    if G_R is None or G_P is None or (with_ts and G_ts is None):
+        return None
+    ts = None if G_ts is None else (G_ts - G_R) * HARTREE_TO_KCAL_MOL + shifts[0]
+    return th.effective_barrier(ts, 0.0, (G_P - G_R) * HARTREE_TO_KCAL_MOL + shifts[1])
+
+
 def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject], monomers: Monomers, T: float,
               state: th.StandardState, tables: Sequence[Table]) -> ReactionThermo:
     """tables: the thermo of every settings variant at T (index 0 = main settings)."""
     names, table = th.participants(rx), tables[0]
     dG_act, dG_rxn, dzpe = th.reaction_delta(rx, table)
     n_r, n_p = (sum(t.coefficient for t in terms) for terms in (rx.reactants, rx.products))
-    shift_act, shift_rxn = (th.standard_state_shift(dn, T, state) for dn in (1 - n_r, n_p - n_r))
-    band = [th.reaction_delta(rx, t)[0] for t in tables] if dG_act is not None else [None]
-    dE_rxn = _kcal(subjects, names[1], names[0])
-    if rx.degenerate and dE_rxn is not None:
-        dE_rxn = 0.0
+    shifts = (th.standard_state_shift(1 - n_r, T, state),
+              th.standard_state_shift(n_p - n_r, T, state))
+    submerged = _submerged(names, subjects, table)
+    band = [_effective(rx, names, subjects, t, shifts, submerged) for t in tables]
     assoc, vs_separated = _association(names, subjects, monomers, table, T, state,
                                        dG_act is not None)
     return ReactionThermo(
         reaction_id=rx.reaction_id, T_K=T, standard_state=state,
         dE_act_kcal=_kcal(subjects, names[2], names[0]) if len(names) == 3 else None,
-        dE_rxn_kcal=dE_rxn, dzpe_act_kcal=dzpe,
-        dG_act_kcal=None if dG_act is None else dG_act + shift_act,
-        dG_rxn_kcal=None if dG_rxn is None else dG_rxn + shift_rxn,
+        dE_rxn_kcal=_kcal(subjects, names[1], names[0]), dzpe_act_kcal=dzpe,
+        dG_act_kcal=None if dG_act is None else dG_act + shifts[0],
+        dG_rxn_kcal=None if dG_rxn is None else dG_rxn + shifts[1],
         dG_assoc_kcal=assoc, dG_act_vs_separated_kcal=vs_separated,
-        band_kcal=None if None in band else (
-            min(cast(list[float], band)) + shift_act, max(cast(list[float], band)) + shift_act),
-        blockers=_blockers(names, subjects, table),
+        band_kcal=None if None in band else (min(cast(list[float], band)),
+                                             max(cast(list[float], band))),
+        blockers=_blockers(names, subjects, table), dG_eff_kcal=band[0],
+        notes=("submerged_barrier",) if submerged else (),
     )
 
 
@@ -247,7 +274,6 @@ class ThermoStage:
         for T in temperatures:
             tables = [{s.id: r[T][i] for s, r in zip(subjects.values(), rows, strict=True)}
                       for i in range(len(variants))]
-            tables[0] = _populated(tables[0], subjects, T)
             out += [Artifact(
                 artifact_id=f"species_thermo_{st.subject}_{T:g}K",
                 type=ArtifactType.SPECIES_THERMO, payload=st,

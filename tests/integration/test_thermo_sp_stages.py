@@ -1,4 +1,5 @@
-"""sp -> thermo with FakeQM / FakeThermo: energy layer, band, association, mixed LOT, m = 2."""
+"""sp -> thermo with FakeQM / FakeThermo: energy layer, band, association, mixed LOT, m = 2,
+dG_eff (state reference, submerged barrier, barrierless)."""
 
 import math
 from dataclasses import replace
@@ -12,7 +13,7 @@ from hfauto.backends.protocols import Capability, ThermoResult
 from hfauto.chemistry.gates import zpe_hartree
 from hfauto.chemistry.thermo import settings_sha, thermo_frequencies
 from hfauto.core import records as R
-from hfauto.core.constants import R_KCAL_MOL_K
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
@@ -41,7 +42,7 @@ def _state(ev, charge, multiplicity):
 
 def _setup(fake_runtime, tmp_run, script, states=NEUTRAL):
     """The double well as composition c = NH + O (p2: the product at another grid; o2: a second
-    O minimum), rx1 = reactant -> product and rx2 = reactant -> p2."""
+    minimum of the O state), rx1 = reactant -> product and rx2 = reactant -> p2."""
     qm = FakeQM(tmp_run, pes := double_well())
     ev = {p: _state(qm.frequencies(pes.molecule(p), DFT), *states["complex"])
           for p in ("reactant", "product", "ts")}
@@ -60,7 +61,7 @@ def _setup(fake_runtime, tmp_run, script, states=NEUTRAL):
     arts += [Artifact(artifact_id=f"m_{k}", type=T.MINIMUM, payload=R.MinimumRecord(
         minimum_id=f"m_{k}", basin_id=k, composition_id={"nh": "nh", "o": "o", "o2": "o"}.get(
             k, "HNO"), species_id=k, tier="dft", level_key="x", opt_calc="o", freq_calc=calc_id(ev[k]),
-        energy_hartree=0.0, state_label=k)) for k in ev if k != "ts"]
+        energy_hartree=0.0, state_label={"o2": "o"}.get(k, k))) for k in ev if k != "ts"]
     term = (R.StoichTerm(composition_id="HNO", coefficient=1),)
     rx1 = R.ReactionRecord(
         reaction_id="rx1", reactants=term, products=term, minima=("m_reactant", "m_product"),
@@ -95,9 +96,9 @@ def test_sp_then_thermo(fake_runtime, tmp_run):
     assert rx.dG_assoc_kcal < 0 and plain["rx1_298.15K_1M"].dG_assoc_kcal == pytest.approx(
         rx.dG_assoc_kcal - 1.894, abs=1e-3)
     assert rx.dG_act_vs_separated_kcal == pytest.approx(rx.dG_assoc_kcal + rx.dG_act_kcal)
+    assert rx.dG_eff_kcal == pytest.approx(rx.dG_act_kcal) and rx.notes == ()  # one conformer
+    assert rx.band_kcal[0] <= rx.dG_eff_kcal <= rx.band_kcal[1]
     assert plain["rx2_298.15K_1atm"].blockers == ("mixed_level_of_theory",)
-    pop = {k: plain[f"m_{k}_298.15K"].population for k in ("reactant", "product", "p2")}
-    assert pop["reactant"] + pop["product"] == pytest.approx(1.0) and pop["p2"] == 1.0  # per LOT
     assert _thermo(view, rt, "tzvp")["m_reactant_298.15K"].energy_calc  # composite G on the sp
 
     ts = calc_id(ev["ts"])  # S9: the sp layer was asked for, the TS has none -> fail closed
@@ -125,6 +126,59 @@ def test_association_across_charge_and_spin_fails_closed(fake_runtime, tmp_run):
     out = _thermo(inputs, rt)
     assert out["m_o2_298.15K"].G_hartree is None and out["m_o_298.15K"].G_hartree is not None
     assert out["rx1_298.15K_1atm"].dG_assoc_kcal is None
+    isomer = _relabel(inputs, {"m_o2": {"state_label": "o_isomer"}})  # another O state
+    rt_ln2 = R_KCAL_MOL_K * 298.15 * math.log(2)  # O alone: its ensemble loses the o2 twin
+    assert _thermo(isomer, rt)["rx1_298.15K_1atm"].dG_assoc_kcal == pytest.approx(
+        rx.dG_assoc_kcal - rt_ln2)
+
+
+def _relabel(view, updates):
+    arts = [a.model_copy(update={"payload": a.payload.model_copy(update=updates[a.artifact_id])})
+            if a.artifact_id in updates else a for a in view.artifacts]
+    return view.model_copy(update={"artifacts": arts})
+
+
+def test_dg_eff_takes_the_lowest_conformer_of_the_reactant_state(fake_runtime, tmp_run):
+    inputs, rt, ev = _setup(fake_runtime, tmp_run, _gv)
+    low = ev["reactant"].model_copy(update={
+        "job_key": "low", "energy_hartree": ev["reactant"].energy_hartree - 1 / HARTREE_TO_KCAL_MOL})
+    conformer = R.MinimumRecord(
+        minimum_id="m_low", basin_id="low", composition_id="HNO", species_id="low", tier="dft",
+        level_key="x", opt_calc="o", freq_calc=calc_id(low), energy_hartree=0.0,
+        state_label="reactant")
+    view = inputs.model_copy(update={"artifacts": [
+        *inputs.artifacts, Artifact(artifact_id=calc_id(low), type=T.CALCULATION, payload=low),
+        Artifact(artifact_id="m_low", type=T.MINIMUM, payload=conformer)]})
+    before, after = _thermo(inputs, rt)["rx1_298.15K_1atm"], _thermo(view, rt)["rx1_298.15K_1atm"]
+    assert after.dG_act_kcal == pytest.approx(before.dG_act_kcal)  # seen from its own conformer
+    assert after.dG_eff_kcal == pytest.approx(before.dG_eff_kcal + 1.0)  # Curtin-Hammett
+
+
+def test_a_submerged_barrier_and_a_barrierless_step_rank_by_max_dg_rxn_0(fake_runtime, tmp_run):
+    inputs, rt, ev = _setup(fake_runtime, tmp_run, _gv)
+    rx1 = inputs.get("rx1").payload
+    down = rx1.model_copy(update={"reaction_id": "down", "minima": ("m_product", "m_reactant")})
+    flat = [r.model_copy(update={"reaction_id": f"bl_{r.reaction_id}", "saddle": None,
+                                 "outcome": R.CaseOutcome.BARRIERLESS}) for r in (rx1, down)]
+    view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, *(
+        Artifact(artifact_id=r.reaction_id, type=T.REACTION, payload=r) for r in (down, *flat))]})
+    plain = _thermo(view, rt)
+    up, back = plain["bl_rx1_298.15K_1atm"], plain["bl_down_298.15K_1atm"]
+    assert up.dG_eff_kcal == pytest.approx(plain["rx1_298.15K_1atm"].dG_rxn_kcal)
+    assert up.dG_eff_kcal > 0 and up.dG_act_kcal is None
+    assert back.dG_eff_kcal == 0.0 and back.dG_rxn_kcal < 0
+    assert plain["rx1_298.15K_1atm"].notes == ()
+    # E_TS 1.6 kcal/mol above the product, whose ZPE is 2.3 kcal/mol higher than the TS's
+    # (reaction mode dropped): the reverse dE0 is <= 0, the forward one stays > 0 (P4a).
+    ts = calc_id(ev["ts"])
+    sunk = _thermo(_relabel(view, {ts: {"energy_hartree": ev["product"].energy_hartree
+                                        + 0.0025}}), rt)
+    for name, ref in (("rx1", up), ("down", back)):
+        rx = sunk[f"{name}_298.15K_1atm"]
+        assert rx.notes == ("submerged_barrier",) and rx.blockers == () and rx.dE_act_kcal > 0
+        assert rx.dG_eff_kcal == pytest.approx(ref.dG_eff_kcal)  # max(dG_rxn, 0)
+    assert sunk["rx1_298.15K_1atm"].dG_act_kcal < sunk["rx1_298.15K_1atm"].dG_rxn_kcal
+    assert sunk["down_298.15K_1atm"].dG_act_kcal < 0
 
 
 def test_chiral_minimum_and_ts_gain_minus_rt_ln2(fake_runtime, tmp_run):
@@ -135,9 +189,7 @@ def test_chiral_minimum_and_ts_gain_minus_rt_ln2(fake_runtime, tmp_run):
     ts = write_geometry(tmp_run, "chiral_ts.xyz", ["C", "H", "F", "Cl", "Br"], np.array(chfclbr))
     updates = {calc_id(ev["ts"]): {"final": ts},  # a C1 TS geometry; its thermo is unchanged
                "m_product": {"chiral": True}}
-    arts = [a.model_copy(update={"payload": a.payload.model_copy(update=updates[a.artifact_id])})
-            if a.artifact_id in updates else a for a in inputs.artifacts]
-    chiral = _thermo(inputs.model_copy(update={"artifacts": arts}), rt)
+    chiral = _thermo(_relabel(inputs, updates), rt)
     m = -R_KCAL_MOL_K * 298.15 * math.log(2)  # -0.4107 kcal/mol
     for name, shift in (("rx1_298.15K_1atm", (m, m)), ("rx2_298.15K_1atm", (m, 0.0))):
         before, after = plain[name], chiral[name]  # rx2 ends at m_p2, which is achiral

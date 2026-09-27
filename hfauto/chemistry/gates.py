@@ -37,8 +37,6 @@ class Policy:
     reaction_window_kcal: float = 40.0
     thermo_zpe_tol_hartree: float = 1.0e-5
     thermo_energy_tol_hartree: float = 1.0e-6
-    rank_dzpe_base_kcal: float = 1.0
-    rank_dzpe_per_h_kcal: float = 4.0
     spin_contamination_tol: float = 0.1
 
 
@@ -49,12 +47,10 @@ _PES_FIELDS = (
 )
 _STATE_FIELDS = ("charge", "multiplicity")
 _NUMERICS_FIELDS = ("grid", "scf_tol")
-_RANKABLE_OUTCOMES = frozenset(
-    {CaseOutcome.ELEMENTARY_STEP, CaseOutcome.DEGENERATE, CaseOutcome.REASSIGNED}
-)
-_RANK_BLOCKERS = (
-    "thermo_unavailable", "mixed_level_of_theory", "spin_contaminated", "method_sign_disagreement",
-)
+_RANKABLE_OUTCOMES = frozenset({
+    CaseOutcome.ELEMENTARY_STEP, CaseOutcome.DEGENERATE, CaseOutcome.REASSIGNED,
+    CaseOutcome.BARRIERLESS,
+})
 
 ConnectionLabel = Literal["elementary", "degenerate", "reassigned", "failed"]
 
@@ -235,26 +231,15 @@ def thermo_consistent(
     return _gate(reasons)
 
 
-def rankable(
-    reaction: ReactionRecord,
-    thermo: ReactionThermo | None,
-    *,
-    participant_notes: Sequence[str] = (),
-    policy: Policy = _DEFAULT,
-) -> Gate:
-    """Unrankable outcomes give their reason and real blockers only (no dG_act or dzpe check)."""
-    flags = set(participant_notes) | set(thermo.blockers if thermo is not None else ())
-    real = [b for b in _RANK_BLOCKERS if b in flags]
+def rankable(reaction: ReactionRecord, thermo: ReactionThermo | None) -> Gate:
+    """A rankable outcome with dG_eff and no thermo blocker (thermo_unavailable,
+    mixed_level_of_theory, spin_contaminated); other outcomes give their reason and the
+    blockers."""
+    real = list(thermo.blockers) if thermo is not None else []
     if reaction.outcome not in _RANKABLE_OUTCOMES:
         return _gate([f"outcome:{reaction.outcome}", *real])
-    if (thermo is None or thermo.dG_act_kcal is None) and "thermo_unavailable" not in real:
+    if (thermo is None or thermo.dG_eff_kcal is None) and "thermo_unavailable" not in real:
         real.insert(0, "thermo_unavailable")
-    tolerance = policy.rank_dzpe_base_kcal + policy.rank_dzpe_per_h_kcal * max(
-        1, reaction.n_h_transferred
-    )
-    dzpe = thermo.dzpe_act_kcal if thermo is not None else None
-    if dzpe is not None and abs(dzpe) > tolerance:
-        real.append("dzpe_out_of_tolerance")
     return _gate(real)
 
 

@@ -100,7 +100,7 @@
 
 | 系 | 結果 | 所要時間 |
 |---|---|---|
-| S1 `sn2_cl` | 2 つの錯体とも trial 0 が背面 SN2 の T1(C–Cl′ 形成、C–Cl 切断)。NT2 で TS −431.8i(ΔE‡ 44.36 kJ/mol)、IRC の端は状態ラベルが source と同じで C–Cl′ に結合した恒等 SN2 の生成物として残る(以前は same_as_source)。16 attempt で生成物 6(すべて恒等 SN2。重複は U4-P7) | 0:28 |
+| S1 `sn2_cl` | 2 つの錯体とも trial 0 が背面 SN2 の T1(C–Cl′ 形成、C–Cl 切断)。NT2 で TS −431.8i(ΔE‡ 44.36 kJ/mol)、IRC の端は状態ラベルが source と同じで C–Cl′ に結合した恒等 SN2 の生成物として残る(以前は same_as_source)。16 attempt で生成物 6(すべて恒等 SN2。重複は U4-P7) | 0:27 |
 | S6 `oh_ch4` | GFN2-xTB では引き抜きが障壁なしで、placement の seed は screen で CH3···H2O に崩壊する(`collapsed_to:CH3+H2O` の緩和の発見 2 件)。H2O + CH3• は screen 極小として残り、explore の出発点もこの CH3···H2O なので、13 attempt は逆向き(生成物 0)。引き抜きの T1 は単体テストの CH4···OH で先頭に出るが、ReaDuct の実計算(O···H 2.30 Å)では NT2 が `ts_not_converged`、AFIR が `same_as_source` | 0:14 |
 | S7 `nh3_icl` | 2 断片の錯体 2 つで T1 のハロゲン移動(N–I 形成・I–Cl 切断)と N–Cl 形成・I–Cl 切断。polar_h の drive はない。NT2 で NH2I + HCl(−193.6i、124.4 kJ/mol)、AFIR で 2 生成物 | 0:17 |
 | S10 `amine_pilot2` | NH3·HF の二重 H 交換(交換リレー、形成 (0,4),(1,5)、切断 (4,5),(0,1))は 1 attempt で −1265.3i の TS に到達し、生成物として残った(W7 は単独の移動 3 件がすべて same_as_source)。`paths` で発見の縮退 case が走り `degenerate_rearrangement`、DFT の TS −1081.2i、ΔE‡ 32.89、ΔG‡ 32.29 kcal/mol。TMA の 1,2-H 移動 ×9 の同じ drive は 1 件になり、376.37 kJ/mol の TS は W7 の 6 回から 3 回(1,2-H 移動 1 件と、同じ TS に落ちるメチル間のリレー 2 件)に減った。explore 全体は 37 attempt・生成物 1(W7 は 44・0) | 23:35 |
@@ -111,6 +111,22 @@
 
 - 実 run で見つかった列挙の穴: CREST の NH3·HF では F···H(N) が 3.03 Å で Σr_vdW(2.67 Å)を超え、レビューどおりの接触の規則では二重 H 交換のリレーが作られなかった。2 つ目の H が 1 つ目の受容原子から供与原子へ移る交換は、1 つ目の移動で両原子が近づくので 2 つ目の接触を問わないことにした(単体テストはこの CREST 構造)。
 - M3・S6 の −289i の TMA·(HF)₂ の HF 交換(下の §5)は、M4 からは same_as_source ではなく生成物(縮退転位)になる。
+
+**M5 の実測(U7-P1・U8-P2、`/home/user/hfauto_r6/M5/runs/<run>`、以前の run の複製を `--from paths`、プローブの複製は `--from structures`)**
+
+M5 から順位の量は δG_eff、ranking.csv の見出しは `…,dG_eff_kcal,band_low_kcal,band_high_kcal,dG_act_kcal,dG_rxn_kcal,dG_act_vs_separated_kcal,torsional,blockers,notes`(手法パネルがあると `dE_act_panel_min_kcal,dE_act_panel_max_kcal` が付く)。blocker の `dzpe_out_of_tolerance` と `method_sign_disagreement` はなくなった。以下の §1〜§12 に出てくるこの 2 つは当時の記録である。
+
+| 系 | 結果 | 所要時間 |
+|---|---|---|
+| S14 `malonaldehyde`(p4_malon の複製) | `degenerate_rearrangement`(TS −1100.4i)、ΔE‡ 2.011、ΔZPE‡ −2.401 で ΔE0‡ ≤ 0 → 注記 `submerged_barrier`、δG_eff = max(ΔG_rxn, 0) = 0.0(band 0.0〜0.0)で rank 1。表示用の ΔG‡ 0.250 は残る | 8:46 |
+| S17 `hf_dimer_swap` | M2 と同じく初期経路が H の同じ側の回転を通り、鞍点が maxiter で `unresolved_within_budget`(順位なし)。障壁なしの行の順位付けは QM を使わないテストでだけ確認(S-A の固定端 CI-NEB 待ち) | 2:18 |
+| S4 `ch3o_doublet` | `elementary_step`、δG_eff = ΔG‡ 30.6117、torsional 列は False(結合変化のある 1,2-H 移動) | 0:01 |
+| 手法パネル HCN(R1 の複製に `method_panel` を追記) | ranking.csv の dE_act_panel_min / max 46.369 / 46.621 は method_panel.csv の最小・最大と一致(sign_disagreement 列はない) | 0:30 |
+| 手法パネル SN2(sn2_panel の複製、既定のパネル) | dE_act_panel_min / max 10.446 / 15.101 が method_panel.csv と一致。δG_eff 11.077 で rank 1 | 0:27 |
+| R1 `hcn` | `elementary_step`、δG_eff = ΔG‡ 42.1783 | 0:02 |
+| R2 `hono` | `elementary_step`、δG_eff = ΔG‡ 11.8158(状態の最小 G は trans)、torsional True | 0:01 |
+| R3 `nh3_inversion` | `degenerate_rearrangement`、δG_eff = ΔG‡ 3.8395 | 0:01 |
+| R4 `water_same_basin` | `same_basin`、順位なし(blocker は `outcome:same_basin` だけ) | 0:01 |
 
 ---
 

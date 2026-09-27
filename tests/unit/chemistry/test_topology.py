@@ -1,8 +1,7 @@
-"""Hysteresis bonds, fragments, proton transfer, WL atom classes and state labels (design §5.5,
+"""Hysteresis bonds, fragments, bond changes, WL atom classes and state labels (design §5.5,
 CH-07)."""
 
 import numpy as np
-import pytest
 
 from hfauto.chemistry import topology as top
 
@@ -28,9 +27,7 @@ def test_hysteresis_keeps_previous_state_in_the_band():
 def test_proton_transfer_changes():
     formed, broken = top.bond_changes(NH3_HF, NEUTRAL, ION_PAIR)
     assert formed == {(0, 4)} and broken == {(4, 5)}
-    assert top.transferred_hydrogens(NH3_HF, NEUTRAL, ION_PAIR) == 1
-    assert top.transferred_hydrogens(NH3_HF, NEUTRAL, NEUTRAL) == 0
-    assert top.proton_coordinate(NEUTRAL, 5, 4, 0) == pytest.approx(0.95 - 1.75)
+    assert top.bond_changes(NH3_HF, NEUTRAL, NEUTRAL) == (frozenset(), frozenset())
 
 
 def test_labile_hydrogens_and_acceptors():

@@ -33,7 +33,8 @@ def test_report_stage_writes_tables_from_a_fake_view(fake_runtime, tmp_run):
                                   source="declared", outcome=rec.CaseOutcome.ELEMENTARY_STEP)
     thermo = rec.ReactionThermo(reaction_id="r1", T_K=298.15, standard_state="1atm",
                                 dE_act_kcal=6.0, dE_rxn_kcal=2.0, dzpe_act_kcal=-1.0,
-                                dG_act_kcal=5.0, dG_rxn_kcal=2.0, band_kcal=(4.5, 5.5))
+                                dG_act_kcal=5.0, dG_rxn_kcal=2.0, band_kcal=(4.5, 5.5),
+                                dG_eff_kcal=5.0)
     found = rec.DiscoveryRecord(discovery_id="d1", source_minimum="reactant", mechanism="nt2",
                                 outcome="product")
     failure = Failure(kind=FailureKind.SCF_NOT_CONVERGED, reason="scf")
@@ -53,14 +54,17 @@ def test_report_stage_writes_tables_from_a_fake_view(fake_runtime, tmp_run):
     assert "<svg class='energy'" in page and "href='#rxn-r1'" in page and "800.0i" in page
     read = {name: list(csv.DictReader((tmp_run / ref.path).read_text().splitlines()))
             for name, ref in tables.items() if name.endswith(".csv")}
-    panel = read["method_panel.csv"]  # two levels on one PES: same values, no disagreement
+    panel = read["method_panel.csv"]  # two levels on one PES: the same values
     assert len({row["level_key"] for row in panel}) == 2
-    assert {row["sign_disagreement"] for row in panel} == {"False"}
     assert all(float(row["dE_rxn_kcal"]) > 0 for row in panel)  # the product lies higher
     assert {(r["metric"], r["key"], r["count"]) for r in read["coverage.csv"]} == {
         ("attempts", "nt2", "1"), ("products", "nt2", "1"),
         ("failure_kind", "scf_not_converged", "1")}
     ranked = read["ranking.csv"][0]
-    assert ranked["band_low_kcal"] == "4.5" and ranked["dG_act_kcal"] == "5.0"
+    assert (ranked["dG_eff_kcal"], ranked["band_low_kcal"], ranked["dG_act_kcal"]) == (
+        "5.0", "4.5", "5.0")
     assert (ranked["T_K"], ranked["standard_state"], ranked["dG_rxn_kcal"]) == (
         "298.15", "1atm", "2.0")
+    assert (ranked["torsional"], ranked["dG_act_vs_separated_kcal"], ranked["notes"]) == (
+        "False", "", "")
+    assert ranked["dE_act_panel_min_kcal"] == panel[0]["dE_act_min_kcal"]

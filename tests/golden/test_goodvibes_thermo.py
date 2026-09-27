@@ -44,6 +44,7 @@ def test_g06_hcn_to_hnc_free_energies(golden):
     dG_act, dG_rxn, dzpe = th.reaction_delta(RX, table)
     assert dG_rxn == pytest.approx(12.742, abs=1e-3) and dG_act == pytest.approx(42.281, abs=1e-3)
     assert dzpe == pytest.approx((table["ts"].zpe_hartree - table["a"].zpe_hartree) * H2K)
-    assert th.reaction_delta(RX.model_copy(update={"degenerate": True}), table)[1] == 0.0
+    degenerate = RX.model_copy(update={"degenerate": True, "minima": ("a", "a")})
+    assert th.reaction_delta(degenerate, table)[1] == 0.0  # one minimum at both ends
     barrierless = RX.model_copy(update={"outcome": R.CaseOutcome.BARRIERLESS})
     assert th.reaction_delta(barrierless, table)[0] is None  # no connected TS, no barrier

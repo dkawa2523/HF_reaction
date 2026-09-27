@@ -151,7 +151,7 @@ def _record(rid: str, source: Source, minima: tuple[MinimumRecord, MinimumRecord
         # (enantiomerization) stays a reaction (CH-35).
         degenerate=ma.basin_id == mb.basin_id and identity.mapped_equivalent(symbols, xa, xb),
         coordinate=coordinate, torsional=not (formed or broken) if torsional is None else torsional,
-        n_h_transferred=topology.transferred_hydrogens(symbols, xa, xb), low_level_ts=low_level_ts,
+        low_level_ts=low_level_ts,
     )
 
 

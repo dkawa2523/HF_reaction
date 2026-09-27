@@ -77,7 +77,6 @@ def _child(parent: ReactionRecord, index: int, minima: tuple[str, str],
         minima=minima,
         endpoints=endpoints,
         torsional=parent.torsional,
-        n_h_transferred=parent.n_h_transferred,
     )
 
 
@@ -86,8 +85,8 @@ def split(
 ) -> tuple[ReactionRecord, ReactionRecord]:
     """Fresh child cases R→I and I→P of a multi-step case.
 
-    Stoichiometry, ``torsional`` and ``n_h_transferred`` are inherited from the parent; the
-    declared coordinate and low-level TS describe the whole step and are not.
+    Stoichiometry and ``torsional`` are inherited from the parent; the declared coordinate
+    and low-level TS describe the whole step and are not.
     """
     compositions = {t.composition_id for t in (*parent.reactants, *parent.products)}
     if intermediate.composition_id not in compositions:

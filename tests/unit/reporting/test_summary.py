@@ -1,23 +1,23 @@
+import csv
 from dataclasses import astuple
 
 from hfauto.core import records as rec
-from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, Geometry, Level
 from hfauto.core.manifest import Artifact
-from hfauto.reporting.summary import coverage, method_panel, participant_notes, rank_rows
+from hfauto.reporting.summary import coverage, method_panel, rank_rows, write_tables
 
 EL = rec.CaseOutcome.ELEMENTARY_STEP
 
 
 def rxn(rid, outcome=EL, minima=("mr", "mp"), **kw):
     return rec.ReactionRecord(reaction_id=rid, reactants=(), products=(), minima=minima,
-                          endpoints=("a", "b"), source="declared", outcome=outcome, **kw)
+                              endpoints=("a", "b"), source="declared", outcome=outcome, **kw)
 
 
-def th(rid, dg, band=None, T=298.15):
+def th(rid, dg, band=None, T=298.15, blockers=()):
     return rec.ReactionThermo(reaction_id=rid, T_K=T, standard_state="1atm", dE_act_kcal=dg,
-                          dE_rxn_kcal=1.0, dzpe_act_kcal=-0.5, dG_act_kcal=dg, dG_rxn_kcal=1.0,
-                          band_kcal=band)
+                              dE_rxn_kcal=1.0, dzpe_act_kcal=-0.5, dG_act_kcal=dg,
+                              dG_rxn_kcal=1.0, dG_eff_kcal=dg, band_kcal=band, blockers=blockers)
 
 
 def ev(fp, energy, grid):
@@ -28,30 +28,31 @@ def ev(fp, energy, grid):
                     energy_hartree=energy, output=g.file, job_key=fp)
 
 
-def mini(mid, calc, notes=()):
+def mini(mid, calc):
     return rec.MinimumRecord(minimum_id=mid, basin_id=mid, composition_id="c", species_id=mid,
-                         tier="dft", level_key="k", opt_calc=calc, freq_calc=calc,
-                         energy_hartree=0.0, state_label="l", notes=notes)
+                             tier="dft", level_key="k", opt_calc=calc, freq_calc=calc,
+                             energy_hartree=0.0, state_label="l")
 
 
-def test_overlapping_bands_share_a_rank_and_unrankable_reactions_are_listed_unranked():
-    reactions = [rxn("a"), rxn("b"), rxn("c"), rxn("d"), rxn("bl", rec.CaseOutcome.BARRIERLESS),
-                 rxn("spin"), rxn("open", None)]
+def test_ranks_follow_dg_eff_with_overlapping_bands_sharing_a_rank():
+    reactions = [rxn("a"), rxn("b"), rxn("c"), rxn("d", torsional=True),
+                 rxn("bl", rec.CaseOutcome.BARRIERLESS), rxn("spin"), rxn("open", None)]
     thermo = [th("a", 10.0, (9.0, 11.0)), th("b", 10.5, (10.8, 12.0)), th("c", 20.0, (19.0, 21.0)),
-              th("d", 12.5, (12.1, 13.0)), th("bl", 1.0), th("spin", 2.0), th("c", 1.0, T=500.0)]
-    notes = {"spin": ("spin_contaminated",)}
-    rows = rank_rows(reactions, thermo, notes, 298.15, "1atm")
-    assert [(r.reaction_id, r.rank) for r in rows] == [
-        ("a", 1), ("b", 1), ("d", 3), ("c", 4), ("bl", None), ("spin", None)]
+              th("d", 12.5, (12.1, 13.0)), th("bl", 1.0), th("spin", 2.0, None, 298.15,
+                                                             ("spin_contaminated",)),
+              th("c", 1.0, T=500.0)]
+    rows = rank_rows(reactions, thermo, 298.15, "1atm")
+    assert [(r.reaction_id, r.rank) for r in rows] == [  # a barrierless step ranks too
+        ("bl", 1), ("a", 2), ("b", 2), ("d", 4), ("c", 5), ("spin", None)]
     by_id = {r.reaction_id: r for r in rows}
-    assert by_id["bl"].blockers == ("outcome:barrierless_at_resolution",)
-    assert "spin_contaminated" in by_id["spin"].blockers and not by_id["spin"].rankable
+    assert by_id["bl"].blockers == () and by_id["spin"].blockers == ("spin_contaminated",)
     assert by_id["a"].tier == "minima" and by_id["a"].band_kcal == (9.0, 11.0)
-    assert [r.rank for r in rank_rows(reactions, thermo, notes, 298.15, "1M")] == [None] * 6
-    by_rxn = rank_rows(reactions[:3], thermo[:3], {}, 298.15, "1atm", metric="dG_rxn")
-    assert [r.rank for r in by_rxn] == [1, 1, 1]  # equal dG_rxn, bands apply to dG_act only
-    assert {(r.T_K, r.standard_state, r.dG_rxn_kcal) for r in by_rxn} == {(298.15, "1atm", 1.0)}
-    old = by_rxn[0].model_dump(exclude={"T_K", "standard_state", "dG_rxn_kcal"})
+    assert by_id["d"].torsional and not by_id["a"].torsional  # a torsion stays ranked
+    assert {(r.T_K, r.standard_state, r.dG_rxn_kcal) for r in rows} == {(298.15, "1atm", 1.0)}
+    assert [r.rank for r in rank_rows(reactions, thermo, 298.15, "1M")] == [None] * 6
+    new = {"T_K", "standard_state", "dG_rxn_kcal", "dG_eff_kcal", "dG_act_vs_separated_kcal",
+           "torsional", "notes"}
+    old = rows[0].model_dump(exclude=new)
     assert rec.RankRow.model_validate(old).T_K is None  # a report row of an older manifest
 
 
@@ -73,30 +74,30 @@ def test_coverage_counts_mechanisms_negative_reasons_and_failure_kinds():
         ("failure_kind", "timeout", 2)}
 
 
-def test_panel_keys_by_full_level_and_sign_disagreement_blocks_ranking():
+def test_panel_spread_is_two_ranking_columns_not_a_blocker(tmp_path):
+    """dE_rxn changes sign between the levels (+6.28 / -6.28): no blocker, both still rank."""
     calcs = {"r": ev("R", -1.0, "fine"), "p": ev("P", -0.99, "fine"), "t": ev("T", -0.98, "fine"),
-             "r2": ev("R", -1.0, "xfine"), "p2": ev("P", -1.01, "xfine"), "x": ev("X", 0, "fine")}
-    minima = {"mr": mini("mr", "r"), "mp": mini("mp", "p", ("soft_imaginary_mode",))}
+             "r2": ev("R", -1.0, "xfine"), "p2": ev("P", -1.01, "xfine"),
+             "t2": ev("T", -0.975, "xfine"), "x": ev("X", 0, "fine")}
+    minima = {"mr": mini("mr", "r"), "mp": mini("mp", "p")}
     saddle = rec.SaddleClaim(saddle_calc="t", freq_calc="t", imag_cm1=-900.0, energy_hartree=-0.98)
     reactions = [rxn("x", saddle=saddle), rxn("lost", minima=("mr", ""))]
-    rows, disagreements = method_panel(calcs, reactions, minima=minima)
-    assert len({r.level_key for r in rows}) == 2 and {r.reaction_id for r in rows} == {"x"}
-    fine, xfine = sorted(rows, key=lambda r: r.level)
+    panel = method_panel(calcs, reactions, minima=minima)
+    assert len({r.level_key for r in panel}) == 2 and {r.reaction_id for r in panel} == {"x"}
+    fine, xfine = sorted(panel, key=lambda r: r.level)
     assert fine.level.endswith(" fine") and xfine.level.endswith(" xfine")
-    assert round(fine.dE_rxn_kcal, 2) == 6.28 and round(fine.dE_act_kcal, 2) == 12.55
-    assert xfine.dE_act_kcal is None and fine.dE_rxn_min_kcal == xfine.dE_rxn_kcal < 0
-    assert disagreements == {"x"} and all(r.sign_disagreement for r in rows)
-    notes = participant_notes(reactions, minima, disagreements)
-    assert notes["x"] == ("soft_imaginary_mode", "method_sign_disagreement")
-    lost, x = rank_rows(reactions, [th("x", 5.0), th("lost", 6.0)], notes, 298.15, "1atm")
-    assert (lost.rank, x.rank, x.blockers) == (1, None, ("method_sign_disagreement",))
+    assert (round(fine.dE_rxn_kcal, 2), round(fine.dE_act_kcal, 2)) == (6.28, 12.55)
+    assert (round(xfine.dE_rxn_min_kcal, 2), round(xfine.dE_rxn_max_kcal, 2)) == (-6.28, 6.28)
+    rows = rank_rows(reactions, [th("x", 5.0), th("lost", 6.0)], 298.15, "1atm")
+    assert [(r.reaction_id, r.rank, r.blockers) for r in rows] == [("x", 1, ()), ("lost", 2, ())]
 
+    def ranking(panel_rows):
+        path = write_tables(tmp_path, rows, [], panel_rows)["ranking.csv"]
+        return {r["reaction_id"]: r for r in csv.DictReader(path.read_text().splitlines())}
 
-def test_panel_sign_deadband_ignores_near_zero_reaction_energies():
-    d_rxn = (0.13, -0.03, 0.33, 0.47, -0.64)  # HONO trans->cis panel, kcal/mol
-    calcs = {f"{fp}{i}": ev(fp.upper(), d / HARTREE_TO_KCAL_MOL if fp == "p" else 0.0, f"g{i}")
-             for i, d in enumerate(d_rxn) for fp in "rp"}
-    minima = {"mr": mini("mr", "r0"), "mp": mini("mp", "p0")}
-    rows, disagreements = method_panel(calcs, [rxn("hono")], minima=minima)
-    assert len(rows) == 5 and not disagreements and not any(r.sign_disagreement for r in rows)
-    assert (round(rows[0].dE_rxn_min_kcal, 2), round(rows[0].dE_rxn_max_kcal, 2)) == (-0.64, 0.47)
+    x = ranking(panel)["x"]
+    assert (x["dE_act_panel_min_kcal"], x["dE_act_panel_max_kcal"]) == (
+        str(fine.dE_act_min_kcal), str(fine.dE_act_max_kcal))
+    assert round(float(x["dE_act_panel_max_kcal"]), 2) == 15.69
+    assert ranking(panel)["lost"]["dE_act_panel_min_kcal"] == ""
+    assert "dE_act_panel_min_kcal" not in ranking([fine])["x"]  # one level is no panel

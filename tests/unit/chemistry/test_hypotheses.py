@@ -81,7 +81,7 @@ def test_declared_reaction_comes_first_and_borrows_the_discovery_ts():
     assert rec.minima == ("m_hcn", "m_hnc") and rec.endpoints == ("hcn", "hnc")
     assert rec.reactants[0].composition_id == rec.products[0].composition_id == "CHN_q0_m1"
     assert rec.coordinate == (term,) and not rec.torsional and not rec.degenerate
-    assert rec.n_h_transferred == 1 and rec.low_level_ts == hnc.geometry  # d2 vetoes nothing
+    assert rec.low_level_ts == hnc.geometry  # d2 vetoes nothing
 
     [auto] = select(basins(*minima), [hcn, hnc], found, [], load)
     assert auto.source == "discovery" and auto.reaction_id.startswith("rxn_discovery_")
@@ -114,7 +114,7 @@ def test_rough_inputs_are_judged_on_the_basin_structure():
     rotation = ReactionInput(id="rot", reactant="rotor_a", product="rotor_b")
     [rec] = select([(basin, species("rotor_opt", "COHHHH", methanol()).geometry)], [a, b], [],
                    [rotation], load)
-    assert rec.degenerate and rec.torsional and rec.n_h_transferred == 0
+    assert rec.degenerate and rec.torsional
 
 
 def test_a_declared_enantiomerization_is_degenerate_not_same_basin():
@@ -139,7 +139,7 @@ def test_a_discovery_within_one_basin_is_a_degenerate_hypothesis():
     [rec] = select(basins(screen, basin), [source, swapped], found, [], load)
     assert (rec.source, rec.minima, rec.endpoints) == ("discovery", ("d_xch", "d_xch"),
                                                        ("xch_src", "xch_prod"))
-    assert rec.degenerate and not rec.torsional and rec.n_h_transferred == 2
+    assert rec.degenerate and not rec.torsional
     assert rec.low_level_ts == ts
 
 
@@ -174,8 +174,7 @@ def test_conformer_pairs_need_a_30_degree_twist():
 
     records = select(basins(*minima), confs, [], [], load)
     assert [r.minima for r in records] == [("m0", "m2"), ("m1", "m2")]  # 10° apart is dropped
-    assert all(r.source == "conformer" and r.torsional and r.n_h_transferred == 0
-               for r in records)
+    assert all(r.source == "conformer" and r.torsional for r in records)
 
 
 def test_a_0p05_angstrom_change_is_not_a_reaction():

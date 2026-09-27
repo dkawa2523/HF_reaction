@@ -12,7 +12,7 @@ from hfauto.drivers.reaction_case.state import Action, Decision
 TERM = r.StoichTerm(composition_id="H3N_q0_m1", coefficient=1)
 CASE = r.ReactionRecord(reaction_id="rxn", reactants=(TERM,), products=(TERM,), minima=("ma", "mb"),
                         endpoints=("sa", "sb"), source="declared", torsional=True,
-                        n_h_transferred=1, reasons=("note",))
+                        reasons=("note",))
 SADDLE = r.SaddleClaim(saddle_calc="s", freq_calc="f", imag_cm1=-900.0, energy_hartree=-56.0)
 QRC = r.ConnectionClaim(side_calcs=("p", "m"), minima=("mb", "ma"), amplitude_A=0.1)
 
@@ -70,7 +70,7 @@ def test_split_inherits_the_parent_stoichiometry():
         assert child.source == "split"
         assert child.reactants == parent.reactants and child.products == parent.products
         assert child.outcome is None and child.reasons == ()
-        assert child.torsional and child.n_h_transferred == 1
+        assert child.torsional
     other = well.model_copy(update={"composition_id": "HF_q0_m1"})
     with pytest.raises(ValueError, match="composition"):
         split(parent, other, well_species)

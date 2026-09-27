@@ -153,30 +153,28 @@ def test_thermo_consistent():  # against the list GoodVibes got (chemistry.therm
 def reaction(**kw) -> r.ReactionRecord:
     term = (r.StoichTerm(composition_id="c", coefficient=1),)
     base = r.ReactionRecord(reaction_id="r", reactants=term, products=term, minima=("A", "B"),
-                            endpoints=("sa", "sb"), source="declared", n_h_transferred=2,
+                            endpoints=("sa", "sb"), source="declared",
                             outcome=CaseOutcome.ELEMENTARY_STEP)
     return base.model_copy(update=kw)
 
 
-def thermo(dzpe: float, blockers: tuple[str, ...] = ()) -> r.ReactionThermo:
+def thermo(dG_eff: float | None = 12.2, blockers: tuple[str, ...] = ()) -> r.ReactionThermo:
     return r.ReactionThermo(reaction_id="r", T_K=298.15, standard_state="1atm", dE_act_kcal=13.6,
-                            dE_rxn_kcal=1.0, dzpe_act_kcal=dzpe, dG_act_kcal=12.2,
-                            dG_rxn_kcal=1.0, blockers=blockers)
+                            dE_rxn_kcal=1.0, dzpe_act_kcal=-9.0, dG_act_kcal=12.2,
+                            dG_rxn_kcal=1.0, dG_eff_kcal=dG_eff, blockers=blockers)
 
 
-def test_rankable():
-    assert g.rankable(reaction(), thermo(-9.0))
-    assert g.rankable(reaction(), thermo(9.1)).reasons == ("dzpe_out_of_tolerance",)
-    assert not g.rankable(reaction(n_h_transferred=0), thermo(5.5))
-    assert not g.rankable(reaction(), thermo(1.0, ("spin_contaminated",)))
-    assert not g.rankable(reaction(), thermo(1.0), participant_notes=("mixed_level_of_theory",))
-    assert g.rankable(reaction(), None).reasons == ("thermo_unavailable",)  # no dzpe blocker
-    lost = thermo(1.0, ("thermo_unavailable",)).model_copy(update={"dG_act_kcal": None})
-    assert g.rankable(reaction(), lost).reasons == ("thermo_unavailable",)  # not repeated
-    assert not g.rankable(reaction(outcome=CaseOutcome.BARRIERLESS), thermo(1.0))
-    same = reaction(outcome=CaseOutcome.SAME_BASIN)  # no TS: only the outcome and real blockers
+def test_rankable():  # any dZPE; a barrierless outcome ranks by its dG_eff
+    assert g.rankable(reaction(), thermo())
+    assert g.rankable(reaction(outcome=CaseOutcome.BARRIERLESS), thermo(1.0))
+    assert not g.rankable(reaction(), thermo(blockers=("spin_contaminated",)))
+    assert g.rankable(reaction(), None).reasons == ("thermo_unavailable",)
+    assert g.rankable(reaction(), thermo(None)).reasons == ("thermo_unavailable",)
+    lost = thermo(None, ("mixed_level_of_theory", "thermo_unavailable"))
+    assert g.rankable(reaction(), lost).reasons == lost.blockers  # not repeated
+    same = reaction(outcome=CaseOutcome.SAME_BASIN)  # only the outcome and the thermo blockers
     assert g.rankable(same, None).reasons == ("outcome:same_basin",)
-    assert g.rankable(same, None, participant_notes=("spin_contaminated",)).reasons == (
+    assert g.rankable(same, thermo(0.0, ("spin_contaminated",))).reasons == (
         "outcome:same_basin", "spin_contaminated")
 
 
