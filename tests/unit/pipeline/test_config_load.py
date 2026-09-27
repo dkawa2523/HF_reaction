@@ -11,25 +11,43 @@ FILES = {  # pipeline, system and site first: the arguments of load()
     " stage: minima, engine: xtb, method: gfn2, init_hessian: {method: gfn2}}]}",
     "systems/h2.yaml": "{system_id: h2, species: [{id: h2, xyz: xyz/h2.xyz}]}",
     "sites/local.yaml": "{site: local, scratch_root: /home/u/s, cores: 4}",
-    "methods/gfn2.yaml": "{id: gfn2, kind: xtb, gfn: 2}",
+    "pipelines/methods/gfn2.yaml": "{id: gfn2, kind: xtb, gfn: 2}",  # next to the pipeline
     "systems/xyz/h2.xyz": "2\n\nH 0 0 0\nH 0 0 0.74\n",
 }
 
 
-def test_load_reads_the_four_layers(tmp_path):
+def _write(root):  # -> the pipeline, system and site paths
     for name, text in FILES.items():
-        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / name).write_text(text, encoding="utf-8")
-    resolved = load(*(tmp_path / name for name in list(FILES)[:3]))
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text, encoding="utf-8")
+    return [root / name for name in list(FILES)[:3]]
+
+
+def test_load_reads_the_four_layers(tmp_path):
+    resolved = load(*_write(tmp_path))
     assert list(resolved.methods) == ["gfn2"] and resolved.policy().noise_cm1 == 12.0
     assert resolved.system.species[0].xyz == (tmp_path / "systems/xyz/h2.xyz").resolve()
     assert resolved.pipeline.stages[0].settings()["init_hessian"] == {"method": "gfn2"}
     assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?|unknown", resolved.code_version)
 
 
+def test_methods_next_to_the_pipeline_come_first_then_configs_methods(tmp_path, monkeypatch):
+    pipeline, *rest = _write(tmp_path)
+    shared = tmp_path / "configs/methods/gfn2.yaml"  # the CLI's configs/ of the working dir
+    shared.parent.mkdir(parents=True)
+    shared.write_text("{id: gfn2, kind: xtb, gfn: 1}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    other = tmp_path / "elsewhere/demo.yaml"  # a pipeline outside configs/ (P1c)
+    other.parent.mkdir()
+    other.write_text(FILES["pipelines/demo.yaml"], encoding="utf-8")
+    assert load(pipeline, *rest).methods["gfn2"].gfn == 2
+    assert load(other, *rest).methods["gfn2"].gfn == 1
+
+
 def test_unknown_keys_are_errors():
     stage = {"id": "a", "stage": "structures"}
-    for bad in ({"merge_with": "base"}, {"gates": {"no_such_gate": 1.0}}, {"stages": [stage] * 2}):
+    for bad in ({"merge_with": "base"}, {"gates": {"no_such_gate": 1.0}}, {"stages": [stage] * 2},
+                {"conditions": {"temperatures_K": [298.15]}}):  # temperatures belong to thermo
         with pytest.raises(ValidationError):
             PipelineConfig.model_validate({"pipeline_id": "p", "stages": [stage], **bad})
     config = create_model("MinimaConfig", __base__=StageConfig, level=(str, "screen"))

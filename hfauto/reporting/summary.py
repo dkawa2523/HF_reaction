@@ -29,7 +29,7 @@ from hfauto.core.records import (
 )
 
 _FROM_THERMO = {"dG_eff_kcal", "dG_act_kcal", "dG_rxn_kcal", "dG_act_vs_separated_kcal",
-                "band_kcal", "notes"}  # RankRow fields copied from the ReactionThermo
+                "band_kcal", "energy_level", "notes"}  # RankRow fields from the ReactionThermo
 
 
 @dataclass(frozen=True)
@@ -71,8 +71,8 @@ def _tie_ranks(intervals: Mapping[str, tuple[float, float]]) -> dict[str, int]:
     return ranks
 
 
-def _row(reaction: ReactionRecord, thermo: ReactionThermo | None, T: float, state: str
-         ) -> RankRow:
+def _row(reaction: ReactionRecord, thermo: ReactionThermo | None, T: float | None,
+         state: str | None) -> RankRow:
     gate = rankable(reaction, thermo)
     values = thermo.model_dump(include=_FROM_THERMO) if thermo is not None else {}
     return RankRow(reaction_id=reaction.reaction_id, outcome=reaction.outcome,
@@ -82,12 +82,11 @@ def _row(reaction: ReactionRecord, thermo: ReactionThermo | None, T: float, stat
 
 
 def rank_rows(reactions: Iterable[ReactionRecord], reaction_thermo: Iterable[ReactionThermo],
-              T: float, state: str) -> list[RankRow]:
+              T: float | None, state: str | None) -> list[RankRow]:
     """Rank the rankable reactions by dG_eff at (T, state), sharing a rank where sensitivity
     bands overlap; the rest keep rank None. Reactions without an outcome are unprocessed
     hypotheses and are not listed."""
-    thermo = {t.reaction_id: t for t in reaction_thermo
-              if math.isclose(t.T_K, T, abs_tol=1e-6) and t.standard_state == state}
+    thermo = {t.reaction_id: t for t in reaction_thermo if (t.T_K, t.standard_state) == (T, state)}
     rows = [_row(r, thermo.get(r.reaction_id), T, state) for r in reactions
             if r.outcome is not None]
     ranks = _tie_ranks({r.reaction_id: r.band_kcal or (value, value) for r in rows
@@ -121,20 +120,6 @@ def _label(level: Level) -> str:
     return text if level.scf_tol is None else f"{text} scf={level.scf_tol:g}"
 
 
-def _stationary_points(
-    reaction: ReactionRecord,
-    calculations: Mapping[str, Evidence],
-    minima: Mapping[str, MinimumRecord],
-) -> tuple[str, str, str | None] | None:
-    """Geometry fingerprints of (reactant minimum, product minimum, TS or None)."""
-    try:
-        start, end = (calculations[minima[m].opt_calc].final.fingerprint for m in reaction.minima)
-    except KeyError:  # missing minimum (placeholder '') or calculation outside the view
-        return None
-    saddle = calculations.get(reaction.saddle.saddle_calc) if reaction.saddle else None
-    return start, end, saddle.final.fingerprint if saddle is not None else None
-
-
 def _deltas(
     energies: Mapping[str, float], points: tuple[str, str, str | None]
 ) -> tuple[float, float | None] | None:
@@ -163,40 +148,50 @@ def _panel_rows(
     ]
 
 
+def _subject_energies(calculations: Sequence[Artifact], freq: Mapping[str, str]
+                      ) -> list[tuple[str, Evidence]]:
+    """(subject, Evidence) in view order: each subject's freq calculation (the reference
+    level), then every sp calculation for each subject its parents name."""
+    evidence = {a.artifact_id: a.payload for a in calculations if isinstance(a.payload, Evidence)}
+    return [(s, evidence[c]) for s, c in freq.items() if c in evidence] + [
+        (s, ev) for a in calculations if isinstance(ev := a.payload, Evidence) and ev.task == "sp"
+        for s in a.parents]
+
+
 def method_panel(
-    calculations: Mapping[str, Evidence],
-    reactions: Iterable[ReactionRecord],
+    calculations: Sequence[Artifact],
+    reactions: Sequence[ReactionRecord],
     *,
     minima: Mapping[str, MinimumRecord],
 ) -> list[PanelRow]:
     """dE_rxn and dE_act of each reaction at every level with energies at its stationary
     points, keyed by ``Level.full_key`` (CH-25).
 
-    A calculation contributes its energy at ``final`` to the stationary point with the same
-    geometry fingerprint: fixed-geometry single points, and the opt / saddle / freq jobs that
-    produced the claim itself (the reference level).
+    A stationary point is a subject of the sp stage (a minimum_id, or SaddleClaim.freq_calc
+    for the TS): its reference energy comes from its freq calculation, the other levels from
+    the sp calculations whose parents name it (the later one in the view wins).
     """
-    energies: dict[str, dict[str, float]] = defaultdict(dict)
+    freq = {m.minimum_id: m.freq_calc for m in minima.values()} | {
+        r.saddle.freq_calc: r.saddle.freq_calc for r in reactions if r.saddle is not None}
+    energies: dict[str, dict[str, float]] = defaultdict(dict)  # level key -> subject -> E
     levels: dict[str, Level] = {}
-    for ev in calculations.values():
+    for subject, ev in _subject_energies(calculations, freq):
         key = ev.level.full_key()
         levels.setdefault(key, ev.level)
-        energies[key].setdefault(ev.final.fingerprint, ev.energy_hartree)
+        energies[key][subject] = ev.energy_hartree
     rows: list[PanelRow] = []
     for reaction in reactions:
-        points = _stationary_points(reaction, calculations, minima)
-        if points is None:
-            continue
+        points = (*reaction.minima, reaction.saddle.freq_calc if reaction.saddle else None)
         deltas = {key: _deltas(energies[key], points) for key in sorted(energies)}
-        found = [(key, levels[key], *d) for key, d in deltas.items() if d is not None]
-        rows += _panel_rows(reaction.reaction_id, found)
+        rows += _panel_rows(reaction.reaction_id, [
+            (key, levels[key], *d) for key, d in deltas.items() if d is not None])
     return rows
 
 
 _RANK_HEADER = (
-    "rank", "reaction_id", "outcome", "tier", "rankable", "T_K", "standard_state", "dG_eff_kcal",
-    "band_low_kcal", "band_high_kcal", "dG_act_kcal", "dG_rxn_kcal", "dG_act_vs_separated_kcal",
-    "torsional", "blockers", "notes",
+    "rank", "reaction_id", "outcome", "tier", "rankable", "T_K", "standard_state",
+    "energy_level", "dG_eff_kcal", "band_low_kcal", "band_high_kcal", "dG_act_kcal",
+    "dG_rxn_kcal", "dG_act_vs_separated_kcal", "torsional", "blockers", "notes",
 )
 _PANEL_COLUMNS = ("dE_act_panel_min_kcal", "dE_act_panel_max_kcal")
 
@@ -204,9 +199,9 @@ _PANEL_COLUMNS = ("dE_act_panel_min_kcal", "dE_act_panel_max_kcal")
 def _rank_cells(row: RankRow) -> tuple[object, ...]:
     low, high = row.band_kcal or (None, None)
     return (row.rank, row.reaction_id, row.outcome.value, row.tier, row.rankable, row.T_K,
-            row.standard_state, row.dG_eff_kcal, low, high, row.dG_act_kcal, row.dG_rxn_kcal,
-            row.dG_act_vs_separated_kcal, row.torsional, ";".join(row.blockers),
-            ";".join(row.notes))
+            row.standard_state, row.energy_level, row.dG_eff_kcal, low, high, row.dG_act_kcal,
+            row.dG_rxn_kcal, row.dG_act_vs_separated_kcal, row.torsional,
+            ";".join(row.blockers), ";".join(row.notes))
 
 
 def _ranking(rows: Sequence[RankRow], panel_rows: Sequence[PanelRow]

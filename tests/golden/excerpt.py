@@ -1,7 +1,8 @@
 """Regenerate tests/golden/data and SOURCES.json from runs/ (design §10.2; runs/ is only read).
 Usage: python tests/golden/excerpt.py [RUNS_DIR]. Each file's `method` names a rule below.
-Absolute sources (G25/G26 and G27/G28: WSL job dirs under /home/user/hfauto_r6/m0/golden and
-/home/user/hfauto_r6/m1/golden) are read as they are; regenerate those on WSL."""
+Absolute sources (G25/G26, G27/G28 and G29: WSL job dirs under /home/user/hfauto_r6/m0/golden,
+/home/user/hfauto_r6/m1/golden and /home/user/hfauto_r6/SA/sac_golden) are read as they are;
+regenerate those on WSL."""
 
 import gzip
 import hashlib

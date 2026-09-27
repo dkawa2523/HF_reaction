@@ -20,10 +20,10 @@ from hfauto.pipeline.runner import run_pipeline
 
 pytestmark = pytest.mark.integration
 STAGES = [{"id": "structures", "stage": "structures"},
+          {"id": "screen", "stage": "minima", "level": "screen", "engine": "nwchem",
+           "method": "tzvp"},
           {"id": "dft", "stage": "minima", "level": "dft", "engine": "nwchem", "method": "svp",
            "select": {"include": "all"}},
-          {"id": "sp", "stage": "sp", "engine": "nwchem", "methods": ["tzvp"],
-           "targets": "all_minima"},
           {"id": "report", "stage": "report"}]
 ADAPTER = SimpleNamespace(  # one trivial process per job; the result is computed in parse
     result_type=Evidence, continuation=lambda *_: None,
@@ -32,7 +32,8 @@ ADAPTER = SimpleNamespace(  # one trivial process per job; the result is compute
 
 
 class JobQM(fakes.FakeQM):
-    """FakeQM whose calls are JobRunner jobs; ``crash`` interrupts the second single point."""
+    """FakeQM whose calls are JobRunner jobs; ``crash`` interrupts the seventh call (the dft
+    stage's second optimization)."""
 
     def __init__(self, root, jobs, crash):
         super().__init__(root, fakes.double_well())
@@ -40,7 +41,7 @@ class JobQM(fakes.FakeQM):
 
     def _job(self, kind, mol, method, *, deadline=None, **kw):
         def compute():
-            if self.crash and kind == "energy" and "energy" in self.calls:
+            if self.crash and len(self.calls) == 6:
                 raise RuntimeError("interrupted")
             return getattr(fakes.FakeQM, kind)(self, mol, method, **kw)
 
@@ -77,12 +78,13 @@ def test_interrupted_run_resumes_and_from_reruns_the_downstream_stages(tmp_path,
     with engines.override(Capability.QM, "nwchem", factory):
         with pytest.raises(RuntimeError, match="interrupted"):
             run()
-        assert len(made[0].calls) == 5  # opt + freq per endpoint and one single point
+        assert len(made[0].calls) == 6  # opt + freq per endpoint in screen, one in dft
         done = {s["id"]: "done" for s in STAGES}
-        assert run() == (done, (1, 1))  # dft is skipped; the finished single point is a hit
-        assert made[1].calls == ["energy"]
-        assert run(start="dft", stop="dft") == ({**done, "sp": "stale", "report": "stale"}, (4, 0))
-        assert not made[2].calls and run() == (done, (2, 0))  # sp and report run again
+        assert run() == (done, (2, 2))  # screen is skipped; dft's finished opt + freq are hits
+        assert made[1].calls == ["optimize", "frequencies"]
+        assert run(start="screen", stop="screen") == (
+            {**done, "dft": "stale", "report": "stale"}, (4, 0))
+        assert not made[2].calls and run() == (done, (4, 0))  # dft and report run again
     with SiteLock(tmp_path / "scratch", tmp_path / "other"), pytest.raises(RuntimeError,
                                                                            match="site lock"):
         run_pipeline(resolved, tmp_run)  # another run holds the site

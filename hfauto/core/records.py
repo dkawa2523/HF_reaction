@@ -191,6 +191,7 @@ class ReactionThermo(BaseModel):
     band_kcal: tuple[float, float] | None = None  # dG_eff over the qs x cutoff variants
     blockers: tuple[str, ...] = ()
     dG_eff_kcal: float | None = None  # the ranking quantity (chemistry.thermo.effective_barrier)
+    energy_level: str | None = None  # method/basis of the energies, e.g. wb97x-d3/def2-tzvpd
     notes: tuple[str, ...] = ()  # submerged_barrier
 
 
@@ -211,6 +212,7 @@ class RankRow(BaseModel):
     dG_eff_kcal: float | None = None
     dG_act_vs_separated_kcal: float | None = None
     torsional: bool = False
+    energy_level: str | None = None
     notes: tuple[str, ...] = ()
 
 

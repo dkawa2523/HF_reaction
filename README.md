@@ -26,7 +26,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 | `minima` | opt → 別ジョブの freq → 虚振動に沿った mode-follow → 極小のレジストリ |
 | `explore` | 元素に依らない結合変化のテンプレート(移動 / リレー / 形成 / 切断)で反応 trial を作り、ReaDuct の NT2 / AFIR で生成物を探す(陰性結果も記録する) |
 | `reaction-paths` | 反応仮説ごとに、障壁の事前判定 → saddle → TS の振動数検証 → QRC → 分類 |
-| `sp` | 停留点での一点計算(手法パネル。CCSD(T) は小さい閉殻分子で opt-in) |
+| `sp` | 順位に使う点だけの一点計算(エネルギー層と手法パネル。CCSD(T) は小さい分子で opt-in、開殻は ROHF-CCSD(T)) |
 | `thermo` | GoodVibes 4.3.0 の API による qRRHO、キラリティ(m = 2)、整合ゲート、会合量、順位の量 δG_eff と感度の幅 |
 | `report` | δG_eff による順位付け(ranking.csv)、探索の被覆率、手法パネルの表と HTML |
 
@@ -36,18 +36,18 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 |---|---|---|
 | `configs/pipelines/discover.yaml` | structures → conformers → screen → explore → dft → paths → thermo → report | 単量体と組成から反応を探す |
 | `configs/pipelines/known_endpoints.yaml` | structures → dft → paths → thermo → report | system に宣言した反応の端点から、経路と熱化学を求める |
-| `configs/pipelines/method_panel.yaml` | panel_sp → panel_report | 既存の run に `--run-dir` で追記し、停留点を PBE0/def2-TZVPD と ωB97X-D3/def2-TZVPD で比べる。CCSD(T)/def2-TZVPD は小さい閉殻分子のときだけ `methods` に足す。追記した後は panel_report の順位が最終(`conditions` を元の run とそろえること。違えば、順位を付けられる反応は thermo_unavailable になる。same_basin などは outcome だけ) |
+| `configs/pipelines/method_panel.yaml` | panel_sp → panel_thermo → panel_report | 既存の run に `--run-dir` で追記し、停留点を PBE0/def2-TZVPD と ωB97X-D3/def2-TZVPD で比べ、参照手法(`energy_method`)のエネルギー層で順位を付け直す(後から追記した層が元の thermo の値を上書きし、ranking.csv の `energy_level` 列に層が出る)。CCSD(T)/def2-TZVPD は小さい分子(重原子約 4 個まで)のときだけ `methods` に足し、`energy_method` にする |
 
 ## 設定(4 分割)
 
-4 つの層は中身が重ならないので、マージも優先順位もない。手法を変えるときは別の method ファイルを使う。停留点の手法は minima(dft)と reaction-paths の 2 か所に書き、食い違えば読み込み時に拒否される。宣言反応の端点は xyz で与える(SMILES では原子の対応と配座を決められない)。system と pipeline の YAML は未知のキーを実行前に拒否する。温度は `conditions` だけで指定し、thermo の settings のスケール因子は `vib_scale` の 1 つだけである。
+4 つの層は中身が重ならないので、マージも優先順位もない。手法を変えるときは別の method ファイルを使う。停留点の手法は minima(dft)と reaction-paths の 2 か所に書き、食い違えば読み込み時に拒否される。宣言反応の端点は xyz で与える(SMILES では原子の対応と配座を決められない)。system と pipeline の YAML は未知のキーを実行前に拒否する。温度と標準状態は thermo stage の `temperatures_K`・`standard_states`(既定 298.15 K・1 atm)だけで指定し、report は ReportConfig の指定がなければ thermo の最初の (T, 標準状態) で並べる。thermo の settings のスケール因子は `vib_scale` の 1 つだけである。
 
 | 層 | 置き場所 | 中身 |
 |---|---|---|
 | site | `configs/sites/` | 実行ファイルの絶対パス、scratch、コア数とメモリ、エンジンごとの版数の pin と実行設定 |
 | method | `configs/methods/` | 汎関数・基底・分散補正・grid・SCF 閾値(xTB は GFN と電子温度) |
 | system | `configs/systems/`(xyz は `configs/systems/xyz/`) | 化学種、組成、宣言反応。hcn、hono、nh3_inversion、formaldehyde、tma_hf2、amine_hf_panel、water_same_basin と、レビュー §6 の検証セット(sn2_cl ほか 17 系。対応は docs/validation.md の r6) |
-| pipeline | `configs/pipelines/` | stage の並びと設定、温度と標準状態、ゲート閾値の上書き(`gates:`) |
+| pipeline | `configs/pipelines/` | stage の並びと設定、ゲート閾値の上書き(`gates:`) |
 
 ## インストール
 
@@ -71,7 +71,7 @@ hfauto doctor --site configs/sites/wsl_local.yaml
 | `hfauto report RUN_DIR` | run 全体の HTML レポートを書く |
 | `hfauto case RUN_DIR REACTION_ID` | 反応ケースの判断ログを表示する |
 
-PIPELINE・SYSTEM・SITE には、YAML のパスか `configs/<kind>/` の下の名前を指定する(名前はカレントディレクトリの `configs/` で解決する)。
+PIPELINE・SYSTEM・SITE には、YAML のパスか `configs/<kind>/` の下の名前を指定する(名前はカレントディレクトリの `configs/` で解決する)。pipeline が使う method は、pipeline ファイルの隣の `methods/<id>.yaml` があればそれを、なければカレントディレクトリの `configs/methods/<id>.yaml` を読む。
 
 ## クイックスタート(HCN → HNC)
 
@@ -85,7 +85,7 @@ hfauto run known_endpoints --system configs/systems/hcn.yaml --site configs/site
 
 ## 検証済みのベンチマーク
 
-WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD での実測値(第2ラウンド改良後の再検証 v3)である。9 項目の全体、改良前(W7)・v2 との比較と、撤回した旧値は [docs/validation.md](docs/validation.md) にある。順位の量は δG_eff = max(G_TS, G_R, G_P) − G_R で、G_R・G_P は反応物・生成物と同じ状態の最小 G である。障壁なし(barrierless_at_resolution)と、ZPE で障壁が沈む反応(順方向か逆方向の ΔE‡ + ΔZPE‡ ≤ 0。注記 `submerged_barrier`)は max(ΔG_rxn, 0) で同じ表に並ぶ。ranking.csv の `torsional` 列は結合変化のないねじれの段を示し、手法パネルを追記すると ΔE‡ の最小・最大の列が付く。順位は PBE0-D3BJ/def2-SVPD の δG_eff の序数として読む。手法誤差の符号は反応で異なり(HCN −1.2、HONO +2.0 kcal/mol。2 系での見積もり)、2 反応の δG_eff の差が約 3 kcal/mol 未満なら、順序は手法誤差で入れ替わり得る(根拠は [docs/design.md](docs/design.md) §7)。
+WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD での実測値(第2ラウンド改良後の再検証 v3)である。9 項目の全体、改良前(W7)・v2 との比較と、撤回した旧値は [docs/validation.md](docs/validation.md) にある。順位の量は δG_eff = max(G_TS, G_R, G_P) − G_R で、G_R・G_P は反応物・生成物と同じ状態の最小 G である。障壁なし(barrierless_at_resolution)と、ZPE で障壁が沈む反応(順方向か逆方向の ΔE‡ + ΔZPE‡ ≤ 0。注記 `submerged_barrier`)は max(ΔG_rxn, 0) で同じ表に並ぶ。ranking.csv の `torsional` 列は結合変化のないねじれの段を示し、手法パネルを追記すると ΔE‡ の最小・最大の列が付く。順位は PBE0-D3BJ/def2-SVPD の δG_eff の序数として読む。PBE0 の障壁の誤差は反応クラスで違い(文献の平均符号付き誤差は H 移動 −4.2、重原子移動 −6.6、求核置換 −1.9 kcal/mol。CCSD(T) との差の実測は HCN −1.2、HONO +2.0、SN2 −3.0)、クラスが混ざるときは差が数 kcal/mol 未満の順序は入れ替わり得る。精度が要るときは method_panel を追記してエネルギー層で並べ直す(根拠は [docs/design.md](docs/design.md) §7)。
 
 | 系 | pipeline | 結果 | 所要時間 |
 |---|---|---|---|

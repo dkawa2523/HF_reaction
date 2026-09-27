@@ -18,11 +18,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from hfauto.chemistry.gates import Policy
 from hfauto.core.method import EngineSite, MethodSpec
-from hfauto.core.system import Conditions, SystemConfig, load_system
+from hfauto.core.system import SystemConfig, load_system
 from hfauto.execution.process import Command, resolve_executable, run_command
 
 _POLICY_FIELDS = frozenset(f.name for f in dataclasses.fields(Policy))
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_CONFIGS = Path("configs")  # like the CLI: relative to the working directory
 _GIT_TIMEOUT_S = 30.0
 
 
@@ -50,7 +51,6 @@ class StageEntry(BaseModel):
 class PipelineConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     pipeline_id: str
-    conditions: Conditions = Conditions()
     gates: dict[str, float] = {}  # Policy overrides
     stages: list[StageEntry]
 
@@ -120,25 +120,28 @@ def load_site(path: Path) -> SiteConfig:
     return SiteConfig.model_validate(_read_yaml(path))
 
 
-def load_method(methods_dir: Path, method_id: str) -> MethodSpec:
-    path = Path(methods_dir) / f"{method_id}.yaml"
+def load_method(path: Path) -> MethodSpec:
     method = MethodSpec.model_validate(_read_yaml(path))
-    if method.id != method_id:
+    if method.id != Path(path).stem:
         raise ValueError(f"{path}: id {method.id!r} does not match the file name")
     return method
 
 
+def _method_path(pipeline_path: Path, method_id: str) -> Path:
+    """``methods/<id>.yaml`` next to the pipeline file, else ``configs/methods/<id>.yaml``."""
+    local = Path(pipeline_path).parent / "methods" / f"{method_id}.yaml"
+    return local if local.is_file() else _CONFIGS / "methods" / f"{method_id}.yaml"
+
+
 def load(pipeline_path: Path, system_path: Path, site_path: Path) -> ResolvedConfig:
-    """Read the four layers; methods come from ``<configs>/methods/<id>.yaml``."""
-    pipeline_path = Path(pipeline_path)
+    """Read the four layers; each method from ``_method_path``."""
     pipeline = PipelineConfig.model_validate(_read_yaml(pipeline_path))
-    methods_dir = pipeline_path.resolve().parent.parent / "methods"
     ids = sorted(method_ids([entry.settings() for entry in pipeline.stages]))
     return ResolvedConfig(
         pipeline=pipeline,
         system=load_system(Path(system_path)),
         site=load_site(Path(site_path)),
-        methods={method_id: load_method(methods_dir, method_id) for method_id in ids},
+        methods={m: load_method(_method_path(pipeline_path, m)) for m in ids},
         code_version=code_version(),
     )
 

@@ -17,7 +17,7 @@ from hfauto.core.hashing import sha256_file
 from hfauto.core.manifest import Artifact, Manifest, save_manifest
 from hfauto.core.method import Deadline, MethodSpec
 from hfauto.core.records import ArtifactType
-from hfauto.core.system import Conditions, SystemConfig
+from hfauto.core.system import SystemConfig
 from hfauto.pipeline.config import ResolvedConfig, SiteConfig, StageEntry, method_ids
 from hfauto.pipeline.layout import JobCounts, RunLayout, now
 from hfauto.stages import catalog
@@ -38,7 +38,6 @@ class Runtime:
     run_id: str
     run_dir: Path
     system: SystemConfig
-    conditions: Conditions
     policy: Policy
     site: SiteConfig
     methods: Mapping[str, MethodSpec]
@@ -101,7 +100,6 @@ def build_runtime(
         run_id=layout.run_id,
         run_dir=layout.run_dir,
         system=resolved.system,
-        conditions=resolved.pipeline.conditions,
         policy=resolved.policy(),
         site=resolved.site,
         methods=resolved.methods,
@@ -118,7 +116,6 @@ def config_sha(entry: StageEntry, resolved: ResolvedConfig) -> str:
     methods = {m: resolved.methods[m].model_dump(mode="json") for m in method_ids(entry.settings())}
     data = {
         "entry": entry.model_dump(mode="json"),
-        "conditions": resolved.pipeline.conditions.model_dump(mode="json"),
         "gates": resolved.pipeline.gates,
         "system": system,
         "methods": methods,

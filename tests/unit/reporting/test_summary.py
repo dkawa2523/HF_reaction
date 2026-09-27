@@ -17,15 +17,18 @@ def rxn(rid, outcome=EL, minima=("mr", "mp"), **kw):
 def th(rid, dg, band=None, T=298.15, blockers=()):
     return rec.ReactionThermo(reaction_id=rid, T_K=T, standard_state="1atm", dE_act_kcal=dg,
                               dE_rxn_kcal=1.0, dzpe_act_kcal=-0.5, dG_act_kcal=dg,
-                              dG_rxn_kcal=1.0, dG_eff_kcal=dg, band_kcal=band, blockers=blockers)
+                              dG_rxn_kcal=1.0, dG_eff_kcal=dg, band_kcal=band, blockers=blockers,
+                              energy_level="wb97x-d3/def2-tzvpd")
 
 
-def ev(fp, energy, grid):
+def calc(cid, fp, energy, grid, *subjects):  # an sp names its subjects in its parents
     level = Level(program="nwchem", version="7.2.3", method="pbe0", basis="def2-svpd",
                   charge=0, multiplicity=1, grid=grid)
     g = Geometry(file=FileRef(path=f"{fp}.xyz", sha256="0"), fingerprint=fp, symbols=("H",))
-    return Evidence(engine="nwchem", task="sp", level=level, start=g, final=g,
-                    energy_hartree=energy, output=g.file, job_key=fp)
+    payload = Evidence(engine="nwchem", task="freq" if not subjects else "sp", level=level,
+                       start=g, final=g, energy_hartree=energy, output=g.file, job_key=cid)
+    return Artifact(artifact_id=cid, type=rec.ArtifactType.CALCULATION, payload=payload,
+                    parents=subjects)
 
 
 def mini(mid, calc):
@@ -49,6 +52,7 @@ def test_ranks_follow_dg_eff_with_overlapping_bands_sharing_a_rank():
     assert by_id["a"].tier == "minima" and by_id["a"].band_kcal == (9.0, 11.0)
     assert by_id["d"].torsional and not by_id["a"].torsional  # a torsion stays ranked
     assert {(r.T_K, r.standard_state, r.dG_rxn_kcal) for r in rows} == {(298.15, "1atm", 1.0)}
+    assert {r.energy_level for r in rows} == {"wb97x-d3/def2-tzvpd"}
     assert [r.rank for r in rank_rows(reactions, thermo, 298.15, "1M")] == [None] * 6
     new = {"T_K", "standard_state", "dG_rxn_kcal", "dG_eff_kcal", "dG_act_vs_separated_kcal",
            "torsional", "notes"}
@@ -75,12 +79,15 @@ def test_coverage_counts_mechanisms_negative_reasons_and_failure_kinds():
 
 
 def test_panel_spread_is_two_ranking_columns_not_a_blocker(tmp_path):
-    """dE_rxn changes sign between the levels (+6.28 / -6.28): no blocker, both still rank."""
-    calcs = {"r": ev("R", -1.0, "fine"), "p": ev("P", -0.99, "fine"), "t": ev("T", -0.98, "fine"),
-             "r2": ev("R", -1.0, "xfine"), "p2": ev("P", -1.01, "xfine"),
-             "t2": ev("T", -0.975, "xfine"), "x": ev("X", 0, "fine")}
+    """dE_rxn changes sign between the levels (+6.28 / -6.28): no blocker, both still rank.
+    Reference energies come from the freq calculations, the others through the sp parents
+    (geometry fingerprints play no part)."""
+    calcs = [calc("r", "R", -1.0, "fine"), calc("p", "P", -0.99, "fine"),
+             calc("t", "T", -0.98, "fine"), calc("r2", "R", -1.0, "xfine", "mr"),
+             calc("p2", "Q", -1.01, "xfine", "mp"), calc("t3", "T", 0, "xfine"),
+             calc("t2", "T", -0.975, "xfine", "t"), calc("x", "X", 0, "xfine", "stranger")]
     minima = {"mr": mini("mr", "r"), "mp": mini("mp", "p")}
-    saddle = rec.SaddleClaim(saddle_calc="t", freq_calc="t", imag_cm1=-900.0, energy_hartree=-0.98)
+    saddle = rec.SaddleClaim(saddle_calc="s", freq_calc="t", imag_cm1=-900.0, energy_hartree=-0.98)
     reactions = [rxn("x", saddle=saddle), rxn("lost", minima=("mr", ""))]
     panel = method_panel(calcs, reactions, minima=minima)
     assert len({r.level_key for r in panel}) == 2 and {r.reaction_id for r in panel} == {"x"}
@@ -96,6 +103,7 @@ def test_panel_spread_is_two_ranking_columns_not_a_blocker(tmp_path):
         return {r["reaction_id"]: r for r in csv.DictReader(path.read_text().splitlines())}
 
     x = ranking(panel)["x"]
+    assert x["energy_level"] == "wb97x-d3/def2-tzvpd"
     assert (x["dE_act_panel_min_kcal"], x["dE_act_panel_max_kcal"]) == (
         str(fine.dE_act_min_kcal), str(fine.dE_act_max_kcal))
     assert round(float(x["dE_act_panel_max_kcal"]), 2) == 15.69

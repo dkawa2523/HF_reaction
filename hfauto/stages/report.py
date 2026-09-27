@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import ClassVar, Literal
 
-from hfauto.core.evidence import Evidence
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.records import (
     ArtifactType,
@@ -21,8 +20,10 @@ from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
 
 class ReportConfig(StageConfig):
-    T_K: float | None = None  # None: the first of conditions.temperatures_K
-    standard_state: Literal["1atm", "1bar", "1M"] | None = None  # None: the first state
+    """None: the first (T, state) of the ReactionThermo records in the view."""
+
+    T_K: float | None = None
+    standard_state: Literal["1atm", "1bar", "1M"] | None = None
 
 
 class ReportStage:
@@ -33,18 +34,14 @@ class ReportStage:
     def run(self, inputs: Manifest, config: ReportConfig, rt: StageRuntime) -> list[Artifact]:
         reactions = inputs.records(ArtifactType.REACTION, ReactionRecord)
         minima = {m.minimum_id: m for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord)}
-        calculations = {
-            a.artifact_id: a.payload
-            for a in inputs.of(ArtifactType.CALCULATION)
-            if isinstance(a.payload, Evidence)
-        }
-        panel = summary.method_panel(calculations, reactions, minima=minima)
-        rows = summary.rank_rows(
-            reactions,
-            inputs.records(ArtifactType.REACTION_THERMO, ReactionThermo),
-            config.T_K if config.T_K is not None else rt.conditions.temperatures_K[0],
-            config.standard_state or rt.conditions.standard_states[0],
-        )
+        panel = summary.method_panel(inputs.of(ArtifactType.CALCULATION), reactions,
+                                     minima=minima)
+        thermo = inputs.records(ArtifactType.REACTION_THERMO, ReactionThermo)
+        T, state = config.T_K, config.standard_state
+        if thermo:
+            T = thermo[0].T_K if T is None else T
+            state = state or thermo[0].standard_state
+        rows = summary.rank_rows(reactions, thermo, T, state)
         counts = summary.coverage(
             inputs.records(ArtifactType.DISCOVERY, DiscoveryRecord),
             [a for a in inputs.artifacts if a.status == "failed"],

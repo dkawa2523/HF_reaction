@@ -128,6 +128,47 @@ M5 から順位の量は δG_eff、ranking.csv の見出しは `…,dG_eff_kcal,
 | R3 `nh3_inversion` | `degenerate_rearrangement`、δG_eff = ΔG‡ 3.8395 | 0:01 |
 | R4 `water_same_basin` | `same_basin`、順位なし(blocker は `outcome:same_basin` だけ) | 0:01 |
 
+**S-A の実測(SA-A: U8-P3・U8-P6・U8-P8、`/home/user/hfauto_r6/SA/runs/<run>`)**
+
+U8-P3 のプローブ: M5 の run の複製に、sp(ωB97X-D3/def2-TZVPD と CCSD(T)/def2-TZVPD)→ thermo(`energy_method` ωB97X-D3)→ report を追記した(コードは `82c46d4` の複製)。ΔE‡(kcal/mol、括弧は CCSD(T) との差):
+
+| 系 | PBE0-D3BJ/def2-SVPD | ωB97X-D3/def2-TZVPD | CCSD(T)/def2-TZVPD | δG_eff(SVPD → ωB97X 層) |
+|---|---|---|---|---|
+| HCN → HNC | 46.62(−1.19) | 46.37(−1.44) | 47.81 | 42.18 → 41.93 |
+| HONO trans → cis | 13.67(+2.02) | 12.82(+1.17) | 11.65 | 11.82 → 10.97 |
+| SN2 Cl⁻···CH3Cl | 10.45(−2.99) | 15.10(+1.67) | 13.44 | 11.08 → 15.73 |
+| マロンアルデヒドの PT | 2.01(−2.1) | 3.23(−0.9) | (T) が失敗。CCSD 4.48、文献の CCSD(T) 約 4.1(Wang et al., J. Chem. Phys. 128, 224314 (2008))を基準にした | 0.00(`submerged_barrier`)→ 1.47(ΔE0‡ = +0.83 で沈まない) |
+| CH3O• → CH2OH• | 33.01 | 33.58(⟨S²⟩ 0.754〜0.758) | 開殻は SA-C | 30.61 → 31.18 |
+
+- SP 1 点の時間(4 rank): TMA·(HF)₂(17 原子、`tma_hf2/neutral.xyz`)で PBE0/SVPD 35.5 s、ωB97X-D3/TZVPD 1,758 s(freq 約 900 s の約 2 倍)。マロンアルデヒド(9 原子)の ωB97X-D3 は 577〜750 s、CCSD(T) は CCSD が約 1,070 s/点の後、(T) が GA の配列を確保できず abort した(`ga_create_JKblocked: cannot allocate`、1,200 MB/rank。重原子 5 個)。HCN・HONO・SN2・CH3O の ωB97X-D3 は 6〜115 s(HONO は同時負荷あり)。
+- 判定: ωB97X-D3/TZVPD は 4 系中 3 系で CCSD(T) に近い(平均絶対誤差 2.07 → 1.29 kcal/mol。HCN だけ 0.25 遠い)が、17 原子で 1 点 29 分かかり(レビューの見込みは数分)、discover では極小が数十点あるので、**既定の discover・known_endpoints には入れない**。エネルギー層は method_panel の追記(panel_sp → panel_thermo → panel_report)で使う。
+- U8-P6: M5 の hcn_panel・sn2_panel の複製で panel_report だけを新しいコードで再実行すると、ranking.csv は `energy_level` 列が加わるだけで、method_panel.csv は参照レベルの行だけが 1e-4 kcal/mol 以下変わった(参照エネルギーを opt / saddle から freq の SCF に変えたため。値は ReactionThermo の ΔE‡ と一致: HCN 46.62147、SN2 10.44594)。
+- 新しいコード(作業ツリーの複製)で M5 の hcn_panel に既定の method_panel を追記: conditions を写さずに panel_sp → panel_thermo → panel_report が通り、ranking.csv の `energy_level` は `wb97x-d3/def2-tzvpd`、δG_eff 41.926(上の composite と同じ)。同じ pipeline ファイルを configs/ の外に置き、s4_ch3o_doublet の複製に追記した(method は作業ディレクトリの configs/methods から): 1:18 で完走し(レビュー P1c の rc=2 が解消)、⟨S²⟩ 0.754〜0.758 で `spin_contaminated` なし、δG_eff 31.18。HCN の TS の CCSD(T) は最初の実行で別の run と重なって rc 1 で落ち、`--retry-failed nonzero_exit` で 18 s で通った。
+
+**S-A の SA-B・SA-C の確認(U8-P4・U8-P7・U0-P5)**
+
+- U8-P4(SP の対象、QM なしの数え直し): M5 の run で、順位の付く run の SP 対象数は変わらない(hcn 3、hono 3、nh3 2、malonaldehyde 2、ch3o 3、sn2 2)。`unresolved` の S17 は 1 → 0、`same_basin` の水は 1 → 0。
+- U8-P7(`/home/user/hfauto_r6/SA/sac_probe`、別の NWChem 4 rank と同時に走った時間を含む): TCE の ROHF-CCSD(T)/def2-TZVPD の出力は SCF の `open shells = 1` と `CCSD(T) total energy / hartree`。OH• は 1.8 s。CH3O• は `2eorb` なしだと v2 積分の GA 確保(378 MB/rank)に失敗して abort、`2eorb` だけで 407 s、`2eorb 2emet 13` で 63 s(E −114.874239093 Eh、3 通りとも 1e-10 Eh で一致)。golden G29 は NWChemEngine で作った OH•(E −75.640597872 Eh、Level の多重度 2、⟨S²⟩ なし)。
+- U0-P5: NWChem 7.2.3 の DFT の反復上限の既定は 50(レビューの 30 ではない)。P3c の ZTS bead 4(H3、二重項)は原子の初期推定からなら既定で 13 反復で収束する(E −1.548056711 Eh、⟨S²⟩ 0.987)が、失敗した attempt の movecs 4 通りから始めると、既定・`iterations 100`・`damp 40 ncydp 30 lshift 0.5`・`convergence rabuck 20` はすべて未収束で、`cgmin` だけが 5〜8 反復で収束した(勾配 5e-4 で止まるので E は 1.5〜3.6e-7 Eh 高い)。I⁻+CH3I(ECP あり)はどの方法でも収束した(E の差 2e-8 Eh 以内)。救済は cgmin の 1 本。cgmin は ⟨S²⟩ を出さないので、⟨S²⟩ のない開殻 DFT の Evidence は `incomplete_output`(`s2_not_reported`)にした。閉殻の G26(FHF⁻)と G27(HI)の SP を新しいデッキで再計算すると E の差は 2e-9 Eh 以内で、G27 の SCF は 7 反復のまま。smoke(`-m real tests/smoke/test_real_nwchem.py`)は OH• の ROHF-CCSD(T) を加えた 7 件が合格。
+
+**S-A の統合後の実測(作業ツリー、`/home/user/hfauto_r6/SA/int/runs/<run>`、R1〜R4・S18・S19 は新しい run dir)**
+
+U8-P3 のプローブで既定の pipeline は PBE0-D3BJ/def2-SVPD のままなので、R1〜R4 の δG_eff は M5 と同じで、ranking.csv に `energy_level` 列(`pbe0-d3bj/def2-svpd`)が加わった。以後の段はこの表の値と比べる。エネルギー層は method_panel の追記で使う。
+
+| 系 | 結果 | 所要時間 |
+|---|---|---|
+| smoke | `-m real tests/smoke` 14 件合格 | 1:15 |
+| R1 `hcn` | `elementary_step`、δG_eff 42.1783 | 1:21 |
+| R2 `hono` | `elementary_step`、δG_eff 11.8158、torsional True | 3:22 |
+| R3 `nh3_inversion` | `degenerate_rearrangement`、δG_eff 3.8395 | 1:16 |
+| R4 `water_same_basin` | `same_basin`、順位なし | 0:11 |
+| S20 HCN(R1 の複製に CCSD(T) 入りのパネルを追記) | configs/ の外の pipeline(method は configs/methods から)で完走。`energy_level` `wb97x-d3/def2-tzvpd`、δG_eff 41.926。ΔE‡: PBE0/SVPD 46.621、PBE0/TZVPD 46.429、ωB97X-D3 46.369、CCSD(T) 47.807。ranking.csv の panel min / max 46.369 / 47.807 は method_panel.csv と一致 | 1:23 |
+| S20 SN2(M5 の sn2_panel の複製) | ΔE‡: PBE0/SVPD 10.446、PBE0/TZVPD 11.146、ωB97X-D3 15.101、CCSD(T) 13.436。δG_eff 15.732(ωB97X 層)、panel min / max 10.446 / 15.101 が一致 | 0:01(ジョブはすべて再利用) |
+| S20 CH3O•(M5 の s4 の複製) | ROHF-CCSD(T) の行が埋まった(ΔE‡ 33.372、ΔE_rxn −7.802。以前は `wft_closed_shell_only`)。ωB97X-D3 33.578、PBE0/TZVPD 32.713。δG_eff 31.178、`spin_contaminated` なし、panel min / max 32.713 / 33.578 が一致 | 4:38 |
+| S18 `h3_doublet` | `degenerate_rearrangement`(TS −605.8i)、ΔE‡ 4.563、δG_eff 4.091。SCREEN の single から saddle が直接収束し、string も SCF の救済も使わなかった(cgmin は SA-C のプローブで P3c の bead を収束させた) | 0:47 |
+| S19 `tma_hf2`(`discover`、新しい run) | explore 25 attempt で生成物 0。宣言反応 `neutral_to_shared_proton` は DFT で shared_proton が neutral に落ちて `same_basin`(順位なし)。SP の対象は 0 点(dft 極小 3、旧 `reaction_stationary_points` は 1、`all_minima` は 3)。dft stage が 1,787 s で大半 | 32:02 |
+| S19 複数条件(tma_hf2 に thermo_conditions → report_conditions を追記。T 250 / 298.15 / 400 K × 1 atm / 1 M) | ΔG_assoc(TMA + 2 HF → 錯体)は 1 atm で −14.52 / −11.53 / −5.11、1 M で −17.52 / −15.32 / −10.66 kcal/mol(差 2RT ln(RT/P°) = 3.00 / 3.79 / 5.55)。report は最初の (298.15 K、1 atm) で並べた。SN2(sn2_panel の複製に同じ追記)の δG_eff は 1 atm と 1 M で同じ(250 K 10.898、298.15 K 11.077、400 K 11.435) | 0:02 |
+
 ---
 
 以下は v3・v4・v5(第2〜第4ラウンド改良後の再検証、2026-09-26)の記録。第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11、第4ラウンドの小さな改良(コード `13a4340`)後の退行確認 v5 は §12 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。

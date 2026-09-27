@@ -40,6 +40,7 @@ PLANAR_NH2OH = _mol(("N", 0, 0, 0), ("O", 1.42, 0, 0), ("H", -0.5, 0.866, 0),
                     ("H", -0.5, -0.866, 0), ("H", 1.74, 0.91, 0))
 HCN = _mol(("H", 0, 0, -1.066), ("C", 0, 0, 0), ("N", 0, 0, 1.156))
 HI = _mol(("H", 0, 0, 0), ("I", 0, 0, 1.61))
+OH = Molecule(XYZ(["O", "H"], np.array([[0, 0, 0.00777717], [0, 0, 0.98222283]])), 0, 2)
 
 
 def _final(tmp_path, ev: Evidence) -> Molecule:
@@ -98,6 +99,17 @@ def test_mp2_single_point_and_the_wb97x_d3_level(real_engine):
     ev = qm.energy(WATER, wb97)
     assert isinstance(ev, Evidence), ev
     assert (ev.level.method, ev.level.dispersion, ev.level.grid) == ("wb97x-d3", None, "fine")
+
+
+def test_open_shell_ccsd_t_is_rohf_through_the_tce(real_engine):
+    """OH.: ROHF-CCSD(T)/def2-TZVPD through the TCE (G29; 30 s CPU on 4 ranks)."""
+    qm = real_engine(Capability.QM, "nwchem")
+    ccsd_t = MethodSpec(id="ccsd-t_def2-tzvpd", kind="wft", wft_method="ccsd(t)",
+                        basis="def2-tzvpd")
+    ev = qm.energy(OH, ccsd_t)
+    assert isinstance(ev, Evidence), ev
+    assert (ev.level.method, ev.level.multiplicity, ev.s2) == ("ccsd(t)", 2, None)
+    assert ev.energy_hartree == pytest.approx(-75.640597872, abs=1e-6)
 
 
 def test_string_bead_energies_settle_hcn_sto3g(real_engine, tmp_path):

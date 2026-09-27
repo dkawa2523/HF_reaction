@@ -124,7 +124,7 @@ class EngineSite(BaseModel):
 
 
 class ThermoSettings(BaseModel):
-    """Typed GoodVibes settings; temperatures come from the run's Conditions."""
+    """Typed GoodVibes settings; temperatures come from ThermoConfig.temperatures_K."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     qs: Literal["grimme", "truhlar"] = "grimme"

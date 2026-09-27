@@ -1,4 +1,5 @@
-# Opt-in method-panel reference for small closed-shell molecules (not in the default panel).
+# Opt-in method-panel reference for small molecules (open shells: ROHF-CCSD(T) through the
+# TCE; not in the default panel).
 id: ccsd-t_def2-tzvpd
 kind: wft
 wft_method: ccsd(t)

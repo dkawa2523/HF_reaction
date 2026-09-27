@@ -24,12 +24,14 @@ from hfauto.pipeline.runner import run_pipeline
 from hfauto.stages import catalog
 
 pytestmark = pytest.mark.integration
-T, PIPELINES = R.ArtifactType, Path(__file__).resolve().parents[2] / "configs" / "pipelines"
+REPO = Path(__file__).resolve().parents[2]
+T, PIPELINES = R.ArtifactType, REPO / "configs" / "pipelines"
 
 
 @pytest.fixture
-def pipeline(tmp_path, tmp_run, override_engine):
+def pipeline(tmp_path, tmp_run, override_engine, monkeypatch):
     """``pipeline(name)`` runs configs/pipelines/<name>.yaml in tmp_run with every engine faked."""
+    monkeypatch.chdir(REPO)  # the methods come from configs/methods, as for the CLI
     well = fakes.double_well()
     pes = fakes.PES(well.symbols, lambda x: well.energy(x) if np.size(x) == 9 else float(
         np.sum((pdist(np.reshape(x, (-1, 3))) - 0.92) ** 2)), well.points)
@@ -99,6 +101,8 @@ def test_known_endpoints_then_method_panel_appended_to_the_run(pipeline):
     assert panel >= {"def2-tzvpd"} and "def2-svp" not in panel
     report = load_manifest(layout.manifest_path("panel_report")).records(T.REPORT, R.ReportRecord)
     assert [row.reaction_id for row in report[0].rows] == ["rx"]  # the paths stage's reaction
+    [row] = report[0].rows  # ranked on panel_thermo's layer (no conditions copied)
+    assert row.rankable and (row.T_K, row.energy_level) == (298.15, "wb97x-d3/def2-tzvpd")
     with pytest.raises(ValueError, match="already belongs"):
         pipeline("discover")  # structures, dft, ... are known_endpoints stage ids
 
@@ -122,9 +126,9 @@ def test_a_run_whose_inputs_all_fail_still_writes_the_report(pipeline, tmp_path,
     for species in system["species"]:  # an even electron count: no doublet
         species["multiplicity"] = 2
     (tmp_path / "doublets.yaml").write_text(yaml.safe_dump(system), encoding="utf-8")
-    args = ["run", str(PIPELINES / "known_endpoints.yaml"), "--system", "doublets.yaml",
-            "--site", "site.yaml", "--run-dir", str(tmp_run)]
-    monkeypatch.chdir(tmp_path)
+    args = ["run", str(PIPELINES / "known_endpoints.yaml"), "--system",
+            str(tmp_path / "doublets.yaml"), "--site", str(tmp_path / "site.yaml"),
+            "--run-dir", str(tmp_run)]
     result = CliRunner().invoke(app, args)
     assert result.exit_code == 1, result.output
     states = {s.stage_id: s for s in RunLayout(tmp_run).read_state()}

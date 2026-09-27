@@ -39,8 +39,8 @@ _PATH_ENERGY = re.compile(  # a Path Energy block: one 'string: <bead> <energy>'
     r"^[ \t]*string: Path Energy #.*\n((?:[ \t]*string:[ \t]+\d+[ \t]+\S+[ \t]*\n)+)",
     re.MULTILINE,
 )
-_WFT_ENERGY = {
-    "ccsd(t)": r"Total CCSD\(T\) energy:\s+(\S+)",
+_WFT_ENERGY = {  # the ccsd module (RHF) or the TCE (ROHF)
+    "ccsd(t)": r"(?:Total CCSD\(T\) energy:|CCSD\(T\) total energy / hartree\s+=)\s+(\S+)",
     "mp2": r"Total MP2 energy:?\s+(\S+)",
 }
 
@@ -60,10 +60,8 @@ def version(text: str) -> str | None:
 
 
 def wft_method(text: str) -> str | None:
-    """"ccsd(t)" or "mp2" when the job ran a correlated wave-function method."""
-    if "Total CCSD(T) energy" in text:
-        return "ccsd(t)"
-    return "mp2" if "Total MP2 energy" in text else None
+    """"ccsd(t)" or "mp2" when the job reported a correlated wave-function energy."""
+    return next((m for m, p in _WFT_ENERGY.items() if re.search(p, text, re.MULTILINE)), None)
 
 
 def basis(text: str) -> str | None:

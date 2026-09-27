@@ -1,5 +1,6 @@
 """NWChem engines through JobRunner with a stub executable that replays recorded outputs:
-G07 (HCN TS: level lines, vibrational block and .hess), G01 (two blocks) and G13 (string)."""
+G07 (HCN TS: level lines, vibrational block and .hess), G01 (two blocks), G13 (string) and
+G29 (OH. ROHF-CCSD(T))."""
 
 import shutil
 import sys
@@ -30,6 +31,8 @@ frame = lambda rows: f"{len(rows)}\n geometry\n" + "\n".join(rows) + "\n"
 if task == "dft string":
     Path("job.string_final.xyz").write_text(frame(atoms) * 11)
     sys.exit(print((here / "G13.out").read_text()))
+if task == "tce energy":
+    sys.exit(print((here / "G29.out").read_text()))
 if len(atoms) == 4:
     sys.exit(print((here / "G01.out").read_text()))
 g07 = (here / "G07.out").read_text()
@@ -62,7 +65,8 @@ def nwchem(golden, tmp_path):
     stub = tmp_path / "stub"
     stub.mkdir()
     for name, rel in (("G01.out", "G01/nwchem.out"), ("G13.out", "G13/nwchem_string.out"),
-                      ("G07.out", "G07/nwchem.out"), ("G07.hess", "G07/hfauto_job.hess")):
+                      ("G07.out", "G07/nwchem.out"), ("G07.hess", "G07/hfauto_job.hess"),
+                      ("G29.out", "G29/oh_ccsdt.out")):
         shutil.copyfile(golden.path(f"nwchem/{rel}"), stub / name)
     (stub / "nwchem.py").write_text(STUB)
     if sys.platform == "win32":
@@ -104,17 +108,23 @@ def test_frequencies_cache_and_input_checks(nwchem, golden):
     assert grid.kind is FailureKind.METHOD_MISMATCH and "grid" in grid.reason
 
 
-def test_open_shell_wft_and_all_electron_iodine_are_rejected_without_a_job(nwchem, golden):
+def test_open_shell_ccsd_t_is_a_rohf_tce_job_and_all_electron_iodine_is_rejected(nwchem,
+                                                                                 golden):
     jobs, site = nwchem
     engine = NWChemEngine(jobs=jobs, site=site)
-    mp2 = MethodSpec(id="mp2", kind="wft", wft_method="mp2", basis="def2-svp")
-    failure = engine.energy(Molecule(_hcn_ts(golden).xyz, 1, 2), mp2)
-    assert (failure.kind, failure.reason) == (FailureKind.INPUT_INVALID, "wft_closed_shell_only")
+    ccsd_t = MethodSpec(id="ccsd-t", kind="wft", wft_method="ccsd(t)", basis="def2-tzvpd")
+    symbols, coords = geometry_block(golden.text("nwchem/G29/oh_ccsdt.out"))
+    ev = engine.energy(Molecule(XYZ(list(symbols), coords), 0, 2), ccsd_t)
+    assert isinstance(ev, Evidence) and ev.task == "sp" and ev.s2 is None
+    assert (ev.level.method, ev.level.multiplicity) == ("ccsd(t)", 2)
+    assert ev.energy_hartree == pytest.approx(-75.640597871999560, abs=1e-9)
+    deck = (jobs.store.attempt_dir(ev.job_key, 0) / "job.nw").read_text()
+    assert "  rohf\n  nopen 1\n" in deck and deck.rstrip().endswith("task tce energy")
     hi = Molecule(XYZ(["H", "I"], np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.61]])), 0, 1)
-    failure = engine.energy(hi, mp2.model_copy(update={"basis": "cc-pVDZ"}))
+    failure = engine.energy(hi, ccsd_t.model_copy(update={"basis": "cc-pVDZ"}))
     assert (failure.kind, failure.reason) == (FailureKind.INPUT_INVALID,
                                               "no_ecp_for_basis:cc-pVDZ:I")
-    assert (jobs.stats().hits, jobs.stats().misses) == (0, 0)
+    assert (jobs.stats().hits, jobs.stats().misses) == (0, 1)
 
 
 def test_g01_two_vibrational_blocks_are_not_a_freq_evidence(nwchem, golden):

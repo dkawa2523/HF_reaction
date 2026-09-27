@@ -175,9 +175,9 @@ class _NWChem:
         return self._evidence(task, workdir, text, level)
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
-        """autoz -> Cartesian coordinates from the same start; SCF -> the old vectors with damping
-        and level shift; timeout / maxiter of a driver job -> its latest frame with the old
-        vectors and driver Hessian (design §7.1)."""
+        """autoz -> Cartesian coordinates from the same start; SCF -> the old vectors with the
+        quadratic solver (cgmin); timeout / maxiter of a driver job -> its latest frame with the
+        old vectors and driver Hessian (design §7.1)."""
         if failure.kind is FailureKind.INPUT_INVALID and failure.reason == "autoz":
             execution = task.execution.model_copy(update={"coordinates": "cartesian"})
             return replace(task, execution=execution)
@@ -247,9 +247,11 @@ class _NWChem:
                         fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords))
 
     def _evidence(self, task: Task, workdir: Path, text: str, level: Level) -> Evidence | Failure:
-        energy, start_mol = nw_out.total_energy(text), task.inputs["start"]
+        energy, start_mol, s2 = nw_out.total_energy(text), task.inputs["start"], nw_out.s2(text)
         if energy is None:
             return _incomplete("no_energy")
+        if s2 is None and level.multiplicity > 1 and task.inputs["method"].kind == "dft":
+            return _incomplete("s2_not_reported")  # cgmin prints no <S2>: spin_ok needs it
         start = self._geometry(write_xyz(start_mol.xyz, workdir / "start.xyz"))
         final, extra = start, dict[str, Any]()
         if task.kind in _DRIVER_JOBS:
@@ -265,7 +267,7 @@ class _NWChem:
                 return vibrations
             extra.update(vibrations)
         return Evidence(engine=task.engine, task=_TASK[task.kind], level=level, start=start,
-                        final=final, energy_hartree=energy, s2=nw_out.s2(text),
+                        final=final, energy_hartree=energy, s2=s2,
                         output=self._jobs.store.file_ref(workdir / STDOUT_NAME), job_key="",
                         **extra)
 
@@ -302,7 +304,8 @@ class _NWChem:
 
 
 class NWChemEngine(_NWChem):
-    """QM: DFT energy / optimize / frequencies; closed-shell MP2 and CCSD(T) energies."""
+    """QM: DFT energy / optimize / frequencies; MP2 and CCSD(T) energies (ROHF-CCSD(T) for
+    open shells)."""
 
     name: ClassVar[str] = "nwchem"
 
@@ -318,8 +321,6 @@ class NWChemEngine(_NWChem):
 
     def energy(self, mol: Molecule, method: MethodSpec, *,
                deadline: Deadline | None = None) -> Evidence | Failure:
-        if method.kind == "wft" and mol.multiplicity > 1:
-            return _invalid("wft_closed_shell_only")
         return self._qm("energy", mol, method, deadline)
 
     def optimize(self, mol: Molecule, method: MethodSpec, *,

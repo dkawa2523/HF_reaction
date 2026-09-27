@@ -93,12 +93,6 @@ class SystemConfig(BaseModel):
         return self
 
 
-class Conditions(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    temperatures_K: tuple[float, ...] = (298.15,)
-    standard_states: tuple[Literal["1atm", "1bar", "1M"], ...] = ("1atm",)
-
-
 def load_system(path: Path) -> SystemConfig:
     """Read a system YAML file and resolve xyz paths against its directory."""
     path = Path(path)

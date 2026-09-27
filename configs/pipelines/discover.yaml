@@ -1,7 +1,6 @@
 # Discovery from monomers and compositions: conformers -> xTB minima -> ReaDuct exploration
 # -> DFT minima -> reaction paths -> thermochemistry -> report.
 pipeline_id: discover
-conditions: {temperatures_K: [298.15], standard_states: [1atm]}
 stages:
   - {id: structures, stage: structures}
   - {id: conformers, stage: conformers, engine: crest, method: gfn2}

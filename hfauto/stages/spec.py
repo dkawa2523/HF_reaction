@@ -20,7 +20,7 @@ from hfauto.core.evidence import FileRef, Geometry
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import Deadline, MethodSpec
 from hfauto.core.records import ArtifactType
-from hfauto.core.system import Conditions, SystemConfig
+from hfauto.core.system import SystemConfig
 
 ItemT = TypeVar("ItemT")
 ResultT = TypeVar("ResultT")
@@ -45,7 +45,6 @@ class StageRuntime(Protocol):
     stage_id: str
     stage_dir: Path
     system: SystemConfig
-    conditions: Conditions
     policy: Policy
 
     def engine(self, capability: Capability, name: str) -> Engine: ...

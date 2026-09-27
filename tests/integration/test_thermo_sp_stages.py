@@ -1,13 +1,12 @@
-"""sp -> thermo with FakeQM / FakeThermo: energy layer, band, association, mixed LOT, m = 2,
-dG_eff (state reference, submerged barrier, barrierless)."""
+"""sp -> thermo with FakeQM / FakeThermo: energy layer (parents, label, spin), band,
+association, mixed LOT, m = 2, dG_eff (state reference, submerged barrier, barrierless)."""
 
 import math
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pytest
-from fakes import FakeQM, FakeThermo, double_well, write_geometry
+from fakes import PES, FakeQM, FakeThermo, double_well, write_geometry
 
 from hfauto.backends.protocols import Capability, ThermoResult
 from hfauto.chemistry.gates import zpe_hartree
@@ -17,7 +16,7 @@ from hfauto.core.constants import HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
-from hfauto.core.system import CompositionInput, Conditions, SpeciesInput, SystemConfig
+from hfauto.core.system import CompositionInput, SpeciesInput, SystemConfig
 from hfauto.drivers.minimum import calc_id
 from hfauto.stages.single_point import SinglePointConfig, SinglePointStage
 from hfauto.stages.thermochemistry import ThermoConfig, ThermoStage
@@ -43,16 +42,19 @@ def _state(ev, charge, multiplicity):
 def _setup(fake_runtime, tmp_run, script, states=NEUTRAL):
     """The double well as composition c = NH + O (p2: the product at another grid; o2: a second
     minimum of the O state), rx1 = reactant -> product and rx2 = reactant -> p2."""
-    qm = FakeQM(tmp_run, pes := double_well())
+    well = double_well()
+    part = well.energy(well.points["reactant"]) / 2 + 0.05  # NH and O: 63 kcal/mol up
+    pes = PES(well.symbols, lambda x: well.energy(x) if np.size(x) == 9 else part, well.points)
+    qm = FakeQM(tmp_run, pes)
     ev = {p: _state(qm.frequencies(pes.molecule(p), DFT), *states["complex"])
           for p in ("reactant", "product", "ts")}
     medium = ev["product"].level.model_copy(update={"grid": "medium"})
     ev["p2"] = ev["product"].model_copy(update={"job_key": "p2", "level": medium})  # other LOT
-    for tag, symbols, nu in (("nh", ["N", "H"], (3000.0,)), ("o", ["O"], ())):  # 63 kcal/mol up
+    for tag, symbols, nu in (("nh", ["N", "H"], (3000.0,)), ("o", ["O"], ())):
         geom = write_geometry(tmp_run, f"{tag}.xyz", symbols, np.eye(3)[: len(symbols)])
         ev[tag] = _state(ev["reactant"], *states[tag]).model_copy(update={
             "start": geom, "final": geom, "job_key": tag, "frequencies_cm1": nu,
-            "energy_hartree": ev["reactant"].energy_hartree / 2 + 0.05})
+            "energy_hartree": part})
     ev["o2"] = ev["o"].model_copy(update={"job_key": "o2"})
     arts = [Artifact(artifact_id=calc_id(e), type=T.CALCULATION, payload=e) for e in ev.values()]
     arts += [Artifact(artifact_id=t, type=T.SPECIES, payload=R.SpeciesRecord(
@@ -73,22 +75,22 @@ def _setup(fake_runtime, tmp_run, script, states=NEUTRAL):
     system = SystemConfig(system_id="s", species=[SpeciesInput(id=t, xyz=Path(f"{t}.xyz"))
                                                   for t in ("nh", "o")],  # never read
                           compositions=[CompositionInput(id="c", components={"nh": 1, "o": 1})])
-    rt = replace(fake_runtime(system, {(Capability.QM, "nwchem"): qm, (
-        Capability.THERMO, "goodvibes"): FakeThermo(script)}, methods={"svp": DFT, "tzvp": BIG}),
-        conditions=Conditions(standard_states=("1atm", "1M")))
+    rt = fake_runtime(system, {(Capability.QM, "nwchem"): qm, (
+        Capability.THERMO, "goodvibes"): FakeThermo(script)}, methods={"svp": DFT, "tzvp": BIG})
     return Manifest(run_id="r", stage_id="v", created_at="t", artifacts=arts), rt, ev
 
 
 def _thermo(view, rt, method=None):  # <subject|rxn>_<T>... -> payload
-    out = ThermoStage().run(view, ThermoConfig(engine="goodvibes", energy_method=method), rt)
+    config = ThermoConfig(engine="goodvibes", energy_method=method, standard_states=("1atm", "1M"))
+    out = ThermoStage().run(view, config, rt)
     return {a.artifact_id.split("_thermo_")[1]: a.payload for a in out}
 
 
 def test_sp_then_thermo(fake_runtime, tmp_run):
     inputs, rt, ev = _setup(fake_runtime, tmp_run, _gv)
     sp = SinglePointStage().run(inputs, SinglePointConfig(engine="nwchem", methods=["tzvp"]), rt)
-    assert sorted((a.payload.task, len(a.parents)) for a in sp) == [("sp", 1)] * 2 + [("sp", 2)]
-    view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, *sp]})  # p2: product's sp
+    assert any({"m_product", "m_p2"} <= set(a.parents) for a in sp)  # one geometry, one sp
+    view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, *sp]})
 
     plain = _thermo(view, rt)
     rx = plain["rx1_298.15K_1atm"]
@@ -99,9 +101,19 @@ def test_sp_then_thermo(fake_runtime, tmp_run):
     assert rx.dG_eff_kcal == pytest.approx(rx.dG_act_kcal) and rx.notes == ()  # one conformer
     assert rx.band_kcal[0] <= rx.dG_eff_kcal <= rx.band_kcal[1]
     assert plain["rx2_298.15K_1atm"].blockers == ("mixed_level_of_theory",)
-    assert _thermo(view, rt, "tzvp")["m_reactant_298.15K"].energy_calc  # composite G on the sp
+    assert rx.energy_level == plain["rx2_298.15K_1atm"].energy_level == "xfake/svp"  # no grid
+    composite = _thermo(view, rt, "tzvp")
+    assert composite["m_reactant_298.15K"].energy_calc  # the sp its parents name
+    assert composite["rx1_298.15K_1atm"].energy_level == "xfake/tzvp"
+    assert composite["rx1_298.15K_1atm"].blockers == ()
 
-    ts = calc_id(ev["ts"])  # S9: the sp layer was asked for, the TS has none -> fail closed
+    ts = calc_id(ev["ts"])  # U8-P8: a UKS-like sp far from <S^2> = 0 blocks like a freq would
+    spin = [a.model_copy(update={"payload": a.payload.model_copy(update={"s2": 0.75})})
+            if ts in a.parents else a for a in view.artifacts]
+    hot = _thermo(view.model_copy(update={"artifacts": spin}), rt, "tzvp")["rx1_298.15K_1atm"]
+    assert hot.blockers == ("spin_contaminated",) and hot.dG_eff_kcal is not None
+
+    # S9: the sp layer was asked for, the TS has none -> fail closed
     view = inputs.model_copy(update={"artifacts": [
         *inputs.artifacts, *(a for a in sp if ts not in a.parents)]})
     layered = _thermo(view, rt, "tzvp")
@@ -109,6 +121,7 @@ def test_sp_then_thermo(fake_runtime, tmp_run):
     assert {"thermo_unavailable", "energy_layer_missing"} <= set(layered[f"{ts}_298.15K"].notes)
     assert "thermo_unavailable" in layered["rx1_298.15K_1atm"].blockers
     assert layered["rx1_298.15K_1atm"].dE_act_kcal is None  # no dE mixing the sp and freq LOTs
+    assert layered["rx1_298.15K_1atm"].energy_level is None
 
 
 def test_association_across_charge_and_spin_fails_closed(fake_runtime, tmp_run):  # S14

@@ -242,7 +242,8 @@ def render(view: Manifest, out_dir: Path, *, load_xyz: Callable[[Geometry], XYZ]
     """Write ``out_dir/report.html`` for the reactions with an outcome and return its path.
 
     Rows follow the last ReportRecord in the view (ranked first); the thermo shown first is
-    the first ReactionThermo of the reaction in view order (the conditions' first T and state).
+    the first ReactionThermo of the reaction in view order (the thermo stage's first T and
+    state).
     """
     reactions = [r for r in view.records(ArtifactType.REACTION, ReactionRecord)
                  if r.outcome is not None]

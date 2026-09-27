@@ -47,7 +47,7 @@ _PES_FIELDS = (
 )
 _STATE_FIELDS = ("charge", "multiplicity")
 _NUMERICS_FIELDS = ("grid", "scf_tol")
-_RANKABLE_OUTCOMES = frozenset({
+RANKABLE_OUTCOMES = frozenset({
     CaseOutcome.ELEMENTARY_STEP, CaseOutcome.DEGENERATE, CaseOutcome.REASSIGNED,
     CaseOutcome.BARRIERLESS,
 })
@@ -232,15 +232,11 @@ def thermo_consistent(
 
 
 def rankable(reaction: ReactionRecord, thermo: ReactionThermo | None) -> Gate:
-    """A rankable outcome with dG_eff and no thermo blocker (thermo_unavailable,
-    mixed_level_of_theory, spin_contaminated); other outcomes give their reason and the
-    blockers."""
-    real = list(thermo.blockers) if thermo is not None else []
-    if reaction.outcome not in _RANKABLE_OUTCOMES:
-        return _gate([f"outcome:{reaction.outcome}", *real])
-    if (thermo is None or thermo.dG_eff_kcal is None) and "thermo_unavailable" not in real:
-        real.insert(0, "thermo_unavailable")
-    return _gate(real)
+    """A rankable outcome and a thermo record without blockers. The thermo stage is the only
+    source of the blockers (thermo_unavailable, mixed_level_of_theory, spin_contaminated)."""
+    outcome = () if reaction.outcome in RANKABLE_OUTCOMES else (f"outcome:{reaction.outcome}",)
+    facts = thermo.blockers if thermo is not None else ("thermo_record_missing",)
+    return _gate([*outcome, *facts])
 
 
 Tier = Literal["screening", "minima", "saddle", "connected"]

@@ -168,12 +168,11 @@ def test_rankable():  # any dZPE; a barrierless outcome ranks by its dG_eff
     assert g.rankable(reaction(), thermo())
     assert g.rankable(reaction(outcome=CaseOutcome.BARRIERLESS), thermo(1.0))
     assert not g.rankable(reaction(), thermo(blockers=("spin_contaminated",)))
-    assert g.rankable(reaction(), None).reasons == ("thermo_unavailable",)
-    assert g.rankable(reaction(), thermo(None)).reasons == ("thermo_unavailable",)
+    assert g.rankable(reaction(), None).reasons == ("thermo_record_missing",)
     lost = thermo(None, ("mixed_level_of_theory", "thermo_unavailable"))
-    assert g.rankable(reaction(), lost).reasons == lost.blockers  # not repeated
-    same = reaction(outcome=CaseOutcome.SAME_BASIN)  # only the outcome and the thermo blockers
-    assert g.rankable(same, None).reasons == ("outcome:same_basin",)
+    assert g.rankable(reaction(), lost).reasons == lost.blockers  # the thermo stage's facts only
+    same = reaction(outcome=CaseOutcome.SAME_BASIN)  # the outcome and the thermo blockers
+    assert g.rankable(same, None).reasons == ("outcome:same_basin", "thermo_record_missing")
     assert g.rankable(same, thermo(0.0, ("spin_contaminated",))).reasons == (
         "outcome:same_basin", "spin_contaminated")
 

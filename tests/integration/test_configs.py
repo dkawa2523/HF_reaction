@@ -36,7 +36,7 @@ def test_pipeline_stages_and_their_methods_validate(path):
 
 def test_sites_and_methods_validate():
     assert all(config.load_site(path).engines for path in files("sites"))
-    assert all(config.load_method(CONFIGS / "methods", p.stem) for p in files("methods"))
+    assert all(config.load_method(p) for p in files("methods"))
 
 
 @pytest.mark.parametrize("path", files("systems"), ids=lambda p: p.stem)

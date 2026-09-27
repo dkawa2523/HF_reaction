@@ -634,5 +634,21 @@
    "review-2026-09-27 §6.2",
    "U3-P1"
   ]
+ },
+ {
+  "id": "G29",
+  "files": [
+   {
+    "golden": "nwchem/G29/oh_ccsdt.out",
+    "source": "/home/user/hfauto_r6/SA/sac_golden/jobs/0b/0b4aa8c74f7fc6291bb391169c36bade51e96e13f1734e07caaaf90aaa630663/attempt_00/stdout.txt",
+    "source_sha256": "443806693ecf915fa9090e62579b39cb264049a3ef375c8cb52418423d57016f",
+    "method": "copy"
+   }
+  ],
+  "expect": "OH•(二重項、G25 の PBE0-D3BJ/def2-SVPD 極小)の ROHF-CCSD(T)/def2-TZVPD(TCE、`2eorb` `2emet 13`、`freeze atomic` で O 1s を凍結)、hfauto の NWChemEngine で生成。E −75.640597871999560(ROHF −75.418369434946)。SCF の `open shells = 1` から Level の多重度 2、`CCSD(T) total energy / hartree` からエネルギーを読む。⟨S²⟩ はない",
+  "refs": [
+   "review-2026-09-27 §6.2",
+   "U8-P7"
+  ]
  }
 ]

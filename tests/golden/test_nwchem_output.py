@@ -1,4 +1,4 @@
-"""NWChem parser on real outputs (design §10.2: G01, G03-G05, G07, G10, G13, G21-G28)."""
+"""NWChem parser on real outputs (design §10.2: G01, G03-G05, G07, G10, G13, G21-G29)."""
 
 import json
 import re
@@ -26,6 +26,7 @@ XFINE = MethodSpec(id="m", kind="dft", functional="pbe0", basis="def2-svpd",
                    dispersion="d3zero", grid="xfine", scf_energy_tol=1e-8)
 SVPD = MethodSpec(id="pbe0-d3bj_def2-svpd", kind="dft", functional="pbe0", basis="def2-svpd",
                   dispersion="d3bj", grid="fine", scf_energy_tol=1e-7)  # G25-G28
+CCSD_T = MethodSpec(id="ccsd-t_def2-tzvpd", kind="wft", wft_method="ccsd(t)", basis="def2-tzvpd")
 
 
 def test_g01_two_vibrational_blocks(golden):
@@ -157,6 +158,10 @@ def test_doublet_anion_and_atom_freq_evidence(golden, tmp_path, stem, charge, mu
     assert isinstance(ev, Evidence) and ev.n_external == n_external
     assert len(ev.frequencies_cm1) == n_modes and all(nu > 0 for nu in ev.frequencies_cm1)
     assert spin_ok(ev) and (ev.s2 is None) == (multiplicity == 1)
+    if multiplicity > 1:  # the SCF rescue (cgmin) prints no <S2>: no UKS Evidence without it
+        (work / STDOUT_NAME).write_text(re.sub("<S2> =.*", "", text), encoding="utf-8")
+        failure = engine.parse(task, work, result)
+        assert (failure.kind, failure.reason) == (Kind.INCOMPLETE_OUTPUT, "s2_not_reported")
 
 
 def test_g27_iodine_ecp_electrons_and_ccsd_t_frozen_core(golden):
@@ -167,8 +172,16 @@ def test_g27_iodine_ecp_electrons_and_ccsd_t_frozen_core(golden):
         assert "\necp\n  I library def2-ecp\nend\n" in text and "* library def2-ecp" not in text
         assert re.search(r"I \(Iodine\) Replaces\s+28 electrons", text)
     assert re.search(r"Alpha electrons :\s+13\n", sp)
-    level = nw.observe_level(cc)
-    assert (level.method, level.basis, level.charge, level.multiplicity) == (
-        "ccsd(t)", "def2-tzvpd", 0, 1)
-    assert nw.total_energy(cc) == pytest.approx(-297.821560434727, abs=1e-9)
     assert re.findall(r"number of core\s+(\d+)", cc) == ["0"]
+
+
+@pytest.mark.parametrize(("stem", "multiplicity", "energy"), [
+    ("G27/hi_ccsdt", 1, -297.821560434727), ("G29/oh_ccsdt", 2, -75.640597871999560)])
+def test_ccsd_t_level_and_energy_rhf_ccsd_module_and_rohf_tce(golden, stem, multiplicity,
+                                                              energy):
+    """G27: the ccsd module (RHF); G29: the TCE on a ROHF reference (``open shells = 1``)."""
+    text = golden.text(f"nwchem/{stem}.out")
+    level = nw.observe_level(text)
+    assert level_mismatches(CCSD_T, level, version_pin="7.2.3") == []
+    assert (level.charge, level.multiplicity) == (0, multiplicity)
+    assert nw.total_energy(text) == pytest.approx(energy, abs=1e-9) and nw.s2(text) is None

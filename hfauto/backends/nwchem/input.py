@@ -2,10 +2,10 @@
 
 Every deck writes the top-level ``charge``, the geometry in the input frame
 (``units angstrom nocenter noautosym``, plus ``noautoz`` for Cartesian coordinates), a
-spherical basis with the def2-ECP of every element beyond Kr and, for DFT, xc / mult
-(``odft`` when open shell) / grid / energy convergence / dispersion. Optimizations and
-saddles never compute a Hessian: frequencies are a job of their own, and an initial Hessian
-is read from ``<name>.hess`` (``inhess 2``).
+spherical basis with the def2-ECP of every element beyond Kr, at most SCF_MAXITER SCF cycles
+and, for DFT, xc / mult (``odft`` when open shell) / grid / energy convergence / dispersion.
+Optimizations and saddles never compute a Hessian: frequencies are a job of their own, and an
+initial Hessian is read from ``<name>.hess`` (``inhess 2``).
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from hfauto.core.method import MethodSpec
 OPT_MAXITER = 100
 SADDLE_MAXITER = 50
 STRING_MAXITER = 20
+SCF_MAXITER = 100  # NWChem 7.2.3 defaults: DFT 50, SCF 20
 INITIAL_PATH = "initial_path.xyz"  # xyz_path is read from permanent_dir (the job's cwd)
 _VDW = {"d3zero": 3, "d3bj": 4}
 # NWChem tightens frequency jobs to 1e-7 on its own (opt default 1e-6); writing one value for
@@ -39,7 +40,7 @@ class Setup:
     cartesian: bool = False  # ExecutionSpec.coordinates == "cartesian" (noautoz)
     maxiter: int | None = None  # ExecutionSpec.maxiter overrides the driver / string default
     restart_vectors: bool = False  # start from <name>.movecs of the previous attempt
-    scf_rescue: bool = False  # damping and level shift after SCF_NOT_CONVERGED
+    scf_rescue: bool = False  # quadratic SCF (cgmin) after SCF_NOT_CONVERGED
 
 
 _DEFAULT = Setup()
@@ -110,12 +111,13 @@ def _dft(mol: Molecule, method: MethodSpec, setup: Setup) -> list[str]:
     if method.grid:
         lines.append(f"  grid {method.grid}")
     lines.append(f"  convergence energy {method.scf_energy_tol or DEFAULT_SCF_ENERGY_TOL:.1e}")
+    lines.append(f"  iterations {SCF_MAXITER}")
     if method.dispersion:
         lines.append(f"  disp vdw {_VDW[method.dispersion]}")
     if setup.restart_vectors:
         lines.append(f"  vectors input {setup.name}.movecs")
-    if setup.scf_rescue:
-        lines.append("  convergence damp 40 ncydp 30 lshift 0.5")
+    if setup.scf_rescue:  # converged the P3c H3 bead where DIIS, damping and rabuck oscillated
+        lines.append("  cgmin")  # (docs/validation.md); it prints no <S2>
     return [*lines, "end"]
 
 
@@ -169,18 +171,29 @@ def render_string(start: Molecule, end: Molecule, method: MethodSpec, setup: Set
 
 
 def render_wft(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:
-    """MP2 or CCSD(T) single point with frozen atomic cores; closed shell only (RHF reference).
+    """MP2 or CCSD(T) single point with frozen atomic cores. Closed shells use the RHF
+    ``ccsd`` / ``mp2`` modules; open shells a high-spin ROHF reference (``nopen`` = m - 1)
+    and the TCE, with ``2eorb 2emet 13`` (without them CH3O./def2-TZVPD exceeds 1200 MB/rank).
 
     ``freeze atomic`` freezes no orbital of an ECP atom (I keeps 4s4p4d correlated, G27).
-    CCSD may take 50 iterations (default 20); the scf block only restarts from <name>.movecs.
+    The ccsd module may take 50 iterations (default 20).
     """
     if method.kind != "wft" or method.wft_method is None:
         raise ValueError(f"method {method.id!r} is not a wave-function method")
-    scf = ["scf", f"  vectors input {setup.name}.movecs", "end"] if setup.restart_vectors else []
-    module = "mp2" if method.wft_method == "mp2" else "ccsd"
-    return _deck(setup, _system(mol, method, setup), scf,
-                 [module, "  freeze atomic", *(["  maxiter 50"] if module == "ccsd" else []),
-                  "end"], [f"task {method.wft_method} energy"])
+    open_shell = mol.multiplicity > 1
+    scf = ["scf", *(["  rohf", f"  nopen {mol.multiplicity - 1}"] if open_shell else []),
+           f"  maxiter {SCF_MAXITER}",
+           *([f"  vectors input {setup.name}.movecs"] if setup.restart_vectors else []), "end"]
+    if open_shell:
+        body = ["tce", "  2eorb", "  2emet 13", f"  {method.wft_method}", "  freeze atomic",
+                "end"]
+        task = "task tce energy"
+    else:
+        module = "mp2" if method.wft_method == "mp2" else "ccsd"
+        body = [module, "  freeze atomic", *(["  maxiter 50"] if module == "ccsd" else []),
+                "end"]
+        task = f"task {method.wft_method} energy"
+    return _deck(setup, _system(mol, method, setup), scf, body, [task])
 
 
 def hess_text(hessian: np.ndarray) -> str:

@@ -2,13 +2,16 @@
 sensitivity band, association thermochemistry and the ranking quantity dG_eff.
 
 Subjects: every dft minimum (monomers included) and SaddleClaim freq calc; one engine call
-each covers the main settings and the qs x cutoff variants at the conditions' temperatures.
+each covers the main settings and the qs x cutoff variants at the configured temperatures.
 Modes follow chemistry.thermo.thermo_frequencies (a TS drops its reaction coordinate). A
 failed call or gate gives G = None (thermo_unavailable), never retried. Species values are
 1 atm; reactions get one record per standard state. With energy_method, G = E_SP + (G_GV -
-E_GV) from the sp on the same geometry; a subject without that sp is energy_layer_missing. A
-chiral subject (MinimumRecord.chiral, or a chiral TS geometry) gets -RT ln 2 in G: its mirror
-image is the same basin or saddle, counted once with m = 2 (in ensembles too).
+E_GV) from the sp whose parents name the subject (the later one in the view wins); a subject
+without it is energy_layer_missing. The energy layer passes spin_ok like the freq. A chiral
+subject (MinimumRecord.chiral, or a chiral TS geometry) gets -RT ln 2 in G: its mirror image
+is the same basin or saddle, counted once with m = 2 (in ensembles too). The blockers of a
+ReactionThermo are the only source of thermo_unavailable, mixed_level_of_theory and
+spin_contaminated.
 
 A state is a composition and a topology.state_label. dG_eff (thermo.effective_barrier) refers
 to the lowest G of the reactant's and the product's state on the same freq and energy LOT
@@ -24,11 +27,11 @@ from typing import ClassVar, cast
 
 from hfauto.backends.protocols import Capability, ThermoEngine
 from hfauto.chemistry import thermo as th
-from hfauto.chemistry.gates import Gate, Policy, same_pes, thermo_consistent
+from hfauto.chemistry.gates import Gate, Policy, same_pes, spin_ok, thermo_consistent
 from hfauto.chemistry.identity import is_chiral
 from hfauto.chemistry.xyz import XYZ, hill_formula
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
-from hfauto.core.evidence import Evidence, Failure, Geometry
+from hfauto.core.evidence import Evidence, Failure, Geometry, Level
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec, ThermoSettings, level_mismatches
 from hfauto.core.records import (
@@ -43,8 +46,8 @@ from hfauto.core.records import (
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
 _QS, _CUTOFFS_CM1 = ("grimme", "truhlar"), (50.0, 100.0, 150.0)
-State = tuple[str, str]  # (composition_id, state_label)
-Monomers = dict[tuple[str, int], list[tuple[State, int]]]  # complex (Hill, charge) -> parts
+State = th.State
+Monomers = th.Monomers
 Table = dict[str, SpeciesThermo]  # subject -> thermo at one temperature and one settings
 
 
@@ -52,6 +55,8 @@ class ThermoConfig(StageConfig):
     engine: str  # thermo engine name; no default
     settings: ThermoSettings = ThermoSettings()
     energy_method: str | None = None  # sp layer of the composite G
+    temperatures_K: tuple[float, ...] = (298.15,)
+    standard_states: tuple[th.StandardState, ...] = ("1atm",)
 
 
 @dataclass(frozen=True)
@@ -59,13 +64,13 @@ class _Subject:
     id: str  # minimum_id or SaddleClaim.freq_calc
     freq_calc: str
     freq: Evidence
-    energy_calc: str | None  # sp at energy_method on the same geometry
+    energy_calc: str | None  # the sp at energy_method whose parents name this subject
     energy: Evidence  # that sp, else the freq itself
     state: State | None  # None for a TS
     notes: tuple[str, ...]  # of the MinimumRecord / SaddleClaim
     formula: tuple[str, int]  # (Hill formula, charge): finds a complex's monomers
     lot: tuple[str, str]  # full keys of the freq and energy levels
-    layer_missing: bool  # energy_method set but no sp on this geometry
+    layer_missing: bool  # energy_method set but no such sp
     chiral: bool  # the mirror image is the same basin or saddle: -RT ln 2 in G
 
 
@@ -77,17 +82,18 @@ def _variants(settings: ThermoSettings) -> list[ThermoSettings]:
 
 def _subjects(inputs: Manifest, method: MethodSpec | None, load: Callable[[Geometry], XYZ]
               ) -> dict[str, _Subject]:
-    layer = {} if method is None else {
-        a.payload.start.fingerprint: (a.artifact_id, a.payload)
+    layer = {} if method is None else {  # subject -> the sp at method naming it
+        parent: (a.artifact_id, a.payload)
         for a in inputs.of(ArtifactType.CALCULATION)
         if isinstance(a.payload, Evidence) and a.payload.task == "sp"
         and not level_mismatches(method, a.payload.level, version_pin=a.payload.level.version)
+        for parent in a.parents
     }
 
     def make(sid: str, calc: str, state: State | None, notes: tuple[str, ...],
              chiral: bool) -> _Subject:
         freq = inputs.evidence(calc)
-        sp_calc, sp = layer.get(freq.final.fingerprint, (None, freq))
+        sp_calc, sp = layer.get(sid, (None, freq))
         return _Subject(sid, calc, freq, sp_calc, sp, state, notes,
                         (hill_formula(freq.final.symbols), freq.level.charge),
                         (freq.level.full_key(), sp.level.full_key()),
@@ -137,19 +143,6 @@ def _species(sub: _Subject, engine: ThermoEngine, variants: Sequence[ThermoSetti
     return rows
 
 
-def _monomers(inputs: Manifest, rt: StageRuntime) -> Monomers:
-    """(Hill, charge) of each system composition -> (state, count) of its components."""
-    species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)}
-    out: Monomers = {}
-    for comp in rt.system.compositions:
-        parts = [(species[i], n) for i, n in comp.components.items() if i in species]
-        if len(parts) == len(comp.components) and sum(comp.components.values()) > 1:
-            symbols = [x for s, n in parts for x in s.geometry.symbols * n]
-            key = (hill_formula(symbols), sum(s.charge * n for s, n in parts))
-            out[key] = [((s.composition_id, s.state_label), n) for s, n in parts]
-    return out
-
-
 def _same_level(subs: Sequence[_Subject], *, state: bool = True) -> bool:
     return bool(same_pes(*[s.freq.level for s in subs], state=state)) and bool(
         same_pes(*[s.energy.level for s in subs], state=state))
@@ -179,15 +172,26 @@ def _association(names: tuple[str, ...], subjects: dict[str, _Subject], monomers
                           T, state)
 
 
-def _blockers(names: tuple[str, ...], subjects: dict[str, _Subject], table: Table
+def _blockers(names: tuple[str, ...], subs: Sequence[_Subject], table: Table, policy: Policy
               ) -> tuple[str, ...]:
-    subs = [subjects[p] for p in names if p in subjects]
     hits = {
         "thermo_unavailable": any(p not in table or table[p].G_hartree is None for p in names),
         "mixed_level_of_theory": not _same_level(subs),
-        "spin_contaminated": any("spin_contaminated" in s.notes for s in subs),
+        "spin_contaminated": any("spin_contaminated" in s.notes or not spin_ok(s.energy, policy)
+                                 for s in subs),
     }
     return tuple(name for name, hit in hits.items() if hit)
+
+
+def _label(level: Level) -> str:  # e.g. pbe0-d3bj/def2-svpd
+    method = f"{level.method}-{level.dispersion}" if level.dispersion else level.method
+    return f"{method}/{level.basis}" if level.basis else method
+
+
+def _energy_level(subs: Sequence[_Subject]) -> str | None:
+    """The energy layer all participants share; None when it is missing or mixed."""
+    labels = {None if s.layer_missing else _label(s.energy.level) for s in subs}
+    return labels.pop() if len(labels) == 1 else None
 
 
 def _kcal(subjects: dict[str, _Subject], a: str, b: str) -> float | None:
@@ -231,9 +235,11 @@ def _effective(rx: ReactionRecord, names: tuple[str, ...], subjects: dict[str, _
 
 
 def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject], monomers: Monomers, T: float,
-              state: th.StandardState, tables: Sequence[Table]) -> ReactionThermo:
+              state: th.StandardState, tables: Sequence[Table], policy: Policy
+              ) -> ReactionThermo:
     """tables: the thermo of every settings variant at T (index 0 = main settings)."""
     names, table = th.participants(rx), tables[0]
+    subs = [subjects[p] for p in names if p in subjects]
     dG_act, dG_rxn, dzpe = th.reaction_delta(rx, table)
     n_r, n_p = (sum(t.coefficient for t in terms) for terms in (rx.reactants, rx.products))
     shifts = (th.standard_state_shift(1 - n_r, T, state),
@@ -251,8 +257,8 @@ def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject], monomers: Monom
         dG_assoc_kcal=assoc, dG_act_vs_separated_kcal=vs_separated,
         band_kcal=None if None in band else (min(cast(list[float], band)),
                                              max(cast(list[float], band))),
-        blockers=_blockers(names, subjects, table), dG_eff_kcal=band[0],
-        notes=("submerged_barrier",) if submerged else (),
+        blockers=_blockers(names, subs, table, policy), dG_eff_kcal=band[0],
+        energy_level=_energy_level(subs), notes=("submerged_barrier",) if submerged else (),
     )
 
 
@@ -266,10 +272,11 @@ class ThermoStage:
         engine = cast(ThermoEngine, rt.engine(Capability.THERMO, cfg.engine))
         method = None if cfg.energy_method is None else rt.method(cfg.energy_method)
         subjects = _subjects(inputs, method, rt.load_xyz)
-        temperatures, variants = rt.conditions.temperatures_K, _variants(cfg.settings)
+        temperatures, variants = cfg.temperatures_K, _variants(cfg.settings)
         rows = rt.thread_map(lambda s: _species(s, engine, variants, temperatures, rt.policy),
                              list(subjects.values()), threads_per_item=1)
-        monomers = _monomers(inputs, rt)
+        monomers = th.monomer_states(inputs.records(ArtifactType.SPECIES, SpeciesRecord),
+                                     rt.system.compositions)
         out: list[Artifact] = []
         for T in temperatures:
             tables = [{s.id: r[T][i] for s, r in zip(subjects.values(), rows, strict=True)}
@@ -283,7 +290,7 @@ class ThermoStage:
             out += [Artifact(
                 artifact_id=f"reaction_thermo_{rx.reaction_id}_{T:g}K_{state}",
                 type=ArtifactType.REACTION_THERMO, parents=(rx.reaction_id,),
-                payload=_reaction(rx, subjects, monomers, T, state, tables),
+                payload=_reaction(rx, subjects, monomers, T, state, tables, rt.policy),
             ) for rx in inputs.records(ArtifactType.REACTION, ReactionRecord)
-                for state in rt.conditions.standard_states]
+                for state in cfg.standard_states]
         return out

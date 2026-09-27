@@ -10,15 +10,19 @@ other standard states only through ``standard_state_shift``.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Literal
 
+from hfauto.chemistry.xyz import hill_formula
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
 from hfauto.core.hashing import fingerprint_dict
 from hfauto.core.method import ThermoSettings
-from hfauto.core.records import CaseOutcome, ReactionRecord, SpeciesThermo
+from hfauto.core.records import CaseOutcome, ReactionRecord, SpeciesRecord, SpeciesThermo
+from hfauto.core.system import CompositionInput
 
 StandardState = Literal["1atm", "1bar", "1M"]
+State = tuple[str, str]  # (composition_id, state_label)
+Monomers = dict[tuple[str, int], list[tuple[State, int]]]  # complex (Hill, charge) -> parts
 
 _L_ATM_PER_MOL_K = 0.082057366080960  # gas constant in L atm / (mol K), CODATA 2018
 _ATM_PER_BAR = 1.0 / 1.01325
@@ -32,6 +36,21 @@ def thermo_frequencies(freqs_cm1: Sequence[float], *, saddle: bool) -> tuple[flo
     drops its lowest mode (the reaction coordinate) and keeps the others as |nu|."""
     modes = sorted(freqs_cm1)[1:] if saddle else freqs_cm1
     return tuple(sorted(abs(nu) for nu in modes))
+
+
+def monomer_states(species: Iterable[SpeciesRecord],
+                   compositions: Iterable[CompositionInput]) -> Monomers:
+    """(Hill formula, charge) of each composition of several molecules -> (state, count) of
+    its parts: the separated reference."""
+    by_id = {s.species_id: s for s in species}
+    out: Monomers = {}
+    for comp in compositions:
+        parts = [(by_id[i], n) for i, n in comp.components.items() if i in by_id]
+        if len(parts) == len(comp.components) and sum(comp.components.values()) > 1:
+            symbols = [x for s, n in parts for x in s.geometry.symbols * n]
+            key = (hill_formula(symbols), sum(s.charge * n for s, n in parts))
+            out[key] = [((s.composition_id, s.state_label), n) for s, n in parts]
+    return out
 
 
 def settings_sha(settings: ThermoSettings) -> str:
