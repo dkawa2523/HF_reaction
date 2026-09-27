@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from hfauto.chemistry import gates as g
+from hfauto.chemistry.topology import bonds
+from hfauto.chemistry.xyz import read_xyz
 from hfauto.core import records as r
 from hfauto.core.constants import CM1_TO_HARTREE, HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, FileRef, Geometry, Level, Task
 from hfauto.core.records import CaseOutcome
 
+ACAC = Path(__file__).resolve().parents[3] / "configs" / "systems" / "xyz" / "acac"
 REF = FileRef(path="jobs/x/out.txt", sha256="0" * 64)
 LEVEL = Level(program="nwchem", version="7.2.3", method="pbe0", basis="def2-svpd",
               dispersion="d3bj", charge=0, multiplicity=1, grid="fine", scf_tol=1e-7)
@@ -47,6 +52,20 @@ def test_is_minimum_rejections():
     assert not g.is_minimum(ev(freqs=modes()), opt=ev("saddle"))
     fine_opt = ev("opt", level=LEVEL.model_copy(update={"grid": "xfine"}))
     assert "pes_mismatch:grid" in g.is_minimum(ev(freqs=modes()), opt=fine_opt).reasons
+
+
+def test_freq_and_parent_share_one_electronic_state():
+    """U3-P7: at one geometry the freq job reproduces its parent's energy within the SCF noise
+    floor max(1e-5, 20 x scf_tol); another SCF solution 1e-4 Eh away is state_mismatch."""
+    freqs = modes()
+    assert g.is_minimum(ev(freqs=freqs), opt=ev("opt", energy=E_TS - 5e-6))
+    shifted = ev("opt", energy=E_TS - 1e-4)
+    assert g.is_minimum(ev(freqs=freqs), opt=shifted).reasons == ("state_mismatch",)
+    moved = g.is_minimum(ev(freqs=freqs, fp="g1"), opt=shifted)  # energies of two geometries
+    assert moved.reasons == ("geometry_mismatch",)
+    saddle = ev("saddle", energy=E_TS + 1e-4)
+    assert g.is_first_order_saddle(ev(freqs=modes(-700.0)), saddle=saddle).reasons == (
+        "state_mismatch",)
 
 
 @pytest.mark.parametrize("imag", [-1131.6, -680.11, -757.0])
@@ -127,6 +146,21 @@ def test_connection_assignment():
     assert connect(assigned=("A", "C")) == (g.Gate(True), "reassigned")
     assert connect(assigned=("A", None))[0].reasons == ("unassigned_side",)
     assert connect(assigned=("A", "A")) == (g.Gate(False, ("sides_same_basin",)), "failed")
+
+
+def test_a_degenerate_proton_transfer_moves_the_proton():
+    """U6-P7 (S16 acac enol): the PT's QRC sides carry the two endpoints' bond graphs. A methyl
+    rotation TS connects the basin to itself through two rotamers of R, with the proton in
+    place: no degenerate PT."""
+    reactant, product = (read_xyz(ACAC / f"{name}.xyz") for name in ("reactant", "product"))
+    r_bonds, p_bonds = (bonds(reactant.symbols, end.coords) for end in (reactant, product))
+    assert r_bonds != p_bonds  # H10 on O2, then on O6
+    kw = {"assigned": ("M", "M"), "expected": frozenset({"M"}), "degenerate": True}
+    pt, rotation = (r_bonds, p_bonds, p_bonds, r_bonds), (r_bonds, p_bonds, r_bonds, r_bonds)
+    assert connect(bond_sets=pt, **kw) == (g.Gate(True), "degenerate")
+    assert connect(bond_sets=rotation, **kw) == (g.Gate(False, ("bond_change_missing",)), "failed")
+    assert connect(bond_sets=(r_bonds,) * 4, **kw)[1] == "degenerate"  # inversion: no bond change
+    assert connect(bond_sets=rotation, assigned=("A", "B"))[1] == "elementary"  # not degenerate
 
 
 def test_thermo_consistent():  # against the list GoodVibes got (chemistry.thermo_frequencies)

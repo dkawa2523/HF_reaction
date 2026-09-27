@@ -55,7 +55,7 @@ class MinimumRecord(BaseModel):
     state_label: str
     members: tuple[str, ...] = ()  # species that fell into this basin (collapsed seeds included)
     chiral: bool = False  # the mirror image is a distinct structure of this basin (m = 2)
-    notes: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()  # *_imaginary_mode, spin_contaminated, endpoint_was_saddle
 
 
 class ReactionTrial(BaseModel):
@@ -149,7 +149,7 @@ class ReactionRecord(BaseModel):
     minima: tuple[str, str]  # (reactant side, product side); equal for degenerate reactions
     endpoints: tuple[str, str]  # species ids used for path calculations
     degenerate: bool = False
-    source: Literal["declared", "discovery", "mode_follow", "conformer", "split", "reassigned"]
+    source: Literal["declared", "discovery", "mode_follow", "split", "reassigned"]
     coordinate: tuple[CoordinateTerm, ...] = ()
     torsional: bool = False
     low_level_ts: Geometry | None = None

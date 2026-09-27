@@ -4,9 +4,11 @@ import fakes
 import numpy as np
 import pytest
 
-from hfauto.chemistry.profile import classify, energies_settled
-from hfauto.chemistry.xyz import Molecule
-from hfauto.core.evidence import FailureKind
+from hfauto.chemistry.profile import classify
+from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
+from hfauto.chemistry.xyz_trajectory import write_xyz_trajectory
+from hfauto.core.evidence import FailureKind, FileRef
+from hfauto.core.hashing import sha256_file
 from hfauto.core.method import MethodSpec
 
 M = MethodSpec(id="pbe0", kind="dft", functional="pbe0", basis="def2-svp")
@@ -39,15 +41,20 @@ def test_double_well_ts_has_one_imaginary_mode_and_saddle_finds_it(tmp_run) -> N
                                        ("flat_uphill", "barrierless")])
 def test_paths_follow_the_pes_or_the_script(tmp_run, name, want) -> None:
     pes = getattr(fakes, name)()
-    path = fakes.FakePath(tmp_run, pes, script=["pes", "barrierless", "failed"])
     ends = pes.molecule("reactant"), pes.molecule("product")
-    profile = path.find_path(*ends, M, images=11, refine_ts=want == "single")
+    a, b = (m.xyz.coords for m in ends)
+    frames = [XYZ(list(pes.symbols), a + t * (b - a)) for t in np.linspace(0.0, 1.0, 11)]
+    initial = write_xyz_trajectory(frames, tmp_run / "initial.xyz")
+    ref = FileRef(path="initial.xyz", sha256=sha256_file(initial))
+    path = fakes.FakePath(tmp_run, pes, script=["pes", "barrierless", "failed"],
+                          tsopt=want == "single")
+    profile = path.find_path(*ends, M, images=11, initial_path=ref)  # the initial path's PES
     assert classify(profile.energies_hartree, 1e-4) == want
-    # Like a real ZTS: gmax stays flat, the bead energies settle (not for "unconverged").
-    assert energies_settled(profile.energy_history, 1e-4) and min(profile.gmax_history) > 1e-3
-    if profile.ts is not None:
-        assert profile.ts_energy_hartree == pytest.approx(pes.energy(pes.points["ts"]))
-    assert classify(path.find_path(*ends, M, images=11).energies_hartree, 1e-4) == "barrierless"
-    assert path.find_path(*ends, M, images=11).kind is FailureKind.NONZERO_EXIT
-    stuck = fakes.FakePath(tmp_run, pes, script=["unconverged"]).find_path(*ends, M, images=11)
-    assert not energies_settled(stuck.energy_history, 1e-3)
+    if want == "single":  # like pysis_neb: a TS optimized from the highest image
+        ts = read_xyz(tmp_run / profile.ts.file.path).coords
+        assert pes.energy(ts) == pytest.approx(pes.energy(pes.points["ts"]))
+    else:
+        assert profile.ts is None
+    again = path.find_path(*ends, M, images=11, initial_path=ref)
+    assert classify(again.energies_hartree, 1e-4) == "barrierless"
+    assert path.find_path(*ends, M, images=11, initial_path=ref).kind is FailureKind.NONZERO_EXIT

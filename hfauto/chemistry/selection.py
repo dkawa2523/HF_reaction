@@ -8,7 +8,6 @@ monomer (needed for association thermochemistry) is always included. ``all``: ev
 
 from __future__ import annotations
 
-import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -55,11 +54,15 @@ def select_for_refinement(
 
 
 def rerank(
-    candidates: Sequence[Candidate], sp_energies: Mapping[str, float], keep_per_state: int
+    candidates: Sequence[Candidate],
+    sp_energies: Mapping[str, float],
+    keep_per_state: int,
+    window_kcal: float,
 ) -> list[Candidate]:
-    """Re-score with single-point energies and keep the ``keep_per_state`` lowest per state.
+    """Re-score with single-point energies and keep, per state, the ``keep_per_state`` lowest
+    within ``window_kcal`` of the lowest (the better estimate cuts the window again).
 
     A candidate without a single point drops out unless it is always kept.
     """
     rescored = [replace(c, energy_hartree=sp_energies.get(c.species_id)) for c in candidates]
-    return select_for_refinement(rescored, per_state=keep_per_state, window_kcal=math.inf)
+    return select_for_refinement(rescored, per_state=keep_per_state, window_kcal=window_kcal)

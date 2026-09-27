@@ -1,7 +1,9 @@
-"""pysisyphus side of ``pysis_gs``; runs in ``python -m hfauto.execution.worker``.
+"""pysisyphus side of ``pysis_neb``; runs in ``python -m hfauto.execution.worker``.
 
-pysisyphus is imported only inside ``run_growing_string``, so only the worker process loads
-it. The returned dict becomes the attempt's ``result.json``; coordinates are in Å.
+pysisyphus is imported only inside ``run_neb``, so only the worker process loads it. The
+returned dict becomes the attempt's ``result.json``; the NEB's images are pysisyphus's own
+trajectories (Å): ``final_geometries.trj``, written whether or not the NEB converged, else the
+last cycle's ``current_geometries.trj`` when an error stopped it.
 """
 
 from __future__ import annotations
@@ -12,54 +14,39 @@ from typing import Any
 
 from hfauto.core.constants import BOHR_TO_ANGSTROM
 
+IMAGES = ("final_geometries.trj", "current_geometries.trj")
 _XTB_VERSION = re.compile(r"xtb version (\S+)")
 
 
-def run_growing_string(job: dict[str, Any], workdir: Path) -> dict[str, Any]:
-    """Run the pysisyphus input ``job["run_dict"]`` (cos + optional tsopt) in ``workdir``.
+def neb_images(workdir: Path) -> Path | None:
+    """The NEB's final images, else those of its last cycle; None before its first cycle."""
+    return next((workdir / name for name in IMAGES if (workdir / name).is_file()), None)
 
-    When the run with a TS optimization raises, the growing string alone is rerun and
-    returned with ``ts`` None and ``tsopt_error``; a failing growing string propagates.
+
+def run_neb(job: dict[str, Any], workdir: Path) -> dict[str, Any]:
+    """Run ``job["run_dict"]`` (CI-NEB, then the TS optimization from its climbing image).
+
+    When the run raises after a NEB cycle (mostly the TS optimization), the images still stand:
+    ``ts`` is None and ``error`` says why. A run that raises before any images propagates.
     """
     from pysisyphus.run import run_from_dict
 
-    run_dict = job["run_dict"]
     try:
-        result = run_from_dict(run_dict, cwd=workdir)
+        result = run_from_dict(job["run_dict"], cwd=workdir)
     except Exception as exc:
-        if "tsopt" not in run_dict:
+        if neb_images(workdir) is None:
             raise
-        gs_only = {key: value for key, value in run_dict.items() if key != "tsopt"}
-        summary = summarize(run_from_dict(gs_only, cwd=workdir), workdir)
-        return {**summary, "tsopt_error": f"{type(exc).__name__}: {exc}"}
-    return summarize(result, workdir)
+        return {"ts": None, "error": f"{type(exc).__name__}: {exc}",
+                "xtb_version": _xtb_version(workdir)}
+    return {"ts": ts_coords(result), "xtb_version": _xtb_version(workdir)}
 
 
-def summarize(result: Any, workdir: Path) -> dict[str, Any]:
-    """Images, energies, optimizer history and the TS of a pysisyphus ``RunResult``.
-
-    The TS is reported only when its optimization converged; pysisyphus leaves it unset
-    when the splined HEI is the first or last image.
-    """
-    cos, opt = result.cos, result.cos_opt
-    ts = None
-    if result.ts_geom is not None and result.ts_opt is not None and result.ts_opt.is_converged:
-        ts = {"coords": _angstrom(result.ts_geom.cart_coords),
-              "energy": float(result.ts_geom.energy)}
-    climbing = int(cos.get_hei_index()) if getattr(cos, "started_climbing", False) else None
-    return {
-        "images": [_angstrom(image.cart_coords) for image in cos.images],
-        "energies": [float(image.energy) for image in cos.images],
-        "max_forces": [float(f) for f in opt.max_forces],
-        "converged": bool(opt.is_converged),
-        "climbing_image": climbing,
-        "ts": ts,
-        "xtb_version": _xtb_version(workdir),
-    }
-
-
-def _angstrom(coords: Any) -> list[list[float]]:
-    flat = [float(x) * BOHR_TO_ANGSTROM for x in coords]
+def ts_coords(result: Any) -> list[list[float]] | None:
+    """The TS (Å) of a pysisyphus ``RunResult`` when its optimization converged; pysisyphus
+    leaves it unset when the splined HEI is the first or last image."""
+    if result.ts_geom is None or result.ts_opt is None or not result.ts_opt.is_converged:
+        return None
+    flat = [float(x) * BOHR_TO_ANGSTROM for x in result.ts_geom.cart_coords]
     return [flat[i : i + 3] for i in range(0, len(flat), 3)]
 
 

@@ -19,7 +19,7 @@ dissociation by the most stretched bond). 1,2-shifts come after the through-spac
 their r_ab is set by the bond angle, not by how the source is arranged. Drives with the same
 WL atom classes and formed-pair distances (0.1 Å) are one trial. Linear molecules are bent by
 10° and displaced by 0.05 Å per atom (seeded), so that NT2 does not start on a symmetry line
-(CH-30). Torsions are conformer pairs in ``hypotheses``.
+(CH-30). A torsion is studied only when declared (``hypotheses``).
 """
 
 from __future__ import annotations

@@ -10,7 +10,6 @@ import pytest
 from hfauto.backends.nwchem import output as nw
 from hfauto.backends.nwchem.engine import NWChemEngine
 from hfauto.chemistry.gates import spin_ok
-from hfauto.chemistry.profile import energies_settled
 from hfauto.chemistry.vibrations import external_basis, projected_frequencies
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
 from hfauto.core.constants import BOHR_TO_ANGSTROM, HARTREE_TO_KCAL_MOL
@@ -80,13 +79,13 @@ def test_g10_grid_mismatch_and_frame_change(golden):
     assert nw.frame_shift(text, *nw.geometry_block(text, 0)) == 0.0
 
 
-def test_g13_bead_energies_settle_although_gmax_rose(golden):
-    text = golden.text("nwchem/G13/nwchem_string.out")  # gmax 9.1e-4 -> 9.2e-3
-    history = nw.string_path_energies(text)
-    assert [len(energies) for energies in history] == [11] * 3
-    assert history[-1] == pytest.approx(nw.string_energies(text), abs=1e-9)
-    assert energies_settled(history, 0.1 / HARTREE_TO_KCAL_MOL)
-    assert nw.program_converged(text)  # recorded only
+def test_g13_final_bead_energies(golden):
+    text = golden.text("nwchem/G13/nwchem_string.out")  # the '@zts Bead number' lines
+    energies = nw.string_energies(text)
+    blocks = re.findall(r"Path Energy #.*\n((?: string:[ \t]+\d+[ \t]+\S+[ \t]*\n)+)", text)
+    last = [float(row.split()[2]) for row in blocks[-1].splitlines()]  # the last iteration
+    assert len(energies) == 11 and energies == pytest.approx(last, abs=1e-9)
+    assert (energies[0] - energies[-1]) * HARTREE_TO_KCAL_MOL == pytest.approx(0.93, abs=0.01)
 
 
 def test_g22_g23_g24_and_other_failures(golden):
@@ -128,7 +127,7 @@ def test_final_xyz_numbering_atom_order_and_missing_d3(golden, tmp_path):
     ("G28/cl_opt", -1, 1, -459.982266730126), ("G28/cl_freq", -1, 1, -459.982266730122)])
 def test_doublet_anion_ecp_and_atom_level_s2_and_energy(golden, stem, charge, multiplicity,
                                                         energy):
-    text = golden.text(f"nwchem/{stem}.out")  # OH. opt / freq energies: U3-P7 later
+    text = golden.text(f"nwchem/{stem}.out")
     level = nw.observe_level(text)
     assert level_mismatches(SVPD, level, version_pin="7.2.3") == []
     assert (level.charge, level.multiplicity) == (charge, multiplicity)

@@ -1,5 +1,5 @@
 """Reaction hypotheses (design §8.2): priority, degeneracy on basin structures (declared and
-discovered), conformer pairs, CH-07, chem 13."""
+discovered), no conformer pairs, CH-07, chem 13."""
 
 from __future__ import annotations
 
@@ -168,13 +168,25 @@ def test_declared_endpoint_collapsed_at_screen_takes_the_dft_basin():
     assert rec.minima == ("d_a", "d_a") and not rec.degenerate  # decide(): SAME_BASIN
 
 
-def test_conformer_pairs_need_a_30_degree_twist():
-    confs = [species(f"hooh{d}", "OOHH", h2o2(d)) for d in (180, 170, 110)]
+def test_conformers_of_one_state_are_no_hypothesis_but_a_declared_torsion_is():
+    """U5-P7: three DFT minima of one state_label give no hypothesis (Curtin-Hammett); the
+    declared trans -> cis rotation of HONO (S3) stays."""
+    confs = [species(f"hooh{d}", "OOHH", h2o2(d)) for d in (180, 140, 100)]
     minima = [minimum(f"m{i}", s.species_id, -1.0 + 1e-4 * i) for i, s in enumerate(confs)]
+    assert select(basins(*minima), confs, [], [], load) == []
 
-    records = select(basins(*minima), confs, [], [], load)
-    assert [r.minima for r in records] == [("m0", "m2"), ("m1", "m2")]  # 10° apart is dropped
-    assert all(r.source == "conformer" and r.torsional for r in records)
+    trans = species("hono_t", "HONO", [[-0.1975, -0.9436, 0.0], [0.0248, -0.0016, 0.0],
+                                        [1.4070, 0.0083, 0.0], [1.8276, 1.0971, 0.0]])
+    cis = species("hono_c", "HONO", [[-0.2479, 0.9422, 0.0], [0.0449, 0.0070, 0.0],
+                                      [1.3960, 0.0144, 0.0], [1.8689, 1.0940, 0.0]])
+    dihedral = r.CoordinateTerm(kind="dihedral", atoms=(0, 1, 2, 3))
+    rotation = ReactionInput(id="trans_to_cis", reactant="hono_t", product="hono_c",
+                             coordinate=[dihedral], torsional=True)
+    hono = basins(minimum("m_t", "hono_t", -205.3455), minimum("m_c", "hono_c", -205.3453))
+    [rec] = select(hono, [trans, cis], [], [rotation], load)
+    assert (rec.reaction_id, rec.source, rec.minima) == ("trans_to_cis", "declared",
+                                                         ("m_t", "m_c"))
+    assert rec.torsional and not rec.degenerate
 
 
 def test_a_0p05_angstrom_change_is_not_a_reaction():

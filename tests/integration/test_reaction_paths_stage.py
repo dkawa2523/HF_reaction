@@ -1,6 +1,7 @@
 """reaction-paths stage on fake engines (§7.3, §8.2), including the CH-05 regression."""
 
 import json
+from functools import partial
 from pathlib import Path
 
 import fakes
@@ -26,7 +27,7 @@ SYSTEM = SystemConfig(  # declared endpoints name an xyz, which this stage never
     system_id="t", reactions=[ReactionInput(id="rx", reactant="reactant", product="product")],
     species=[SpeciesInput(id=n, role="endpoint", xyz=Path(f"{n}.xyz")) for n in ENDS])
 FAKES = {(Cap.QM, "nwchem"): fakes.FakeQM, (Cap.PATH, "nwchem_string"): fakes.FakePath,
-         (Cap.QM, "xtb"): fakes.FakeQM, (Cap.PATH, "pysis_gs"): fakes.FakePath}
+         (Cap.QM, "xtb"): fakes.FakeQM, (Cap.PATH, "pysis_neb"): partial(fakes.FakePath, tsopt=True)}
 
 
 class CollapsingSaddle(fakes.FakeSaddle):  # every saddle search falls into the intermediate
@@ -63,7 +64,7 @@ def run_stage(fake_runtime, root, pes, view, *, screen=True, saddle=None, system
     rt = fake_runtime(system, engines, methods={"pbe0": DFT, "gfn2": XTB})
     config = ReactionPathsConfig(method="pbe0", policy=policy, engines={
         "qm": "nwchem", "saddle": "nwchem_saddle", "path": "nwchem_string"},
-        screen={"method": "gfn2", "qm": "xtb", "path": "pysis_gs"} if screen else None)
+        screen={"method": "gfn2", "qm": "xtb", "path": "pysis_neb"} if screen else None)
     arts = ReactionPathsStage().run(view, config, rt)
     return {a.artifact_id: a.payload for a in arts if a.type == T.REACTION}, arts, engines
 
@@ -106,19 +107,19 @@ def test_a_case_that_raises_is_unresolved_and_the_next_case_runs(
 
 @pytest.mark.parametrize("pes,points,outcome", [
     (fakes.symmetric_double_well, ENDS, O.DEGENERATE),
-    (fakes.flat_uphill, ENDS, O.BARRIERLESS),  # the GS path leaves it to the string
+    (fakes.flat_uphill, ENDS, O.BARRIERLESS),  # the NEB between the DFT minima closes it
     (fakes.harmonic, {"reactant": "minimum", "product": "start"}, O.SAME_BASIN),
 ])
 def test_outcomes_on_model_surfaces(tmp_run, fake_runtime, pes, points, outcome) -> None:
     view = dft_view(tmp_run, pes(), points)[0]
     reactions, _, engines = run_stage(fake_runtime, tmp_run, pes(), view)
     assert reactions["rx"].outcome is outcome
-    assert outcome is not O.BARRIERLESS or reactions["rx"].reasons == ("string:barrierless",)
+    assert outcome is not O.BARRIERLESS or reactions["rx"].reasons == ("screen:barrierless",)
     assert reactions["rx"].degenerate is (outcome is O.DEGENERATE)
     assert outcome is not O.SAME_BASIN or not any(e.calls for e in engines.values())  # no job
 
 
-@pytest.mark.parametrize("screen", [True, False])  # the well on the GS path or the string
+@pytest.mark.parametrize("screen", [True, False])  # the well on the NEB path or the string
 def test_triple_well_splits_into_two_elementary_children(tmp_run, fake_runtime, screen) -> None:
     view, _ = dft_view(tmp_run, fakes.triple_well())
     reactions, arts, _ = run_stage(fake_runtime, tmp_run, fakes.triple_well(), view, screen=screen)
@@ -161,4 +162,4 @@ def test_walltime_low_level_ts_shortcut_and_negative_discoveries_do_not_veto(
                                        payload=record))
         reactions, _, engines = run_stage(fake_runtime, tmp_run, pes, view)
         assert reactions["rx"].outcome is O.ELEMENTARY_STEP
-        assert not engines[Cap.PATH, "pysis_gs"].calls  # the low-level TS shortcut
+        assert not engines[Cap.PATH, "pysis_neb"].calls  # the low-level TS shortcut

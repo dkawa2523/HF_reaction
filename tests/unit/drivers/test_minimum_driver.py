@@ -46,15 +46,62 @@ def test_harmonic_start_gives_a_minimum_or_with_a_stuck_soft_mode_a_soft_minimum
     assert soft.history[-1] == "soft:persisted"
 
 
-@pytest.mark.parametrize("name,status,last", [("double_well", "saddle", "ts_candidate"),
-                                              ("symmetric_double_well", "minimum", "replace")])
-def test_mode_follow_from_a_transition_state(tmp_run, name, status, last) -> None:
-    pes = getattr(fakes, name)()
-    out = relax(tmp_run, pes, "ts")
-    assert out.status == status and out.history[-1] == f"follow1:{last}"
-    if status == "saddle":  # ± fell into two different minima: a TS candidate for free
-        ends = sorted(pes.energy(pes.points[p]) for p in ("reactant", "product"))
-        assert sorted(ev.energy_hartree for ev in out.ts_candidate) == pytest.approx(ends)
+def springs(symbols, ref, points):
+    """Pairwise springs at rest in ``ref``: every distance of ``ref`` is a minimum."""
+    d0 = pdist(ref)
+    return fakes.PES(symbols, lambda x: float(np.sum((pdist(np.reshape(x, (-1, 3))) - d0) ** 2)),
+                     points)
+
+
+def two_barrier_tops() -> fakes.PES:
+    """Two F-H-F units, each H on top of its own double well (like the two methyl torsions of
+    eclipsed C2v dimethyl ether): a second-order saddle. Springs hold the four F atoms."""
+    first, second = fakes.symmetric_double_well(), fakes.symmetric_double_well(height=0.02)
+    top = first.points["ts"]
+    x0, heavy = np.vstack([top, top[:, ::-1] + [0.0, 3.0, 0.0]]), [0, 2, 3, 5]
+    frame = springs(("F",) * 4, x0[heavy], {}).energy
+
+    def energy(x):
+        x = np.reshape(x, (-1, 3))
+        return first.energy(x[:3]) + second.energy(x[3:]) + frame(x[heavy])
+
+    return fakes.PES(("F", "H", "F") * 2, energy, {"top": x0})
+
+
+@pytest.mark.parametrize("pes", [fakes.double_well(), fakes.symmetric_double_well()])
+def test_a_first_order_saddle_goes_both_ways_from_its_own_hessian(tmp_run, pes) -> None:
+    qm = fakes.FakeQM(tmp_run, pes)
+    out = relax(tmp_run, pes, "ts", qm)
+    assert out.status == "saddle" and out.history[-1] == "follow1:ts_candidate"
+    ends = sorted(pes.energy(pes.points[p]) for p in ("reactant", "product"))
+    assert sorted(ev.energy_hartree for ev in out.ts_candidate) == pytest.approx(ends)
+    assert qm.calls.count("optimize+init_hessian") == 2  # each side from the TS Hessian
+    assert "optimize" not in qm.calls[1:]
+
+
+@pytest.mark.parametrize("symbols", [("N", "H", "H", "H"), ("N", "H", "F", "Cl")])
+def test_a_planar_amine_gives_an_inversion_ts_candidate(tmp_run, symbols) -> None:
+    """The two pyramids are one basin, relabelled by a proper rotation (NH3) or mirror images
+    (NHFCl): a degenerate TS between two structures."""
+    pyramid = np.array([[0.0, 0.0, 0.38], [0.94, 0.0, 0.0], [-0.47, 0.814, 0.0],
+                        [-0.47, -0.814, 0.0]])
+    pes = springs(symbols, pyramid, {"planar": pyramid * [1.0, 1.0, 0.0]})
+    out = relax(tmp_run, pes, "planar")
+    assert out.status == "saddle" and out.history[-1] == "follow1:ts_candidate"
+    plus, minus = (fakes.xyz_loader(tmp_run)(ev.start).coords for ev in out.ts_candidate)
+    assert plus[0, 2] * minus[0, 2] < 0  # N above and below the H3 plane
+
+
+def test_a_second_order_saddle_descends_one_side_without_a_ts_candidate(tmp_run) -> None:
+    pes = two_barrier_tops()
+    qm = fakes.FakeQM(tmp_run, pes)
+    out = relax(tmp_run, pes, "top", qm)
+    assert out.history == ("opt", "freq:saddle", "follow1:one_side")
+    assert out.status == "minimum" and out.ts_candidate is None
+    assert qm.calls == ["optimize", "frequencies", "optimize+init_hessian", "frequencies"]
+    x = fakes.xyz_loader(tmp_run)(out.opt.final).coords.reshape(2, 3, 3)
+    off_centre = np.linalg.norm(x[:, 1] - 0.5 * (x[:, 0] + x[:, 2]), axis=1)
+    assert (off_centre > 0.35).all()  # each H in a well of its own unit (0.4 Å off centre)
 
 
 def test_registry_known_new_joined_and_init_hessian(tmp_run) -> None:
@@ -80,10 +127,8 @@ def test_registry_known_new_joined_and_init_hessian(tmp_run) -> None:
 
 
 def test_mirror_images_share_one_chiral_basin_of_one_spin_state(tmp_run) -> None:
-    d0 = pdist(CHFCLBR)  # pairwise springs: both enantiomers are exact minima
-    pes = fakes.PES(("C", "H", "F", "Cl", "Br"),
-                    lambda x: float(np.sum((pdist(np.reshape(x, (-1, 3))) - d0) ** 2)),
-                    {"r": CHFCLBR, "s": CHFCLBR * [-1.0, 1.0, 1.0]})
+    pes = springs(("C", "H", "F", "Cl", "Br"), CHFCLBR,  # both enantiomers are exact minima
+                  {"r": CHFCLBR, "s": CHFCLBR * [-1.0, 1.0, 1.0]})
     qm, registry = fakes.FakeQM(tmp_run, pes), Registry([], fakes.xyz_loader(tmp_run))
     r = add(registry, relax(tmp_run, pes, "r", qm), "r")
     s = relax_to_minimum(pes.molecule("s"), M, qm, known=registry)

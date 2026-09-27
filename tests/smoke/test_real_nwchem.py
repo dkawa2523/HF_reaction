@@ -15,7 +15,7 @@ import pytest
 
 from hfauto.backends.protocols import Capability
 from hfauto.chemistry.gates import is_first_order_saddle, is_minimum
-from hfauto.chemistry.profile import classify, energies_settled
+from hfauto.chemistry.profile import classify
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
@@ -112,9 +112,9 @@ def test_open_shell_ccsd_t_is_rohf_through_the_tce(real_engine):
     assert ev.energy_hartree == pytest.approx(-75.640597872, abs=1e-6)
 
 
-def test_string_bead_energies_settle_hcn_sto3g(real_engine, tmp_path):
-    """HCN -> HNC ZTS from a GS path (9 beads, 20 iterations, about 80 s): gmax stays near
-    0.05 Eh/bohr, yet the bead energies settle into a single maximum (2026-09-26 review U5)."""
+def test_one_string_chunk_is_classified_as_it_stands_hcn_sto3g(real_engine, tmp_path):
+    """HCN -> HNC: one ZTS chunk from a low-level path (9 beads, 20 iterations, about 80 s):
+    gmax stays near 0.05 Eh/bohr, yet its beads show a single maximum (U5-P4)."""
     run = tmp_path / "run"
     run.mkdir(parents=True, exist_ok=True)
     path = Path(shutil.copy(DATA / "hcn_zts_initial.xyz", run / "hcn_zts_initial.xyz"))
@@ -126,5 +126,4 @@ def test_string_bead_energies_settle_hcn_sto3g(real_engine, tmp_path):
     string = real_engine(Capability.PATH, "nwchem_string")
     profile = string.find_path(start, end, sto3g, images=9, initial_path=initial)
     assert isinstance(profile, PathProfile), profile
-    assert energies_settled(profile.energy_history, 0.1 / HARTREE_TO_KCAL_MOL)
     assert classify(profile.energies_hartree, 1 / HARTREE_TO_KCAL_MOL) == "single"

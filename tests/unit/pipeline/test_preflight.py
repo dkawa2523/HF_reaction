@@ -39,8 +39,8 @@ def test_executables_version_pins_and_worker_modules(tmp_path):
 
 def test_engine_uses_pair_engines_with_methods():
     paths = {"id": "paths", "stage": "reaction-paths", "method": "pbe0",
-             "engines": {"qm": "nwchem"}, "screen": {"method": "gfn2", "path": "pysis_gs"}}
+             "engines": {"qm": "nwchem"}, "screen": {"method": "gfn2", "path": "pysis_neb"}}
     thermo = {"id": "thermo", "stage": "thermo", "engine": "goodvibes"}
     uses = engine_uses(PipelineConfig(pipeline_id="p", stages=[paths, thermo]))
     assert {(u.capability, u.name, u.method) for u in uses} == {(None, "goodvibes", None),
-        (Capability.QM, "nwchem", "pbe0"), (Capability.PATH, "pysis_gs", "gfn2")}
+        (Capability.QM, "nwchem", "pbe0"), (Capability.PATH, "pysis_neb", "gfn2")}

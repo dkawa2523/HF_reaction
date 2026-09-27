@@ -5,7 +5,12 @@ import pytest
 
 from hfauto.backends.protocols import Capability
 from hfauto.backends.xtb import XTBEngine
+from hfauto.chemistry.identity import mapped_rmsd
+from hfauto.chemistry.interpolation import idpp
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
+from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
+from hfauto.core.evidence import FileRef
+from hfauto.core.hashing import sha256_file
 from hfauto.core.method import ExecutionSpec, MethodSpec
 
 pytestmark = pytest.mark.real
@@ -30,12 +35,21 @@ def test_xtb_water_opt_hess_units_and_cycle_limit(real_engine, tmp_path):
     assert capped.optimize(far, GFN2).kind == "geometry_maxiter"
 
 
-def test_pysis_gs_hcn_to_hnc_ts_has_one_imaginary_mode(real_engine, tmp_path):
-    hcn = mol("CNH", [0, 0, 0], [0, 0, 1.156], [0, 0, -1.066])  # exactly linear ends
+def test_pysis_neb_hcn_to_hnc_keeps_its_ends_and_its_ts_has_one_imaginary_mode(real_engine,
+                                                                               tmp_path):
+    """Fixed-end CI-NEB from hfauto's IDPP between exactly linear ends; TSOpt from the CI."""
+    hcn = mol("CNH", [0, 0, 0], [0, 0, 1.156], [0, 0, -1.066])
     hnc = mol("CNH", [0, 0, 0], [0, 0, 1.17], [0, 0, 2.17])
-    path = real_engine(Capability.PATH, "pysis_gs").find_path(hcn, hnc, GFN2, images=11,
-                                                                refine_ts=True)
-    assert len(path.energies_hartree) == 11 and path.ts is not None
-    ts = Molecule(read_xyz(tmp_path / "run" / path.ts.file.path), 0, 1)
+    run, symbols = tmp_path / "run", list(hcn.xyz.symbols)
+    frames = idpp(symbols, hcn.xyz.coords, hnc.xyz.coords, 11)
+    initial = write_xyz_trajectory([XYZ(symbols, f) for f in frames], run / "idpp.xyz")
+    ref = FileRef(path="idpp.xyz", sha256=sha256_file(initial))
+    path = real_engine(Capability.PATH, "pysis_neb").find_path(hcn, hnc, GFN2, images=11,
+                                                                initial_path=ref)
+    images = read_xyz_trajectory(run / path.images.path)
+    assert len(images) == 11 and path.ts is not None
+    assert mapped_rmsd(images[0].coords, hcn.xyz.coords) < 1e-4
+    assert mapped_rmsd(images[-1].coords, hnc.xyz.coords) < 1e-4
+    ts = Molecule(read_xyz(run / path.ts.file.path), 0, 1)
     freq = real_engine(Capability.QM, "xtb").frequencies(ts, GFN2)
     assert sum(f < -50 for f in freq.frequencies_cm1) == 1

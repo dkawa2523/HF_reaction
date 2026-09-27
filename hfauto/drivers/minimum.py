@@ -6,14 +6,14 @@ Imports are limited to hfauto.core, hfauto.chemistry and hfauto.backends.protoco
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
 from hfauto.chemistry.gates import Policy, imaginary_tier, is_minimum, spin_ok
-from hfauto.chemistry.identity import assign, is_chiral, same_basin
-from hfauto.chemistry.modes import classify_mode_follow, displace
+from hfauto.chemistry.identity import assign, is_chiral, mapped_equivalent, same_basin
+from hfauto.chemistry.modes import BOUNDS_A, amplitude, classify_mode_follow
 from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.xyz import XYZ, Molecule, composition_key
 from hfauto.core.evidence import Evidence, Failure, FailureKind, Geometry
@@ -25,13 +25,7 @@ if TYPE_CHECKING:
 
 Status = Literal["minimum", "soft_minimum", "saddle", "known", "failed"]
 LoadXYZ = Callable[[Geometry], XYZ]
-
-
-@dataclass(frozen=True)
-class MinimumPolicy:
-    max_mode_follow: int = 2
-    amplitude_A: float = 0.1
-    gates: Policy = field(default_factory=Policy)
+_GATES = Policy()
 
 
 @dataclass(frozen=True)
@@ -42,12 +36,9 @@ class MinimumOutcome:
     history: tuple[str, ...]
     known_basin: str | None = None  # existing basin id when status == "known"
     failure: Failure | None = None
-    # ± displacements reached two distinct minima (their freq Evidence): a free TS candidate
+    # ± reached two minima distinct as labelled (their freq Evidence): a free TS candidate
     ts_candidate: tuple[Evidence, Evidence] | None = None
     notes: tuple[str, ...] = ()  # MinimumRecord.notes: *_imaginary_mode, spin_contaminated
-
-
-_DEFAULT = MinimumPolicy()
 
 
 def calc_id(ev: Evidence) -> str:
@@ -65,6 +56,19 @@ class _Point:
     tier: str
     notes: tuple[str, ...]
 
+    def step(self, below_cm1: float) -> tuple[np.ndarray, int]:
+        """Sum of the imaginary modes below -below_cm1, each by its energy-target amplitude
+        (modes.amplitude), with the largest atomic displacement capped at the upper bound; and
+        the number of those modes."""
+        symbols, freq = self.xyz.symbols, self.freq
+        pairs = [(nu, np.asarray(mode, dtype=float).reshape(-1, 3)) for nu, mode in
+                 zip(freq.frequencies_cm1 or (), freq.imaginary_modes, strict=False)
+                 if nu < -below_cm1]
+        step = np.sum([amplitude(nu, mode, symbols) / np.linalg.norm(mode, axis=1).max() * mode
+                       for nu, mode in pairs], axis=0)
+        largest = float(np.linalg.norm(step, axis=1).max())
+        return step * min(1.0, BOUNDS_A[1] / largest), len(pairs)
+
 
 @dataclass(frozen=True)
 class _Ctx:
@@ -72,7 +76,8 @@ class _Ctx:
     method: MethodSpec
     qm: QMEngine
     load: LoadXYZ
-    policy: MinimumPolicy
+    max_mode_follow: int
+    gates: Policy
     deadline: Deadline | None
 
     def molecule(self, xyz: XYZ) -> Molecule:
@@ -84,39 +89,46 @@ class _Ctx:
         freq = self.qm.frequencies(self.molecule(xyz), self.method, deadline=self.deadline)
         if isinstance(freq, Failure):
             return freq
-        gate = is_minimum(freq, opt=opt, policy=self.policy.gates)
+        gate = is_minimum(freq, opt=opt, policy=self.gates)
         hard = [reason for reason in gate.reasons if reason != "imaginary_mode"]
         if hard:
             return Failure(kind=FailureKind.GATE_REJECTED, reason=",".join(hard),
                            job_key=freq.job_key)
-        tier = imaginary_tier(freq.frequencies_cm1 or (), self.policy.gates)
-        notes = gate.notes + spin_ok(freq, self.policy.gates).reasons
+        tier = imaginary_tier(freq.frequencies_cm1 or (), self.gates)
+        notes = gate.notes + spin_ok(freq, self.gates).reasons
         return _Point(opt, freq, xyz, tier, notes)
 
-    def relax(self, coords: np.ndarray) -> _Point | None:
-        """opt → freq from displaced coordinates; None when either job fails."""
+    def relax(self, coords: np.ndarray, source: _Point) -> _Point | None:
+        """opt → freq from coordinates displaced from ``source``, whose freq Hessian starts the
+        opt as it is (NWChem minimizes along |e| of a negative eigenvalue, trust 0.3); None
+        when either job fails."""
         xyz = XYZ(symbols=list(self.template.xyz.symbols), coords=coords)
-        opt = self.qm.optimize(self.molecule(xyz), self.method, deadline=self.deadline)
+        opt = self.qm.optimize(self.molecule(xyz), self.method, init_hessian=source.freq,
+                               deadline=self.deadline)
         if isinstance(opt, Failure):
             return None
         point = self.frequencies(opt)
         return point if isinstance(point, _Point) else None
 
 
+def _same(a: _Point, b: _Point) -> bool:
+    """One structure as labelled: one basin that no relabelling or mirror image maps between
+    (the NH3 inversion, a symmetric proton transfer or an enantiomerization is a degenerate
+    rearrangement between two structures, as in the reaction case)."""
+    symbols, xa, xb = a.xyz.symbols, a.xyz.coords, b.xyz.coords
+    return (same_basin(symbols, xa, xb, a.opt.energy_hartree, b.opt.energy_hartree)
+            and not mapped_equivalent(symbols, xa, xb))
+
+
 def _labels(source: _Point, sides: list[_Point | None]) -> list[str | None]:
     """Identity labels (source, plus, minus): equal labels mean the same structure."""
-
-    def same(a: _Point, b: _Point) -> bool:
-        return same_basin(a.xyz.symbols, a.xyz.coords, b.xyz.coords,
-                          a.opt.energy_hartree, b.opt.energy_hartree)
-
     seen: list[tuple[_Point, str]] = [(source, "source")]
     labels: list[str | None] = ["source"]
     for name, side in zip(("plus", "minus"), sides, strict=True):
         if side is None:
             labels.append(None)
             continue
-        label = next((known for point, known in seen if same(side, point)), name)
+        label = next((known for point, known in seen if _same(side, point)), name)
         seen.append((side, label))
         labels.append(label)
     return labels
@@ -124,13 +136,15 @@ def _labels(source: _Point, sides: list[_Point | None]) -> list[str | None]:
 
 def _follow(ctx: _Ctx, point: _Point, history: list[str]
             ) -> tuple[_Point, tuple[Evidence, Evidence] | None]:
-    """Up to max_mode_follow cycles of ± displacement along the lowest imaginary mode."""
-    for cycle in range(1, ctx.policy.max_mode_follow + 1):
+    """Up to max_mode_follow cycles from a saddle: ± along the imaginary mode of a first-order
+    saddle (a TS candidate when both sides are minima); one side along all the modes below
+    -saddle_cm1 of a higher-order one (± would mostly stop at first-order saddles)."""
+    for cycle in range(1, ctx.max_mode_follow + 1):
         if point.tier != "saddle" or not point.freq.imaginary_modes:
             break
-        plus, minus = displace(point.xyz.coords, np.asarray(point.freq.imaginary_modes[0]),
-                               ctx.policy.amplitude_A)
-        sides = [ctx.relax(plus), ctx.relax(minus)]
+        step, order = point.step(ctx.gates.saddle_cm1)
+        sides = [ctx.relax(point.xyz.coords + step, point),
+                 ctx.relax(point.xyz.coords - step, point) if order == 1 else None]
         labels = _labels(point, sides)
         verdict = classify_mode_follow(*labels)
         history.append(f"follow{cycle}:{verdict}")
@@ -145,11 +159,9 @@ def _follow(ctx: _Ctx, point: _Point, history: list[str]
 
 
 def _soften(ctx: _Ctx, point: _Point, history: list[str]) -> tuple[_Point, Status]:
-    """One displacement along a soft imaginary mode; soft_minimum when it persists."""
+    """One displacement along the soft imaginary modes; soft_minimum when one persists."""
     if point.freq.imaginary_modes:
-        plus, _ = displace(point.xyz.coords, np.asarray(point.freq.imaginary_modes[0]),
-                           ctx.policy.amplitude_A)
-        side = ctx.relax(plus)
+        side = ctx.relax(point.xyz.coords + point.step(ctx.gates.noise_cm1)[0], point)
         if side is not None and side.tier in ("none", "noise"):
             history.append("soft:resolved")
             return side, "minimum"
@@ -169,7 +181,8 @@ def relax_to_minimum(
     *,
     known: Registry | None = None,
     init_hessian: Evidence | None = None,
-    policy: MinimumPolicy = _DEFAULT,
+    max_mode_follow: int = 2,
+    gates: Policy = _GATES,
     deadline: Deadline | None = None,
     load_xyz: LoadXYZ | None = None,
 ) -> MinimumOutcome:
@@ -181,7 +194,7 @@ def relax_to_minimum(
     load = load_xyz or (known.load_xyz if known is not None else None)
     if load is None:
         raise ValueError("relax_to_minimum needs load_xyz or a known Registry")
-    ctx = _Ctx(mol, method, qm, load, policy, deadline)
+    ctx = _Ctx(mol, method, qm, load, max_mode_follow, gates, deadline)
     history = ["opt"]
     opt = qm.optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
     if isinstance(opt, Failure):
@@ -244,23 +257,24 @@ class Registry:
         """Join the known basin, or the basin that ``find`` matches; else register a new
         basin."""
         if outcome.status == "known" and outcome.known_basin is not None:
-            return self._join(outcome.known_basin, species.species_id)
+            return self.join(outcome.known_basin, species.species_id)
         opt, freq = outcome.opt, outcome.freq
         if outcome.status not in ("minimum", "soft_minimum") or opt is None or freq is None:
             raise ValueError(f"cannot register a {outcome.status!r} outcome")
         basin = self.find(opt)
         if basin is not None:
-            return self._join(basin, species.species_id)
+            return self.join(basin, species.species_id)
         xyz = self.load_xyz(opt.final)
         record = _new_record(opt, freq, outcome.notes, species, tier, xyz)
         self._basins[record.basin_id] = _Entry(record, xyz)
         return record
 
-    def _join(self, basin_id: str, species_id: str) -> MinimumRecord:
+    def join(self, basin_id: str, species_id: str, *notes: str) -> MinimumRecord:
+        """Add ``species_id`` to the members of ``basin_id`` and ``notes`` to its record."""
         entry = self._basins[basin_id]
-        if species_id not in entry.record.members:
-            members = (*entry.record.members, species_id)
-            entry.record = entry.record.model_copy(update={"members": members})
+        members = tuple(dict.fromkeys((*entry.record.members, species_id)))
+        notes = tuple(dict.fromkeys((*entry.record.notes, *notes)))
+        entry.record = entry.record.model_copy(update={"members": members, "notes": notes})
         return entry.record
 
 

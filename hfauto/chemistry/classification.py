@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
+import numpy as np
+
+from hfauto.chemistry.topology import bond_changes
 from hfauto.core.records import (
     BarrierVerdict,
     CaseOutcome,
@@ -68,7 +71,7 @@ def finalize(
 
 
 def _child(parent: ReactionRecord, index: int, minima: tuple[str, str],
-           endpoints: tuple[str, str]) -> ReactionRecord:
+           endpoints: tuple[str, str], torsional: bool) -> ReactionRecord:
     return ReactionRecord(
         reaction_id=f"{parent.reaction_id}_split{index}",
         source="split",
@@ -76,17 +79,21 @@ def _child(parent: ReactionRecord, index: int, minima: tuple[str, str],
         products=parent.products,
         minima=minima,
         endpoints=endpoints,
-        torsional=parent.torsional,
+        torsional=torsional,
     )
 
 
 def split(
-    parent: ReactionRecord, intermediate: MinimumRecord, intermediate_species: SpeciesRecord
+    parent: ReactionRecord,
+    intermediate: MinimumRecord,
+    intermediate_species: SpeciesRecord,
+    structures: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> tuple[ReactionRecord, ReactionRecord]:
     """Fresh child cases R→I and I→P of a multi-step case.
 
-    Stoichiometry and ``torsional`` are inherited from the parent; the declared coordinate
-    and low-level TS describe the whole step and are not.
+    ``structures`` are the basin structures of R, I and P in one atom order. Stoichiometry is
+    inherited from the parent; a child is torsional when its own ends differ in no bond. The
+    declared coordinate and low-level TS describe the whole step and are not inherited.
     """
     compositions = {t.composition_id for t in (*parent.reactants, *parent.products)}
     if intermediate.composition_id not in compositions:
@@ -94,8 +101,10 @@ def split(
             f"{parent.reaction_id}: intermediate {intermediate.minimum_id} has composition "
             f"{intermediate.composition_id}, not one of {sorted(compositions)}"
         )
+    symbols, (a, i, b) = intermediate_species.geometry.symbols, structures
+    first, second = (not any(bond_changes(symbols, x, y)) for x, y in ((a, i), (i, b)))
     m, s = intermediate.minimum_id, intermediate_species.species_id
     return (
-        _child(parent, 1, (parent.minima[0], m), (parent.endpoints[0], s)),
-        _child(parent, 2, (m, parent.minima[1]), (s, parent.endpoints[1])),
+        _child(parent, 1, (parent.minima[0], m), (parent.endpoints[0], s), first),
+        _child(parent, 2, (m, parent.minima[1]), (s, parent.endpoints[1]), second),
     )

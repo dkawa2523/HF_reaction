@@ -62,7 +62,7 @@ def pipeline(tmp_path, tmp_run, override_engine, monkeypatch):
 
     qm, path, saddle = (c(tmp_run, pes) for c in (fakes.FakeQM, fakes.FakePath, fakes.FakeSaddle))
     fake = {(Cap.QM, "nwchem"): qm, (Cap.QM, "xtb"): qm, (Cap.SADDLE, "nwchem_saddle"): saddle,
-            (Cap.PATH, "nwchem_string"): path, (Cap.PATH, "pysis_gs"): path,
+            (Cap.PATH, "nwchem_string"): path, (Cap.PATH, "pysis_neb"): path,
             (Cap.CONFORMERS, "crest"): fakes.FakeConformers(search),
             (Cap.DISCOVERY, "readuct"): fakes.FakeDiscovery(explore),
             (Cap.THERMO, "goodvibes"): fakes.FakeThermo(goodvibes)}

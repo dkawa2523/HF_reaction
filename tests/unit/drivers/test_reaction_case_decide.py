@@ -20,6 +20,7 @@ CASE = r.ReactionRecord(reaction_id="rxn", reactants=(TERM,), products=(TERM,), 
 DEGENERATE = CASE.model_copy(update={"minima": ("ma", "ma"), "degenerate": True})
 GEO = Geometry(file=FileRef(path="seed.xyz", sha256="0" * 64), fingerprint="f", symbols=("H",))
 SEED = st.Seed(geometry=GEO, source="screen_ts", tangent=None)
+HIGHER = st.Seed(geometry=GEO, source="higher_order_retry", tangent=None)
 CLAIM = r.SaddleClaim(saddle_calc="s", freq_calc="f", imag_cm1=-1131.0, energy_hartree=-93.0)
 SOFT = CLAIM.model_copy(update={"imag_cm1": -30.0})  # |nu| < saddle_cm1 = 50
 POLICY = st.CasePolicy()
@@ -38,6 +39,8 @@ BASE = CaseState(minima=(MA, MB))  # nothing done yet
 S = replace(BASE, screen=BV(verdict="single", source="screen"))  # screened, one peak found
 BLOCKED = Decision(A.BLOCKED, "endpoints_not_on_one_pes", C.BLOCKED)
 NO_PATH = Decision(A.FIND_PATH, "no_dft_path")
+NEXT_CHUNK = Decision(A.FIND_PATH, "next_chunk")
+EXHAUSTED = Decision(A.COMPLETE, "attempts_exhausted", C.UNRESOLVED)
 
 
 ROW_CASES = [  # (row, id, case, state, policy, expected decision)
@@ -71,38 +74,47 @@ ROW_CASES = [  # (row, id, case, state, policy, expected decision)
     (8, "collapsed", CASE, replace(S, last_saddle="converged", ts_check="collapsed",
                                    seeds=(SEED,)), POLICY,
      Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")),
+    (8, "after_an_endpoint_well", CASE, replace(S, last_saddle="converged", ts_check="collapsed",
+                                                intermediate="same_as_endpoint"), POLICY,
+     Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")),
     (8, "soft_ts_qrc_failed", CASE, replace(S, claim=SOFT, last_saddle="converged", ts_check="ok",
                                             connection="failed", connection_attempts=1), POLICY,
      Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")),
-    (9, "distinct", CASE, replace(S, ts_check="collapsed", intermediate="distinct"), POLICY,
+    (9, "distinct", CASE, replace(S, intermediate="distinct"), POLICY,
      Decision(A.COMPLETE, "intermediate_distinct", C.MULTI_STEP)),
-    (10, "higher_order", CASE, replace(S, last_saddle="converged", ts_check="higher_order",
-                                       saddle_attempts=1), POLICY,
-     Decision(A.REFINE_SADDLE, "higher_order_retry")),
-    (11, "screen", CASE, BASE, POLICY, Decision(A.SCREEN, "screen")),
-    (11, "degenerate_goes_on", DEGENERATE, replace(BASE, minima=(MA, MA)), POLICY,
+    (10, "screen", CASE, BASE, POLICY, Decision(A.SCREEN, "screen")),
+    (10, "degenerate_goes_on", DEGENERATE, replace(BASE, minima=(MA, MA)), POLICY,
      Decision(A.SCREEN, "screen")),
-    (12, "screen", CASE, replace(S, screen=BV(verdict="barrierless", source="screen"),
+    (11, "screen", CASE, replace(S, screen=BV(verdict="barrierless", source="screen"),
                                  seeds=(SEED,)), POLICY,
      Decision(A.COMPLETE, "screen:barrierless", C.BARRIERLESS)),
-    (12, "string", CASE, replace(S, screen=BV(verdict="barrierless", source="string"),
+    (11, "string", CASE, replace(S, screen=BV(verdict="barrierless", source="string"),
                                  path_runs=1), POLICY,
      Decision(A.COMPLETE, "string:barrierless", C.BARRIERLESS)),
-    (13, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
+    (12, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
                                        seeds=(SEED,)), POLICY,
      Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")),
-    (14, "seed", CASE, replace(S, seeds=(SEED,)), POLICY,
+    (13, "seed", CASE, replace(S, seeds=(SEED,)), POLICY,
      Decision(A.REFINE_SADDLE, "seed:screen_ts")),
-    (15, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), POLICY, NO_PATH),
-    (15, "screen_off", CASE, BASE, replace(POLICY, screen=False), NO_PATH),
-    (15, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
+    (13, "higher_order_retry", CASE, replace(S, seeds=(HIGHER,), last_saddle="failed",
+                                             saddle_attempts=1), POLICY,
+     Decision(A.REFINE_SADDLE, "seed:higher_order_retry")),
+    (14, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), POLICY, NO_PATH),
+    (14, "screen_off", CASE, BASE, replace(POLICY, screen=False), NO_PATH),
+    (14, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
      POLICY, NO_PATH),
-    (15, "gs_barrierless", CASE, replace(S, screen=BV(verdict="unavailable", source="screen",
-                                                      reasons=("low_level_ends",))),
-     POLICY, NO_PATH),
+    (15, "seeds_failed", CASE, replace(S, screen=BV(verdict="single", source="string"),
+                                       path_runs=1, saddle_attempts=1, last_saddle="failed"),
+     POLICY, NEXT_CHUNK),
+    (15, "after_an_endpoint_well", CASE, replace(S, screen=BV(verdict="intermediate",
+                                                              source="string"),
+                                                 intermediate="same_as_endpoint", path_runs=2,
+                                                 saddle_attempts=2), POLICY, NEXT_CHUNK),
     (16, "exhausted", CASE, replace(S, path_runs=1, seeds=(SEED,), saddle_attempts=2,
-                                    last_saddle="failed"), POLICY,
-     Decision(A.COMPLETE, "attempts_exhausted", C.UNRESOLVED)),
+                                    last_saddle="failed"), POLICY, EXHAUSTED),
+    (16, "chunks_used", CASE, replace(S, screen=BV(verdict="single", source="string"),
+                                      path_runs=3, saddle_attempts=1), POLICY, EXHAUSTED),
+    (16, "string_failed", CASE, replace(S, path_runs=1, saddle_attempts=1), POLICY, EXHAUSTED),
 ]
 
 
@@ -145,26 +157,25 @@ def test_a_new_profile_reopens_the_checks_of_an_earlier_saddle():
     assert record_profile(BASE, BV(verdict="single", source="screen")).path_runs == 0
 
 
-def test_higher_order_retry_until_attempts_run_out():
-    first = replace(S, last_saddle="converged", ts_check="higher_order", saddle_attempts=1,
-                    path_runs=1)
-    assert decide(CASE, first, POLICY) == Decision(A.REFINE_SADDLE, "higher_order_retry")
-    second = replace(first, saddle_attempts=2)
-    assert decide(CASE, second, POLICY) == Decision(A.COMPLETE, "attempts_exhausted",
-                                                    C.UNRESOLVED)
+def test_seeds_share_one_attempt_budget():
+    """U6-P3 / U6-P6: a higher-order push or a stalled search's restart is an ordinary seed."""
+    first = replace(S, seeds=(HIGHER,), last_saddle="failed", saddle_attempts=1, path_runs=1)
+    assert decide(CASE, first, POLICY) == Decision(A.REFINE_SADDLE, "seed:higher_order_retry")
+    assert decide(CASE, replace(first, saddle_attempts=2), POLICY) == EXHAUSTED
 
 
 def test_a_soft_ts_whose_qrc_failed_is_validated_as_a_collapsed_saddle():
     """U6-P5: a TS with |nu| < saddle_cm1 is a TS, but once its QRC fails for good (the one
-    same-basin retry included) it joins row 8; its basin then ends the case."""
+    same-basin retry included) it joins row 8, whose action withdraws the claim."""
     failed = replace(S, claim=SOFT, last_saddle="converged", ts_check="ok", connection="same_basin",
                      connection_attempts=1)
     collapsed = Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")
     assert decide(CASE, failed, POLICY) == Decision(A.CONNECT, "connection_retry")
     failed = replace(failed, connection_attempts=2)
     assert decide(CASE, failed, POLICY) == collapsed
-    assert decide(CASE, replace(failed, intermediate="distinct"), POLICY) == Decision(
+    validated = replace(failed, claim=None, connection=None, ts_check=None, last_saddle=None)
+    assert decide(CASE, replace(validated, intermediate="distinct"), POLICY) == Decision(
         A.COMPLETE, "intermediate_distinct", C.MULTI_STEP)
+    assert decide(CASE, replace(validated, intermediate="same_as_endpoint"), POLICY) == NO_PATH
     unresolved = Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)
-    assert decide(CASE, replace(failed, intermediate="same_as_endpoint"), POLICY) == unresolved
     assert decide(CASE, replace(failed, claim=CLAIM), POLICY) == unresolved  # a hard TS

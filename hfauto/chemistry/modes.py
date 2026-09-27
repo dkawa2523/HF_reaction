@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal
 
 import numpy as np
 
-from hfauto.core.constants import BOHR_TO_ANGSTROM
+from hfauto.chemistry.elements import mass
+from hfauto.core.constants import AMU_TO_ME, BOHR_TO_ANGSTROM, CM1_TO_HARTREE
+
+TARGET_HARTREE = 3.0e-4  # expected energy change of one displacement (QRC and mode-follow)
+BOUNDS_A = (0.05, 0.4)  # largest atomic displacement (Å); an opt reuses a Hessian within 0.5 Å
 
 
 def _unit_max_displacement(mode: np.ndarray) -> np.ndarray:
@@ -20,12 +25,12 @@ def _unit_max_displacement(mode: np.ndarray) -> np.ndarray:
 
 
 def displace(
-    coords: np.ndarray, mode: np.ndarray, amplitude_A: float
+    coords: np.ndarray, mode: np.ndarray, largest_A: float
 ) -> tuple[np.ndarray, np.ndarray]:
-    """coords ± mode, with the largest atomic displacement equal to amplitude_A."""
+    """coords ± mode, with the largest atomic displacement equal to largest_A."""
 
     x = np.asarray(coords, dtype=float).reshape(-1, 3)
-    step = amplitude_A * _unit_max_displacement(mode)
+    step = largest_A * _unit_max_displacement(mode)
     if step.shape != x.shape:
         raise ValueError("mode and coordinates differ in atom count")
     return x + step, x - step
@@ -38,24 +43,25 @@ def overlap(a: np.ndarray, b: np.ndarray) -> float:
     return float(abs(va @ vb) / (np.linalg.norm(va) * np.linalg.norm(vb)))
 
 
-def qrc_amplitude(
-    hessian: np.ndarray,
+def amplitude(
+    nu_cm1: float,
     mode: np.ndarray,
-    *,
-    target_hartree: float,
-    bounds_A: tuple[float, float] = (0.05, 0.4),
+    symbols: Sequence[str],
+    target_hartree: float = TARGET_HARTREE,
+    bounds_A: tuple[float, float] = BOUNDS_A,
 ) -> float:
-    """Largest atomic displacement s with ½|κ|s² = target, clipped to bounds_A.
+    """Largest atomic displacement s (Å) with ½κs² = target along ``mode``, clipped to bounds_A.
 
-    κ = uᵀHu (Eh/Å²) for the mode scaled to a 1 Å largest atomic displacement; the
-    Hessian is in Eh/bohr².
+    κ = ω²·Σ m_i|u_i|² for the mode u scaled to a 1 Å largest atomic displacement: the harmonic
+    energy E = ½ω²Q², equal to uᵀHu for an exact normal mode (QRC, Goodman & Silva 2003).
     """
 
-    u = _unit_max_displacement(mode).ravel()
-    h = np.asarray(hessian, dtype=float)
-    if h.shape != (u.size, u.size):
-        raise ValueError("Hessian and mode differ in dimension")
-    curvature = abs(float(u @ h @ u)) / BOHR_TO_ANGSTROM**2
+    u = _unit_max_displacement(mode)
+    masses = np.array([mass(symbol) for symbol in symbols])
+    if len(masses) != len(u):
+        raise ValueError("mode and symbols differ in atom count")
+    omega2 = (nu_cm1 * CM1_TO_HARTREE / BOHR_TO_ANGSTROM) ** 2 * AMU_TO_ME  # Eh/(amu Å²)
+    curvature = omega2 * float(masses @ (u * u).sum(axis=1))
     low, high = bounds_A
     if curvature == 0.0:
         return high

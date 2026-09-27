@@ -96,13 +96,8 @@ class PathProfile(BaseModel):
     engine: str
     level: Level
     images: FileRef  # multi-frame xyz
-    energies_hartree: tuple[float, ...]
-    gmax_history: tuple[float, ...] = ()  # max gradient per iteration (Eh/bohr), recorded only
-    energy_history: tuple[tuple[float, ...], ...] = ()  # bead energies per string iteration
-    program_converged: bool  # the program's own claim, recorded only
-    climbing_image: int | None = None
-    ts: Geometry | None = None  # TS optimized within the same input (pysis_gs)
-    ts_energy_hartree: float | None = None
+    energies_hartree: tuple[float, ...] = ()  # bead energies (nwchem_string); none from the NEB
+    ts: Geometry | None = None  # TS optimized from the climbing image (pysis_neb)
     job_key: str
 
 
@@ -123,4 +118,5 @@ class Failure(BaseModel):
     model_config = _FROZEN
     kind: FailureKind
     reason: str
+    final: Geometry | None = None  # last frame of a saddle search stopped at maxiter
     job_key: str | None = None

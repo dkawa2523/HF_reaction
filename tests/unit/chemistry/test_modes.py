@@ -1,33 +1,47 @@
 """Mode displacements, QRC amplitudes and mode-follow outcomes (design §5.5, chem 7)."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
+from hfauto.backends.nwchem.output import hess_to_npy
 from hfauto.chemistry import modes
+from hfauto.chemistry.vibrations import projected_frequencies
+from hfauto.chemistry.xyz import read_xyz
 from hfauto.core.constants import BOHR_TO_ANGSTROM
 
-
-def _quadratic_pes(curvature: float) -> tuple[np.ndarray, np.ndarray]:
-    """Hessian (Eh/bohr²) of 3 atoms with one mode of the given eigenvalue."""
-    rng = np.random.default_rng(7)
-    q, _ = np.linalg.qr(rng.standard_normal((9, 9)))
-    eigenvalues = np.array([curvature] + list(np.linspace(0.1, 0.5, 8)))
-    return q @ np.diag(eigenvalues) @ q.T, q[:, 0]
+G07 = Path(__file__).parents[2] / "golden" / "data" / "nwchem" / "G07"  # the HCN TS, -1131i
 
 
-def test_qrc_amplitude_hits_target_energy():
-    hessian, mode = _quadratic_pes(-0.08)
-    s = modes.qrc_amplitude(hessian, mode, target_hartree=3e-4, bounds_A=(0.01, 5.0))
-    plus, _ = modes.displace(np.zeros((3, 3)), mode, s)
+def _former_qrc_rule(hessian, mode, target):  # uᵀHu of the 1 Å mode (removed in S-B)
+    u = np.reshape(mode, (-1, 3)) / np.linalg.norm(np.reshape(mode, (-1, 3)), axis=1).max()
+    curvature = abs(u.ravel() @ hessian @ u.ravel()) / BOHR_TO_ANGSTROM**2
+    return float(np.clip(np.sqrt(2.0 * target / curvature), 0.05, 0.4))
+
+
+@pytest.mark.golden
+def test_amplitude_hits_the_target_energy_of_the_former_qrc_rule(tmp_path):
+    """κ = ω²·Σm|u|² equals uᵀHu for a normal mode, so QRC amplitudes do not change."""
+    xyz = read_xyz(G07 / "final.xyz")
+    hessian = np.load(hess_to_npy(G07 / "hfauto_job.hess", 3, tmp_path / "h.npy"))
+    freqs, vectors, _ = projected_frequencies(hessian, xyz.symbols, xyz.coords)
+    s = modes.amplitude(freqs[0], vectors[0], xyz.symbols)
+    assert freqs[0] < -1000 and 0.05 < s < 0.4  # not clipped
+    assert s == pytest.approx(_former_qrc_rule(hessian, vectors[0], 3e-4), rel=1e-9)
+    plus, _ = modes.displace(np.zeros((3, 3)), vectors[0], s)
     step_bohr = plus.ravel() / BOHR_TO_ANGSTROM
-    assert 0.5 * step_bohr @ hessian @ step_bohr == pytest.approx(-3e-4)
+    assert 0.5 * step_bohr @ hessian @ step_bohr == pytest.approx(-3e-4, rel=1e-6)
 
 
-def test_qrc_amplitude_is_clipped():
-    stiff, mode = _quadratic_pes(-50.0)
-    assert modes.qrc_amplitude(stiff, mode, target_hartree=3e-4) == 0.05
-    flat, mode = _quadratic_pes(-1e-6)
-    assert modes.qrc_amplitude(flat, mode, target_hartree=3e-4) == 0.4
+def test_amplitude_is_clipped_and_mass_weighted():
+    mode = np.array([[0.0, 0.0, 1.0], [0.0, 0.0, 0.0]])
+    assert modes.amplitude(-3000.0, mode, ["H", "H"]) == 0.05  # stiff
+    assert modes.amplitude(-5.0, mode, ["H", "H"]) == 0.4  # flat
+    assert modes.amplitude(0.0, mode, ["H", "H"]) == 0.4
+    light = modes.amplitude(-300.0, mode, ["H", "H"], bounds_A=(0.0, 9.0))
+    heavy = modes.amplitude(-300.0, mode, ["I", "H"], bounds_A=(0.0, 9.0))
+    assert light / heavy == pytest.approx(np.sqrt(126.904 / 1.008), rel=1e-3)
 
 
 def test_displace_and_overlap():

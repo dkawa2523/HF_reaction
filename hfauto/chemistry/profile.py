@@ -1,8 +1,7 @@
-"""Path profiles: class, peak interpolation and settled string energies (§5.5).
+"""Path profiles: class, peak interpolation, node spacing and tangents (§5.5).
 
-A string is continued until its bead energies settle; neither the gradient history (the
-unprojected gmax never vanishes on a sloped path) nor the program's own "converged"
-message is used (CH-08).
+A path is classified as it stands, converged or not: its maximum between two minima bounds the
+saddle from above, and its peak is only a seed (CH-08).
 """
 
 from __future__ import annotations
@@ -79,18 +78,6 @@ def hei(
     neighbour = k + 1 if offset >= 0 else k - 1
     coords = frames[k] + abs(offset) * (frames[neighbour] - frames[k])
     return k + offset, float(energy), coords
-
-
-def energies_settled(
-    history: Sequence[Sequence[float]], tol_hartree: float, window: int = 3
-) -> bool:
-    """True when the last `window` iterations exist and no bead energy changed by `tol_hartree`
-    or more between consecutive ones."""
-
-    if len(history) < window:
-        return False
-    steps = np.diff(np.asarray(history[-window:], dtype=float), axis=0)
-    return bool(np.abs(steps).max(initial=0.0) < tol_hartree)
 
 
 def max_node_spacing(coords_list: Sequence[np.ndarray]) -> float:

@@ -53,6 +53,7 @@ RANKABLE_OUTCOMES = frozenset({
 })
 
 ConnectionLabel = Literal["elementary", "degenerate", "reassigned", "failed"]
+Bonds = frozenset[tuple[int, int]]  # a labelled bond graph (topology.bonds)
 
 
 def _gate(reasons: Sequence[str], notes: Sequence[str] = ()) -> Gate:
@@ -60,8 +61,9 @@ def _gate(reasons: Sequence[str], notes: Sequence[str] = ()) -> Gate:
 
 
 def qrc_drop(level: Level, policy: Policy = _DEFAULT) -> float:
-    """Smallest energy drop a QRC side must show below the TS: max(minimum, scf_noise_factor x
-    scf_tol); a missing scf_tol counts as 0."""
+    """The SCF noise floor max(qrc_min_drop, scf_noise_factor x scf_tol); a missing scf_tol
+    counts as 0. A QRC side must end this far below the TS, and a freq job may differ this much
+    from its parent at one geometry."""
     return max(policy.qrc_min_drop_hartree, policy.scf_noise_factor * (level.scf_tol or 0.0))
 
 
@@ -112,16 +114,23 @@ def _mode_count_reasons(freq: Evidence) -> list[str]:
     return []
 
 
-def _link_reasons(freq: Evidence, parent: Evidence) -> list[str]:
-    """The freq job must sit on the parent's final geometry, on the same PES incl. numerics."""
-    reasons = [] if freq.start.fingerprint == parent.final.fingerprint else ["geometry_mismatch"]
+def _link_reasons(freq: Evidence, parent: Evidence, policy: Policy) -> list[str]:
+    """The freq job sits on the parent's final geometry, on the same PES incl. numerics, in the
+    same SCF solution: an energy within qrc_drop of the parent's (a UKS freq may find another
+    solution; NWChem's freq tightens the grid and screening, H2Te 3.1e-6 Eh apart)."""
+    if freq.start.fingerprint != parent.final.fingerprint:
+        reasons = ["geometry_mismatch"]
+    elif abs(freq.energy_hartree - parent.energy_hartree) > qrc_drop(parent.level, policy):
+        reasons = ["state_mismatch"]
+    else:
+        reasons = []
     return reasons + list(same_pes(parent.level, freq.level, numerics=True).reasons)
 
 
 def is_minimum(freq: Evidence, *, opt: Evidence, policy: Policy = _DEFAULT) -> Gate:
     reasons = [f"not_{want}_task:{ev.task}" for ev, want in ((freq, "freq"), (opt, "opt"))
                if ev.task != want]
-    reasons += _link_reasons(freq, opt) + _mode_count_reasons(freq)
+    reasons += _link_reasons(freq, opt, policy) + _mode_count_reasons(freq)
     tier = imaginary_tier(freq.frequencies_cm1 or (), policy)
     notes: tuple[str, ...] = ()
     if tier == "saddle":
@@ -134,7 +143,7 @@ def is_minimum(freq: Evidence, *, opt: Evidence, policy: Policy = _DEFAULT) -> G
 def is_first_order_saddle(freq: Evidence, *, saddle: Evidence, policy: Policy = _DEFAULT) -> Gate:
     """One negative eigenvalue of any size: the lowest mode below -noise_cm1, the second not
     below -saddle_cm1 (higher_order); a second between the two is the note soft_secondary_mode."""
-    reasons = _link_reasons(freq, saddle) + _mode_count_reasons(freq)
+    reasons = _link_reasons(freq, saddle, policy) + _mode_count_reasons(freq)
     lowest, second = (*sorted(freq.frequencies_cm1 or ()), 0.0, 0.0)[:2]  # missing: 0
     if lowest >= -policy.noise_cm1:
         reasons.append("no_imaginary_mode")
@@ -169,18 +178,30 @@ def _side_reasons(index: int, side: Evidence, ts: Evidence, drop: float) -> list
     return reasons
 
 
+def _bonds_exchanged(bond_sets: tuple[Bonds, ...] | None) -> bool:
+    """A degenerate step that changes bonds must show the two endpoints' labelled bond graphs on
+    its QRC sides; one without a bond change (inversion, torsion) is not judged by bonds."""
+    if bond_sets is None:
+        return True
+    reactant, product, *sides = bond_sets
+    return reactant == product or set(sides) == {reactant, product}
+
+
 def _assignment(
     assigned: tuple[str | None, str | None],
     expected: frozenset[str],
     *,
     degenerate: bool,
     sides_distinct: bool,
+    bonds_exchanged: bool,
 ) -> tuple[ConnectionLabel, str | None]:
     first, second = assigned
     if first is None or second is None:
         return "failed", "unassigned_side"
     if degenerate and first == second and {first} == expected:
-        return ("degenerate", None) if sides_distinct else ("failed", "sides_not_distinct")
+        if not sides_distinct:
+            return "failed", "sides_not_distinct"
+        return ("degenerate", None) if bonds_exchanged else ("failed", "bond_change_missing")
     if first == second:
         return "failed", "sides_same_basin"
     if not degenerate and {first, second} == expected:
@@ -196,12 +217,17 @@ def connection(
     *,
     degenerate: bool,
     sides_distinct: bool = True,
+    bond_sets: tuple[Bonds, ...] | None = None,
     policy: Policy = _DEFAULT,
 ) -> tuple[Gate, ConnectionLabel]:
+    """Both QRC sides end below the TS in assigned basins. ``bond_sets`` are the labelled bond
+    graphs (R, P, side0, side1): a degenerate case whose ends differ in bonds needs exactly those
+    two graphs on its sides (a methyl rotation TS leaves the transferred proton in place)."""
     drop = qrc_drop(ts_freq.level, policy)
     reasons = [r for i, side in enumerate(sides) for r in _side_reasons(i, side, ts_freq, drop)]
     label, why = _assignment(
-        assigned, expected, degenerate=degenerate, sides_distinct=sides_distinct
+        assigned, expected, degenerate=degenerate, sides_distinct=sides_distinct,
+        bonds_exchanged=_bonds_exchanged(bond_sets),
     )
     if why is not None:
         reasons.append(why)

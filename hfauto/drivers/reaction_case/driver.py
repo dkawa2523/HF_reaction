@@ -129,6 +129,8 @@ def drive_case(case: ReactionRecord, rt: CaseRuntime, policy: CasePolicy) -> Cas
                       connection=work.connection)
     record = record.model_copy(update={"log": f"cases/{folder.name}/log.jsonl"})
     children: tuple[ReactionRecord, ...] = ()
-    if record.outcome is CaseOutcome.MULTI_STEP and work.intermediate is not None:
-        children = split(record, *work.intermediate)
+    if record.outcome is CaseOutcome.MULTI_STEP and ctx is not None and work.intermediate:
+        well, well_species = work.intermediate
+        middle = _endpoint(rt, well.minimum_id, well_species.species_id)
+        children = split(record, well, well_species, (ctx.raw[0], middle, ctx.raw[1]))
     return CaseResult(record, children, _artifacts(record, work))

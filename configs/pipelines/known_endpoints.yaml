@@ -1,5 +1,5 @@
 # Declared reactions between known endpoints: DFT minima of every input species, then the
-# reaction paths (the barrier screen re-optimizes the DFT endpoints with xTB).
+# reaction paths (the barrier screen relaxes the IDPP between the DFT minima by an xTB NEB).
 pipeline_id: known_endpoints
 stages:
   - {id: structures, stage: structures}
@@ -7,6 +7,6 @@ stages:
      select: {include: all}, init_hessian: {engine: xtb, method: gfn2}}
   - {id: paths, stage: reaction-paths, method: pbe0-d3bj_def2-svpd,
      engines: {qm: nwchem, saddle: nwchem_saddle, path: nwchem_string},
-     screen: {method: gfn2, qm: xtb, path: pysis_gs}}
+     screen: {method: gfn2, qm: xtb, path: pysis_neb}}
   - {id: thermo, stage: thermo, engine: goodvibes}
   - {id: report, stage: report}

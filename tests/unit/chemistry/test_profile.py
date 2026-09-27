@@ -1,4 +1,4 @@
-"""Path class, peak interpolation and settled string energies (design §5.5, CH-08)."""
+"""Path class, peak interpolation, node spacing and tangents (design §5.5, CH-08)."""
 
 import numpy as np
 import pytest
@@ -35,15 +35,6 @@ def test_hei_interpolates_parabola_and_coordinates_at_the_given_peak():
     assert prof.hei(frames[:5], two, 1)[0] == pytest.approx(1.1)  # toward the higher side
     with pytest.raises(ValueError, match="interior"):
         prof.hei(frames, energies, 0)
-
-
-def test_energies_settled():
-    settled = [(0.0, 5.0, 1.0), (0.0, 3.0, 1.0), (0.0, 3.06, 1.0), (0.0, 3.0, 1.02)]
-    assert prof.energies_settled(settled, 0.1)  # the first step lies outside the window
-    assert not prof.energies_settled(settled, 0.05)
-    assert not prof.energies_settled([*settled, (0.0, 3.2, 1.0)], 0.1)  # still moving
-    assert not prof.energies_settled(settled[-2:], 0.1)  # fewer than 3 iterations
-    assert not prof.energies_settled([], 0.1)
 
 
 def test_spacing_and_tangent():

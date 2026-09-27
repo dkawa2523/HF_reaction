@@ -28,6 +28,13 @@ class SoftQM(fakes.FakeQM):
                                      "imaginary_modes": (tuple(np.eye(9)[3]),)})
 
 
+class StuckQM(fakes.FakeQM):
+    def optimize(self, mol, method, *, init_hessian=None, deadline=None):
+        if not self.calls:  # the first input converges to the barrier top (a saddle endpoint)
+            mol = self.pes.molecule("ts")
+        return super().optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
+
+
 def species(root, pes, sid, point, shift=0.0):
     x = pes.points[point] + shift
     record = SpeciesRecord(species_id=sid, composition_id=composition_key(pes.symbols, 0, 1),
@@ -85,6 +92,17 @@ def test_saddle_structure_gives_a_mode_follow_discovery(fake_runtime, tmp_run):
     assert found.ts is not None and found.ts_imag_cm1 < -50
     assert {s.source for s in out.records(T.SPECIES, SpeciesRecord)} == {"input", "mode_follow"}
     assert all(a.status == "success" for a in out.artifacts)  # no failed minimum for "t"
+
+
+def test_an_endpoint_on_a_saddle_joins_the_side_nearer_its_input(fake_runtime, tmp_run):
+    pes = fakes.double_well()  # declared as the product (H at O), above the reactant
+    run = stage(fake_runtime, tmp_run, pes, low=StuckQM)[0]
+    out = run("screen", [species(tmp_run, pes, "p", "product")], **SCREEN)
+    minima = out.records(T.MINIMUM, MinimumRecord)
+    (joined,) = [m for m in minima if "p" in m.members]
+    assert joined.energy_hartree == max(m.energy_hartree for m in minima)  # nearer, not lower
+    assert joined.notes == ("endpoint_was_saddle",) and len(minima) == 2
+    assert len(out.records(T.DISCOVERY, DiscoveryRecord)) == 1
 
 
 def test_soft_mode_known_minimum_and_init_hessian(fake_runtime, tmp_run):

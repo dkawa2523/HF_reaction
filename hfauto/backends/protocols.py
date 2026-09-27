@@ -148,8 +148,7 @@ class PathEngine(Engine, Protocol):
         method: MethodSpec,
         *,
         images: int,
-        initial_path: FileRef | None = None,
-        refine_ts: bool = False,
+        initial_path: FileRef,  # multi-frame xyz from start to end (the relaxed path's start)
         deadline: Deadline | None = None,
     ) -> PathProfile | Failure: ...
 
@@ -161,10 +160,11 @@ class SaddleRefiner(Engine, Protocol):
         seed: Molecule,
         method: MethodSpec,
         *,
-        hessian: Evidence,  # freq Evidence whose final geometry is seed (any Level)
+        # freq Evidence (any Level) at seed or within 0.5 Å per atom of it (same atoms, frame)
+        hessian: Evidence,
         mode: Sequence[float],  # reaction direction (3N): the only negative initial curvature
         deadline: Deadline | None = None,
-    ) -> Evidence | Failure: ...
+    ) -> Evidence | Failure: ...  # maxiter: a Failure whose ``final`` is the last frame
 
 
 @runtime_checkable

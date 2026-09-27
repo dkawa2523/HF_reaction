@@ -1,6 +1,6 @@
 """NWChem engines through JobRunner with a stub executable that replays recorded outputs:
 G07 (HCN TS: level lines, vibrational block and .hess), G01 (two blocks), G13 (string) and
-G29 (OH. ROHF-CCSD(T))."""
+G29 (OH. ROHF-CCSD(T)). A driver deck with ``maxiter 7`` stops at maxiter."""
 
 import shutil
 import sys
@@ -12,7 +12,9 @@ from hfauto.backends.nwchem.engine import NWChemEngine, NWChemSaddle, NWChemStri
 from hfauto.backends.nwchem.output import geometry_block, read_hess
 from hfauto.chemistry.vibrations import shape_hessian
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
-from hfauto.core.evidence import Evidence, FailureKind, PathProfile
+from hfauto.chemistry.xyz_trajectory import write_xyz_trajectory
+from hfauto.core.evidence import Evidence, FailureKind, FileRef, PathProfile
+from hfauto.core.hashing import sha256_file
 from hfauto.core.method import EngineSite, MethodSpec
 from hfauto.execution.jobs import JobRunner
 from hfauto.execution.jobstore import JobStore
@@ -52,6 +54,8 @@ if task in ("dft optimize", "dft saddle"):
         Path(f"final-{n:03d}.xyz").write_text(frame(rows))
     Path("job.movecs").write_text("v"), Path("job.drv.hess").write_text("h")
     print("@    0    -93.16699428\n@    1    -93.16699428\n")
+    if "  maxiter 7\n" in deck:
+        sys.exit(print(" Failed to converge in maximum number of steps"))
     if not restarted:
         sys.exit(124)
     print("      Optimization converged\n")
@@ -167,11 +171,38 @@ def test_saddle_shapes_the_hessian_along_the_mode_and_always_follows_mode_1(nwch
     assert other.job_key != ts.job_key  # the mode is part of the job key
 
 
-def test_g13_string_profile(nwchem, golden):
+def test_a_saddle_at_maxiter_fails_with_its_last_frame_and_takes_a_hessian_nearby(nwchem,
+                                                                                   golden):
+    """U6-P6: no continuation with the stalled driver Hessian; U6-P3: a freq within 0.5 Å."""
+    jobs, site = nwchem
+    mol = _hcn_ts(golden)
+    freq = NWChemEngine(jobs=jobs, site=site).frequencies(mol, FINE)
+    capped = site.model_copy(update={"execution": site.execution.model_copy(update={"maxiter": 7})})
+    near, far = (Molecule(XYZ(mol.xyz.symbols, mol.xyz.coords + [d, 0, 0]), 0, 1)
+                 for d in (0.3, 0.6))
+    failure = NWChemSaddle(jobs=jobs, site=capped).refine(near, FINE, hessian=freq,
+                                                          mode=freq.imaginary_modes[0])
+    assert (failure.kind, failure.reason) == (FailureKind.GEOMETRY_MAXITER, "maxiter")
+    last = read_xyz(jobs.store.run_dir / failure.final.file.path)
+    assert np.allclose(last.coords, near.xyz.coords + 0.01, atol=1e-7)
+    assert not jobs.store.attempt_dir(failure.job_key, 1).exists()  # one attempt only
+    mismatch = NWChemSaddle(jobs=jobs, site=site).refine(far, FINE, hessian=freq,
+                                                         mode=freq.imaginary_modes[0])
+    assert (mismatch.kind, mismatch.reason) == (FailureKind.INPUT_INVALID,
+                                                "hessian_geometry_mismatch")
+
+
+def test_g13_string_profile_from_its_initial_path(nwchem, golden):
     text = golden.text("nwchem/G13/nwchem_string.out")
     (s0, c0), (s1, c1) = geometry_block(text, 0), geometry_block(text, 1)
     start, end = Molecule(XYZ(list(s0), c0), 0, 1), Molecule(XYZ(list(s1), c1), 0, 1)
-    engine = NWChemString(jobs=nwchem[0], site=nwchem[1])
-    profile = engine.find_path(start, end, XFINE, images=11)
+    jobs, site = nwchem
+    initial = write_xyz_trajectory([start.xyz, end.xyz], jobs.store.run_dir / "initial.xyz")
+    ref = FileRef(path="initial.xyz", sha256=sha256_file(initial))
+    profile = NWChemString(jobs=jobs, site=site).find_path(start, end, XFINE, images=11,
+                                                           initial_path=ref)
     assert isinstance(profile, PathProfile) and len(profile.energies_hartree) == 11
-    assert len(profile.energy_history) == 3 and profile.gmax_history == () and profile.ts is None
+    assert profile.ts is None
+    attempt = jobs.store.attempt_dir(profile.job_key, 0)
+    assert "xyz_path initial_path.xyz" in (attempt / "job.nw").read_text()
+    assert sha256_file(attempt / "initial_path.xyz") == ref.sha256

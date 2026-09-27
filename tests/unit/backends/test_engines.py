@@ -18,7 +18,7 @@ def test_table_holds_exactly_the_eight_final_entries() -> None:
     assert engines._TABLE == {
         C.QM: {"nwchem": f"{nw}:NWChemEngine", "xtb": "hfauto.backends.xtb:XTBEngine"},
         C.PATH: {"nwchem_string": f"{nw}:NWChemString",
-                 "pysis_gs": "hfauto.backends.pysis.engine:PysisGrowingString"},
+                 "pysis_neb": "hfauto.backends.pysis.engine:PysisNEB"},
         C.SADDLE: {"nwchem_saddle": f"{nw}:NWChemSaddle"},
         C.CONFORMERS: {"crest": "hfauto.backends.crest:CRESTEngine"},
         C.DISCOVERY: {"readuct": "hfauto.backends.readuct.engine:ReaDuctEngine"},

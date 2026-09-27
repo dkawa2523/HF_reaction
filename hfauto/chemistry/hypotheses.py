@@ -1,20 +1,21 @@
 """Reaction hypotheses: pairs of minima that become reaction cases (design §8.2).
 
-Priority: declared reactions, discovery products (low-level TS first), mode-follow TS candidates,
-conformer pairs.  Declared reactions are always kept so that decide() classifies them (blocked,
-same basin, out of window); the others must join two DFT basins of one level inside the window
-and show a change (CH-07).  A discovery whose two ends fall into one DFT basin is kept when its
-ends map onto each other by a non-identity permutation: a degenerate rearrangement, evaluated
-like a declared one.  ``minima`` includes the screen minima that discoveries start from.
-Degeneracy, bond changes and torsions are judged on the basins' optimized structures in the
-endpoints' atom order and handedness (``identity.basin_coords``), never on input coordinates.
+Priority: declared reactions, discovery products (low-level TS first), mode-follow TS candidates.
+Declared reactions are always kept so that decide() classifies them (blocked, same basin, out of
+window); the others must join two DFT basins of one level inside the window and show a change
+(CH-07).  Two conformers of one state are no hypothesis: a fast pre-equilibrium does not enter
+the ranking (Curtin-Hammett), and a torsion is studied only when declared.  A discovery whose
+two ends fall into one DFT basin is kept when its ends map onto each other by a non-identity
+permutation: a degenerate rearrangement, evaluated like a declared one.  ``minima`` includes
+the screen minima that discoveries start from.
+Degeneracy and bond changes are judged on the basins' optimized structures in the endpoints'
+atom order and handedness (``identity.basin_coords``), never on input coordinates.
 Negative discoveries never veto a hypothesis (review X1); only the summary reports them.
 """
 
 from __future__ import annotations
 
-import itertools
-from collections import Counter, defaultdict
+from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -39,7 +40,7 @@ from hfauto.core.records import (
 from hfauto.core.system import ReactionInput
 
 LoadXYZ = Callable[[Geometry], XYZ]
-Source = Literal["declared", "discovery", "mode_follow", "conformer"]
+Source = Literal["declared", "discovery", "mode_follow"]
 Ends = tuple[str, str] | None  # a discovery's source and product species
 Candidate = tuple[Source, MinimumRecord | None, MinimumRecord | None, Geometry | None, Ends]
 
@@ -59,30 +60,6 @@ def pick_endpoints(
         return None
     _, i, j = min(scored)
     return members_a[i].species_id, members_b[j].species_id
-
-
-def _dihedrals_deg(x: np.ndarray, quads: list[tuple[int, int, int, int]]) -> np.ndarray:
-    p = x[np.asarray(quads)]
-    b0, b1, b2 = p[:, 0] - p[:, 1], p[:, 2] - p[:, 1], p[:, 3] - p[:, 2]
-    b1 = b1 / np.linalg.norm(b1, axis=1)[:, None]
-    v = b0 - np.sum(b0 * b1, axis=1)[:, None] * b1
-    w = b2 - np.sum(b2 * b1, axis=1)[:, None] * b1
-    return np.degrees(np.arctan2(np.sum(np.cross(b1, v) * w, axis=1), np.sum(v * w, axis=1)))
-
-
-def _max_torsion_change(symbols: Sequence[str], a: np.ndarray, b: np.ndarray) -> float:
-    """Largest periodic change of a dihedral i-j-k-l along bonds (bonds taken from a)."""
-    bonded = topology.bonds(symbols, a)
-    neighbours: defaultdict[int, set[int]] = defaultdict(set)
-    for i, j in bonded:
-        neighbours[i].add(j)
-        neighbours[j].add(i)
-    quads = [(i, j, k, m) for j, k in bonded
-             for i in neighbours[j] - {k} for m in neighbours[k] - {j} if i != m]
-    if not quads:
-        return 0.0
-    delta = _dihedrals_deg(b, quads) - _dihedrals_deg(a, quads)
-    return float(np.max(np.abs((delta + 180.0) % 360.0 - 180.0)))
 
 
 def _max_distance_change(a: np.ndarray, b: np.ndarray) -> float:
@@ -107,7 +84,6 @@ class _Pool:
     load: LoadXYZ
     window_kcal: float
     min_distance_A: float
-    min_angle_deg: float
 
     def coords(self, minimum: MinimumRecord, species: SpeciesRecord) -> np.ndarray:
         """The basin's optimized structure in the atom order and handedness of ``species``."""
@@ -181,13 +157,6 @@ def _candidates(pool: _Pool, discoveries: Sequence[DiscoveryRecord]) -> Iterator
         start = pool.minima.get(d.source_minimum)
         ends = (start.species_id, d.product_species or "") if start else None
         yield source, pool.dft_basin(d.source_minimum), product, d.ts, ends
-    groups: defaultdict[tuple[str, str, str], list[MinimumRecord]] = defaultdict(list)
-    for m in sorted(pool.minima.values(), key=lambda m: (m.energy_hartree, m.minimum_id)):
-        if m.tier == "dft":
-            groups[(m.composition_id, m.state_label, m.level_key)].append(m)
-    for group in groups.values():
-        for ma, mb in itertools.combinations(group, 2):
-            yield "conformer", ma, mb, None, None
 
 
 def _degenerate(pool: _Pool, rid: str, source: Source, basin: MinimumRecord, ends: Ends,
@@ -218,17 +187,13 @@ def _auto(pool: _Pool, source: Source, ma: MinimumRecord, mb: MinimumRecord,
     sa, sb = pool.species[picked[0]], pool.species[picked[1]]
     xa, xb = pool.coords(ma, sa), pool.coords(mb, sb)
     changed = any(topology.bond_changes(sa.geometry.symbols, xa, xb))
-    twisted = _max_torsion_change(sa.geometry.symbols, xa, xb) >= pool.min_angle_deg
-    # A conformer pair twists without a bond change; others need a large enough change (CH-07).
-    moved = changed or twisted or _max_distance_change(xa, xb) >= pool.min_distance_A
-    if not ((twisted and not changed) if source == "conformer" else moved):
+    if not (changed or _max_distance_change(xa, xb) >= pool.min_distance_A):  # CH-07
         return None
     return _record(rid, source, (ma, mb), (sa, sb), (xa, xb), low_level_ts=ts)
 
 
 def _pool(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[SpeciesRecord],
-          load_xyz: LoadXYZ, window_kcal: float, min_distance_A: float, min_angle_deg: float
-          ) -> _Pool:
+          load_xyz: LoadXYZ, window_kcal: float, min_distance_A: float) -> _Pool:
     pairs = list(minima)
     by_id = {m.minimum_id: m for m, _ in pairs}
     basin_of: dict[str, MinimumRecord] = {}
@@ -237,8 +202,7 @@ def _pool(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[Sp
             basin_of.setdefault(s, m)
     return _Pool(species={s.species_id: s for s in species}, minima=by_id,
                  structure={m.minimum_id: g for m, g in pairs}, basin_of=basin_of,
-                 load=load_xyz, window_kcal=window_kcal, min_distance_A=min_distance_A,
-                 min_angle_deg=min_angle_deg)
+                 load=load_xyz, window_kcal=window_kcal, min_distance_A=min_distance_A)
 
 
 def _lend_ts(record: ReactionRecord, ts: Geometry | None) -> ReactionRecord:
@@ -251,12 +215,11 @@ def _lend_ts(record: ReactionRecord, ts: Geometry | None) -> ReactionRecord:
 def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[SpeciesRecord],
            discoveries: Iterable[DiscoveryRecord], declared: Sequence[ReactionInput],
            load_xyz: LoadXYZ, *, window_kcal: float = Policy.reaction_window_kcal,
-           min_distance_A: float = 0.2, min_angle_deg: float = 30.0,
-           max_per_composition: int = 6) -> list[ReactionRecord]:
+           min_distance_A: float = 0.2, max_per_composition: int = 6) -> list[ReactionRecord]:
     """One ReactionRecord per hypothesis; a repeated minima pair keeps the first hypothesis.
     ``minima`` pairs every minimum (any tier) with its optimized structure."""
     found = list(discoveries)
-    pool = _pool(minima, species, load_xyz, window_kcal, min_distance_A, min_angle_deg)
+    pool = _pool(minima, species, load_xyz, window_kcal, min_distance_A)
     records = [_declared(pool, r) for r in declared]
     index = {frozenset(r.minima): i for i, r in enumerate(records)}
     per_composition = Counter(r.reactants[0].composition_id for r in records if r.reactants)

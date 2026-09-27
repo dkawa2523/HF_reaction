@@ -46,7 +46,10 @@ HESSIAN_NEAR_A = 0.5  # optimize: largest per-atom distance to the init_hessian'
 _TASK: dict[str, Literal["sp", "opt", "freq", "saddle"]] = {
     "energy": "sp", "optimize": "opt", "frequencies": "freq", "saddle": "saddle"}
 _DRIVER_JOBS = frozenset({"optimize", "saddle"})
-_CONTINUED = frozenset({FailureKind.TIMEOUT, FailureKind.GEOMETRY_MAXITER})
+# Driver jobs continued from their latest frame; a saddle at maxiter is not (its updated
+# Hessian stalls it): it returns its last frame for a restart with a fresh Hessian.
+_CONTINUED = {"optimize": frozenset({FailureKind.TIMEOUT, FailureKind.GEOMETRY_MAXITER}),
+              "saddle": frozenset({FailureKind.TIMEOUT})}
 
 
 def _invalid(reason: str) -> Failure:
@@ -166,7 +169,10 @@ class _NWChem:
         failure = nw_out.classify_failure(text, returncode=result.returncode,
                                           timed_out=result.timed_out)
         if failure is not None:
-            return failure
+            stalled = task.kind == "saddle" and failure.kind is FailureKind.GEOMETRY_MAXITER
+            latest = nw_out.final_xyz(workdir, task.inputs["mol"].xyz.symbols) if stalled else None
+            return failure if latest is None else failure.model_copy(
+                update={"final": self._geometry(latest)})
         level = self._observed(task, text)
         if isinstance(level, Failure):
             return level
@@ -176,13 +182,13 @@ class _NWChem:
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
         """autoz -> Cartesian coordinates from the same start; SCF -> the old vectors with the
-        quadratic solver (cgmin); timeout / maxiter of a driver job -> its latest frame with the
-        old vectors and driver Hessian (design §7.1)."""
+        quadratic solver (cgmin); timeout of a driver job or maxiter of an opt -> its latest
+        frame with the old vectors and driver Hessian (design §7.1)."""
         if failure.kind is FailureKind.INPUT_INVALID and failure.reason == "autoz":
             execution = task.execution.model_copy(update={"coordinates": "cartesian"})
             return replace(task, execution=execution)
         rescue = failure.kind is FailureKind.SCF_NOT_CONVERGED
-        if not rescue and (failure.kind not in _CONTINUED or task.kind not in _DRIVER_JOBS):
+        if not rescue and failure.kind not in _CONTINUED.get(task.kind, ()):
             return None
         mol = task.inputs["mol"]
         latest = nw_out.final_xyz(workdir, mol.xyz.symbols) if task.kind in _DRIVER_JOBS else None
@@ -299,8 +305,7 @@ class _NWChem:
             return _incomplete("string_path_images")
         return PathProfile(engine=task.engine, level=level,
                            images=self._jobs.store.file_ref(images), energies_hartree=energies,
-                           energy_history=nw_out.string_path_energies(text),
-                           program_converged=nw_out.program_converged(text), job_key="")
+                           job_key="")
 
 
 class NWChemEngine(_NWChem):
@@ -341,8 +346,9 @@ class NWChemEngine(_NWChem):
 
 
 class NWChemSaddle(_NWChem):
-    """SADDLE: eigenvector following from a freq Hessian computed at the seed (any Level),
-    shaped so that ``mode`` (the reaction direction, 3N) is its only negative curvature."""
+    """SADDLE: eigenvector following from a freq Hessian (any Level) computed at the seed or
+    within HESSIAN_NEAR_A of it, shaped so that ``mode`` (the reaction direction, 3N) is its
+    only negative curvature. A search stopped at maxiter fails with its last frame."""
 
     name: ClassVar[str] = "nwchem_saddle"
 
@@ -350,7 +356,7 @@ class NWChemSaddle(_NWChem):
                mode: Sequence[float], deadline: Deadline | None = None) -> Evidence | Failure:
         if not _dft_supported(method):
             return _invalid(f"unsupported_method:{method.id}")
-        path = self._hessian_file(hessian, seed)
+        path = self._hessian_file(hessian, seed, near_A=HESSIAN_NEAR_A)
         if isinstance(path, Failure):
             return path
         unit = np.ravel(mode) / np.linalg.norm(mode)
@@ -362,22 +368,21 @@ class NWChemSaddle(_NWChem):
 
 
 class NWChemString(_NWChem):
-    """PATH: zero-temperature string with frozen ends. ``refine_ts`` is ignored: NWChem does
-    not optimize a TS inside the string job, so ``PathProfile.ts`` stays None."""
+    """PATH: one zero-temperature string chunk with frozen ends from the initial path;
+    ``PathProfile.ts`` stays None (NWChem does not optimize a TS inside the string job)."""
 
     name: ClassVar[str] = "nwchem_string"
     result_type: type[BaseModel] = PathProfile
 
     def find_path(self, start: Molecule, end: Molecule, method: MethodSpec, *, images: int,
-                  initial_path: FileRef | None = None, refine_ts: bool = False,
-                  deadline: Deadline | None = None) -> PathProfile | Failure:
+                  initial_path: FileRef, deadline: Deadline | None = None
+                  ) -> PathProfile | Failure:
         if not _dft_supported(method):
             return _invalid(f"unsupported_method:{method.id}")
         if start.xyz.symbols != end.xyz.symbols or images < 3:
             return _invalid("string_endpoints_or_images")
-        path = None if initial_path is None else self._jobs.store.run_dir / initial_path.path
         payload = {"start": start.fingerprint(), "end": end.fingerprint(), "images": images,
-                   "initial_path": initial_path and initial_path.sha256}
+                   "initial_path": initial_path.sha256}
         inputs = {"mol": start, "start": start, "end": end, "method": method, "images": images,
-                  "initial_path": path}
+                  "initial_path": self._jobs.store.run_dir / initial_path.path}
         return self._run("string", payload, inputs, deadline)

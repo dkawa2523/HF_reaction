@@ -6,7 +6,8 @@ serially in species-id order and each is registered as soon as it is relaxed, so
 that falls into a registered basin (its mirror image included) is ``known`` and skips its freq
 job (one identity criterion: identity.assign). A saddle whose ± displacements reach two
 distinct minima gives two ``mode_follow`` species, relaxed and registered right after it, their
-minima and a ``mode_follow`` discovery.
+minima and a ``mode_follow`` discovery; the saddle's own species joins the side basin nearer its
+input structure (note ``endpoint_was_saddle``).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from typing import ClassVar, Literal, cast
 from pydantic import BaseModel, ConfigDict
 
 from hfauto.backends.protocols import Capability, QMEngine
+from hfauto.chemistry.identity import permutation_invariant_rmsd
 from hfauto.chemistry.selection import Candidate, rerank, select_for_refinement
 from hfauto.chemistry.topology import fragments, state_label
 from hfauto.chemistry.xyz import Molecule
@@ -31,6 +33,7 @@ from hfauto.drivers import minimum as driver
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
 T = ArtifactType
+_TIE_A = 0.05  # side RMSDs this close to the input count as equally near: the lower minimum wins
 
 
 def _artifact(artifact_id: str, payload: Payload) -> Artifact:
@@ -99,10 +102,9 @@ class _Run:
 
     def relax(self, job: _Job) -> _Relaxed:
         mol = self.molecule(job.species, job.start)
-        policy = driver.MinimumPolicy(self.cfg.mode_follow, gates=self.rt.policy)
-        return job, driver.relax_to_minimum(mol, self.method, self.qm, known=self.registry,
-                                            init_hessian=self.init_hessian(mol), policy=policy,
-                                            load_xyz=self.rt.load_xyz)
+        return job, driver.relax_to_minimum(
+            mol, self.method, self.qm, known=self.registry, init_hessian=self.init_hessian(mol),
+            max_mode_follow=self.cfg.mode_follow, gates=self.rt.policy, load_xyz=self.rt.load_xyz)
 
     def init_hessian(self, mol: Molecule) -> Evidence | None:
         spec = self.cfg.init_hessian
@@ -145,6 +147,26 @@ class _Run:
                 "energy_hartree": freq.energy_hartree, "level_key": freq.level.full_key()})
             jobs.append(_Job(species, freq.start))
         return jobs
+
+    def join_nearer_side(self, done: _Relaxed) -> None:
+        """The species of a TS candidate joins the side basin nearer its input structure
+        (permutation-invariant RMSD; the lower minimum when both are within _TIE_A)."""
+        job, outcome = done
+        if outcome.ts_candidate is None:
+            return
+        sid, x = job.species.species_id, self.rt.load_xyz(job.start)
+        sides = [(permutation_invariant_rmsd(x.symbols, x.coords,
+                                             self.rt.load_xyz(freq.start).coords)[0], record)
+                 for i, freq in enumerate(outcome.ts_candidate, start=1)
+                 if (record := self.records.get(f"{sid}_mf{i}")) is not None]
+        if len(sides) != 2:
+            return
+        nearest = min(rmsd for rmsd, _ in sides)
+        basin = min((m for rmsd, m in sides if rmsd - nearest <= _TIE_A),
+                    key=lambda m: m.energy_hartree)
+        record = self.registry.join(basin.basin_id, sid, "endpoint_was_saddle")
+        self.minima[record.basin_id] = self.records[sid] = record
+        self.history[sid].append(f"joined:{record.basin_id}")
 
     def discovery(self, done: _Relaxed) -> DiscoveryRecord | None:
         """source_minimum = side 1's minimum, product_species = side 2, ts = the saddle."""
@@ -206,7 +228,7 @@ def _jobs(inputs: Manifest, cfg: MinimaConfig, run: _Run) -> list[_Job]:
         per_state=sel.rerank_top if sel.rerank_sp else sel.per_state, window_kcal=sel.window_kcal)
     if sel.rerank_sp:
         energies = run.single_points([pool[c.species_id][1] for c in chosen if not c.always])
-        chosen = rerank(chosen, energies, sel.per_state)
+        chosen = rerank(chosen, energies, sel.per_state, sel.window_kcal)
     return [pool[c.species_id][1] for c in chosen]
 
 
@@ -226,6 +248,7 @@ class MinimaStage:
             for side in sides:
                 run.settle(side)
             side_jobs += sides
+            run.join_nearer_side(done)
             found = run.discovery(done)
             if found is not None:
                 run.extra.append(_artifact(found.discovery_id, found))

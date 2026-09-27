@@ -32,7 +32,7 @@ _TABLE: dict[Capability, dict[str, str]] = {
     Capability.QM: {"nwchem": "hfauto.backends.nwchem.engine:NWChemEngine",
                     "xtb": "hfauto.backends.xtb:XTBEngine"},
     Capability.PATH: {"nwchem_string": "hfauto.backends.nwchem.engine:NWChemString",
-                      "pysis_gs": "hfauto.backends.pysis.engine:PysisGrowingString"},
+                      "pysis_neb": "hfauto.backends.pysis.engine:PysisNEB"},
     Capability.SADDLE: {"nwchem_saddle": "hfauto.backends.nwchem.engine:NWChemSaddle"},
     Capability.CONFORMERS: {"crest": "hfauto.backends.crest:CRESTEngine"},
     Capability.DISCOVERY: {"readuct": "hfauto.backends.readuct.engine:ReaDuctEngine"},

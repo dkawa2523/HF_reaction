@@ -1,1 +1,1 @@
-"""pysisyphus growing string with the native xTB calculator (``pysis_gs``, design §6.3)."""
+"""pysisyphus climbing-image NEB with the native xTB calculator (``pysis_neb``, design §6.3)."""

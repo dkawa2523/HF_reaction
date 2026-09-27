@@ -20,7 +20,7 @@ from hfauto.backends import protocols as bp
 from hfauto.chemistry.profile import hei
 from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian, to_canonical_npy
 from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz, write_xyz
-from hfauto.chemistry.xyz_trajectory import write_xyz_trajectory
+from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
 from hfauto.core.constants import BOHR_TO_ANGSTROM as BOHR
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry, Level, PathProfile
 from hfauto.core.evidence import FailureKind as Kind
@@ -255,46 +255,47 @@ class FakeQM(_Surface):  # calls: "energy", "optimize" / "optimize+init_hessian"
                               imaginary_modes=imaginary)
 
 
-class FakeSaddle(_Surface):  # calls: "refine"; follows the only negative mode, like NWChem
-    def refine(self, seed, method, *, hessian: Evidence, mode, deadline=None
-               ) -> Evidence | Failure:
+class FakeSaddle(_Surface):  # calls: "refine"; like NWChemSaddle: a Hessian within 0.5 Å,
+    def refine(self, seed, method, *, hessian: Evidence, mode, deadline=None  # the only
+               ) -> Evidence | Failure:  # negative mode followed, the last frame at maxiter
         self.calls.append("refine")
         key = self._key(seed.fingerprint(), method.signature(), hessian.job_key,
                         np.round(np.ravel(mode), 6).tolist())
         start = self._start(seed, key)
-        h = self._hessian(hessian, start, key)
+        h = self._hessian(hessian, start, key, 0.5)
         if isinstance(h, Failure):
             return h
         _, vectors = np.linalg.eigh(shape_hessian(h, seed.xyz.coords, mode))
         x, energies, ok = _saddle(self.pes, seed.xyz.coords, vectors[:, 0])
         if not ok:
-            return Failure(kind=Kind.GEOMETRY_MAXITER, reason="maxiter", job_key=key)
+            last = write_geometry(self.root, f"fake/{key[:16]}/last.xyz", seed.xyz.symbols, x)
+            return Failure(kind=Kind.GEOMETRY_MAXITER, reason="maxiter", final=last, job_key=key)
         return self._evidence("saddle", seed, method, key, start, x,
                               trajectory_energies_hartree=tuple(energies))
 
 
 class FakePath(_Surface):
-    """Linear interpolation on the PES. Each call takes the next ``script`` entry: "pes" (also
-    once empty), "barrierless" / "single" / "intermediate", "unconverged" or "failed".
+    """The initial path as it stands (no relaxation) with its PES energies. Each call takes the
+    next ``script`` entry: "pes" (also once empty), "barrierless" / "single" / "intermediate"
+    (scripted energies) or "failed". With ``tsopt`` (the low-level NEB) a TS is optimized from
+    the highest interior image, like pysis_neb's TSOpt from the climbing image."""
 
-    Like a real ZTS, gmax stays flat; the bead energies settle within a few iterations except
-    for "unconverged", whose bead energies never settle (the final profile is the PES)."""
-
-    def __init__(self, root: Path, pes: PES, script: Sequence[str] = ()) -> None:
+    def __init__(self, root: Path, pes: PES, script: Sequence[str] = (), *,
+                 tsopt: bool = False) -> None:
         super().__init__(root, pes)
-        self.script = list(script)
+        self.script, self.tsopt = list(script), tsopt
 
-    def find_path(self, start, end, method, *, images: int, initial_path=None,
-                  refine_ts: bool = False, deadline=None) -> PathProfile | Failure:
+    def find_path(self, start, end, method, *, images: int, initial_path: FileRef,
+                  deadline=None) -> PathProfile | Failure:
         shape = self.script.pop(0) if self.script else "pes"
         self.calls.append(f"find_path:{shape}")
         key = self._key(start.fingerprint(), end.fingerprint(), method.signature(), images,
-                        refine_ts, shape)
+                        initial_path.sha256, shape)
         if shape == "failed":
             return Failure(kind=Kind.NONZERO_EXIT, reason="scripted", job_key=key)
-        t, a, b = np.linspace(0.0, 1.0, images), start.xyz.coords, end.xyz.coords
-        frames = [a + ti * (b - a) for ti in t]
-        e = np.array([self.pes.energy(f) for f in frames])
+        frames = [i.coords for i in read_xyz_trajectory(self.root / initial_path.path)]
+        assert len(frames) == images, "the initial path holds the images"
+        t, e = np.linspace(0.0, 1.0, images), np.array([self.pes.energy(f) for f in frames])
         bumps = {"barrierless": 0 * t, "single": np.sin(np.pi * t),
                  "intermediate": np.sin(2 * np.pi * t) ** 2}
         e = e[0] + (e[-1] - e[0]) * t + 0.01 * bumps[shape] if shape in bumps else e
@@ -302,15 +303,11 @@ class FakePath(_Surface):
         xyz = write_xyz_trajectory([XYZ(list(start.xyz.symbols), f) for f in frames],
                                    folder / "images.xyz")
         x, _, ok = (_saddle(self.pes, hei(frames, e, 1 + int(np.argmax(e[1:-1])))[2], None)
-                    if refine_ts else (None, [], False))
+                    if self.tsopt else (None, [], False))
         ts = write_geometry(self.root, folder / "ts.xyz", start.xyz.symbols, x) if ok else None
-        drift = (0.0, 2e-3, 0.0, 2e-3, 0.0) if shape == "unconverged" else (1e-2, 1e-4, 1e-5, 0.0)
         return PathProfile(engine=self.name, level=fake_level(method, start), ts=ts,
                            images=_ref(self.root, xyz), energies_hartree=tuple(e.tolist()),
-                           gmax_history=(1e-2, 9e-3, 9.5e-3, 1e-2),
-                           energy_history=tuple(tuple((e + d).tolist()) for d in drift),
-                           program_converged=shape != "unconverged",
-                           ts_energy_hartree=self.pes.energy(x) if ok else None, job_key=key)
+                           job_key=key)
 
 
 class _Scripted(_Fake):  # replays the results in order, or calls a callable script

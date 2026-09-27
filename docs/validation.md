@@ -169,6 +169,49 @@ U8-P3 のプローブで既定の pipeline は PBE0-D3BJ/def2-SVPD のままな�
 | S19 `tma_hf2`(`discover`、新しい run) | explore 25 attempt で生成物 0。宣言反応 `neutral_to_shared_proton` は DFT で shared_proton が neutral に落ちて `same_basin`(順位なし)。SP の対象は 0 点(dft 極小 3、旧 `reaction_stationary_points` は 1、`all_minima` は 3)。dft stage が 1,787 s で大半 | 32:02 |
 | S19 複数条件(tma_hf2 に thermo_conditions → report_conditions を追記。T 250 / 298.15 / 400 K × 1 atm / 1 M) | ΔG_assoc(TMA + 2 HF → 錯体)は 1 atm で −14.52 / −11.53 / −5.11、1 M で −17.52 / −15.32 / −10.66 kcal/mol(差 2RT ln(RT/P°) = 3.00 / 3.79 / 5.55)。report は最初の (298.15 K、1 atm) で並べた。SN2(sn2_panel の複製に同じ追記)の δG_eff は 1 atm と 1 M で同じ(250 K 10.898、298.15 K 11.077、400 K 11.435) | 0:02 |
 
+**S-B の SB-A のプローブ(U5-P2 の採否、`/home/user/hfauto_r6/SB/sba/runs/<run>`)**
+
+作業ツリーの複製(2026-09-28 06:30、SB-B・SB-C の途中の変更を含む。`driver.py` の `split` にだけ R・I・P の構造を渡す配線を足した)で、基準の run の複製に `known_endpoints --from paths` を 1 本ずつ流した。基準は S-A の統合 run(R1〜R3・S18)か、各系の最新の M 段の run(S-A は経路を変えていない)。時間は paths stage(基準がジョブをほぼ再利用した run は、最初に全部を計算した run の値)。
+
+| 系 | 基準 | SCREEN(基準 → NEB) | outcome・ΔG‡(kcal/mol) | paths(s) |
+|---|---|---|---|---|
+| HCN | SA int | GS の TS → NEB の TS(13 サイクル)。上界 33.98 → 34.21 | `elementary_step`、42.1783 で同じ | 59 → 58 |
+| NH3 | SA int | TS → TS(5)。4.46 → 4.48 | `degenerate_rearrangement`、3.8395 で同じ | 62 → 62 |
+| H + H2(S18) | SA int | HEI → HEI(20、CI の TSOpt なし)。81.09 → 7.56。種の Hessian は xTB(重なり 0.91)→ DFT(xTB に方向の負モードなし) | `degenerate_rearrangement`、4.0909 で同じ | 36 → 38 |
+| H2O2(S13) | M3 | IDPP の HEI → NEB の HEI(5、TSOpt なし)。1.28 → 1.30 | `degenerate_rearrangement`、1.1802 で同じ。FIND_PATH なし | 74 → 76 |
+| HONO | SA int | TS → TS(12)。14.21 → 14.37 | `elementary_step`、11.8158 で同じ。FIND_PATH なし | 146 → 126 |
+| (HF)₂(S17) | M2 / M5 | HEI(同じ側の H 回転、7.8)→ NEB の TS(9)。1.74 | `unresolved_within_budget`(saddle 2 回 maxiter、FIND_PATH)→ **`degenerate_rearrangement`(C2h の入れ替え、TS −227.3i)、ΔE‡ 1.256、ΔG‡ 1.392** | 408 → 73 |
+| Cl⁻·CH3Cl(S1) | M1 | TS → TS(11)。12.25 → 12.60 | `degenerate_rearrangement`、ΔE‡ 10.4459 で同じ、ΔG‡ 11.0771 → 11.0773 | 441 → 314 |
+| DME(S12) | M2 | TS → TS(19) | `degenerate_rearrangement`、1.9638 で同じ | 446 → 446 |
+| マロンアルデヒド(S14) | M5 | TS → TS(7)。3.43 → 3.10 | `degenerate_rearrangement`、δG_eff 0.0 で同じ(ΔG‡ 0.2499 → 0.2498) | 651 → 640 |
+| trans-HONO → HNO2(S15) | M2 | HEI → TS(14)。85.09 → 55.55 | `elementary_step`、同じ直接の TS(−2085.6i → −2088.1i、E_TS は 7e-5 Eh 低い)、ΔG‡ 52.060 → 52.016 | 240 → 114 |
+| acac(S16) | M3(60 分で打ち切り) | TS → TS(13)。3.03 | M3 は QRC の途中で打ち切り → **`degenerate_rearrangement`(TS −986.8i、`soft_secondary_mode`)、ΔE‡ 1.980、ΔG‡ −0.93 で δG_eff 0.0**。縮退の判定を実計算で初めて確認 | 全体 69:31(paths 4,171: SP 9 本 325、saddle 229、TS freq 712、QRC 1,402 + 1,339) |
+
+- NEB は全系で収束し(5〜20 サイクル、1 本 2〜4 s、未収束の NEB はなかった)、CI からの TSOpt は H2O2 と H + H2 以外で収束した。どの系も FIND_PATH に入らなかった(基準では S17 だけが入った)。TS は S15 以外で E_TS が 1e-9 Eh 以内で同じ。
+- SCREEN の上界(内部の DFT 最大 − 高い方の極小)は、xTB の端点から始まる GS より DFT 極小を固定した NEB の方が TS に近い(S15 85.1 → 55.6、H + H2 81.1 → 7.6。TS の ΔE‡ は 55.3、4.6)。
+- 判定: どの系も同じか改善(S17 は未解決から順位の付く縮退転位になり、acac は完走し、S15・S1・HONO は速くなった)、HONO と H2O2 は FIND_PATH を通らないので、U5-P2 の固定端 CI-NEB を採用した(GS と DLC の後退案は入れない)。
+- S17 は障壁 1.26 kcal/mol で解像度(1.0)より高いので BARRIERLESS ではない。実計算で順位の付く BARRIERLESS の行はまだない。S15 の cis-HONO を経る 2 段の経路は実計算では通らない(直接の TS が見つかる)。
+- 同じ段の SB-A の QM なしの確認: 決定表(行 8 のきっかけは VALIDATE_INTERMEDIATE が消費する、旧行 10 の削除、行 15 の次チャンク)、multi_max の井戸が端点だったときに同じ種を積み直さないこと、saddle の maxiter で最終フレームが種になり 1 回だけやり直すこと、0.5 Å 以内の TS freq の再利用(NWChem の stub と fake)、pysis の入力。
+
+**S-B の統合後の実測(作業ツリー、`/home/user/hfauto_r6/SB/runs/<run>`、R1〜R4・S4・S13・S15・S18 は新しい run dir)**
+
+| 系 | 結果 | 所要時間 |
+|---|---|---|
+| smoke | `-m real tests/smoke` 14 件合格(pysis_neb の HCN と NWChem の 1 チャンク string を含む) | 1:12 |
+| R1 `hcn` | `elementary_step`、δG_eff 42.1783(S-A と同じ) | 1:17 |
+| R2 `hono` | `elementary_step`、δG_eff 11.8158(同じ)。SCREEN は NEB の TS、FIND_PATH なし | 3:00 |
+| R3 `nh3_inversion` | `degenerate_rearrangement`、δG_eff 3.8395(同じ) | 1:14 |
+| R4 `water_same_basin` | `same_basin`(同じ) | 0:12 |
+| S13 `h2o2_gauche` | `degenerate_rearrangement`、ΔG‡ 1.1802(NEB の HEI、DFT Hessian の種)。FIND_PATH なし | 1:35 |
+| S18 `h3_doublet` | `degenerate_rearrangement`(TS が得られる)、δG_eff 4.0909 | 0:46 |
+| S15 `hono_hno2` | `elementary_step`、ΔG‡ 52.016(直接の TS。cis の井戸は経路に現れず `multi_step` にはならない) | 2:41 |
+| S4 `ch3o_doublet`(Cs 入力) | 宣言反応は `elementary_step`、ΔG‡ 30.6117(同じ)。Cs の CH2OH• は DFT で saddle になり、mode-follow の両側が鏡像になって `ts_candidate` → `rxn_mode_follow_…` が `degenerate_rearrangement`(torsional、δG_eff 3.876)として順位 1 に加わり、ch2oh は注記 `endpoint_was_saddle` 付きで basin に入った(U3-P3・U3-P4 で予期した増加) | 13:41(M2 8:53。増えたのは mode-follow の case) |
+| S19 `tma_hf2`(S-A の run の複製を `--from dft`) | dft の DFT ジョブ 10 本(すべて JobStore の再利用、S-A も 10 本)で U3-P6 の窓で増えない。`same_basin` は同じ | 0:02 |
+| S16・S17・S1・S12・S14(SB-A プローブの run の複製を `--from paths`) | paths のジョブ 16 本すべて再利用で、outcome と ΔG‡ はプローブと同じ(acac `degenerate_rearrangement` δG_eff 0.0。U6-P7 の結合グラフ確認を通る。種の DFT Hessian 0 本。M3 は 60 分で QRC の途中だったが、プローブでは全体 69:31 で完走し、QRC が paths の 2,741 / 4,171 s) | 各 0:02〜0:10 |
+| S11 DME の C2v 種(`/home/user/hfauto_r6/SB/ho_harness.py`、REFINE_SADDLE と VALIDATE_TS の手順を再現) | 1 回目: xTB Hessian(二面角方向との重なり 0.30)で 125 s、C2v の 2 次 saddle(−232.1i / −128.6i、ΔE 4.03)→ `higher_order`。反応モードでない −128.6i に沿って `modes.amplitude` 0.23 Å 押し、TS freq を Hessian に 2 回目 → maxiter で 190 s で停止(以前の drv.hess 継続は 495 s)。最終フレームから xTB Hessian(重なり 0.82)で再開 → 17 歩 160 s で一次鞍点 −226.9i、ΔE‡ 2.33(P5b と同じ) | 8:02 |
+
+- S11 の再開は 3 回目の saddle で、`max_saddle_attempts` 2(再開も同じ予算)の実際の case では FIND_PATH に進む。停滞と再開の動作はレビューの予測どおり。
+
 ---
 
 以下は v3・v4・v5(第2〜第4ラウンド改良後の再検証、2026-09-26)の記録。第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11、第4ラウンドの小さな改良(コード `13a4340`)後の退行確認 v5 は §12 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。

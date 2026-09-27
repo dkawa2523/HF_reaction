@@ -11,7 +11,7 @@
 | NWChem | 7.2.3(conda-forge の MPI ビルド、Open MPI 5.0.10) | micromamba で `/home/user/.local/opt/nwchem-7.2.3` に入れ、`/home/user/.local/bin/nwchem` からリンク | 版数のフラグがないので、ジョブごとに出力の版数行を照合する |
 | xTB | 6.7.x(6.7.1) | 公式バイナリを `/home/user/.local/opt/xtb-6.7.1` に置く | `xtb --version`(doctor) |
 | CREST | 3.0.x(3.0.2) | 公式バイナリを `/home/user/.local/opt/crest-3.0.2` に置く | `crest --version`(doctor) |
-| pysisyphus | 1.0(1.0.0) | production extra(`pysisyphus>=1.0,<2`)。xTB ネイティブ計算器でだけ使う | worker の import(doctor)。site の pin は xTB の版数 |
+| pysisyphus | 1.0(1.0.0) | production extra(`pysisyphus>=1.0,<2`)。xTB ネイティブ計算器の CI-NEB だけに使う。site のエンジン名は `pysis_neb`(S-B で growing string から CI-NEB に替えて改名。古い site・pipeline ファイルはエンジンのキーを書き換える) | worker の import(doctor)。site の pin は xTB の版数 |
 | SCINE ReaDuct | 6.1.0(scine-xtb-wrapper 3.0.2) | production extra | worker の import(doctor) |
 | GoodVibes | 4.3.0 | production extra。API(`goodvibes.api.compute_thermo`)を worker で呼ぶ | `goodvibes.__version__`(doctor) |
 | pymsym | 0.3.5 | production extra。GoodVibes の対称数に使う | worker の import(doctor) |
@@ -62,7 +62,7 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 
 ### 実エンジンの smoke(`pytest -m real`、WSL)
 
-`tests/smoke/` のテストは marker `real` が付き、`HFAUTO_REAL=1` と `HFAUTO_SITE=<site ファイル>` がそろったときだけ動く(そろわなければ skip)。ジョブは pytest の一時ディレクトリの下に作られるので、`--basetemp` で ext4 上の `/home/user/hfauto_v2` の下を指定する。W7 では 10 passed、59 秒だった。その後、HCN → HNC の ZTS(PBE0/STO-3G、9 beads、1 rank で約 80 s、4 rank で約 15 s。bead エネルギーが落ち着いて single に分類されること)と、F⁻·(HF)₂ の組成の CREST(`--noopt` で初期トポロジー検査を通ること、約 1.4 s。`--noopt` なしでは初期トポロジー検査で止まり約 25 s)を加えた。Git Bash から WSL を呼ぶときは、/home で始まる引数が Windows のパスに書き換えられないように `MSYS_NO_PATHCONV=1` を付ける。
+`tests/smoke/` のテストは marker `real` が付き、`HFAUTO_REAL=1` と `HFAUTO_SITE=<site ファイル>` がそろったときだけ動く(そろわなければ skip)。ジョブは pytest の一時ディレクトリの下に作られるので、`--basetemp` で ext4 上の `/home/user/hfauto_v2` の下を指定する。W7 では 10 passed、59 秒だった。その後、HCN → HNC の ZTS(PBE0/STO-3G、9 beads、1 rank で約 80 s、4 rank で約 15 s。1 チャンクで single に分類されること)、HCN → HNC の `pysis_neb`(IDPP から 15 サイクル、端点は固定のまま、TS の xTB の虚振動が 1 本。約 6 s)と、F⁻·(HF)₂ の組成の CREST(`--noopt` で初期トポロジー検査を通ること、約 1.4 s。`--noopt` なしでは初期トポロジー検査で止まり約 25 s)を加えた。Git Bash から WSL を呼ぶときは、/home で始まる引数が Windows のパスに書き換えられないように `MSYS_NO_PATHCONV=1` を付ける。
 
 ```bash
 MSYS_NO_PATHCONV=1 wsl -e bash -lc 'cd /mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline && HFAUTO_REAL=1 HFAUTO_SITE=configs/sites/wsl_local.yaml /home/user/.venvs/hfauto-prod/bin/python -m pytest -m real tests/smoke --basetemp=/home/user/hfauto_v2/smoke'

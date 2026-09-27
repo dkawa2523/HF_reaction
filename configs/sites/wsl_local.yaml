@@ -19,7 +19,7 @@ engines:
     version: "6.7.1"
     executables: {xtb: /home/user/.local/bin/xtb}
     execution: {threads: 1}
-  pysis_gs:
+  pysis_neb:
     version: "6.7.1"  # the xTB version behind the native calculator
     executables: {xtb: /home/user/.local/bin/xtb}
     python: /home/user/.venvs/hfauto-prod/bin/python

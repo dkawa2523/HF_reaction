@@ -265,7 +265,7 @@
     "method": "nwchem"
    }
   ],
-  "expect": "gmax は 9.14e-4 から 9.15e-3 に悪化するが、bead エネルギーは 3 反復で最大 0.095 kcal/mol しか動かない → `energies_settled`（0.1 kcal/mol）は True",
+  "expect": "gmax は 9.14e-4 から 9.15e-3 に悪化するが、チャンクは収束を問わずそのまま分類する（U5-P4）。最終 bead エネルギー（`@zts Bead number`）は 0.93 kcal/mol 下がり、揺れは 0.01 kcal/mol → 解像度で barrierless（U5-P1）",
   "refs": [
    "CH-08"
   ]

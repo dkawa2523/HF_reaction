@@ -25,4 +25,11 @@ def test_discovery_endpoints_always_kept_unranked_dropped_and_rerank():
             Candidate("unscreened", "A", "u", None)]
     assert ids(select_for_refinement(pool, per_state=1)) == ["low", "source", "product"]
     sp = {"low": -2.0, "mid": -2.3}  # re-ranked by single points; no point, no refinement
-    assert ids(rerank(pool, sp, keep_per_state=1)) == ["mid", "source", "product"]
+    assert ids(rerank(pool, sp, 1, window_kcal=6.0)) == ["mid", "source", "product"]
+
+
+def test_rerank_applies_the_window_to_the_single_point_energies():
+    pool = [Candidate(f"c{i}", "A", "s", -1.0 + i * KCAL) for i in range(3)]
+    pool.append(Candidate("source", "A", "s", -1.0, always=True))
+    sp = {"c0": -2.0, "c1": -2.0 + 5 * KCAL, "c2": -2.0 + 7 * KCAL}  # c2 now 7 kcal/mol up
+    assert ids(rerank(pool, sp, 3, window_kcal=6.0)) == ["c0", "c1", "source"]
