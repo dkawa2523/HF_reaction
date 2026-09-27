@@ -191,7 +191,7 @@
     "method": "copy"
    }
   ],
-  "expect": "両分岐が TS より上にある → 分岐の軌跡として `connection` は不合格",
+  "expect": "両分岐の終点が TS より上 → `connection` は no_descent で不合格",
   "refs": [
    "CH-03"
   ]
@@ -222,7 +222,7 @@
     "method": "copy"
    }
   ],
-  "expect": "後退側が step 0 で上昇している → 不合格",
+  "expect": "後退側は step 0 で上昇するが終点は E_TS − drop より下 → 降下は合格(途中の経路は判定しない)",
   "refs": [
    "CH-03"
   ]
@@ -249,7 +249,7 @@
     "method": "copy"
    }
   ],
-  "expect": "降下の条件は合格するが、割付けは 4 通りとも閾値内 → 一意性で不合格",
+  "expect": "変位点は TS より上だが両側とも下り、trans / cis に一意に割り付く → elementary",
   "refs": [
    "CH-03",
    "CH-04"

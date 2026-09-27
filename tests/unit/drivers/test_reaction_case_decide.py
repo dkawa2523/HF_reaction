@@ -21,6 +21,7 @@ DEGENERATE = CASE.model_copy(update={"minima": ("ma", "ma"), "degenerate": True}
 GEO = Geometry(file=FileRef(path="seed.xyz", sha256="0" * 64), fingerprint="f", symbols=("H",))
 SEED = st.Seed(geometry=GEO, source="screen_ts", tangent=None)
 CLAIM = r.SaddleClaim(saddle_calc="s", freq_calc="f", imag_cm1=-1131.0, energy_hartree=-93.0)
+SOFT = CLAIM.model_copy(update={"imag_cm1": -30.0})  # |nu| < saddle_cm1 = 50
 POLICY = st.CasePolicy()
 
 
@@ -58,9 +59,10 @@ ROW_CASES = [  # (row, id, case, state, policy, expected decision)
      Decision(A.COMPLETE, "connection:degenerate", C.DEGENERATE)),
     (5, "reassigned", CASE, replace(S, claim=CLAIM, connection="reassigned"), POLICY,
      Decision(A.COMPLETE, "connection:reassigned", C.REASSIGNED)),
-    (5, "retry", CASE, replace(S, claim=CLAIM, connection="failed", connection_attempts=1), POLICY,
+    (5, "same_basin_retry", CASE, replace(S, claim=CLAIM, connection="same_basin",
+                                          connection_attempts=1), POLICY,
      Decision(A.CONNECT, "connection_retry")),
-    (5, "failed", CASE, replace(S, claim=CLAIM, connection="failed", connection_attempts=2),
+    (5, "failed", CASE, replace(S, claim=CLAIM, connection="failed", connection_attempts=1),
      POLICY, Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)),
     (6, "claim", CASE, replace(S, claim=CLAIM, last_saddle="converged", ts_check="ok"), POLICY,
      Decision(A.CONNECT, "ts_validated")),
@@ -68,6 +70,9 @@ ROW_CASES = [  # (row, id, case, state, policy, expected decision)
      Decision(A.VALIDATE_TS, "saddle_converged")),
     (8, "collapsed", CASE, replace(S, last_saddle="converged", ts_check="collapsed",
                                    seeds=(SEED,)), POLICY,
+     Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")),
+    (8, "soft_ts_qrc_failed", CASE, replace(S, claim=SOFT, last_saddle="converged", ts_check="ok",
+                                            connection="failed", connection_attempts=1), POLICY,
      Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")),
     (9, "distinct", CASE, replace(S, ts_check="collapsed", intermediate="distinct"), POLICY,
      Decision(A.COMPLETE, "intermediate_distinct", C.MULTI_STEP)),
@@ -147,3 +152,19 @@ def test_higher_order_retry_until_attempts_run_out():
     second = replace(first, saddle_attempts=2)
     assert decide(CASE, second, POLICY) == Decision(A.COMPLETE, "attempts_exhausted",
                                                     C.UNRESOLVED)
+
+
+def test_a_soft_ts_whose_qrc_failed_is_validated_as_a_collapsed_saddle():
+    """U6-P5: a TS with |nu| < saddle_cm1 is a TS, but once its QRC fails for good (the one
+    same-basin retry included) it joins row 8; its basin then ends the case."""
+    failed = replace(S, claim=SOFT, last_saddle="converged", ts_check="ok", connection="same_basin",
+                     connection_attempts=1)
+    collapsed = Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")
+    assert decide(CASE, failed, POLICY) == Decision(A.CONNECT, "connection_retry")
+    failed = replace(failed, connection_attempts=2)
+    assert decide(CASE, failed, POLICY) == collapsed
+    assert decide(CASE, replace(failed, intermediate="distinct"), POLICY) == Decision(
+        A.COMPLETE, "intermediate_distinct", C.MULTI_STEP)
+    unresolved = Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)
+    assert decide(CASE, replace(failed, intermediate="same_as_endpoint"), POLICY) == unresolved
+    assert decide(CASE, replace(failed, claim=CLAIM), POLICY) == unresolved  # a hard TS

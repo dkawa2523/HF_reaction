@@ -5,7 +5,8 @@ import re
 import numpy as np
 import pytest
 
-from hfauto.chemistry.vibrations import projected_frequencies
+from hfauto.chemistry.modes import overlap
+from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian
 from hfauto.chemistry.xyz import read_xyz
 
 pytestmark = pytest.mark.golden
@@ -31,11 +32,15 @@ def test_g07_matches_nwchem_with_isotopic_masses(golden):
     assert freqs[0] == pytest.approx(-1131.57, abs=1.0)
 
 
-def test_g08_non_stationary_seed_has_four_imaginary_modes(golden):
+def test_g08_four_imaginary_modes_and_the_shaped_saddle_hessian(golden):
     deck = golden.text("nwchem/G08/nwchem.nw")
     block = re.search(r"^geometry[^\n]*\n(.*?)^end", deck, re.MULTILINE | re.DOTALL)
     rows = [line.split() for line in block.group(1).splitlines()]
     symbols, coords = [r[0] for r in rows], np.array([[float(v) for v in r[1:4]] for r in rows])
     hessian = _hess(golden.text("nwchem/G08/hfauto_job.hess"), len(symbols))
-    freqs, _, _ = projected_frequencies(hessian, symbols, coords)
+    freqs, modes, _ = projected_frequencies(hessian, symbols, coords)
     assert np.count_nonzero(freqs < 0) == 4
+    for mode in modes[:2]:  # -1296 or -1214 cm-1 becomes the only imaginary mode (U6-P1)
+        shaped, (first, *_), _ = projected_frequencies(
+            shape_hessian(hessian, coords, mode), symbols, coords)
+        assert np.count_nonzero(shaped < 0) == 1 and overlap(first, mode) > 0.99

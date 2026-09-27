@@ -11,7 +11,7 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Literal
 
-from hfauto.chemistry.gates import Policy
+from hfauto.chemistry.gates import ConnectionLabel, Policy
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Geometry
 from hfauto.core.records import (
@@ -22,7 +22,6 @@ from hfauto.core.records import (
     SaddleClaim,
 )
 
-ConnectionLabel = Literal["elementary", "degenerate", "reassigned", "failed"]
 QRC_AMPLITUDES = 2  # QRC tries at most two amplitudes (§8.1)
 
 
@@ -58,7 +57,7 @@ class CasePolicy:
 class Seed:
     geometry: Geometry
     source: Literal["discovery_ts", "screen_ts", "screen_hei", "path_hei", "higher_order_retry"]
-    tangent: tuple[float, ...] | None  # path tangent or mapped endpoint difference
+    tangent: tuple[float, ...] | None  # low-level TS xTB imaginary mode, path tangent, or None
 
 
 @dataclass(frozen=True)
@@ -79,7 +78,7 @@ class CaseState:
     last_saddle: Literal["converged", "failed"] | None = None
     ts_check: Literal["ok", "collapsed", "higher_order"] | None = None
     claim: SaddleClaim | None = None
-    connection: ConnectionLabel | None = None
+    connection: ConnectionLabel | Literal["same_basin"] | None = None  # the retried failure
     connection_attempts: int = 0
     path_runs: int = 0  # DFT strings run, failed ones included
     intermediate: Literal["distinct", "same_as_endpoint"] | None = None
@@ -142,18 +141,27 @@ _CONNECTED = {
 }
 
 
+def _soft_ts_failed(s: CaseState, p: CasePolicy) -> bool:
+    """A TS softer than saddle_cm1 whose QRC failed counts as a collapsed saddle (rows 8-9)."""
+    return (s.connection in ("failed", "same_basin") and s.claim is not None
+            and s.claim.imag_cm1 > -p.gates.saddle_cm1)
+
+
 def _r05_connection(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
     if s.connection is None:
         return None
     if s.connection in _CONNECTED:
         return _complete(_CONNECTED[s.connection], f"connection:{s.connection}")
-    if s.connection_attempts < QRC_AMPLITUDES:
+    if s.connection == "same_basin" and s.connection_attempts < QRC_AMPLITUDES:
         return Decision(Action.CONNECT, "connection_retry")  # amplitude x qrc_retry_factor
+    if _soft_ts_failed(s, p) and s.intermediate != "same_as_endpoint":
+        return None  # validated as an intermediate first (rows 8-9)
     return _complete(CaseOutcome.UNRESOLVED, "connection_failed")
 
 
 def _r06_claim(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
-    return Decision(Action.CONNECT, "ts_validated") if s.claim is not None else None
+    fresh = s.claim is not None and s.connection is None
+    return Decision(Action.CONNECT, "ts_validated") if fresh else None
 
 
 def _r07_saddle(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
@@ -163,7 +171,7 @@ def _r07_saddle(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision |
 
 
 def _r08_collapsed(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
-    if s.ts_check == "collapsed" and s.intermediate is None:
+    if (s.ts_check == "collapsed" or _soft_ts_failed(s, p)) and s.intermediate is None:
         return Decision(Action.VALIDATE_INTERMEDIATE, "saddle_collapsed")
     return None
 

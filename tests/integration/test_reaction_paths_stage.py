@@ -30,7 +30,7 @@ FAKES = {(Cap.QM, "nwchem"): fakes.FakeQM, (Cap.PATH, "nwchem_string"): fakes.Fa
 
 
 class CollapsingSaddle(fakes.FakeSaddle):  # every saddle search falls into the intermediate
-    def refine(self, seed, method, *, hessian, mode_index=None, deadline=None):
+    def refine(self, seed, method, *, hessian, mode, deadline=None):
         key = self._key("collapse", seed.fingerprint())
         return self._evidence("saddle", seed, method, key, self._start(seed, key),
                               self.pes.points["intermediate"], trajectory_energies_hartree=(0.0,))

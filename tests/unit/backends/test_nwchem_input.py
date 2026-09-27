@@ -28,15 +28,14 @@ def test_opt_and_saddle_never_compute_hessians():
     assert "task dft frequencies" in freq and freq.count("task ") == 1 and "driver" not in freq
 
 
-def test_saddle_keywords_and_mode_following():
-    free = nw.render_saddle(WATER, PBE0, moddir=0)
-    for key in ("trust 0.1", "sadstp 0.1", "maxiter 50", "inhess 2", "task dft saddle"):
-        assert key in free
-    assert "moddir" not in free and "noautoz" not in free
-    lowest = nw.render_saddle(WATER, PBE0, moddir=1)
-    assert "  moddir 1" in lowest and "noautoz" not in lowest
-    second = nw.render_saddle(WATER, PBE0, moddir=2, cartesian=True)
-    assert "  moddir 2" in second and "noautosym noautoz" in second
+def test_saddle_keywords_always_follow_mode_1():
+    deck = nw.render_saddle(WATER, PBE0)  # the shaped Hessian's only negative mode
+    for key in ("trust 0.1", "sadstp 0.1", "maxiter 50", "inhess 2\n  moddir 1",
+                "task dft saddle"):
+        assert key in deck
+    assert "noautoz" not in deck
+    resumed = nw.render_saddle(WATER, PBE0, nw.Setup(cartesian=True), init_hessian=False)
+    assert "  moddir 1" in resumed and "noautosym noautoz" in resumed and "inhess" not in resumed
 
 
 def test_string_keywords():

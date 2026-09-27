@@ -84,6 +84,18 @@
 | R3 `nh3_inversion` | `degenerate_rearrangement`、ΔG‡ 3.8395。paths のジョブは 22 → 18(SCREEN の DFT freq、両端ノードの SP 2 本、SCREEN の TS の SP がなくなった) | 1:17 |
 | R4 `water_same_basin` | `same_basin` | 0:11 |
 
+**M3 の実測(U6-P2・U6-P1・U6-P5、`/home/user/hfauto_r6/M3/runs/<run>`、pipeline `known_endpoints`)**
+
+| 系 | 結果 | 所要時間 |
+|---|---|---|
+| S13 `h2o2_gauche` | 鞍点 −290.5i から QRC が両側とも同じ basin の鏡像へ下り `degenerate_rearrangement`、ΔE‡ 1.147、ΔG‡ 1.180 kcal/mol(M2 は `connection_failed`)。xTB の種に負モードがなく DFT Hessian を使った | 1:37 |
+| S16 `acac` | SCREEN の xTB TS の虚モードを方向にして xTB Hessian を採用(`saddle_hessian:xtb:overlap:1.00`、種の DFT Hessian 0 本)。NWChem の 1 歩目は `negative= 1`、6 歩(226 s)で PT の TS(−986.75i、ほかに −38 / −25 のメチル、`soft_secondary_mode`)に収束し、開始から約 40 分で TS 検証まで通過(以前は誤ったモードを 36 歩追って 60 分打ち切り)。QRC は 1 側 31 歩(1,390 s)かかり、60 分の上限では接続判定まで届かない(1 側目の終点 −345.191570 Eh は反応物極小 −345.191565 Eh と同じ高さ) | 60:00 で打ち切り(再開 45:00 で打ち切り) |
+| S4 `ch3o_doublet` | M2 の run を複製して `--from paths`: 新しいジョブキーの saddle 1 本だけを再計算(hits 17 / misses 1)、6 歩で同じ TS、`elementary_step`、ΔG‡ 30.6117 | 0:26 |
+| R1 `hcn` | `elementary_step`、ΔG‡ 42.1783、saddle 5 歩(xTB Hessian、重なり 1.00) | 1:20 |
+| R2 `hono` | `elementary_step`、ΔG‡ 11.8160(string の揺らぎ ±0.002 以内)、saddle 4 歩(xTB Hessian、重なり 0.57) | 5:34 |
+| R3 `nh3_inversion` | `degenerate_rearrangement`、ΔG‡ 3.8395、saddle 3 歩(xTB Hessian、重なり 1.00) | 1:16 |
+| R4 `water_same_basin` | `same_basin` | 0:12 |
+
 ---
 
 以下は v3・v4・v5(第2〜第4ラウンド改良後の再検証、2026-09-26)の記録。第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11、第4ラウンドの小さな改良(コード `13a4340`)後の退行確認 v5 は §12 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。

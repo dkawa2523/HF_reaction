@@ -18,7 +18,7 @@ from scipy.spatial.distance import pdist
 
 from hfauto.backends import protocols as bp
 from hfauto.chemistry.profile import hei
-from hfauto.chemistry.vibrations import projected_frequencies, to_canonical_npy
+from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian, to_canonical_npy
 from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz, write_xyz
 from hfauto.chemistry.xyz_trajectory import write_xyz_trajectory
 from hfauto.core.constants import BOHR_TO_ANGSTROM as BOHR
@@ -248,17 +248,18 @@ class FakeQM(_Surface):  # calls: "energy", "optimize" / "optimize+init_hessian"
                               imaginary_modes=imaginary)
 
 
-class FakeSaddle(_Surface):
-    def refine(self, seed, method, *, hessian: Evidence, mode_index: int | None = None,
-               deadline=None) -> Evidence | Failure:
-        self.calls.append(f"refine:{mode_index}")
-        key = self._key(seed.fingerprint(), method.signature(), hessian.job_key, mode_index)
+class FakeSaddle(_Surface):  # calls: "refine"; follows the only negative mode, like NWChem
+    def refine(self, seed, method, *, hessian: Evidence, mode, deadline=None
+               ) -> Evidence | Failure:
+        self.calls.append("refine")
+        key = self._key(seed.fingerprint(), method.signature(), hessian.job_key,
+                        np.round(np.ravel(mode), 6).tolist())
         start = self._start(seed, key)
         h = self._hessian(hessian, start, key)
         if isinstance(h, Failure):
             return h
-        _, modes, _ = projected_frequencies(h, seed.xyz.symbols, seed.xyz.coords)
-        x, energies, ok = _saddle(self.pes, seed.xyz.coords, modes[mode_index or 0])
+        _, vectors = np.linalg.eigh(shape_hessian(h, seed.xyz.coords, mode))
+        x, energies, ok = _saddle(self.pes, seed.xyz.coords, vectors[:, 0])
         if not ok:
             return Failure(kind=Kind.GEOMETRY_MAXITER, reason="maxiter", job_key=key)
         return self._evidence("saddle", seed, method, key, start, x,

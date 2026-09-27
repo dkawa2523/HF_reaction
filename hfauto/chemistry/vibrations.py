@@ -83,16 +83,20 @@ def projected_frequencies(
     return freqs, modes, k
 
 
-def cartesian_mode_number(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray,
-                          mode: np.ndarray) -> int:
-    """1-based place of ``mode`` among the negative eigenvectors of P·H·P (ascending), P the
-    unweighted rigid-motion projector: the order of a Cartesian driver. 1 if none is negative."""
+def shape_hessian(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray, reaction_mode: np.ndarray,
+                  floor: float = 1.0e-3) -> np.ndarray:
+    """Initial saddle-search Hessian whose only negative curvature is the reaction mode: P·H·P
+    (P projects out the unweighted rigid motions) rebuilt from max(|λ_i|, floor) Eh/bohr²,
+    negative for the eigenvector most parallel to ``reaction_mode``. Eigenvector following
+    climbs that mode (moddir 1) and descends all others (Baker 1986); the inertia survives
+    the internal-coordinate transformation (Sylvester)."""
     n = np.size(coords_A) // 3
-    rigid = external_basis(["H"] * n, coords_A)  # equal masses: unweighted, about the centroid
-    p = np.eye(3 * n) - rigid @ rigid.T
-    values, vectors = np.linalg.eigh(p @ _square_hessian(hessian_eh_bohr2, n) @ p)
-    cosines = np.abs(vectors[:, values < -1.0e-6].T @ np.ravel(mode))
-    return int(np.argmax(cosines)) + 1 if len(cosines) else 1
+    u, k, _ = _external_svd(["H"] * n, coords_A)  # equal masses: unweighted, about the centroid
+    values, vectors = np.linalg.eigh(u[:, k:].T @ _square_hessian(hessian_eh_bohr2, n) @ u[:, k:])
+    modes = u[:, k:] @ vectors
+    curvature = np.maximum(np.abs(values), floor)
+    curvature[np.argmax(np.abs(modes.T @ np.ravel(reaction_mode)))] *= -1.0
+    return (modes * curvature) @ modes.T
 
 
 def rotational_constants_ghz(symbols: Sequence[str], coords: np.ndarray) -> tuple[float, ...]:

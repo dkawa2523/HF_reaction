@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
 
-from hfauto.chemistry import profile
+from hfauto.chemistry import profile, topology
 from hfauto.chemistry import xyz_trajectory as trajectory
 from hfauto.chemistry.gates import (
     barrier_verdict,
@@ -20,10 +20,10 @@ from hfauto.chemistry.gates import (
     qrc_drop,
     spin_ok,
 )
+from hfauto.chemistry.geometry import most_changed_dihedral
 from hfauto.chemistry.identity import mapped_equivalent, mapped_rmsd, periodic_nearest
 from hfauto.chemistry.interpolation import align_mapped, align_sequential, idpp
 from hfauto.chemistry.modes import displace, overlap, qrc_amplitude
-from hfauto.chemistry.topology import declared_coordinate, declared_coordinate_gradient, state_label
 from hfauto.chemistry.xyz import XYZ, Molecule, composition_key, geometry_fingerprint
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
@@ -32,6 +32,7 @@ from hfauto.core.method import Deadline
 from hfauto.core.records import (
     BarrierVerdict,
     ConnectionClaim,
+    CoordinateTerm,
     MinimumRecord,
     ReactionRecord,
     SaddleClaim,
@@ -45,7 +46,8 @@ if TYPE_CHECKING:
     from hfauto.drivers.reaction_case.driver import CaseRuntime
 
 _COLLAPSE_A = 0.05  # xTB endpoints this close (identity mapping) collapsed into one structure
-_MIN_OVERLAP = 0.3  # mode vs tangent: use the xTB Hessian / below it only a note
+_MIN_OVERLAP = 0.3  # an xTB Hessian is used when a negative mode lies along the direction
+_LOW_LEVEL_TS = frozenset({"screen_ts", "discovery_ts"})  # Seed.tangent: their xTB TS mode
 _RETRY_A = 0.1  # step down the second imaginary mode of a higher-order saddle
 _SETTLED = 0.1  # a string ends once its bead energies move < 0.1 x resolution in 3 iterations
 
@@ -67,7 +69,6 @@ class Work:
     path: Profile | None = None  # the latest DFT profile, behind CaseState.screen
     saddle: Evidence | None = None
     ts_freq: Evidence | None = None
-    saddle_notes: tuple[str, ...] = ()
     connection: ConnectionClaim | None = None
     intermediate: tuple[MinimumRecord, SpeciesRecord] | None = None
     calcs: dict[str, Evidence] = field(default_factory=dict)
@@ -143,20 +144,37 @@ class Ctx:
             return verdict
         return verdict.model_copy(update={"verdict": "unavailable", "reasons": ("low_level_ends",)})
 
-    def chord(self, coords: np.ndarray) -> tuple[float, ...]:
-        """Endpoint difference aligned onto ``coords``: the tangent of a seed off a path."""
-        a, b = (align_mapped(coords, end) for end in self.ends)
-        return tuple((b - a).ravel())
-
-    def direction(self, coords: np.ndarray, tangent: tuple[float, ...] | None
-                  ) -> np.ndarray | None:
-        """Gradient of the declared coordinate at ``coords``, else the seed tangent."""
-        if self.case.coordinate:
-            return declared_coordinate_gradient(self.case.coordinate, coords)
-        return None if tangent is None else np.asarray(tangent)
+    def direction(self, x: np.ndarray, seed: Seed) -> np.ndarray:
+        """Reaction direction at a seed (design §6): a low-level TS's own imaginary mode, else
+        the path tangent (the endpoint chord off a path) on the reaction centre; with no bond
+        change, the gradient of the declared coordinate, else of the most changed dihedral."""
+        if seed.tangent is not None and seed.source in _LOW_LEVEL_TS:
+            return np.asarray(seed.tangent)
+        a, b = (align_mapped(x, end) for end in self.ends)
+        centre, bonded = _reaction_centre(self.symbols, a, b)
+        if not centre and (terms := self.case.coordinate or _dihedral(bonded, a, b)):
+            return topology.declared_coordinate_gradient(terms, x)
+        t = np.reshape(b - a if seed.tangent is None else seed.tangent, (-1, 3))
+        rows, v = sorted(centre) or list(range(len(t))), np.zeros_like(t)
+        v[rows] = t[rows]
+        return v.ravel() / np.linalg.norm(v)
 
     def record(self, basin_id: str) -> MinimumRecord:
         return next(r for r, _ in self.rt.minima.values() if r.basin_id == basin_id)
+
+
+def _reaction_centre(symbols: list[str], a: np.ndarray, b: np.ndarray
+                     ) -> tuple[set[int], frozenset[tuple[int, int]]]:
+    """Atoms whose bonds change from a to b and their neighbours; the bonds of a."""
+    formed, broken = topology.bond_changes(symbols, a, b)
+    changed, bonded = {i for pair in formed | broken for i in pair}, topology.bonds(symbols, a)
+    return changed | {k for pair in bonded if changed & set(pair) for k in pair}, bonded
+
+
+def _dihedral(bonded: frozenset[tuple[int, int]], a: np.ndarray, b: np.ndarray
+              ) -> tuple[CoordinateTerm, ...]:
+    chain = most_changed_dihedral(bonded, a, b)
+    return () if chain is None else (CoordinateTerm(kind="dihedral", atoms=chain),)
 
 
 def _unavailable(reason: str) -> BarrierVerdict:
@@ -174,21 +192,31 @@ def _peak_seed(ctx: Ctx, name: str, source: Literal["screen_hei", "path_hei"]) -
     return Seed(ctx.geometry(name, x), source, tangent)
 
 
-def _xtb_saddle_ok(ctx: Ctx, coords: np.ndarray) -> bool:
-    """Low-level freq: exactly one mode below -saddle_cm1, and it is the lowest."""
+def _xtb_modes(ctx: Ctx, coords: np.ndarray, below_cm1: float
+               ) -> tuple[Evidence | None, list[np.ndarray]]:
+    """The xTB freq at ``coords`` (None when unavailable) and its modes below -below_cm1."""
     rt = ctx.rt
     if rt.screen_qm is None or rt.screen_method is None:
-        return False
+        return None, []
     freq = rt.screen_qm.frequencies(ctx.mol(coords), rt.screen_method, deadline=ctx.deadline)
     if isinstance(freq, Failure):
-        return False
-    return sum(nu < -ctx.policy.gates.saddle_cm1 for nu in freq.frequencies_cm1 or ()) == 1
+        return None, []
+    nus = sorted(freq.frequencies_cm1 or ())
+    return freq, [np.asarray(m) for m, nu in zip(freq.imaginary_modes, nus, strict=False)
+                  if nu < -below_cm1]
+
+
+def _xtb_ts_mode(ctx: Ctx, coords: np.ndarray) -> tuple[float, ...] | None:
+    """A low-level TS's imaginary mode: its xTB freq has exactly one mode below -saddle_cm1."""
+    _, modes = _xtb_modes(ctx, coords, ctx.policy.gates.saddle_cm1)
+    return tuple(modes[0]) if len(modes) == 1 else None
 
 
 def _shortcut(ctx: Ctx, geometry: Geometry) -> tuple[BarrierVerdict, Seed | None] | None:
     """Step 1: a low-level TS already known (discovery / mode-follow): three points."""
     x = ctx.coords(geometry)
-    if not _xtb_saddle_ok(ctx, x):
+    mode = _xtb_ts_mode(ctx, x)
+    if mode is None:
         ctx.note("low_level_ts_rejected")
         return None
     e_ts = ctx.sp(x)
@@ -196,7 +224,7 @@ def _shortcut(ctx: Ctx, geometry: Geometry) -> tuple[BarrierVerdict, Seed | None
         return None
     verdict = barrier_verdict((ctx.energies[0], e_ts, ctx.energies[1]), source="screen",
                               policy=ctx.policy.gates)
-    return verdict, Seed(geometry, "discovery_ts", ctx.chord(x))
+    return verdict, Seed(geometry, "discovery_ts", mode)
 
 
 def _screened(ctx: Ctx, frames: list[np.ndarray], *, exact: bool, ts: Geometry | None = None
@@ -209,8 +237,9 @@ def _screened(ctx: Ctx, frames: list[np.ndarray], *, exact: bool, ts: Geometry |
     verdict = ctx.verdict(frames, [e for e in inner if e is not None], "screen", exact=exact)
     if verdict.verdict != "single":
         return verdict, None
-    if ts is not None and _xtb_saddle_ok(ctx, ctx.coords(ts)):
-        return verdict, Seed(ts, "screen_ts", ctx.chord(ctx.coords(ts)))
+    mode = None if ts is None else _xtb_ts_mode(ctx, ctx.coords(ts))
+    if ts is not None and mode is not None:
+        return verdict, Seed(ts, "screen_ts", mode)
     return verdict, _peak_seed(ctx, "screen_hei", "screen_hei")
 
 
@@ -254,50 +283,23 @@ def screen(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     return case_state.record_profile(state, verdict, seed)
 
 
-def _mode_index(freq: Evidence, direction: np.ndarray | None, noise_cm1: float
-                ) -> tuple[int | None, float | None]:
-    """Imaginary mode (ascending order) most parallel to ``direction`` and that overlap."""
-    freqs = freq.frequencies_cm1 or ()
-    modes = [m for m, nu in zip(freq.imaginary_modes, sorted(freqs), strict=False)
-             if nu < -noise_cm1]
-    if direction is None or not modes:
-        return None, None
-    scores = [overlap(np.asarray(m), direction) for m in modes]
-    best = int(np.argmax(scores))
-    return best, scores[best]
-
-
-def _first_hessian(ctx: Ctx, mol: Molecule, direction: np.ndarray | None) -> Evidence | None:
-    """xTB Hessian at the seed if it has one negative mode along the tangent (chem 20)."""
-    rt = ctx.rt
-    if rt.screen_qm is None or rt.screen_method is None:
-        return None
-    freq = rt.screen_qm.frequencies(mol, rt.screen_method, deadline=ctx.deadline)
-    if isinstance(freq, Failure):
-        return None
-    negative = [nu for nu in freq.frequencies_cm1 or () if nu < -ctx.policy.gates.noise_cm1]
-    _, score = _mode_index(freq, direction, ctx.policy.gates.noise_cm1)
-    return freq if len(negative) == 1 and score is not None and score >= _MIN_OVERLAP else None
-
-
 def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """Initial Hessian (xTB first when usable, else DFT) → saddle.refine from the front seed."""
+    """The front seed's reaction direction → initial Hessian: xTB when one of its negative
+    modes lies along it (chem 20), else DFT → saddle.refine with only that direction negative."""
     rt, seed = ctx.rt, state.seeds[0]
     state = replace(state, seeds=state.seeds[1:], saddle_attempts=state.saddle_attempts + 1,
                     last_saddle=None, ts_check=None, intermediate=None)
     x = ctx.coords(seed.geometry)
-    mol, direction = ctx.mol(x), ctx.direction(x, seed.tangent)
-    hessian = _first_hessian(ctx, mol, direction) if state.saddle_attempts == 1 else None
-    if hessian is None:  # later attempts, or no usable xTB Hessian: DFT at the seed
-        dft = rt.qm.frequencies(mol, rt.method, deadline=ctx.deadline)
-        if isinstance(dft, Failure):
-            ctx.note(f"saddle_hessian:{dft.kind.value}")
-            return replace(state, last_saddle="failed")
-        hessian = dft
-    index, score = _mode_index(hessian, direction, ctx.policy.gates.noise_cm1)
-    low = score is not None and score < _MIN_OVERLAP
-    ctx.work.saddle_notes = ("mode_overlap_below_0.3",) if low else ()
-    result = rt.saddle.refine(mol, rt.method, hessian=hessian, mode_index=index,
+    mol, direction = ctx.mol(x), ctx.direction(x, seed)
+    xtb, modes = _xtb_modes(ctx, x, ctx.policy.gates.noise_cm1)
+    score = max((overlap(m, direction) for m in modes), default=0.0)
+    ctx.note(f"saddle_hessian:{'xtb' if score >= _MIN_OVERLAP else 'dft'}:overlap:{score:.2f}")
+    hessian = xtb if xtb is not None and score >= _MIN_OVERLAP else rt.qm.frequencies(
+        mol, rt.method, deadline=ctx.deadline)
+    if isinstance(hessian, Failure):
+        ctx.note(f"saddle_hessian:{hessian.kind.value}")
+        return replace(state, last_saddle="failed")
+    result = rt.saddle.refine(mol, rt.method, hessian=hessian, mode=tuple(direction),
                               deadline=ctx.deadline)
     if isinstance(result, Failure):
         ctx.note(f"saddle:{result.kind.value}:{result.reason}")
@@ -316,11 +318,10 @@ def validate_ts(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     if isinstance(freq, Failure):
         ctx.note(f"ts_freq:{freq.kind.value}")
         return replace(state, last_saddle="failed")
-    gate = is_first_order_saddle(freq, saddle=saddle, endpoint_energies=ctx.energies,
-                                 torsional=ctx.case.torsional, policy=gates)
+    gate = is_first_order_saddle(freq, saddle=saddle, policy=gates)
     if gate:
         ctx.work.ts_freq = ctx.keep(freq)
-        notes = (*gate.notes, *ctx.work.saddle_notes, *spin_ok(freq, gates).reasons)
+        notes = (*gate.notes, *spin_ok(freq, gates).reasons)
         claim = SaddleClaim(saddle_calc=calc_id(ctx.keep(saddle)), freq_calc=calc_id(freq),
                             imag_cm1=min(freq.frequencies_cm1 or (0.0,)),
                             energy_hartree=freq.energy_hartree, notes=notes)
@@ -329,7 +330,7 @@ def validate_ts(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     if "higher_order" in gate.reasons and len(freq.imaginary_modes) > 1:
         down, _ = displace(x, np.asarray(freq.imaginary_modes[1]), _RETRY_A)
         name = f"retry{state.saddle_attempts}"
-        seed = Seed(ctx.geometry(name, down), "higher_order_retry", ctx.chord(down))
+        seed = Seed(ctx.geometry(name, down), "higher_order_retry", None)
         return replace(state, ts_check="higher_order", seeds=(seed, *state.seeds))
     if "no_imaginary_mode" in gate.reasons:
         return replace(state, ts_check="collapsed")
@@ -352,7 +353,7 @@ def _register(ctx: Ctx, coords: np.ndarray, name: str,
         species_id=species_id(ctx.case.reaction_id, name),
         composition_id=composition_key(ctx.symbols, ctx.charge, ctx.multiplicity),
         charge=ctx.charge, multiplicity=ctx.multiplicity, geometry=opt.final, source=source,
-        state_label=state_label(ctx.symbols, x), energy_hartree=opt.energy_hartree,
+        state_label=topology.state_label(ctx.symbols, x), energy_hartree=opt.energy_hartree,
         level_key=opt.level.full_key(),
     )
     record = rt.registry.add(out, species, tier="dft")
@@ -372,8 +373,8 @@ def _assign(ctx: Ctx, side: Evidence, x: np.ndarray, name: str) -> str | None:
         return ctx.record(basin).minimum_id
     terms = ctx.case.coordinate
     if ctx.case.torsional and terms and all(t.kind == "dihedral" for t in terms):
-        values = [declared_coordinate(terms, end) for end in ctx.raw]
-        return ctx.case.minima[periodic_nearest(declared_coordinate(terms, x), values)]
+        values = [topology.declared_coordinate(terms, end) for end in ctx.raw]
+        return ctx.case.minima[periodic_nearest(topology.declared_coordinate(terms, x), values)]
     record = _register(ctx, x, name, "connection")
     return None if record is None else record.minimum_id
 
@@ -404,7 +405,8 @@ def connect(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
                              policy=p.gates)
     if label == "failed" or first is None or second is None:
         ctx.note(f"qrc{attempt}:{','.join(gate.reasons)}")
-        return replace(state, connection="failed")
+        retry = "sides_same_basin" in gate.reasons  # the only failure worth a wider displacement
+        return replace(state, connection="same_basin" if retry else "failed")
     sides = (calc_id(ctx.keep(plus)), calc_id(ctx.keep(minus)))
     ctx.work.connection = ConnectionClaim(side_calcs=sides, minima=(first, second),
                                           amplitude_A=amplitude)

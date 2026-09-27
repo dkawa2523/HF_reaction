@@ -31,8 +31,6 @@ class Policy:
 
     noise_cm1: float = 10.0
     saddle_cm1: float = 50.0
-    torsion_saddle_cm1: float = 20.0
-    ts_prominence_hartree: float = 2.0e-5
     scf_noise_factor: float = 20.0
     qrc_min_drop_hartree: float = 1.0e-5
     resolution_kcal: float = 1.0  # hills and wells of a DFT path count from this depth
@@ -65,14 +63,10 @@ def _gate(reasons: Sequence[str], notes: Sequence[str] = ()) -> Gate:
     return Gate(ok=not reasons, reasons=tuple(reasons), notes=tuple(notes))
 
 
-def _noise_floor(default: float, level: Level, policy: Policy) -> float:
-    """max(default, scf_noise_factor x scf_tol); a missing scf_tol counts as 0."""
-    return max(default, policy.scf_noise_factor * (level.scf_tol or 0.0))
-
-
 def qrc_drop(level: Level, policy: Policy = _DEFAULT) -> float:
-    """Smallest energy drop a QRC side must show below the TS: max(minimum, SCF noise)."""
-    return _noise_floor(policy.qrc_min_drop_hartree, level, policy)
+    """Smallest energy drop a QRC side must show below the TS: max(minimum, scf_noise_factor x
+    scf_tol); a missing scf_tol counts as 0."""
+    return max(policy.qrc_min_drop_hartree, policy.scf_noise_factor * (level.scf_tol or 0.0))
 
 
 def zpe_hartree(freqs_cm1: Sequence[float], *, scale: float = 1.0) -> float:
@@ -141,29 +135,17 @@ def is_minimum(freq: Evidence, *, opt: Evidence, policy: Policy = _DEFAULT) -> G
     return _gate(reasons, notes)
 
 
-def is_first_order_saddle(
-    freq: Evidence,
-    *,
-    saddle: Evidence,
-    endpoint_energies: Sequence[float] = (),
-    torsional: bool = False,
-    policy: Policy = _DEFAULT,
-) -> Gate:
+def is_first_order_saddle(freq: Evidence, *, saddle: Evidence, policy: Policy = _DEFAULT) -> Gate:
+    """One negative eigenvalue of any size: the lowest mode below -noise_cm1, the second not
+    below -saddle_cm1 (higher_order); a second between the two is the note soft_secondary_mode."""
     reasons = _link_reasons(freq, saddle) + _mode_count_reasons(freq)
-    freqs = sorted(freq.frequencies_cm1 or ())
-    threshold = policy.torsion_saddle_cm1 if torsional else policy.saddle_cm1
-    if not freqs or freqs[0] >= -threshold:
+    lowest, second = (*sorted(freq.frequencies_cm1 or ()), 0.0, 0.0)[:2]  # missing: 0
+    if lowest >= -policy.noise_cm1:
         reasons.append("no_imaginary_mode")
-    notes: list[str] = []
-    if any(nu < -policy.saddle_cm1 for nu in freqs[1:]):
+    if second < -policy.saddle_cm1:
         reasons.append("higher_order")
-    elif any(nu < -policy.noise_cm1 for nu in freqs[1:]):
-        notes.append("soft_secondary_mode")
-    if endpoint_energies:
-        prominence = freq.energy_hartree - max(endpoint_energies)
-        if prominence < _noise_floor(policy.ts_prominence_hartree, freq.level, policy):
-            reasons.append("low_prominence")
-    return _gate(reasons, notes)
+    soft = -policy.saddle_cm1 <= second < -policy.noise_cm1
+    return _gate(reasons, ("soft_secondary_mode",) if soft else ())
 
 
 def barrier_verdict(
@@ -183,18 +165,10 @@ def barrier_verdict(
                           max_node_spacing_A=max_node_spacing_A)
 
 
-def _side_reasons(index: int, side: Evidence, ceiling: float, ts_level: Level, drop: float
-                  ) -> list[str]:
-    """QRC descent checks for one side; ceiling is E_TS - drop."""
-    reasons = [f"side{index}:{r}" for r in same_pes(ts_level, side.level, numerics=True).reasons]
-    traj = side.trajectory_energies_hartree
-    if not traj:
-        return [*reasons, f"side{index}:no_trajectory"]
-    if traj[0] > ceiling:
-        reasons.append(f"side{index}:no_initial_descent")
-    if max(traj) > ceiling:
-        reasons.append(f"side{index}:trajectory_above_ts")
-    if traj[-1] > traj[0] - drop:
+def _side_reasons(index: int, side: Evidence, ts: Evidence, drop: float) -> list[str]:
+    """One QRC side on the TS's PES ends below E_TS - drop; its path there is not judged."""
+    reasons = [f"side{index}:{r}" for r in same_pes(ts.level, side.level, numerics=True).reasons]
+    if side.energy_hartree >= ts.energy_hartree - drop:
         reasons.append(f"side{index}:no_descent")
     return reasons
 
@@ -229,11 +203,7 @@ def connection(
     policy: Policy = _DEFAULT,
 ) -> tuple[Gate, ConnectionLabel]:
     drop = qrc_drop(ts_freq.level, policy)
-    ceiling = ts_freq.energy_hartree - drop
-    reasons = [
-        r for i, side in enumerate(sides)
-        for r in _side_reasons(i, side, ceiling, ts_freq.level, drop)
-    ]
+    reasons = [r for i, side in enumerate(sides) for r in _side_reasons(i, side, ts_freq, drop)]
     label, why = _assignment(
         assigned, expected, degenerate=degenerate, sides_distinct=sides_distinct
     )

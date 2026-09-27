@@ -1,9 +1,9 @@
 """Real NWChem 7.2.3 (WSL, HFAUTO_REAL=1, ranks <= 2; design §10.3).
 
-The moddir case uses planar hydroxylamine (N, O and all three H in one plane): at
+The shaped-Hessian case uses planar hydroxylamine (N, O and all three H in one plane): at
 PBE0-D3BJ/def2-SVP its Hessian has exactly two negative eigenvalues (NH2 inversion near
--1019 cm-1, OH torsion near -666 cm-1), and ``mode_index=1`` follows the torsion in Cartesian
-coordinates, with moddir set by its place among the negative P·H·P eigenvectors.
+-1019 cm-1, OH torsion near -666 cm-1). Passing the torsion as ``mode`` makes it the only
+negative mode of the shaped initial Hessian, which the saddle follows in autoz with moddir 1.
 """
 
 import re
@@ -58,19 +58,20 @@ def test_water_opt_then_a_separate_freq_job(real_engine, tmp_path):
 def test_planar_ammonia_saddle_from_the_freq_hessian(real_engine, tmp_path):
     qm = real_engine(Capability.QM, "nwchem")
     saddle = real_engine(Capability.SADDLE, "nwchem_saddle")
-    ts = saddle.refine(PLANAR_NH3, PBE0, hessian=qm.frequencies(PLANAR_NH3, PBE0))
+    hessian = qm.frequencies(PLANAR_NH3, PBE0)
+    ts = saddle.refine(PLANAR_NH3, PBE0, hessian=hessian, mode=hessian.imaginary_modes[0])
     assert isinstance(ts, Evidence) and ts.task == "saddle", ts
     freq = qm.frequencies(_final(tmp_path, ts), PBE0)
     assert is_first_order_saddle(freq, saddle=ts)
     assert sum(f < -50 for f in freq.frequencies_cm1) == 1
 
 
-def test_moddir_follows_the_second_negative_mode(real_engine):
+def test_shaped_hessian_follows_the_second_negative_mode(real_engine):
     qm = real_engine(Capability.QM, "nwchem")
     saddle = real_engine(Capability.SADDLE, "nwchem_saddle")
     hessian = qm.frequencies(PLANAR_NH2OH, PBE0)
     assert sum(f < -50 for f in hessian.frequencies_cm1) == 2
-    ts = saddle.refine(PLANAR_NH2OH, PBE0, hessian=hessian, mode_index=1)
+    ts = saddle.refine(PLANAR_NH2OH, PBE0, hessian=hessian, mode=hessian.imaginary_modes[1])
     assert isinstance(ts, Evidence) and ts.task == "saddle", ts
 
 

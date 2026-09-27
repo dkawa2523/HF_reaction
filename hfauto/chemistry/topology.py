@@ -16,6 +16,7 @@ from collections.abc import Collection, Sequence
 import numpy as np
 
 from hfauto.chemistry.elements import covalent_radius
+from hfauto.chemistry.geometry import dihedral_deg
 from hfauto.chemistry.xyz import hill_formula
 from hfauto.core.records import CoordinateTerm
 
@@ -116,10 +117,7 @@ def declared_coordinate(terms: Sequence[CoordinateTerm], x: np.ndarray) -> float
             value = float(np.degrees(np.arccos(np.clip(
                 u @ v / (np.linalg.norm(u) * np.linalg.norm(v)), -1.0, 1.0))))
         else:
-            b0, b1, b2 = p[0] - p[1], p[2] - p[1], p[3] - p[2]
-            b1 = b1 / np.linalg.norm(b1)
-            v, w = b0 - (b0 @ b1) * b1, b2 - (b2 @ b1) * b1
-            value = float(np.degrees(np.arctan2(np.cross(b1, v) @ w, v @ w)))
+            value = dihedral_deg(x, term.atoms)
         total += term.coefficient * value
     return total
 

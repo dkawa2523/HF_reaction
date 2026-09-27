@@ -10,12 +10,14 @@ import pytest
 
 from hfauto.chemistry.identity import mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
-from hfauto.chemistry.xyz import XYZ, composition_key
+from hfauto.chemistry.modes import overlap
+from hfauto.chemistry.topology import declared_coordinate_gradient
+from hfauto.chemistry.xyz import XYZ, composition_key, read_xyz
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.method import Deadline, MethodSpec
-from hfauto.core.records import BarrierVerdict, ReactionRecord, SpeciesRecord
+from hfauto.core.records import BarrierVerdict, CoordinateTerm, ReactionRecord, SpeciesRecord
 from hfauto.drivers.minimum import Registry, relax_to_minimum
 from hfauto.drivers.reaction_case.actions import HANDLERS, Profile
 from hfauto.drivers.reaction_case.driver import CaseRuntime, open_case
@@ -39,6 +41,7 @@ PLANAR = ("HONO", [[-0.324178, -0.094409, 0], [0.395107, -0.759978, 0], [1.56130
                    [1.429662, 1.092978, 0]],
           [[-0.197748, -0.943876, 0], [0.024911, -0.001454, 0], [1.407066, 0.008329, 0],
            [1.827671, 1.097200, 0]])
+ACAC = Path(__file__).resolve().parents[3] / "configs" / "systems" / "xyz" / "acac"
 
 
 class HigherOrderQM(fakes.FakeQM):  # every freq job also reports a second imaginary mode
@@ -152,12 +155,18 @@ def test_first_string_chunk_starts_from_an_idpp_without_rigid_jumps(tmp_path, sy
 def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path) -> None:
     ctx, state = case_ctx(tmp_path, fakes.double_well())
     state = act(ctx, state, Action.FIND_PATH)
-    seeds, n_freq = state.seeds, ctx.rt.qm.calls.count("frequencies")
-    state = act(ctx, state, Action.REFINE_SADDLE)  # 1st: xTB Hessian along the tangent
-    assert state.last_saddle == "converged" and ctx.rt.screen_qm.calls == ["frequencies"]
-    assert ctx.rt.qm.calls.count("frequencies") == n_freq and ctx.rt.saddle.calls == ["refine:0"]
-    state = act(ctx, replace(state, seeds=seeds), Action.REFINE_SADDLE)  # 2nd: DFT Hessian
+    seeds, n_freq, logged = state.seeds, ctx.rt.qm.calls.count("frequencies"), []
+    ctx.log = logged.append
+    xtb = HigherOrderQM(tmp_path, ctx.rt.qm.pes)  # two negative modes do not matter
+    ctx.rt = replace(ctx.rt, screen_qm=xtb)
+    state = act(ctx, state, Action.REFINE_SADDLE)  # a negative xTB mode along the tangent
+    assert state.last_saddle == "converged" and xtb.calls == ["frequencies"]
+    assert ctx.rt.qm.calls.count("frequencies") == n_freq and ctx.rt.saddle.calls == ["refine"]
+    ctx.rt = replace(ctx.rt, screen_qm=fakes.FakeQM(tmp_path, fakes.harmonic()))  # none
+    state = act(ctx, replace(state, seeds=seeds), Action.REFINE_SADDLE)  # xTB first, then DFT
     assert ctx.rt.qm.calls.count("frequencies") == n_freq + 1 and state.saddle_attempts == 2
+    notes = [r["note"].rsplit(":", 1)[0] for r in logged if "saddle_hessian" in r["note"]]
+    assert notes == ["saddle_hessian:xtb:overlap", "saddle_hessian:dft:overlap"]
     state = act(ctx, state, Action.VALIDATE_TS)  # a separate freq job on the saddle
     assert state.ts_check == "ok" and state.claim.imag_cm1 < -50 and not state.claim.notes
     assert state.claim.freq_calc != state.claim.saddle_calc
@@ -184,9 +193,34 @@ def test_higher_order_retry_and_failed_saddle_routing(tmp_path) -> None:
     assert decide(ctx.case, state, ctx.policy).action is Action.REFINE_SADDLE
     ctx, state = case_ctx(tmp_path / "b", fakes.double_well(), saddle=FailingSaddle(tmp_path, None))
     ts = fakes.write_geometry(tmp_path / "b", "ts.xyz", ("N", "H", "O"), ctx.rt.qm.pes.points["ts"])
-    state = act(ctx, replace(state, seeds=(Seed(ts, "discovery_ts", ctx.chord(ctx.coords(ts))),)),
+    state = act(ctx, replace(state, seeds=(Seed(ts, "discovery_ts", None),)),
                 Action.REFINE_SADDLE)  # a rejected seed routes to the DFT string
     assert decide(ctx.case, state, ctx.policy) == Decision(Action.FIND_PATH, "no_dft_path")
+
+
+def test_reaction_direction_is_a_low_level_mode_the_reaction_centre_or_a_torsion(tmp_path):
+    """U6-P2: acac PT, whose endpoint chord is dominated by the two methyl rotors."""
+    ctx, _ = case_ctx(tmp_path, fakes.double_well())
+    geo = ctx.rt.minima[ctx.case.minima[0]][1]  # direction() reads only the source and tangent
+    mode = tuple(np.eye(9)[4])
+    assert tuple(ctx.direction(ctx.ends[0], Seed(geo, "screen_ts", mode))) == mode
+    r, p = (read_xyz(ACAC / f"{end}.xyz") for end in ("reactant", "product"))
+    ctx.symbols, a = list(r.symbols), np.asarray(r.coords)
+    ctx.ends = (a, align_mapped(a, np.asarray(p.coords)))
+    chord, methyls = ctx.ends[1] - a, [7, 8, 9, 12, 13, 14]
+    pt, rotors = np.zeros((15, 3)), np.zeros((15, 3))
+    pt[10], rotors[methyls] = a[6] - a[2], chord[methyls]  # H10 from O2 to O6; methyl H
+    direction = ctx.direction(a, Seed(geo, "higher_order_retry", None))
+    assert overlap(chord, pt) < 0.3 and overlap(chord, rotors) > 0.9
+    assert overlap(direction, pt) > 0.9 and overlap(direction, rotors) == 0.0
+    ctx.symbols, a = list(PLANAR[0]), np.array(PLANAR[1])  # cis -> trans HONO: no bond change
+    ctx.ends = (a, align_mapped(a, np.array(PLANAR[2])))
+    torsion = ctx.direction(a, Seed(geo, "path_hei", tuple(np.ones(12))))
+    assert np.allclose(torsion.reshape(4, 3)[:, :2], 0.0) and np.abs(torsion).max() > 0
+    angle = (CoordinateTerm(kind="angle", atoms=(0, 1, 2)),)  # a declared coordinate first
+    ctx.case = ctx.case.model_copy(update={"coordinate": angle})
+    assert np.allclose(ctx.direction(a, Seed(geo, "path_hei", None)),
+                       declared_coordinate_gradient(angle, a))
 
 
 def test_screen_shortcut_and_collapsed_low_level_endpoints(tmp_path) -> None:

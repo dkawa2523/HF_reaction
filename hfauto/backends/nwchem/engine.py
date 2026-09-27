@@ -9,9 +9,10 @@ input geometry equals the input within 1e-4 Å; anything else is a Failure.
 
 from __future__ import annotations
 
+import json
 import math
 import shutil
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, ClassVar, Literal
@@ -22,7 +23,7 @@ from pydantic import BaseModel
 from hfauto.backends.nwchem import input as nw_in
 from hfauto.backends.nwchem import output as nw_out
 from hfauto.backends.protocols import Requirements
-from hfauto.chemistry.vibrations import cartesian_mode_number, projected_frequencies
+from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian
 from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz, write_xyz
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
 from hfauto.core.evidence import (
@@ -34,6 +35,7 @@ from hfauto.core.evidence import (
     Level,
     PathProfile,
 )
+from hfauto.core.hashing import sha256_text
 from hfauto.core.method import Deadline, EngineSite, MethodSpec, level_mismatches
 from hfauto.execution.jobs import JobRunner, Task
 from hfauto.execution.process import STDOUT_NAME, Command, CommandResult, resolve_executable
@@ -84,17 +86,6 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
 
 
-def _moddir(hessian: Path, coords: np.ndarray, modes: tuple[tuple[float, ...], ...],
-            mode_index: int | None) -> tuple[int, bool]:
-    """(moddir, Cartesian) of a saddle: NWChem's choice with no mode below noise, 1 in autoz
-    with one imaginary mode, else the P·H·P place of ``modes[mode_index]`` in Cartesian."""
-    if mode_index is None or not modes:
-        return 0, False
-    if len(modes) == 1:
-        return 1, False
-    return cartesian_mode_number(np.load(hessian), coords, np.ravel(modes[mode_index])), True
-
-
 def _render(task: Task, setup: nw_in.Setup) -> str:
     i = task.inputs
     mol, method, hessian = i["mol"], i["method"], i.get("hessian") is not None
@@ -106,8 +97,7 @@ def _render(task: Task, setup: nw_in.Setup) -> str:
     if task.kind == "frequencies":
         return nw_in.render_frequencies(mol, method, setup)
     if task.kind == "saddle":
-        return nw_in.render_saddle(mol, method, setup, moddir=i["moddir"],
-                                   cartesian=i["cartesian"], init_hessian=hessian)
+        return nw_in.render_saddle(mol, method, setup, init_hessian=hessian)
     return nw_in.render_string(mol, i["end"], method, setup, nbeads=i["images"],
                                initial_path=i.get("initial_path") is not None)
 
@@ -158,8 +148,10 @@ class _NWChem:
         for source in task.inputs.get("restart", ()):
             shutil.copyfile(source, workdir / Path(source).name)
         if task.inputs.get("hessian") is not None:
-            hess = nw_in.hess_text(np.load(task.inputs["hessian"]))
-            (workdir / f"{NAME}.hess").write_text(hess, encoding="ascii")
+            h = np.load(task.inputs["hessian"])
+            if task.kind == "saddle":  # minimizations (QRC sides) keep the raw Hessian
+                h = shape_hessian(h, task.inputs["mol"].xyz.coords, task.inputs["mode"])
+            (workdir / f"{NAME}.hess").write_text(nw_in.hess_text(h), encoding="ascii")
         if task.inputs.get("initial_path") is not None:
             shutil.copyfile(task.inputs["initial_path"], workdir / nw_in.INITIAL_PATH)
         (workdir / f"{NAME}.nw").write_text(_render(task, self._setup(task, workdir)),
@@ -185,7 +177,7 @@ class _NWChem:
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
         """autoz -> Cartesian coordinates from the same start; SCF -> the old vectors with damping
         and level shift; timeout / maxiter of a driver job -> its latest frame with the old
-        vectors and driver Hessian (design §7.1), a saddle then with moddir 1 at most."""
+        vectors and driver Hessian (design §7.1)."""
         if failure.kind is FailureKind.INPUT_INVALID and failure.reason == "autoz":
             execution = task.execution.model_copy(update={"coordinates": "cartesian"})
             return replace(task, execution=execution)
@@ -204,8 +196,6 @@ class _NWChem:
                        "hessian": None,
                        "trajectory": (*task.inputs.get("trajectory", ()),
                                       *nw_out.trajectory_energies(_read(workdir / STDOUT_NAME)))}
-            if task.kind == "saddle":
-                inputs["moddir"] = min(task.inputs["moddir"], 1)  # k > 1 counted the seed's
         return replace(task, inputs=inputs)
 
     def _scratch(self, workdir: Path) -> Path:
@@ -350,23 +340,23 @@ class NWChemEngine(_NWChem):
 
 
 class NWChemSaddle(_NWChem):
-    """SADDLE: eigenvector following from a freq Hessian computed at the seed (any Level)."""
+    """SADDLE: eigenvector following from a freq Hessian computed at the seed (any Level),
+    shaped so that ``mode`` (the reaction direction, 3N) is its only negative curvature."""
 
     name: ClassVar[str] = "nwchem_saddle"
 
     def refine(self, seed: Molecule, method: MethodSpec, *, hessian: Evidence,
-               mode_index: int | None = None,
-               deadline: Deadline | None = None) -> Evidence | Failure:
+               mode: Sequence[float], deadline: Deadline | None = None) -> Evidence | Failure:
         if not _dft_supported(method):
             return _invalid(f"unsupported_method:{method.id}")
         path = self._hessian_file(hessian, seed)
         if isinstance(path, Failure):
             return path
-        moddir, cartesian = _moddir(path, seed.xyz.coords, hessian.imaginary_modes, mode_index)
+        unit = np.ravel(mode) / np.linalg.norm(mode)
         payload = {"molecule": seed.fingerprint(), "hessian": hessian.hessian and
-                   hessian.hessian.sha256, "moddir": moddir, "cartesian": cartesian}
-        inputs = {"mol": seed, "start": seed, "method": method, "hessian": path,
-                  "moddir": moddir, "cartesian": cartesian}
+                   hessian.hessian.sha256,
+                   "mode": sha256_text(json.dumps((np.round(unit, 6) + 0.0).tolist()))}
+        inputs = {"mol": seed, "start": seed, "method": method, "hessian": path, "mode": unit}
         return self._run("saddle", payload, inputs, deadline)
 
 

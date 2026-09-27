@@ -55,26 +55,16 @@ def test_first_order_saddle_passes(imag):
     assert gate.ok and gate.notes == ()
 
 
-def test_saddle_mode_rules():
+def test_saddle_mode_rules():  # one negative eigenvalue of any size above the noise
     saddle = ev("saddle")
     gate = g.is_first_order_saddle(ev(freqs=modes(-120.0, -60.0)), saddle=saddle)
-    assert not gate and "higher_order" in gate.reasons
+    assert gate.reasons == ("higher_order",)
     gate = g.is_first_order_saddle(ev(freqs=modes(-700.0, -30.0)), saddle=saddle)
     assert gate.ok and gate.notes == ("soft_secondary_mode",)
-    assert not g.is_first_order_saddle(ev(freqs=modes(-45.0)), saddle=saddle)
-    assert g.is_first_order_saddle(ev(freqs=modes(-45.0)), saddle=saddle, torsional=True)
-
-
-def test_saddle_prominence():
-    freq, saddle = ev(freqs=modes(-700.0)), ev("saddle")
-    low = g.is_first_order_saddle(freq, saddle=saddle, endpoint_energies=(E_TS - 1e-8,))
-    assert low.reasons == ("low_prominence",)
-    ends = (E_TS - 1e-3, E_TS - 2e-3)
-    assert g.is_first_order_saddle(freq, saddle=saddle, endpoint_energies=ends)
-    loose = LEVEL.model_copy(update={"scf_tol": 1e-5})  # floor becomes 20 x 1e-5 = 2e-4
-    loose_freq = ev(freqs=modes(-700.0), level=loose)
-    assert not g.is_first_order_saddle(loose_freq, saddle=ev("saddle", level=loose),
-                                       endpoint_energies=(E_TS - 1e-4,))
+    soft = g.is_first_order_saddle(ev(freqs=modes(-45.0)), saddle=saddle)  # torsion or not
+    assert soft.ok and soft.notes == ()
+    noise = g.is_first_order_saddle(ev(freqs=modes(-8.0)), saddle=saddle)
+    assert noise.reasons == ("no_imaginary_mode",)
 
 
 def test_same_pes_and_spin():
@@ -103,21 +93,26 @@ def connect(sides=(DOWN, DOWN), assigned=("A", "B"), expected=AB, **kw):
                         degenerate=kw.pop("degenerate", False), **kw)
 
 
-def test_connection_trajectory_checks():
+def test_connection_judges_where_each_side_ends():
     assert connect() == (g.Gate(True), "elementary")
-    gate, label = connect(sides=(DOWN, (E_TS - 1e-3, E_TS + 1e-4, E_TS - 1e-2)))
-    assert label == "failed" and gate.reasons == ("side1:trajectory_above_ts",)
-    gate, label = connect(sides=((E_TS - 1e-3, E_TS - 1.005e-3), DOWN))
+    above = (E_TS + 1e-4, E_TS + 2e-4, E_TS - 1e-2)  # displaced above the TS, then down (H2O2)
+    assert connect(sides=(above, above)) == (g.Gate(True), "elementary")
+    gate, label = connect(sides=((E_TS - 1e-3, E_TS - 5e-6), DOWN))  # ends within drop of E_TS
     assert label == "failed" and gate.reasons == ("side0:no_descent",)
-    gate, _ = connect(sides=((E_TS + 1e-4, E_TS - 1e-2), DOWN))
-    assert "side0:no_initial_descent" in gate.reasons
+
+
+def test_a_ts_below_the_declared_product_survives_as_reassigned():
+    """Endothermic A -> B with E_TS < E_B: the saddle of A -> I is a TS all the same (no endpoint
+    energy enters the TS gate) and QRC names the minima it connects."""
+    assert g.is_first_order_saddle(ev(freqs=modes(-700.0)), saddle=ev("saddle"))
+    assert connect(assigned=("A", "I")) == (g.Gate(True), "reassigned")
 
 
 def test_qrc_drop_is_the_scf_noise_floor():
     assert g.qrc_drop(LEVEL) == pytest.approx(1e-5)  # 20 x 1e-7 is below the minimum
     loose = LEVEL.model_copy(update={"scf_tol": 1e-5})
     assert g.qrc_drop(loose) == pytest.approx(2e-4)
-    side = ev("opt", traj=(E_TS - 3e-4, E_TS - 4e-4), level=loose)  # drop 1e-4 < 2e-4
+    side = ev("opt", energy=E_TS - 1e-4, level=loose)  # 1e-4 below the TS: less than 2e-4
     gate, _ = g.connection(ev(freqs=modes(-700.0), level=loose), (side, side), ("A", "B"), AB,
                            degenerate=False)
     assert gate.reasons == ("side0:no_descent", "side1:no_descent")
@@ -131,7 +126,7 @@ def test_connection_assignment():
     assert undistinct[1] == "failed"
     assert connect(assigned=("A", "C")) == (g.Gate(True), "reassigned")
     assert connect(assigned=("A", None))[0].reasons == ("unassigned_side",)
-    assert connect(assigned=("A", "A"))[1] == "failed"
+    assert connect(assigned=("A", "A")) == (g.Gate(False, ("sides_same_basin",)), "failed")
 
 
 def test_thermo_consistent():  # against the list GoodVibes got (chemistry.thermo_frequencies)

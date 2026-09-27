@@ -49,19 +49,28 @@ def test_rotational_constants_of_linear_hcn():
     assert a == 0.0 and b == pytest.approx(c) and b == pytest.approx(44.5, abs=0.2)
 
 
-def test_cartesian_mode_number_follows_the_projected_order():
+def _four_atoms() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Coordinates, rigid motions (12, 6, unweighted) and an orthonormal internal basis (12, 6)."""
     x = np.array([[0.0, 0.0, 0.0], [1.45, 0.0, 0.0], [-0.3, 0.9, 0.1], [1.8, 0.2, 0.9]])
     c = x - x.mean(axis=0)
     rigid = [np.tile(a, 4) for a in np.eye(3)] + [np.cross(a, c).ravel() for a in np.eye(3)]
     noise = np.random.default_rng(3).standard_normal((12, 6))
     q, _ = np.linalg.qr(np.hstack([np.array(rigid).T, noise]))  # q[:, :6] spans rigid motion
-    u1, u2, rest = q[:, 6], q[:, 7], q[:, 8:]
-    positive = rest @ np.diag([0.3, 0.4, 0.5, 0.6]) @ rest.T
-    rotation = -0.3 * np.outer(q[:, 5], q[:, 5])  # projected out, though lowest unprojected
-    h = -0.2 * np.outer(u1, u1) - 0.1 * np.outer(u2, u2) + positive + rotation
-    modes = (u1, u2, u2 + 0.1 * q[:, 5])  # the last one mixed with a rigid motion
-    assert [vib.cartesian_mode_number(h, x, m) for m in modes] == [1, 2, 2]
-    assert vib.cartesian_mode_number(positive, x, u1) == 1  # no negative eigenvector
+    return x, q[:, :6], q[:, 6:]
+
+
+@pytest.mark.parametrize("reaction", [0, 1, 4])
+def test_shape_hessian_leaves_only_the_reaction_mode_negative(reaction):
+    x, rigid, internal = _four_atoms()
+    curvature = np.array([-0.2, -0.1, 1e-6, 0.4, 0.5, 0.6])  # two negative modes, one soft
+    h = internal @ np.diag(curvature) @ internal.T - 0.3 * np.outer(rigid[:, 5], rigid[:, 5])
+    mode = internal[:, reaction] + 0.2 * internal[:, 3] + 0.5 * rigid[:, 0]  # mixed
+    values, vectors = np.linalg.eigh(vib.shape_hessian(h, x, mode))
+    assert np.count_nonzero(values < -1e-8) == 1  # inertia: one negative eigenvalue
+    assert abs(vectors[:, 0] @ internal[:, reaction]) == pytest.approx(1.0)  # mode chosen
+    expected = np.maximum(np.abs(curvature), 1e-3)  # |λ| with the floor, rigid motions at 0
+    expected[reaction] *= -1.0
+    assert values == pytest.approx(sorted([*expected, 0, 0, 0, 0, 0, 0]), abs=1e-10)
 
 
 def test_canonical_npy(tmp_path):

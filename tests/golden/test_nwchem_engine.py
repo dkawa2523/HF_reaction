@@ -8,11 +8,12 @@ import numpy as np
 import pytest
 
 from hfauto.backends.nwchem.engine import NWChemEngine, NWChemSaddle, NWChemString
-from hfauto.backends.nwchem.output import geometry_block
-from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz, write_xyz
-from hfauto.core.evidence import Evidence, Failure, FailureKind, PathProfile
+from hfauto.backends.nwchem.output import geometry_block, read_hess
+from hfauto.chemistry.vibrations import shape_hessian
+from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
+from hfauto.core.evidence import Evidence, FailureKind, PathProfile
 from hfauto.core.method import EngineSite, MethodSpec
-from hfauto.execution.jobs import JobRunner, Task
+from hfauto.execution.jobs import JobRunner
 from hfauto.execution.jobstore import JobStore
 
 pytestmark = pytest.mark.golden
@@ -40,7 +41,7 @@ print("".join(g07.splitlines(True)[:2]) + ' Geometry "geometry" -> ""\n'
 if task == "dft frequencies":
     shutil.copyfile(here / "G07.hess", "job.hess")
     print(g07[g07.index("  Vibrational analysis"):g07.index(" Task  times")])
-if task == "dft optimize":
+if task in ("dft optimize", "dft saddle"):
     restarted = "vectors input" in deck
     moved = [f"{r.split()[0]} " + " ".join(f"{float(v) + 0.01:.8f}" for v in r.split()[1:])
              for r in atoms]
@@ -137,16 +138,23 @@ def test_timeout_continues_from_the_latest_frame(nwchem, golden):
     assert read_xyz(jobs.store.run_dir / ev.start.file.path).coords == pytest.approx(mol.xyz.coords)
 
 
-def test_saddle_continuation_follows_at_most_mode_1(nwchem, golden, tmp_path):
+def test_saddle_shapes_the_hessian_along_the_mode_and_always_follows_mode_1(nwchem, golden):
     jobs, site = nwchem
     mol = _hcn_ts(golden)
-    write_xyz(mol.xyz, tmp_path / "final-000.xyz")
-    task = Task(engine="nwchem_saddle", version_pin="7.2.3", kind="saddle", key_payload={},
-                execution=site.execution, inputs={"mol": mol, "moddir": 3, "cartesian": True})
-    timeout = Failure(kind=FailureKind.TIMEOUT, reason="timeout")
-    resumed = NWChemSaddle(jobs=jobs, site=site).continuation(task, tmp_path, timeout)
-    assert resumed is not None and resumed.inputs["hessian"] is None
-    assert (resumed.inputs["moddir"], resumed.inputs["cartesian"]) == (1, True)
+    freq = NWChemEngine(jobs=jobs, site=site).frequencies(mol, FINE)
+    saddle, mode = NWChemSaddle(jobs=jobs, site=site), np.eye(9)[8]  # not the TS mode
+    ts = saddle.refine(mol, FINE, hessian=freq, mode=mode)
+    assert isinstance(ts, Evidence) and ts.task == "saddle"
+    first, resumed = (jobs.store.attempt_dir(ts.job_key, i) for i in (0, 1))
+    assert "inhess 2\n  moddir 1" in (first / "job.nw").read_text()
+    raw = np.load(jobs.store.run_dir / freq.hessian.path)
+    shaped = read_hess(first / "job.hess", 3)
+    assert np.allclose(shaped, shape_hessian(raw, mol.xyz.coords, mode), rtol=1e-8, atol=1e-12)
+    assert np.count_nonzero(np.linalg.eigvalsh(shaped) < -1e-8) == 1
+    deck = (resumed / "job.nw").read_text()  # timeout: the latest frame and driver Hessian
+    assert "  moddir 1" in deck and "inhess" not in deck and not (resumed / "job.hess").exists()
+    other = saddle.refine(mol, FINE, hessian=freq, mode=freq.imaginary_modes[0])
+    assert other.job_key != ts.job_key  # the mode is part of the job key
 
 
 def test_g13_string_profile(nwchem, golden):

@@ -85,15 +85,14 @@ def ecp(symbols: Sequence[str], basis: str) -> list[str]:
     return ["ecp", *(f"  {s} library def2-ecp" for s in heavy), "end"]
 
 
-def _system(mol: Molecule, method: MethodSpec, setup: Setup, *, cartesian: bool = False,
-            end: Molecule | None = None) -> list[str]:
+def _system(mol: Molecule, method: MethodSpec, setup: Setup, *, end: Molecule | None = None
+            ) -> list[str]:
     """Geometry (and the string's end geometry), charge, basis, ECP and COSMO."""
     if not method.basis:
         raise ValueError(f"method {method.id!r} names no basis set")
-    noautoz = setup.cartesian or cartesian
-    lines = _geometry(mol.xyz, cartesian=noautoz)
+    lines = _geometry(mol.xyz, cartesian=setup.cartesian)
     if end is not None:
-        lines += _geometry(end.xyz, cartesian=noautoz, label="endgeom")
+        lines += _geometry(end.xyz, cartesian=setup.cartesian, label="endgeom")
     lines += [f"charge {mol.charge}", "basis spherical", f"  * library {method.basis}", "end"]
     lines += ecp(mol.xyz.symbols, method.basis)
     eps = cosmo_dielectric(method)
@@ -149,12 +148,12 @@ def render_frequencies(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAUL
 
 
 def render_saddle(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, *,
-                  moddir: int = 0, cartesian: bool = False, init_hessian: bool = True) -> str:
-    """Eigenvector following from <name>.hess along the driver's mode ``moddir`` (1-based;
-    0 leaves the choice to NWChem); ``cartesian`` when that number counts Cartesian modes."""
-    options = ["  trust 0.1", "  sadstp 0.1"] + (["  inhess 2"] if init_hessian else [])
-    options += [f"  moddir {moddir}"] if moddir > 0 else []
-    return _deck(setup, _system(mol, method, setup, cartesian=cartesian), _dft(mol, method, setup),
+                  init_hessian: bool = True) -> str:
+    """Eigenvector following of mode 1 (``moddir 1``): the only negative mode of <name>.hess,
+    which the adapter shapes along the reaction direction (vibrations.shape_hessian)."""
+    options = ["  trust 0.1", "  sadstp 0.1", *(["  inhess 2"] if init_hessian else []),
+               "  moddir 1"]
+    return _deck(setup, _system(mol, method, setup), _dft(mol, method, setup),
                  _driver(setup, SADDLE_MAXITER, options), ["task dft saddle"])
 
 

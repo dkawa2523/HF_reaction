@@ -30,7 +30,8 @@ def test_double_well_ts_has_one_imaginary_mode_and_saddle_finds_it(tmp_run) -> N
     assert sum(nu < -50 for nu in ts.frequencies_cm1) == 1 and len(ts.imaginary_modes) == 1
     seed = pes.molecule("ts")
     seed.xyz.coords[1] += (0.05, 0.03, 0.0)
-    found = saddle.refine(seed, M, hessian=qm.frequencies(seed, M))
+    hessian = qm.frequencies(seed, M)
+    found = saddle.refine(seed, M, hessian=hessian, mode=hessian.imaginary_modes[0])
     assert found.task == "saddle" and found.energy_hartree == pytest.approx(ts.energy_hartree)
 
 

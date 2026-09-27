@@ -1,11 +1,12 @@
-"""G09, G11, G12: real pysisyphus IRC branches judged by gates.connection (CH-03, CH-04)."""
+"""G09, G11, G12: real pysisyphus IRC branches judged by gates.connection (CH-03, CH-04): a side
+counts by where it ends, not by the path there (U6-P5)."""
 
 import re
 from itertools import accumulate
 
 import pytest
 
-from hfauto.chemistry.gates import connection
+from hfauto.chemistry.gates import Gate, connection
 from hfauto.chemistry.identity import assign
 from hfauto.chemistry.xyz import read_xyz
 from hfauto.core.evidence import Evidence, FileRef, Geometry, Level
@@ -31,18 +32,21 @@ def branches(text):
     return _ev("freq", [e_ts]), (sides[0], sides[1])
 
 
-@pytest.mark.parametrize("gid,why", [("G09", "side0:no_initial_descent"),
-                                     ("G11", "side1:no_descent")])
-def test_irc_branches_that_climb_fail_the_connection_gate(golden, gid, why) -> None:
+@pytest.mark.parametrize("gid,reasons", [
+    ("G09", ("side0:no_descent", "side1:no_descent")),  # both branches end above the TS
+    ("G11", ()),  # the backward branch rises at step 0 but ends below E_TS - drop
+])
+def test_a_branch_is_judged_by_where_it_ends(golden, gid, reasons) -> None:
     ts, sides = branches(golden.text(f"pysisyphus/{gid}/pysis_irc.out"))
     gate, label = connection(ts, sides, ("a", "b"), frozenset({"a", "b"}), degenerate=False)
-    assert label == "failed" and why in gate.reasons
+    assert gate.reasons == reasons and label == ("failed" if reasons else "elementary")
 
 
-def test_g12_hono_branches_fail_and_their_assignment_is_unique(golden) -> None:
-    ts, sides = branches(golden.text("pysisyphus/G12/pysis_irc.out"))
-    gate, _ = connection(ts, sides, ("trans", "cis"), frozenset({"trans", "cis"}), degenerate=False)
-    assert {"side0:no_initial_descent", "side1:no_initial_descent"} <= set(gate.reasons)
+def test_g12_hono_branches_start_above_the_ts_and_connect_trans_and_cis(golden) -> None:
+    ts, sides = branches(golden.text("pysisyphus/G12/pysis_irc.out"))  # displaced 1-2 mEh up
+    assert all(side.trajectory_energies_hartree[0] > ts.energy_hartree for side in sides)
+    assert connection(ts, sides, ("trans", "cis"), frozenset({"trans", "cis"}),
+                      degenerate=False) == (Gate(True), "elementary")
     candidates = {n: (read_xyz(golden.path(f"nwchem/G03/hono_{n}_final.xyz")).coords, float(
         re.findall(r"Total DFT energy =\s+(\S+)", golden.text(f"nwchem/G03/hono_{n}.out"))[-1]))
         for n in ("trans", "cis")}
