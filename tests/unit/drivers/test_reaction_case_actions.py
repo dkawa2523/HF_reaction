@@ -12,14 +12,24 @@ from hfauto.chemistry.identity import mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.xyz import XYZ, composition_key
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.method import Deadline, MethodSpec
-from hfauto.core.records import ReactionRecord, SpeciesRecord
+from hfauto.core.records import BarrierVerdict, ReactionRecord, SpeciesRecord
 from hfauto.drivers.minimum import Registry, relax_to_minimum
-from hfauto.drivers.reaction_case.actions import HANDLERS
+from hfauto.drivers.reaction_case.actions import HANDLERS, Profile
 from hfauto.drivers.reaction_case.driver import CaseRuntime, open_case
-from hfauto.drivers.reaction_case.state import Action, CasePolicy, CaseState, Decision, Seed, decide
+from hfauto.drivers.reaction_case.state import (
+    Action,
+    CasePolicy,
+    CaseState,
+    Decision,
+    Seed,
+    decide,
+    record_profile,
+)
 
+K = 1.0 / HARTREE_TO_KCAL_MOL
 DFT = MethodSpec(id="pbe0", kind="dft", functional="pbe0", basis="def2-svp")
 XTB = MethodSpec(id="gfn2", kind="xtb", gfn=2)
 # Ill-conditioned ends for Kabsch: linear HCN -> HNC (C N H), planar cis -> trans HONO (H O N O)
@@ -90,21 +100,24 @@ def act(ctx, state, action, reason="test"):
     return HANDLERS[action](ctx, state, Decision(action, reason))
 
 
-def test_one_monotonic_string_with_settled_energies_is_barrierless(tmp_path) -> None:
+def test_one_barrierless_string_with_settled_energies_closes_the_case(tmp_path) -> None:
     ctx, state = case_ctx(tmp_path, fakes.flat_uphill())  # gmax flat, bead energies settled
     state = act(ctx, state, Action.FIND_PATH, "no_dft_path")
-    assert state.path_runs == ("monotonic",) and ctx.rt.path.calls == ["find_path:pes"]
-    assert len(ctx.work.path[0]) == ctx.policy.string_beads and not state.seeds
-    assert decide(ctx.case, state, ctx.policy).reason == "dft_path_monotonic"
+    assert (state.screen.verdict, state.screen.source, state.path_runs) == (
+        "barrierless", "string", 1)
+    assert ctx.rt.path.calls == ["find_path:pes"] and not state.seeds
+    assert len(ctx.work.path.frames) == ctx.policy.string_beads and ctx.work.path.exact
+    assert decide(ctx.case, state, ctx.policy).reason == "string:barrierless"
 
 
-@pytest.mark.parametrize("pes,runs", [(fakes.flat_uphill, ("monotonic",)),
-                                      (fakes.double_well, ("single_max",))])
-def test_unsettled_string_runs_in_chunks_and_its_maximum_is_only_a_seed(tmp_path, pes, runs):
+@pytest.mark.parametrize("pes,verdict", [(fakes.flat_uphill, "barrierless"),
+                                         (fakes.double_well, "single")])
+def test_unsettled_string_runs_in_chunks_and_its_maximum_is_only_a_seed(tmp_path, pes, verdict):
     ctx, state = case_ctx(tmp_path, pes(), script=["unconverged"] * 3)
     state = act(ctx, state, Action.FIND_PATH)
-    assert state.path_runs == runs and ctx.rt.path.calls == ["find_path:unconverged"] * 3
-    assert [s.source for s in state.seeds] == (["path_hei"] if runs == ("single_max",) else [])
+    assert state.screen.verdict == verdict
+    assert ctx.rt.path.calls == ["find_path:unconverged"] * 3
+    assert [s.source for s in state.seeds] == (["path_hei"] if verdict == "single" else [])
 
 
 def test_string_chunks_restore_the_frozen_ends_and_align_the_images(tmp_path) -> None:
@@ -119,7 +132,7 @@ def test_string_chunks_restore_the_frozen_ends_and_align_the_images(tmp_path) ->
     notes = [r["note"] for r in logged if r["note"].startswith("string0:c")]
     assert notes[0].startswith("string0:c1:end_drift:0.0") and float(notes[0][-5:]) > 0
     frames = ctx.work.path[0]  # the final path too, without the rigid rotation of image 3
-    assert mapped_rmsd(frames[-1], ctx.ends[1]) < 1e-6 and state.path_runs == ("single_max",)
+    assert mapped_rmsd(frames[-1], ctx.ends[1]) < 1e-6 and state.screen.verdict == "single"
     assert all(np.allclose(align_mapped(a, b), b, atol=1e-6) for a, b in pairwise(frames))
 
 
@@ -180,11 +193,65 @@ def test_screen_shortcut_and_collapsed_low_level_endpoints(tmp_path) -> None:
     ctx, state = case_ctx(tmp_path, fakes.double_well())
     ts = fakes.write_geometry(tmp_path, "ts.xyz", ("N", "H", "O"), ctx.rt.qm.pes.points["ts"])
     ctx.case = ctx.case.model_copy(update={"low_level_ts": ts})
+    energies = ctx.rt.qm.calls.count("energy")
     state = act(ctx, state, Action.SCREEN)
-    assert state.screen.verdict == "proceed" and state.screen.n_dft_points == 3
+    assert state.screen.verdict == "single" and ctx.rt.qm.calls.count("energy") == energies + 1
     assert state.seeds[0].source == "discovery_ts" and ctx.rt.screen_path.calls == []
-    # A single-well low-level surface collapses both endpoints: DFT IDPP, no seed.
+    # A single-well low-level surface collapses both endpoints: the DFT IDPP, SPs inside only.
     ctx, state = case_ctx(tmp_path / "b", fakes.double_well(), screen_pes=fakes.harmonic())
     state = act(ctx, state, Action.SCREEN)
-    assert state.screen.verdict == "proceed" and not state.seeds and ctx.work.initial is not None
-    assert ctx.rt.screen_path.calls == [] and state.screen.n_dft_points == 11
+    assert state.screen.verdict == "single" and ctx.work.initial is not None
+    assert ctx.rt.screen_path.calls == [] and ctx.rt.qm.calls.count("energy") == 9
+    assert [s.source for s in state.seeds] == ["screen_hei"] and ctx.work.path.exact
+
+
+def test_screen_runs_no_dft_frequencies(tmp_path) -> None:
+    """U5-P3: SCREEN issues no DFT freq job (GS path of a double well); ZPE is thermo's."""
+    ctx, state = case_ctx(tmp_path, fakes.double_well())
+    before = ctx.rt.qm.calls.count("frequencies")
+    state = act(ctx, state, Action.SCREEN)
+    assert ctx.rt.qm.calls.count("frequencies") == before and ctx.rt.screen_path.calls
+    assert state.screen.verdict == "single" and state.seeds[0].source == "screen_ts"
+    assert not ctx.work.path.exact and ctx.rt.qm.calls.count("energy") == 9  # nodes inside
+
+
+def test_screen_closes_a_barrierless_case_only_between_the_dft_minima(tmp_path) -> None:
+    ctx, state = case_ctx(tmp_path, fakes.flat_uphill())  # GS path from the xTB minima
+    state = act(ctx, state, Action.SCREEN)
+    assert (state.screen.verdict, state.screen.reasons) == ("unavailable", ("low_level_ends",))
+    assert decide(ctx.case, state, ctx.policy) == Decision(Action.FIND_PATH, "no_dft_path")
+    ctx, state = case_ctx(tmp_path / "b", fakes.flat_uphill(), screen_pes=fakes.harmonic())
+    state = act(ctx, state, Action.SCREEN)  # the DFT IDPP between the DFT minima themselves
+    assert state.screen.verdict == "barrierless" and state.screen.max_node_spacing_A > 0
+    assert decide(ctx.case, state, ctx.policy).reason == "screen:barrierless"
+
+
+def test_screen_finds_the_intermediate_of_a_two_step_path(tmp_path) -> None:
+    ctx, state = case_ctx(tmp_path, fakes.triple_well())
+    state = act(ctx, state, Action.SCREEN)
+    assert state.screen.verdict == "intermediate" and not state.seeds
+    decision = decide(ctx.case, state, ctx.policy)
+    assert decision == Decision(Action.VALIDATE_INTERMEDIATE, "path_intermediate")
+    state = HANDLERS[decision.action](ctx, state, decision)
+    record, _ = ctx.work.intermediate
+    assert state.intermediate == "distinct" and record.minimum_id not in ctx.case.minima
+    assert decide(ctx.case, state, ctx.policy).reason == "intermediate_distinct"
+
+
+@pytest.mark.parametrize("kcal,exact,verdict,seeds", [
+    ((0, 2, 0.5, 3, 6, 9, 10), True, "barrierless", []),  # nothing rises above the product
+    ((0, 2, 0.5, 3, 6, 9, 10), False, "unavailable", []),  # GS path: FIND_PATH decides
+    ((0, 2, 0.5, 3, 6, 12, 10), True, "intermediate", ["path_hei"]),  # the highest peak
+])
+def test_a_well_that_is_an_endpoint_leaves_the_peaks(tmp_path, kcal, exact, verdict, seeds):
+    ctx, state = case_ctx(tmp_path, fakes.double_well())
+    a, b = ctx.ends  # the well (node 2) relaxes back into the reactant
+    frames = [a + t * (b - a) for t in np.linspace(0.0, 1.0, len(kcal))]
+    ctx.work.path = Profile(frames, tuple(e * K for e in kcal), exact)
+    state = record_profile(state, BarrierVerdict(verdict="intermediate", source="string"))
+    state = act(ctx, state, Action.VALIDATE_INTERMEDIATE, "path_intermediate")
+    assert state.intermediate == "same_as_endpoint" and state.screen.verdict == verdict
+    assert [s.source for s in state.seeds] == seeds
+    if seeds:  # node 5, refined by the parabola a quarter step toward the product
+        x = ctx.coords(state.seeds[0].geometry)
+        assert np.allclose(x, frames[5] + 0.25 * (frames[6] - frames[5]), atol=1e-4)

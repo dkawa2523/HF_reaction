@@ -24,6 +24,11 @@ def test_standard_states_populations_and_association():  # + port of test_basin_
     assert th.composite(-2.0, -0.95, -1.0) == pytest.approx(-1.95)
 
 
+def test_a_chiral_structure_gains_minus_rt_ln2():  # m = 2 (HONO TS: 12.23 -> 11.82)
+    assert th.chiral_G(298.15) * H2K == pytest.approx(-0.4107, abs=1e-4)
+    assert th.chiral_G(298.15) == pytest.approx(-RT * math.log(2) / H2K)
+
+
 def test_minimum_keeps_every_negative_mode_as_its_magnitude():  # noise (-4) and soft (-30)
     assert th.thermo_frequencies((500.0, -4.0, -30.0), saddle=False) == (4.0, 30.0, 500.0)
 

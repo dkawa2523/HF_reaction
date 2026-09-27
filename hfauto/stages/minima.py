@@ -3,10 +3,10 @@
 ``level: screen`` relaxes every input species; ``level: dft`` refines a selection
 (``chemistry.selection``) started from the screen minima's optimized structures. Jobs run
 serially in species-id order and each is registered as soon as it is relaxed, so a later job
-that falls into a registered basin is ``known`` and skips its freq job (one identity
-criterion: identity.assign). A saddle whose ± displacements reach two distinct minima gives
-two ``mode_follow`` species, relaxed and registered right after it, their minima and a
-``mode_follow`` discovery.
+that falls into a registered basin (its mirror image included) is ``known`` and skips its freq
+job (one identity criterion: identity.assign). A saddle whose ± displacements reach two
+distinct minima gives two ``mode_follow`` species, relaxed and registered right after it, their
+minima and a ``mode_follow`` discovery.
 """
 
 from __future__ import annotations

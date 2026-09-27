@@ -62,7 +62,7 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 
 ### 実エンジンの smoke(`pytest -m real`、WSL)
 
-`tests/smoke/` のテストは marker `real` が付き、`HFAUTO_REAL=1` と `HFAUTO_SITE=<site ファイル>` がそろったときだけ動く(そろわなければ skip)。ジョブは pytest の一時ディレクトリの下に作られるので、`--basetemp` で ext4 上の `/home/user/hfauto_v2` の下を指定する。W7 では 10 passed、59 秒だった。その後、HCN → HNC の ZTS(PBE0/STO-3G、9 beads、1 rank で約 80 s、4 rank で約 15 s。bead エネルギーが落ち着いて single_max になること)と、F⁻·(HF)₂ の組成の CREST(`--noopt` で初期トポロジー検査を通ること、約 1.4 s。`--noopt` なしでは初期トポロジー検査で止まり約 25 s)を加えた。Git Bash から WSL を呼ぶときは、/home で始まる引数が Windows のパスに書き換えられないように `MSYS_NO_PATHCONV=1` を付ける。
+`tests/smoke/` のテストは marker `real` が付き、`HFAUTO_REAL=1` と `HFAUTO_SITE=<site ファイル>` がそろったときだけ動く(そろわなければ skip)。ジョブは pytest の一時ディレクトリの下に作られるので、`--basetemp` で ext4 上の `/home/user/hfauto_v2` の下を指定する。W7 では 10 passed、59 秒だった。その後、HCN → HNC の ZTS(PBE0/STO-3G、9 beads、1 rank で約 80 s、4 rank で約 15 s。bead エネルギーが落ち着いて single に分類されること)と、F⁻·(HF)₂ の組成の CREST(`--noopt` で初期トポロジー検査を通ること、約 1.4 s。`--noopt` なしでは初期トポロジー検査で止まり約 25 s)を加えた。Git Bash から WSL を呼ぶときは、/home で始まる引数が Windows のパスに書き換えられないように `MSYS_NO_PATHCONV=1` を付ける。
 
 ```bash
 MSYS_NO_PATHCONV=1 wsl -e bash -lc 'cd /mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline && HFAUTO_REAL=1 HFAUTO_SITE=configs/sites/wsl_local.yaml /home/user/.venvs/hfauto-prod/bin/python -m pytest -m real tests/smoke --basetemp=/home/user/hfauto_v2/smoke'

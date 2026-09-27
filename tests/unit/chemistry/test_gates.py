@@ -195,23 +195,15 @@ def test_reaction_tier():
     assert g.reaction_tier(reaction(saddle=saddle, connection=link)) == "connected"
 
 
-ENDS = (0.0, 0.5 * K)
-MONOTONIC = (0.0, 0.2 * K, 0.4 * K, 0.5 * K)
-
-
-def test_barrier_proceed():
-    geo = ev().final
-    v = g.barrier_verdict((0.0, 2 * K, 3 * K, 1 * K, 0.5 * K), dft_endpoints=ENDS,
-                          low_profile=(0.0, K, 2 * K, 3 * K), seed=geo)
-    assert v.verdict == "proceed" and v.seed == geo
-    assert v.max_rel_dft_kcal == pytest.approx(2.5) and v.max_rel_low_kcal == pytest.approx(-1.0)
-    low_max = g.barrier_verdict(MONOTONIC, dft_endpoints=ENDS, low_profile=(0.0, 2 * K, 0.0))
-    assert low_max.verdict == "proceed"
-
-
-def test_barrierless_and_unavailable():
-    v = g.barrier_verdict(MONOTONIC, dft_endpoints=ENDS, low_profile=MONOTONIC,
-                          tangent_mode_cm1=1000.0, max_node_spacing_A=0.12)
-    assert (v.verdict, v.below_zpe, v.max_node_spacing_A, v.n_dft_points, v.seed) == (
-        "barrierless", True, 0.12, 4, None)
-    assert g.barrier_verdict((0.0, 5 * K), dft_endpoints=ENDS).verdict == "unavailable"
+def test_barrier_verdict_classifies_a_profile_between_the_dft_minima():
+    single = g.barrier_verdict((0.0, 2 * K, 3 * K, 1 * K, 0.5 * K), source="screen")
+    assert (single.verdict, single.source) == ("single", "screen")
+    assert single.max_rel_kcal == pytest.approx(2.5)  # above the higher end
+    well = g.barrier_verdict((0.0, 2 * K, 0.5 * K, 3 * K, 6 * K, 9 * K, 10 * K), source="string")
+    assert well.verdict == "intermediate" and well.max_rel_kcal == pytest.approx(-1.0)
+    flat = g.barrier_verdict((0.0, 0.2 * K, 0.4 * K, 0.5 * K), source="string",
+                             max_node_spacing_A=0.12)
+    assert (flat.verdict, flat.max_node_spacing_A, flat.reasons) == ("barrierless", 0.12, ())
+    none = g.barrier_verdict((0.0, 5 * K), source="screen")
+    assert (none.verdict, none.max_rel_kcal, none.reasons) == ("unavailable", None,
+                                                               ("too_few_points",))

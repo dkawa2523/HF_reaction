@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from hfauto.chemistry.classification import finalize, split
-from hfauto.chemistry.identity import permutation_invariant_rmsd
+from hfauto.chemistry.identity import basin_coords
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.xyz import XYZ
 from hfauto.core.evidence import FileRef, Geometry
@@ -64,14 +64,13 @@ class CaseResult:
 
 
 def _endpoint(rt: CaseRuntime, minimum_id: str, species_id: str) -> np.ndarray:
-    """The basin's optimized structure, relabelled into a member species' atom order."""
+    """The basin's optimized structure in a member species' atom order and handedness."""
     record, geometry = rt.minima[minimum_id]
     xyz = rt.load_xyz(geometry)
     if species_id == record.species_id:  # the representative itself
         return np.asarray(xyz.coords, dtype=float)
     own = rt.load_xyz(rt.species[species_id].geometry)
-    _, perm = permutation_invariant_rmsd(xyz.symbols, own.coords, xyz.coords)
-    return np.asarray(xyz.coords, dtype=float)[perm]
+    return basin_coords(xyz.symbols, xyz.coords, own.coords)
 
 
 def open_case(case: ReactionRecord, rt: CaseRuntime, policy: CasePolicy, deadline: Deadline,

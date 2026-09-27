@@ -1,4 +1,4 @@
-"""decide(): the 17 rows of design §7.3 (ports tests/test_reaction_classification.py cases)."""
+"""decide(): the 16 rows of design §7.3 (ports tests/test_reaction_classification.py cases)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from hfauto.core import records as r
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import FileRef, Geometry
 from hfauto.drivers.reaction_case import state as st
-from hfauto.drivers.reaction_case.state import Action, CaseState, Decision, decide, record_path
+from hfauto.drivers.reaction_case.state import Action, CaseState, Decision, decide, record_profile
 
 A, C, BV = Action, r.CaseOutcome, r.BarrierVerdict
 TERM = r.StoichTerm(composition_id="CHN_q0_m1", coefficient=1)
@@ -34,7 +34,7 @@ def minimum(mid: str, basin: str, kcal: float = 0.0, *,
 
 MA, MB = minimum("ma", "A"), minimum("mb", "B", 10.0)
 BASE = CaseState(minima=(MA, MB))  # nothing done yet
-S = replace(BASE, screen=BV(verdict="proceed"))  # screened, barrier found
+S = replace(BASE, screen=BV(verdict="single", source="screen"))  # screened, one peak found
 BLOCKED = Decision(A.BLOCKED, "endpoints_not_on_one_pes", C.BLOCKED)
 NO_PATH = Decision(A.FIND_PATH, "no_dft_path")
 
@@ -44,7 +44,7 @@ ROW_CASES = [  # (row, id, case, state, policy, expected decision)
     (1, "screen_tier", CASE, replace(BASE, minima=(MA, minimum("mb", "B", tier="screen"))),
      POLICY, BLOCKED),
     (1, "two_levels", CASE, replace(S, minima=(MA, minimum("mb", "B", level="L2")),
-                                    path_runs=("monotonic", "monotonic")), POLICY, BLOCKED),
+                                    path_runs=2), POLICY, BLOCKED),
     (2, "same_basin", CASE, replace(BASE, minima=(MA, minimum("mb", "A")), claim=CLAIM), POLICY,
      Decision(A.COMPLETE, "same_basin", C.SAME_BASIN)),
     (3, "uphill", CASE, replace(BASE, minima=(MA, minimum("mb", "B", 41.0))), POLICY,
@@ -77,26 +77,33 @@ ROW_CASES = [  # (row, id, case, state, policy, expected decision)
     (11, "screen", CASE, BASE, POLICY, Decision(A.SCREEN, "screen")),
     (11, "degenerate_goes_on", DEGENERATE, replace(BASE, minima=(MA, MA)), POLICY,
      Decision(A.SCREEN, "screen")),
-    (12, "barrierless", CASE, replace(S, screen=BV(verdict="barrierless"), seeds=(SEED,)), POLICY,
+    (12, "screen", CASE, replace(S, screen=BV(verdict="barrierless", source="screen"),
+                                 seeds=(SEED,)), POLICY,
      Decision(A.COMPLETE, "screen:barrierless", C.BARRIERLESS)),
-    (13, "multi_max", CASE, replace(S, path_runs=("multi_max",), seeds=(SEED,)), POLICY,
-     Decision(A.VALIDATE_INTERMEDIATE, "path_multi_max")),
-    (14, "monotonic", CASE, replace(S, path_runs=("monotonic",)), POLICY,
-     Decision(A.COMPLETE, "dft_path_monotonic", C.BARRIERLESS)),
-    (15, "seed", CASE, replace(S, seeds=(SEED,)), POLICY,
+    (12, "string", CASE, replace(S, screen=BV(verdict="barrierless", source="string"),
+                                 path_runs=1), POLICY,
+     Decision(A.COMPLETE, "string:barrierless", C.BARRIERLESS)),
+    (13, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
+                                       seeds=(SEED,)), POLICY,
+     Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")),
+    (14, "seed", CASE, replace(S, seeds=(SEED,)), POLICY,
      Decision(A.REFINE_SADDLE, "seed:screen_ts")),
-    (16, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), POLICY, NO_PATH),
-    (16, "screen_off", CASE, BASE, replace(POLICY, screen=False), NO_PATH),
-    (16, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable")), POLICY, NO_PATH),
-    (17, "exhausted", CASE, replace(S, path_runs=("single_max",), seeds=(SEED,),
-                                    saddle_attempts=2, last_saddle="failed"), POLICY,
+    (15, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), POLICY, NO_PATH),
+    (15, "screen_off", CASE, BASE, replace(POLICY, screen=False), NO_PATH),
+    (15, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
+     POLICY, NO_PATH),
+    (15, "gs_barrierless", CASE, replace(S, screen=BV(verdict="unavailable", source="screen",
+                                                      reasons=("low_level_ends",))),
+     POLICY, NO_PATH),
+    (16, "exhausted", CASE, replace(S, path_runs=1, seeds=(SEED,), saddle_attempts=2,
+                                    last_saddle="failed"), POLICY,
      Decision(A.COMPLETE, "attempts_exhausted", C.UNRESOLVED)),
 ]
 
 
-def test_table_has_17_rows_and_every_row_is_covered():
-    assert len(st.ROWS) == 17
-    assert {row for row, *_ in ROW_CASES} == set(range(1, 18))
+def test_table_has_16_rows_and_every_row_is_covered():
+    assert len(st.ROWS) == 16
+    assert {row for row, *_ in ROW_CASES} == set(range(1, 17))
 
 
 @pytest.mark.parametrize(("row", "case", "state", "policy", "expected"),
@@ -106,25 +113,36 @@ def test_row(row, case, state, policy, expected):
     assert decide(case, state, policy) == expected
 
 
-def test_multi_max_validates_the_well_even_with_seeds_left():
-    """eng P0-4: a multi_max path adds no HEI seed and never leads to REFINE_SADDLE."""
-    state = record_path(replace(S, seeds=(SEED,)), "multi_max", replace(SEED, source="path_hei"))
-    assert state.seeds == (SEED,) and state.path_runs == ("multi_max",)
+def test_a_well_is_validated_before_any_seed_then_the_seeds_go_on():
+    """eng P0-4: an intermediate profile adds no peak seed and validates its well first."""
+    well = BV(verdict="intermediate", source="string")
+    state = record_profile(replace(S, seeds=(SEED,)), well, replace(SEED, source="path_hei"))
+    assert state.seeds == (SEED,) and state.path_runs == 1 and state.screen == well
     assert decide(CASE, state, POLICY).action is A.VALIDATE_INTERMEDIATE
     after = replace(state, intermediate="same_as_endpoint")
     assert decide(CASE, after, POLICY) == Decision(A.REFINE_SADDLE, "seed:screen_ts")
 
 
-def test_hei_seed_only_from_a_single_max_path():
+def test_a_peak_seeds_only_a_single_step_profile():
     hei = replace(SEED, source="path_hei")
-    assert record_path(S, "single_max", hei).seeds == (hei,)
-    for shape in ("multi_max", "monotonic", "failed"):
-        assert record_path(S, shape, hei).seeds == ()  # type: ignore[arg-type]
+    assert record_profile(S, BV(verdict="single", source="string"), hei).seeds == (hei,)
+    for verdict in ("barrierless", "intermediate", "unavailable"):
+        assert record_profile(S, BV(verdict=verdict, source="string"), hei).seeds == ()
+
+
+def test_a_new_profile_reopens_the_checks_of_an_earlier_saddle():
+    """A string after a collapsed saddle: its own well is validated, not the old saddle."""
+    old = replace(S, saddle_attempts=2, last_saddle="converged", ts_check="collapsed",
+                  intermediate="same_as_endpoint")
+    state = record_profile(old, BV(verdict="intermediate", source="string"))
+    assert (state.last_saddle, state.ts_check, state.intermediate) == (None, None, None)
+    assert decide(CASE, state, POLICY) == Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")
+    assert record_profile(BASE, BV(verdict="single", source="screen")).path_runs == 0
 
 
 def test_higher_order_retry_until_attempts_run_out():
     first = replace(S, last_saddle="converged", ts_check="higher_order", saddle_attempts=1,
-                    path_runs=("single_max",))
+                    path_runs=1)
     assert decide(CASE, first, POLICY) == Decision(A.REFINE_SADDLE, "higher_order_retry")
     second = replace(first, saddle_attempts=2)
     assert decide(CASE, second, POLICY) == Decision(A.COMPLETE, "attempts_exhausted",

@@ -25,7 +25,7 @@ PAYLOADS = {
     AT.MINIMUM: r.MinimumRecord(
         minimum_id="m1", basin_id="b1", composition_id="CHN|0|1", species_id="s1", tier="dft",
         level_key=LEVEL.full_key(), opt_calc="c1", freq_calc="c2", energy_hartree=-93.4,
-        state_label="CHN:ab12cd34", members=("s1",), notes=("soft",)),
+        state_label="CHN:ab12cd34", members=("s1",), chiral=True, notes=("soft",)),
     AT.DISCOVERY: r.DiscoveryRecord(
         discovery_id="d1", source_minimum="m1", mechanism="nt2", outcome="product",
         trial=r.ReactionTrial(trial_id="t1", source_minimum="m1", kind="h_shift",
@@ -35,7 +35,8 @@ PAYLOADS = {
         reaction_id="r1", reactants=TERM, products=TERM, minima=("m1", "m2"),
         endpoints=("s1", "s2"), source="declared",
         coordinate=(r.CoordinateTerm(kind="angle", atoms=(0, 1, 2)),),
-        barrier=r.BarrierVerdict(verdict="proceed", max_rel_dft_kcal=40.0, seed=GEO),
+        barrier=r.BarrierVerdict(verdict="single", source="string", max_rel_kcal=40.0,
+                                 max_node_spacing_A=0.3),
         saddle=r.SaddleClaim(saddle_calc="c3", freq_calc="c4", imag_cm1=-1131.6,
                              energy_hartree=-93.3),
         connection=r.ConnectionClaim(side_calcs=("c5", "c6"), minima=("m1", "m2"),

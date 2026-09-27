@@ -4,6 +4,8 @@ Priority: declared reactions, discovery products (low-level TS first), mode-foll
 conformer pairs.  Declared reactions are always kept so that decide() classifies them (blocked,
 same basin, out of window); the others must join two DFT basins of one level inside the window
 and show a change (CH-07).  ``minima`` includes the screen minima that discoveries start from.
+Degeneracy, bond changes and torsions are judged on the basins' optimized structures in the
+endpoints' atom order and handedness (``identity.basin_coords``), never on input coordinates.
 Negative discoveries never veto a hypothesis (review X1); only the summary reports them.
 """
 
@@ -97,14 +99,20 @@ def _stoich(species: SpeciesRecord | None) -> tuple[StoichTerm, ...]:
 class _Pool:
     species: dict[str, SpeciesRecord]
     minima: dict[str, MinimumRecord]  # every tier, by minimum_id
+    structure: dict[str, Geometry]  # minimum_id -> its optimized structure
     basin_of: dict[str, MinimumRecord]  # species id -> minimum holding it (DFT first)
     load: LoadXYZ
     window_kcal: float
     min_distance_A: float
     min_angle_deg: float
 
-    def coords(self, species: SpeciesRecord) -> np.ndarray:
-        return np.asarray(self.load(species.geometry).coords, dtype=float)
+    def coords(self, minimum: MinimumRecord, species: SpeciesRecord) -> np.ndarray:
+        """The basin's optimized structure in the atom order and handedness of ``species``."""
+        basin = self.load(self.structure[minimum.minimum_id])
+        if species.species_id == minimum.species_id:  # the representative itself
+            return np.asarray(basin.coords, dtype=float)
+        own = self.load(species.geometry).coords
+        return identity.basin_coords(basin.symbols, basin.coords, own)
 
     def members(self, minimum: MinimumRecord) -> list[SpeciesRecord]:
         ids = dict.fromkeys((minimum.species_id, *minimum.members))
@@ -126,18 +134,18 @@ class _Pool:
         return self.dft_basin(own.minimum_id) or own
 
 
-def _record(pool: _Pool, rid: str, source: Source, minima: tuple[MinimumRecord, MinimumRecord],
-            ends: tuple[SpeciesRecord, SpeciesRecord], *,
+def _record(rid: str, source: Source, minima: tuple[MinimumRecord, MinimumRecord],
+            ends: tuple[SpeciesRecord, SpeciesRecord], coords: tuple[np.ndarray, np.ndarray], *,
             coordinate: tuple[CoordinateTerm, ...] = (), torsional: bool | None = None,
             low_level_ts: Geometry | None = None) -> ReactionRecord:
-    (ma, mb), (sa, sb) = minima, ends
+    (ma, mb), (sa, sb), (xa, xb) = minima, ends, coords
     symbols = sa.geometry.symbols
-    xa, xb = pool.coords(sa), pool.coords(sb)
     formed, broken = topology.bond_changes(symbols, xa, xb)
     return ReactionRecord(
         reaction_id=rid, source=source, reactants=_stoich(sa), products=_stoich(sb),
         minima=(ma.minimum_id, mb.minimum_id), endpoints=(sa.species_id, sb.species_id),
-        # CH-35: one basin reached through a relabelling (NH3 inversion) stays a reaction.
+        # One basin reached through a relabelling (NH3 inversion) or as its mirror image
+        # (enantiomerization) stays a reaction (CH-35).
         degenerate=ma.basin_id == mb.basin_id and identity.mapped_equivalent(symbols, xa, xb),
         coordinate=coordinate, torsional=not (formed or broken) if torsional is None else torsional,
         n_h_transferred=topology.transferred_hydrogens(symbols, xa, xb), low_level_ts=low_level_ts,
@@ -157,7 +165,8 @@ def _declared(pool: _Pool, reaction: ReactionInput) -> ReactionRecord:
                               torsional=bool(reaction.torsional))
     if sa.geometry.symbols != sb.geometry.symbols:
         raise ValueError(f"reaction {reaction.id}: endpoints differ in atom order")
-    return _record(pool, reaction.id, "declared", (ma, mb), (sa, sb),
+    coords = (pool.coords(ma, sa), pool.coords(mb, sb))
+    return _record(reaction.id, "declared", (ma, mb), (sa, sb), coords,
                    coordinate=coordinate, torsional=reaction.torsional)
 
 
@@ -187,7 +196,7 @@ def _auto(pool: _Pool, source: Source, ma: MinimumRecord, mb: MinimumRecord,
     if ends is None:
         return None
     sa, sb = pool.species[ends[0]], pool.species[ends[1]]
-    xa, xb = pool.coords(sa), pool.coords(sb)
+    xa, xb = pool.coords(ma, sa), pool.coords(mb, sb)
     changed = any(topology.bond_changes(sa.geometry.symbols, xa, xb))
     twisted = _max_torsion_change(sa.geometry.symbols, xa, xb) >= pool.min_angle_deg
     # A conformer pair twists without a bond change; others need a large enough change (CH-07).
@@ -195,17 +204,20 @@ def _auto(pool: _Pool, source: Source, ma: MinimumRecord, mb: MinimumRecord,
     if not ((twisted and not changed) if source == "conformer" else moved):
         return None
     rid = reaction_id(source, sha256_text(f"{ma.minimum_id}|{mb.minimum_id}")[:10])
-    return _record(pool, rid, source, (ma, mb), (sa, sb), low_level_ts=ts)
+    return _record(rid, source, (ma, mb), (sa, sb), (xa, xb), low_level_ts=ts)
 
 
-def _pool(minima: Iterable[MinimumRecord], species: Iterable[SpeciesRecord], load_xyz: LoadXYZ,
-          window_kcal: float, min_distance_A: float, min_angle_deg: float) -> _Pool:
-    by_id = {m.minimum_id: m for m in minima}
+def _pool(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[SpeciesRecord],
+          load_xyz: LoadXYZ, window_kcal: float, min_distance_A: float, min_angle_deg: float
+          ) -> _Pool:
+    pairs = list(minima)
+    by_id = {m.minimum_id: m for m, _ in pairs}
     basin_of: dict[str, MinimumRecord] = {}
     for m in sorted(by_id.values(), key=lambda m: m.tier != "dft"):  # DFT minima first
         for s in (m.species_id, *m.members):
             basin_of.setdefault(s, m)
-    return _Pool(species={s.species_id: s for s in species}, minima=by_id, basin_of=basin_of,
+    return _Pool(species={s.species_id: s for s in species}, minima=by_id,
+                 structure={m.minimum_id: g for m, g in pairs}, basin_of=basin_of,
                  load=load_xyz, window_kcal=window_kcal, min_distance_A=min_distance_A,
                  min_angle_deg=min_angle_deg)
 
@@ -217,12 +229,13 @@ def _lend_ts(record: ReactionRecord, ts: Geometry | None) -> ReactionRecord:
     return record
 
 
-def select(minima: Iterable[MinimumRecord], species: Iterable[SpeciesRecord],
+def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[SpeciesRecord],
            discoveries: Iterable[DiscoveryRecord], declared: Sequence[ReactionInput],
            load_xyz: LoadXYZ, *, window_kcal: float = Policy.reaction_window_kcal,
            min_distance_A: float = 0.2, min_angle_deg: float = 30.0,
            max_per_composition: int = 6) -> list[ReactionRecord]:
-    """One ReactionRecord per hypothesis; a repeated minima pair keeps the first hypothesis."""
+    """One ReactionRecord per hypothesis; a repeated minima pair keeps the first hypothesis.
+    ``minima`` pairs every minimum (any tier) with its optimized structure."""
     found = list(discoveries)
     pool = _pool(minima, species, load_xyz, window_kcal, min_distance_A, min_angle_deg)
     records = [_declared(pool, r) for r in declared]

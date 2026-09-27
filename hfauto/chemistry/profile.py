@@ -1,4 +1,4 @@
-"""Path profiles: shape, highest energy image and settled string energies (§5.5).
+"""Path profiles: class, peak interpolation and settled string energies (§5.5).
 
 A string is continued until its bead energies settle; neither the gradient history (the
 unprojected gmax never vanishes on a sloped path) nor the program's own "converged"
@@ -37,11 +37,17 @@ def interior_maxima(energies: Sequence[float], resolution: float) -> tuple[int, 
     return tuple(peaks)
 
 
-def shape(
-    energies: Sequence[float], resolution: float
-) -> Literal["monotonic", "single_max", "multi_max"]:
-    count = len(interior_maxima(energies, resolution))
-    return "monotonic" if count == 0 else "single_max" if count == 1 else "multi_max"
+PathClass = Literal["barrierless", "single", "intermediate"]
+
+
+def classify(energies: Sequence[float], resolution: float) -> PathClass:
+    """Hills and wells counted by the same rule: a well (an interior minimum a resolution deep
+    on both sides) marks an intermediate, and two peaks always have one between them; without
+    a well one peak is a single step, and without either the path is barrierless."""
+
+    if interior_maxima([-float(e) for e in energies], resolution):
+        return "intermediate"
+    return "single" if interior_maxima(energies, resolution) else "barrierless"
 
 
 def _frames(coords_list: Sequence[np.ndarray]) -> np.ndarray:
@@ -52,18 +58,18 @@ def _frames(coords_list: Sequence[np.ndarray]) -> np.ndarray:
 
 
 def hei(
-    coords_list: Sequence[np.ndarray], energies: Sequence[float]
+    coords_list: Sequence[np.ndarray], energies: Sequence[float], k: int
 ) -> tuple[float, float, np.ndarray]:
-    """Highest interior image refined by a parabola through it and its neighbours.
+    """Interior image ``k`` (a detected peak) refined by a parabola through it and its
+    neighbours.
 
     Returns (fractional index, interpolated energy, coordinates interpolated linearly at
     the fractional index).
     """
 
     frames, e = _frames(coords_list), np.asarray(energies, dtype=float)
-    if len(e) != len(frames) or len(e) < 3:
-        raise ValueError("need matching coordinates and energies for at least three images")
-    k = 1 + int(np.argmax(e[1:-1]))
+    if len(e) != len(frames) or not 0 < k < len(e) - 1:
+        raise ValueError("need matching coordinates and energies and an interior image")
     left, mid, right = e[k - 1], e[k], e[k + 1]
     curvature = left - 2.0 * mid + right
     offset = 0.0

@@ -1,5 +1,6 @@
-"""sp -> thermo with FakeQM / FakeThermo: energy layer, band, association, mixed LOT."""
+"""sp -> thermo with FakeQM / FakeThermo: energy layer, band, association, mixed LOT, m = 2."""
 
+import math
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from hfauto.backends.protocols import Capability, ThermoResult
 from hfauto.chemistry.gates import zpe_hartree
 from hfauto.chemistry.thermo import settings_sha, thermo_frequencies
 from hfauto.core import records as R
+from hfauto.core.constants import R_KCAL_MOL_K
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
@@ -123,3 +125,21 @@ def test_association_across_charge_and_spin_fails_closed(fake_runtime, tmp_run):
     out = _thermo(inputs, rt)
     assert out["m_o2_298.15K"].G_hartree is None and out["m_o_298.15K"].G_hartree is not None
     assert out["rx1_298.15K_1atm"].dG_assoc_kcal is None
+
+
+def test_chiral_minimum_and_ts_gain_minus_rt_ln2(fake_runtime, tmp_run):
+    inputs, rt, ev = _setup(fake_runtime, tmp_run, _gv)
+    plain = _thermo(inputs, rt)
+    chfclbr = [[0.0, 0.0, 0.0], [0.63, 0.63, 0.63], [-0.8, -0.8, 0.8], [-1.0, 1.0, -1.0],
+               [1.1, -1.1, -1.1]]
+    ts = write_geometry(tmp_run, "chiral_ts.xyz", ["C", "H", "F", "Cl", "Br"], np.array(chfclbr))
+    updates = {calc_id(ev["ts"]): {"final": ts},  # a C1 TS geometry; its thermo is unchanged
+               "m_product": {"chiral": True}}
+    arts = [a.model_copy(update={"payload": a.payload.model_copy(update=updates[a.artifact_id])})
+            if a.artifact_id in updates else a for a in inputs.artifacts]
+    chiral = _thermo(inputs.model_copy(update={"artifacts": arts}), rt)
+    m = -R_KCAL_MOL_K * 298.15 * math.log(2)  # -0.4107 kcal/mol
+    for name, shift in (("rx1_298.15K_1atm", (m, m)), ("rx2_298.15K_1atm", (m, 0.0))):
+        before, after = plain[name], chiral[name]  # rx2 ends at m_p2, which is achiral
+        assert after.dG_act_kcal - before.dG_act_kcal == pytest.approx(shift[0], abs=1e-9)
+        assert after.dG_rxn_kcal - before.dG_rxn_kcal == pytest.approx(shift[1], abs=1e-9)

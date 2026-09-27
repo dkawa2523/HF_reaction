@@ -132,8 +132,10 @@ class ReactionPathsStage:
         policy = config.case_policy(rt.policy)
         species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)}
         case_rt = _case_runtime(config, rt, inputs, species)
+        minima = [(m, inputs.evidence(m.opt_calc).final)
+                  for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord)]
         cases = select(
-            inputs.records(ArtifactType.MINIMUM, MinimumRecord), list(species.values()),
+            minima, list(species.values()),
             inputs.records(ArtifactType.DISCOVERY, DiscoveryRecord), rt.system.reactions,
             rt.load_xyz, window_kcal=rt.policy.reaction_window_kcal,
         )

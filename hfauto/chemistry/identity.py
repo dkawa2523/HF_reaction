@@ -1,8 +1,10 @@
 """Permutation-invariant structure identity (§5.5).
 
-Same-element atoms are matched with scipy's Hungarian solver, alternating with a Kabsch fit
-restricted to proper rotations (det = +1), so enantiomers never coincide.  Several starting
-orientations are tried because the alternation only finds a local optimum.
+Same-element atoms are matched with scipy's Hungarian solver, alternating with a proper Kabsch
+fit from several starting orientations (the alternation only finds a local optimum). A basin
+(``same_basin``, ``assign``) admits proper and improper rotations: mirror images are one minimum,
+a chiral one with m = 2 (``is_chiral``). Labelled comparisons (``mapped_rmsd``) stay proper, so
+that a degenerate rearrangement such as the NH3 inversion differs from the identity.
 """
 
 from __future__ import annotations
@@ -13,6 +15,9 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+_RMSD_A = 0.05  # one basin: permutation-invariant RMSD (mirror image included) ...
+_DE_HARTREE = 5.0e-5  # ... and |dE|, with the best match clearly ahead of the runner-up
+_RUNNER_UP_RATIO, _RUNNER_UP_GAP_A = 3.0, 0.1
 _MAX_REFINE = 5
 _DEGENERATE_REL = 0.05  # principal moments this close (relative) count as degenerate
 _IN_PLANE_STEP_DEG = 30
@@ -23,6 +28,10 @@ _SIGN_FLIPS = tuple(np.diag(s) for s in ((1, 1, 1), (1, -1, -1), (-1, 1, -1), (-
 def _centered(coords: np.ndarray) -> np.ndarray:
     x = np.asarray(coords, dtype=float).reshape(-1, 3)
     return x - x.mean(axis=0)
+
+
+def _mirror(coords: np.ndarray) -> np.ndarray:
+    return np.asarray(coords, dtype=float).reshape(-1, 3) * [-1.0, 1.0, 1.0]
 
 
 def _rotation(mobile: np.ndarray, fixed: np.ndarray) -> np.ndarray:
@@ -117,19 +126,20 @@ def mapped_rmsd(a: np.ndarray, b: np.ndarray) -> float:
     return _rmsd(xb @ _rotation(xb, xa), xa)
 
 
-def same_minimum(
-    symbols: Sequence[str],
-    a: np.ndarray,
-    b: np.ndarray,
-    ea: float,
-    eb: float,
-    *,
-    rmsd_A: float = 0.05,
-    de_hartree: float = 5.0e-5,
-) -> bool:
-    """One minimum: |ΔE| <= de_hartree and permutation-invariant RMSD <= rmsd_A (as assign)."""
+def _basin_match(symbols: Sequence[str], a: np.ndarray, b: np.ndarray
+                 ) -> tuple[float, np.ndarray, bool]:
+    """(rmsd, perm, mirrored): the better of b and its mirror image matched onto a."""
 
-    return abs(ea - eb) <= de_hartree and permutation_invariant_rmsd(symbols, a, b)[0] <= rmsd_A
+    rmsd, perm = permutation_invariant_rmsd(symbols, a, b)
+    m_rmsd, m_perm = permutation_invariant_rmsd(symbols, a, _mirror(b))
+    return (m_rmsd, m_perm, True) if m_rmsd < rmsd else (rmsd, perm, False)
+
+
+def is_chiral(symbols: Sequence[str], x: np.ndarray) -> bool:
+    """True when x and its mirror image are distinct under proper rotations and relabelling
+    (optical isomer number m = 2)."""
+
+    return permutation_invariant_rmsd(symbols, x, _mirror(x))[0] > _RMSD_A
 
 
 def assign(
@@ -137,37 +147,49 @@ def assign(
     coords: np.ndarray,
     energy: float,
     candidates: Mapping[str, tuple[np.ndarray, float]],
-    *,
-    rmsd_A: float = 0.05,
-    de_hartree: float = 5.0e-5,
-    runner_up_ratio: float = 3.0,
-    runner_up_gap_A: float = 0.1,
 ) -> str | None:
-    """Id of the unique candidate (coords, energy) matching the structure, else None."""
+    """Id of the candidate (coords, energy) whose basin holds the structure, else None.
 
-    scored = sorted(
-        (permutation_invariant_rmsd(symbols, coords, xyz)[0], abs(energy - e), key)
-        for key, (xyz, e) in candidates.items()
-    )
-    if not scored or scored[0][0] > rmsd_A or scored[0][1] > de_hartree:
+    Candidates within 5e-5 Eh come first; the closest of them (mirror image included) must lie
+    within 0.05 A and clearly ahead of the runner-up."""
+
+    scored = sorted((_basin_match(symbols, coords, xyz)[0], key)
+                    for key, (xyz, e) in candidates.items() if abs(energy - e) <= _DE_HARTREE)
+    if not scored or scored[0][0] > _RMSD_A:
         return None
-    best = scored[0][0]
     if len(scored) > 1:
-        runner = scored[1][0]
-        separated = runner - best >= runner_up_gap_A or (
-            runner >= runner_up_ratio * best and runner > best
-        )
+        best, runner = scored[0][0], scored[1][0]
+        separated = runner - best >= _RUNNER_UP_GAP_A or (
+            runner >= _RUNNER_UP_RATIO * best and runner > best)
         if not separated:
             return None
-    return scored[0][2]
+    return scored[0][1]
 
 
-def mapped_equivalent(
-    symbols: Sequence[str], a: np.ndarray, b: np.ndarray, *, tol_A: float = 0.05
-) -> bool:
-    """True when a and b differ as mapped but coincide after relabelling (degenerate pair)."""
+def same_basin(symbols: Sequence[str], a: np.ndarray, b: np.ndarray, ea: float, eb: float
+               ) -> bool:
+    """Structures a and b (energies ea, eb) lie in one basin by assign's criterion."""
 
-    return mapped_rmsd(a, b) > tol_A and permutation_invariant_rmsd(symbols, a, b)[0] <= tol_A
+    return assign(symbols, a, ea, {"b": (b, eb)}) is not None
+
+
+def basin_coords(symbols: Sequence[str], basin: np.ndarray, own: np.ndarray) -> np.ndarray:
+    """The basin's structure in the atom order of ``own`` (a structure of that basin), mirrored
+    when the basin is chiral and ``own`` has the other handedness."""
+
+    x = np.asarray(basin, dtype=float).reshape(-1, 3)
+    if not is_chiral(symbols, x):
+        return x[permutation_invariant_rmsd(symbols, own, x)[1]]
+    _, perm, mirrored = _basin_match(symbols, own, x)
+    return (_mirror(x) if mirrored else x)[perm]
+
+
+def mapped_equivalent(symbols: Sequence[str], a: np.ndarray, b: np.ndarray) -> bool:
+    """True when a and b differ as labelled (proper rotations) but are one basin structure
+    (mirror image included): a degenerate rearrangement such as the NH3 inversion or the
+    enantiomerization of a chiral minimum."""
+
+    return mapped_rmsd(a, b) > _RMSD_A and _basin_match(symbols, a, b)[0] <= _RMSD_A
 
 
 def periodic_nearest(value_deg: float, targets_deg: Sequence[float]) -> int:

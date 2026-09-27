@@ -267,7 +267,7 @@ class FakeSaddle(_Surface):
 
 class FakePath(_Surface):
     """Linear interpolation on the PES. Each call takes the next ``script`` entry: "pes" (also
-    once empty), "monotonic" / "single_max" / "multi_max", "unconverged" or "failed".
+    once empty), "barrierless" / "single" / "intermediate", "unconverged" or "failed".
 
     Like a real ZTS, gmax stays flat; the bead energies settle within a few iterations except
     for "unconverged", whose bead energies never settle (the final profile is the PES)."""
@@ -287,13 +287,14 @@ class FakePath(_Surface):
         t, a, b = np.linspace(0.0, 1.0, images), start.xyz.coords, end.xyz.coords
         frames = [a + ti * (b - a) for ti in t]
         e = np.array([self.pes.energy(f) for f in frames])
-        bumps = {"monotonic": 0 * t, "single_max": np.sin(np.pi * t),
-                 "multi_max": np.sin(2 * np.pi * t) ** 2}
+        bumps = {"barrierless": 0 * t, "single": np.sin(np.pi * t),
+                 "intermediate": np.sin(2 * np.pi * t) ** 2}
         e = e[0] + (e[-1] - e[0]) * t + 0.01 * bumps[shape] if shape in bumps else e
         folder = self.root / "fake" / key[:16]
         xyz = write_xyz_trajectory([XYZ(list(start.xyz.symbols), f) for f in frames],
                                    folder / "images.xyz")
-        x, _, ok = _saddle(self.pes, hei(frames, e)[2], None) if refine_ts else (None, [], False)
+        x, _, ok = (_saddle(self.pes, hei(frames, e, 1 + int(np.argmax(e[1:-1])))[2], None)
+                    if refine_ts else (None, [], False))
         ts = write_geometry(self.root, folder / "ts.xyz", start.xyz.symbols, x) if ok else None
         drift = (0.0, 2e-3, 0.0, 2e-3, 0.0) if shape == "unconverged" else (1e-2, 1e-4, 1e-5, 0.0)
         return PathProfile(engine=self.name, level=fake_level(method, start), ts=ts,

@@ -1,6 +1,6 @@
 """Chemical pass/fail gates (design §5.4): the only place that turns Evidence into verdicts.
 
-Allowed imports: the standard library, numpy and hfauto.core.
+Allowed imports: the standard library, numpy, hfauto.core and chemistry.profile.
 """
 
 from __future__ import annotations
@@ -9,8 +9,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from hfauto.chemistry.profile import classify
 from hfauto.core.constants import CM1_TO_HARTREE, HARTREE_TO_KCAL_MOL
-from hfauto.core.evidence import Evidence, Geometry, Level
+from hfauto.core.evidence import Evidence, Level
 from hfauto.core.records import BarrierVerdict, CaseOutcome, ReactionRecord, ReactionThermo
 
 
@@ -34,7 +35,7 @@ class Policy:
     ts_prominence_hartree: float = 2.0e-5
     scf_noise_factor: float = 20.0
     qrc_min_drop_hartree: float = 1.0e-5
-    barrier_proceed_kcal: float = 1.0
+    resolution_kcal: float = 1.0  # hills and wells of a DFT path count from this depth
     reaction_window_kcal: float = 40.0
     thermo_zpe_tol_hartree: float = 1.0e-5
     thermo_energy_tol_hartree: float = 1.0e-6
@@ -165,51 +166,21 @@ def is_first_order_saddle(
     return _gate(reasons, notes)
 
 
-def _max_rel_kcal(
-    profile: Sequence[float] | None, endpoints: tuple[float, float] | None
-) -> float | None:
-    """Highest interior point relative to the higher endpoint, in kcal/mol."""
-    if profile is None or len(profile) < 3:
-        return None
-    reference = max(endpoints) if endpoints is not None else max(profile[0], profile[-1])
-    return (max(profile[1:-1]) - reference) * HARTREE_TO_KCAL_MOL
-
-
 def barrier_verdict(
-    dft_profile: Sequence[float],
+    energies: Sequence[float],
     *,
-    dft_endpoints: tuple[float, float],
-    low_profile: Sequence[float] | None = None,
-    low_endpoints: tuple[float, float] | None = None,
-    tangent_mode_cm1: float | None = None,
-    seed: Geometry | None = None,
+    source: Literal["screen", "string"],
     max_node_spacing_A: float | None = None,
     policy: Policy = _DEFAULT,
 ) -> BarrierVerdict:
-    rel_dft = _max_rel_kcal(dft_profile, dft_endpoints)
-    rel_low = _max_rel_kcal(low_profile, low_endpoints)
-    base = BarrierVerdict(
-        verdict="unavailable",
-        max_rel_low_kcal=rel_low,
-        max_rel_dft_kcal=rel_dft,
-        n_dft_points=len(dft_profile),
-        max_node_spacing_A=max_node_spacing_A,
-    )
-    if rel_dft is None:
-        return base.model_copy(update={"reasons": ("too_few_dft_points",)})
-    limit = policy.barrier_proceed_kcal
-    if rel_dft >= limit or (rel_low is not None and rel_low >= limit):
-        reason = "dft_interior_maximum" if rel_dft >= limit else "low_level_interior_maximum"
-        return base.model_copy(update={"verdict": "proceed", "seed": seed, "reasons": (reason,)})
-    half_quantum_kcal = (
-        0.5 * abs(tangent_mode_cm1) * CM1_TO_HARTREE * HARTREE_TO_KCAL_MOL
-        if tangent_mode_cm1 is not None else None
-    )
-    return base.model_copy(update={
-        "verdict": "barrierless",
-        "below_zpe": half_quantum_kcal is not None and rel_dft < half_quantum_kcal,
-        "reasons": ("no_interior_maximum",),
-    })
+    """Class of a DFT profile with the two DFT minima energies at its ends, at resolution_kcal:
+    a continuous path's maximum bounds the saddle from above."""
+    if len(energies) < 3:
+        return BarrierVerdict(verdict="unavailable", source=source, reasons=("too_few_points",))
+    rel = (max(energies[1:-1]) - max(energies[0], energies[-1])) * HARTREE_TO_KCAL_MOL
+    verdict = classify(energies, policy.resolution_kcal / HARTREE_TO_KCAL_MOL)
+    return BarrierVerdict(verdict=verdict, source=source, max_rel_kcal=rel,
+                          max_node_spacing_A=max_node_spacing_A)
 
 
 def _side_reasons(index: int, side: Evidence, ceiling: float, ts_level: Level, drop: float

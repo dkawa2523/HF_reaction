@@ -22,7 +22,7 @@ def done(outcome: r.CaseOutcome, reason: str = "r") -> Decision:
 
 
 def test_finalize_attaches_outcome_reasons_and_claims():
-    barrier = r.BarrierVerdict(verdict="proceed", max_rel_dft_kcal=12.0)
+    barrier = r.BarrierVerdict(verdict="single", source="screen", max_rel_kcal=12.0)
     rec = finalize(CASE, done(r.CaseOutcome.ELEMENTARY_STEP, "connection:elementary"),
                    barrier=barrier, claim=SADDLE, connection=QRC)
     assert rec.outcome is r.CaseOutcome.ELEMENTARY_STEP

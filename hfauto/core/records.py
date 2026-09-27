@@ -54,6 +54,7 @@ class MinimumRecord(BaseModel):
     energy_hartree: float
     state_label: str
     members: tuple[str, ...] = ()  # species that fell into this basin (collapsed seeds included)
+    chiral: bool = False  # the mirror image is a distinct structure of this basin (m = 2)
     notes: tuple[str, ...] = ()
 
 
@@ -99,14 +100,13 @@ class CoordinateTerm(BaseModel):
 
 
 class BarrierVerdict(BaseModel):
+    """Class of the latest DFT profile (profile.classify), the DFT minima energies at its ends."""
+
     model_config = _FROZEN
-    verdict: Literal["proceed", "barrierless", "unavailable"]
-    max_rel_low_kcal: float | None = None
-    max_rel_dft_kcal: float | None = None
-    n_dft_points: int = 0
-    max_node_spacing_A: float | None = None  # resolution of the barrierless claim
-    below_zpe: bool = False
-    seed: Geometry | None = None  # proceed only: low-level TS or DFT HEI node
+    verdict: Literal["barrierless", "single", "intermediate", "unavailable"]
+    source: Literal["screen", "string"]
+    max_rel_kcal: float | None = None  # highest interior point above the higher end
+    max_node_spacing_A: float | None = None  # resolution of a barrierless claim
     reasons: tuple[str, ...] = ()
 
 

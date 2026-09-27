@@ -4,7 +4,7 @@ import fakes
 import numpy as np
 import pytest
 
-from hfauto.chemistry.profile import energies_settled, shape
+from hfauto.chemistry.profile import classify, energies_settled
 from hfauto.chemistry.xyz import Molecule
 from hfauto.core.evidence import FailureKind
 from hfauto.core.method import MethodSpec
@@ -34,19 +34,19 @@ def test_double_well_ts_has_one_imaginary_mode_and_saddle_finds_it(tmp_run) -> N
     assert found.task == "saddle" and found.energy_hartree == pytest.approx(ts.energy_hartree)
 
 
-@pytest.mark.parametrize("name,want", [("double_well", "single_max"), ("triple_well", "multi_max"),
-                                       ("flat_uphill", "monotonic")])
+@pytest.mark.parametrize("name,want", [("double_well", "single"), ("triple_well", "intermediate"),
+                                       ("flat_uphill", "barrierless")])
 def test_paths_follow_the_pes_or_the_script(tmp_run, name, want) -> None:
     pes = getattr(fakes, name)()
-    path = fakes.FakePath(tmp_run, pes, script=["pes", "monotonic", "failed"])
+    path = fakes.FakePath(tmp_run, pes, script=["pes", "barrierless", "failed"])
     ends = pes.molecule("reactant"), pes.molecule("product")
-    profile = path.find_path(*ends, M, images=11, refine_ts=want == "single_max")
-    assert shape(profile.energies_hartree, 1e-4) == want
+    profile = path.find_path(*ends, M, images=11, refine_ts=want == "single")
+    assert classify(profile.energies_hartree, 1e-4) == want
     # Like a real ZTS: gmax stays flat, the bead energies settle (not for "unconverged").
     assert energies_settled(profile.energy_history, 1e-4) and min(profile.gmax_history) > 1e-3
     if profile.ts is not None:
         assert profile.ts_energy_hartree == pytest.approx(pes.energy(pes.points["ts"]))
-    assert shape(path.find_path(*ends, M, images=11).energies_hartree, 1e-4) == "monotonic"
+    assert classify(path.find_path(*ends, M, images=11).energies_hartree, 1e-4) == "barrierless"
     assert path.find_path(*ends, M, images=11).kind is FailureKind.NONZERO_EXIT
     stuck = fakes.FakePath(tmp_run, pes, script=["unconverged"]).find_path(*ends, M, images=11)
     assert not energies_settled(stuck.energy_history, 1e-3)

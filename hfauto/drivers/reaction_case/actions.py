@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
 
@@ -24,10 +24,9 @@ from hfauto.chemistry.identity import mapped_equivalent, mapped_rmsd, periodic_n
 from hfauto.chemistry.interpolation import align_mapped, align_sequential, idpp
 from hfauto.chemistry.modes import displace, overlap, qrc_amplitude
 from hfauto.chemistry.topology import declared_coordinate, declared_coordinate_gradient, state_label
-from hfauto.chemistry.vibrations import projected_frequencies
 from hfauto.chemistry.xyz import XYZ, Molecule, composition_key, geometry_fingerprint
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
-from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry, PathProfile
+from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
 from hfauto.core.ids import species_id
 from hfauto.core.method import Deadline
 from hfauto.core.records import (
@@ -51,12 +50,21 @@ _RETRY_A = 0.1  # step down the second imaginary mode of a higher-order saddle
 _SETTLED = 0.1  # a string ends once its bead energies move < 0.1 x resolution in 3 iterations
 
 
+class Profile(NamedTuple):
+    """A DFT profile with the DFT minima energies at its ends. ``exact`` when its end frames
+    are the DFT minima themselves (IDPP, string), not the xTB minima a GS path starts from."""
+
+    frames: list[np.ndarray]
+    energies: tuple[float, ...]
+    exact: bool
+
+
 @dataclass
 class Work:
     """Evidence behind the CaseState and the artifacts the case adds."""
 
-    initial: list[np.ndarray] | None = None  # screen GS path or screen IDPP (row 16)
-    path: tuple[list[np.ndarray], tuple[float, ...]] | None = None  # last DFT string
+    initial: list[np.ndarray] | None = None  # screen GS path or screen IDPP (row 15)
+    path: Profile | None = None  # the latest DFT profile, behind CaseState.screen
     saddle: Evidence | None = None
     ts_freq: Evidence | None = None
     saddle_notes: tuple[str, ...] = ()
@@ -85,7 +93,7 @@ class Ctx:
 
     @property
     def resolution(self) -> float:
-        return self.policy.gates.barrier_proceed_kcal / HARTREE_TO_KCAL_MOL
+        return self.policy.gates.resolution_kcal / HARTREE_TO_KCAL_MOL
 
     def mol(self, coords: np.ndarray) -> Molecule:
         xyz = XYZ(list(self.symbols), np.asarray(coords, dtype=float).reshape(-1, 3))
@@ -122,16 +130,18 @@ class Ctx:
         images = trajectory.read_xyz_trajectory(self.rt.resolve(ref))
         return [np.asarray(i.coords, dtype=float) for i in images]
 
-    def verdict(self, dft: Sequence[float], *, frames: Sequence[np.ndarray] | None = None,
-                low: Sequence[float] | None = None, low_ends: tuple[float, float] | None = None,
-                seed: Geometry | None = None) -> BarrierVerdict:
-        """barrier_verdict; ``frames`` add the node spacing and the tangent mode (below_zpe)."""
-        return barrier_verdict(
-            dft, dft_endpoints=self.energies, low_profile=low, low_endpoints=low_ends, seed=seed,
-            policy=self.policy.gates,
-            max_node_spacing_A=None if frames is None else profile.max_node_spacing(frames),
-            tangent_mode_cm1=None if frames is None else _tangent_mode_cm1(self, frames),
-        )
+    def verdict(self, frames: list[np.ndarray], inner: Sequence[float],
+                source: Literal["screen", "string"], *, exact: bool = True) -> BarrierVerdict:
+        """Class of the profile along ``frames`` (``inner`` between the DFT minima energies),
+        kept as the latest path. Only a path between the DFT minima themselves bounds the
+        saddle: a barrierless GS path (xTB ends) leaves the question to FIND_PATH."""
+        energies = (self.energies[0], *inner, self.energies[1])
+        self.work.path = Profile(frames, energies, exact)
+        verdict = barrier_verdict(energies, source=source, policy=self.policy.gates,
+                                  max_node_spacing_A=profile.max_node_spacing(frames))
+        if verdict.verdict != "barrierless" or exact:
+            return verdict
+        return verdict.model_copy(update={"verdict": "unavailable", "reasons": ("low_level_ends",)})
 
     def chord(self, coords: np.ndarray) -> tuple[float, ...]:
         """Endpoint difference aligned onto ``coords``: the tangent of a seed off a path."""
@@ -150,24 +160,18 @@ class Ctx:
 
 
 def _unavailable(reason: str) -> BarrierVerdict:
-    return BarrierVerdict(verdict="unavailable", reasons=(reason,))
+    return BarrierVerdict(verdict="unavailable", source="screen", reasons=(reason,))
 
 
-def _single_points(ctx: Ctx, frames: Sequence[np.ndarray]) -> list[float] | None:
-    energies = [ctx.sp(f) for f in frames]
-    return None if any(e is None for e in energies) else [e for e in energies if e is not None]
-
-
-def _tangent_mode_cm1(ctx: Ctx, frames: Sequence[np.ndarray]) -> float | None:
-    """Frequency of the higher DFT endpoint's mode most parallel to the path there."""
-    high = int(ctx.energies[1] > ctx.energies[0])
-    x = ctx.raw[high]
-    step = align_mapped(x, frames[-2] if high else frames[1]) - x
-    freq = ctx.rt.qm.frequencies(ctx.mol(x), ctx.rt.method, deadline=ctx.deadline)
-    if isinstance(freq, Failure) or freq.hessian is None:
+def _peak_seed(ctx: Ctx, name: str, source: Literal["screen_hei", "path_hei"]) -> Seed | None:
+    """The highest peak detected on the latest profile, refined by a parabola."""
+    path = ctx.work.path
+    peaks = () if path is None else profile.interior_maxima(path.energies, ctx.resolution)
+    if path is None or not peaks:
         return None
-    freqs, modes, _ = projected_frequencies(np.load(ctx.rt.resolve(freq.hessian)), ctx.symbols, x)
-    return float(freqs[int(np.argmax([overlap(m, step) for m in modes]))])
+    k, _, x = profile.hei(path.frames, path.energies, max(peaks, key=path.energies.__getitem__))
+    tangent = tuple(profile.tangent(path.frames, round(k)).ravel())
+    return Seed(ctx.geometry(name, x), source, tangent)
 
 
 def _xtb_saddle_ok(ctx: Ctx, coords: np.ndarray) -> bool:
@@ -190,40 +194,38 @@ def _shortcut(ctx: Ctx, geometry: Geometry) -> tuple[BarrierVerdict, Seed | None
     e_ts = ctx.sp(x)
     if e_ts is None:
         return None
-    verdict = ctx.verdict([ctx.energies[0], e_ts, ctx.energies[1]], seed=geometry)
+    verdict = barrier_verdict((ctx.energies[0], e_ts, ctx.energies[1]), source="screen",
+                              policy=ctx.policy.gates)
     return verdict, Seed(geometry, "discovery_ts", ctx.chord(x))
 
 
-def _screen_idpp(ctx: Ctx) -> BarrierVerdict:
-    """Step 2 when xTB collapses the endpoints: DFT single points along the DFT IDPP."""
+def _screened(ctx: Ctx, frames: list[np.ndarray], *, exact: bool, ts: Geometry | None = None
+              ) -> tuple[BarrierVerdict, Seed | None]:
+    """DFT single points on the interior nodes; a single peak seeds at the GS's TSOpt structure
+    when its xTB freq confirms it, else at the DFT peak."""
+    inner = [ctx.sp(f) for f in frames[1:-1]]
+    if any(e is None for e in inner):
+        return _unavailable("screen_single_point"), None
+    verdict = ctx.verdict(frames, [e for e in inner if e is not None], "screen", exact=exact)
+    if verdict.verdict != "single":
+        return verdict, None
+    if ts is not None and _xtb_saddle_ok(ctx, ctx.coords(ts)):
+        return verdict, Seed(ts, "screen_ts", ctx.chord(ctx.coords(ts)))
+    return verdict, _peak_seed(ctx, "screen_hei", "screen_hei")
+
+
+def _screen_idpp(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
+    """Step 2 when xTB collapses the endpoints: the DFT IDPP between the DFT minima."""
     try:
         frames = idpp(ctx.symbols, *ctx.ends, ctx.policy.screen_images)
     except ValueError as exc:
-        return _unavailable(f"idpp:{exc}")
-    ctx.work.initial = frames  # FIND_PATH (row 16) starts from it; no seed (§7.3)
-    dft = _single_points(ctx, frames)
-    if dft is None:
-        return _unavailable("screen_single_point")
-    return ctx.verdict(dft, frames=frames)
-
-
-def _screen_seed(ctx: Ctx, prof: PathProfile, frames: list[np.ndarray], dft: list[float]
-                 ) -> tuple[Seed, list[float], list[float]]:
-    """(seed, DFT profile, low profile): the GS's TSOpt structure when its xTB freq confirms
-    it (its energies follow the DFT HEI in both profiles), else the DFT HEI node."""
-    low, k = list(prof.energies_hartree), 1 + int(np.argmax(dft[1:-1]))
-    ts = prof.ts if prof.ts is not None and _xtb_saddle_ok(ctx, ctx.coords(prof.ts)) else None
-    e_ts = None if ts is None else ctx.sp(ctx.coords(ts))
-    if ts is None or e_ts is None:
-        tangent = tuple(profile.tangent(frames, k).ravel())
-        return Seed(ctx.geometry("screen_hei", frames[k]), "screen_hei", tangent), dft, low
-    if prof.ts_energy_hartree is not None:
-        low.insert(k + 1, prof.ts_energy_hartree)
-    return Seed(ts, "screen_ts", ctx.chord(ctx.coords(ts))), [*dft[:k + 1], e_ts, *dft[k + 1:]], low
+        return _unavailable(f"idpp:{exc}"), None
+    ctx.work.initial = frames  # FIND_PATH (row 15) starts from it
+    return _screened(ctx, frames, exact=True)
 
 
 def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
-    """Steps 2-4: xTB endpoints, then GS with TSOpt, DFT single points on every node."""
+    """Steps 2-4: xTB endpoints, then GS with TSOpt (the DFT IDPP when xTB collapses them)."""
     qm, path, method = ctx.rt.screen_qm, ctx.rt.screen_path, ctx.rt.screen_method
     if qm is None or path is None or method is None:
         return _unavailable("no_screen_engines"), None
@@ -233,29 +235,23 @@ def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
         return _unavailable(f"screen_endpoint:{kind}"), None
     low_a, low_b = ctx.coords(ea.final), ctx.coords(eb.final)
     if mapped_rmsd(low_a, low_b) <= _COLLAPSE_A:
-        return _screen_idpp(ctx), None
+        return _screen_idpp(ctx)
     prof = path.find_path(ctx.mol(low_a), ctx.mol(align_mapped(low_a, low_b)), method,
                           images=ctx.policy.screen_images, refine_ts=True, deadline=ctx.deadline)
     if isinstance(prof, Failure):
         return _unavailable(f"screen_path:{prof.kind.value}"), None
     frames = ctx.work.initial = align_sequential(ctx.frames(prof.images))  # dlc images rotate
-    dft = _single_points(ctx, frames)
-    if dft is None:
-        return _unavailable("screen_single_point"), None
-    seed, dft, low = _screen_seed(ctx, prof, frames, dft)
-    low_ends = (ea.energy_hartree, eb.energy_hartree)
-    return ctx.verdict(dft, frames=frames, low=low, low_ends=low_ends, seed=seed.geometry), seed
+    return _screened(ctx, frames, exact=False, ts=prof.ts)
 
 
 def screen(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """Barrier pre-check: shortcut from a low-level TS, else the low-level path (chem 16)."""
     found = None if ctx.case.low_level_ts is None else _shortcut(ctx, ctx.case.low_level_ts)
-    if found is None or found[0].verdict != "proceed":
+    if found is None or found[0].verdict != "single":
         found = _screen_path(ctx)
     verdict, seed = found
     ctx.note(f"screen:{verdict.verdict}:{','.join(verdict.reasons)}")
-    seeds = (seed, *state.seeds) if seed and verdict.verdict == "proceed" else state.seeds
-    return replace(state, screen=verdict, seeds=seeds)
+    return case_state.record_profile(state, verdict, seed)
 
 
 def _mode_index(freq: Evidence, direction: np.ndarray | None, noise_cm1: float
@@ -371,7 +367,7 @@ def _register(ctx: Ctx, coords: np.ndarray, name: str,
 
 def _assign(ctx: Ctx, side: Evidence, x: np.ndarray, name: str) -> str | None:
     """Registry.find; a torsional case falls back to the nearest declared dihedral (CH-04)."""
-    basin = ctx.rt.registry.find(ctx.symbols, x, side.energy_hartree)
+    basin = ctx.rt.registry.find(side)
     if basin is not None:
         return ctx.record(basin).minimum_id
     terms = ctx.case.coordinate
@@ -415,31 +411,38 @@ def connect(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     return replace(state, connection=label)
 
 
+def _past_the_well(ctx: Ctx, state: CaseState, path: Profile, name: str) -> CaseState:
+    """The well relaxed into an endpoint: barrierless (with exact ends) when no interior point
+    rises a resolution above the higher end, else the highest peak seeds the saddle search."""
+    v, e = state.screen, path.energies
+    if v is not None and max(e[1:-1]) - max(e[0], e[-1]) < ctx.resolution:
+        flat = "barrierless" if path.exact else "unavailable"
+        return replace(state, screen=v.model_copy(update={"verdict": flat,
+                                                          "reasons": ("well_is_endpoint",)}))
+    source = "screen_hei" if v is not None and v.source == "screen" else "path_hei"
+    seed = _peak_seed(ctx, f"{name}_hei", source)
+    return replace(state, seeds=(*state.seeds, seed)) if seed else state
+
+
 def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """relax_to_minimum → Registry on the collapsed saddle or on the lowest node between the
-    maxima of a multi_max DFT path (then its highest maximum seeds when it is no intermediate)."""
-    work, peaks = ctx.work, ()
-    frames, energies = work.path if work.path is not None else ([], ())
-    if decision.reason == "path_multi_max" and work.path is not None:
-        peaks = profile.interior_maxima(energies, ctx.resolution)
-        x = frames[min(range(peaks[0], peaks[-1] + 1), key=lambda i: energies[i])]
-    elif work.saddle is not None:
-        x = ctx.coords(work.saddle.final)
+    """relax_to_minimum → Registry on the collapsed saddle or on the lowest well of the latest
+    DFT profile."""
+    path = ctx.work.path if decision.reason == "path_intermediate" else None
+    if path is not None:
+        wells = profile.interior_maxima([-e for e in path.energies], ctx.resolution)
+        x = path.frames[min(wells, key=path.energies.__getitem__)]
+    elif ctx.work.saddle is not None:
+        x = ctx.coords(ctx.work.saddle.final)
     else:
         return replace(state, intermediate="same_as_endpoint")
-    name = f"int{state.saddle_attempts}_{len(state.path_runs)}"
+    name = f"int{state.saddle_attempts}_{state.path_runs}"
     record = _register(ctx, x, name, "intermediate")
     ends = {ctx.rt.minima[m][0].basin_id for m in ctx.case.minima}
     if record is not None and record.basin_id not in ends:
-        work.intermediate = (record, ctx.rt.species[record.species_id])
+        ctx.work.intermediate = (record, ctx.rt.species[record.species_id])
         return replace(state, intermediate="distinct")
-    seeds = state.seeds
-    if peaks:  # multi_max whose valley is an endpoint: try the highest maximum
-        top = max(peaks, key=lambda i: energies[i])
-        seed = Seed(ctx.geometry(f"{name}_hei", frames[top]), "path_hei",
-                    tuple(profile.tangent(frames, top).ravel()))
-        seeds = (*seeds, seed)
-    return replace(state, intermediate="same_as_endpoint", seeds=seeds)
+    state = replace(state, intermediate="same_as_endpoint")
+    return state if path is None else _past_the_well(ctx, state, path, name)
 
 
 def _initial_path(ctx: Ctx, beads: int, name: str) -> FileRef | None:
@@ -457,10 +460,10 @@ def _initial_path(ctx: Ctx, beads: int, name: str) -> FileRef | None:
 
 
 def find_path(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """DFT string in chunks until its bead energies settle (at most string_chunks); the shape
-    is recorded as found and only a single_max profile yields a seed. NWChem freezeN moves the
-    frozen ends: seams and the final path get the DFT minima back, drift in a chunk is a note."""
-    rt, p, run_name = ctx.rt, ctx.policy, f"string{len(state.path_runs)}"
+    """DFT string in chunks until its bead energies settle (at most string_chunks), classified
+    as found; a single peak seeds the saddle search. NWChem freezeN moves the frozen ends:
+    seams and the final path get the DFT minima back, drift in a chunk is a note."""
+    rt, p, run_name = ctx.rt, ctx.policy, f"string{state.path_runs}"
     initial = _initial_path(ctx, p.string_beads, f"{run_name}_initial")
     start, end = (ctx.mol(x) for x in ctx.ends)
     last = None
@@ -478,15 +481,10 @@ def find_path(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
         if profile.energies_settled(run.energy_history, _SETTLED * ctx.resolution):
             break
     if last is None:
-        return case_state.record_path(state, "failed")
-    frames, energies = ctx.work.path = last
-    shape = profile.shape(energies, ctx.resolution)  # a path maximum bounds the saddle
-    if shape != "single_max":
-        return case_state.record_path(state, shape)
-    k, _, x = profile.hei(frames, energies)  # unsettled too: the HEI is only a seed
-    seed = Seed(ctx.geometry(f"{run_name}_hei", x), "path_hei",
-                tuple(profile.tangent(frames, round(k)).ravel()))
-    return case_state.record_path(state, shape, seed)
+        return replace(state, path_runs=state.path_runs + 1)
+    verdict = ctx.verdict(last[0], last[1][1:-1], "string")  # unsettled too: a bound and a seed
+    seed = _peak_seed(ctx, f"{run_name}_hei", "path_hei") if verdict.verdict == "single" else None
+    return case_state.record_profile(state, verdict, seed)
 
 
 Handler = Callable[[Ctx, CaseState, Decision], CaseState]

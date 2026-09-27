@@ -73,7 +73,8 @@ def test_declared_reaction_becomes_a_typed_elementary_step(tmp_run, fake_runtime
     reactions, arts, _ = run_stage(fake_runtime, tmp_run, fakes.double_well(), view)
     rx = reactions["rx"]
     assert isinstance(rx, ReactionRecord) and rx.outcome is O.ELEMENTARY_STEP
-    assert rx.barrier.verdict == "proceed" and rx.saddle.imag_cm1 < -50
+    assert (rx.barrier.verdict, rx.barrier.source) == ("single", "screen")
+    assert rx.saddle.imag_cm1 < -50
     calcs = {a.artifact_id for a in arts if a.type == T.CALCULATION}
     assert {rx.saddle.saddle_calc, rx.saddle.freq_calc, *rx.connection.side_calcs} <= calcs
     assert (tmp_run / "stage" / rx.log).read_text().count("\n") >= 5
@@ -105,21 +106,24 @@ def test_a_case_that_raises_is_unresolved_and_the_next_case_runs(
 
 @pytest.mark.parametrize("pes,points,outcome", [
     (fakes.symmetric_double_well, ENDS, O.DEGENERATE),
-    (fakes.flat_uphill, ENDS, O.BARRIERLESS),
+    (fakes.flat_uphill, ENDS, O.BARRIERLESS),  # the GS path leaves it to the string
     (fakes.harmonic, {"reactant": "minimum", "product": "start"}, O.SAME_BASIN),
 ])
 def test_outcomes_on_model_surfaces(tmp_run, fake_runtime, pes, points, outcome) -> None:
     view = dft_view(tmp_run, pes(), points)[0]
     reactions, _, engines = run_stage(fake_runtime, tmp_run, pes(), view)
     assert reactions["rx"].outcome is outcome
+    assert outcome is not O.BARRIERLESS or reactions["rx"].reasons == ("string:barrierless",)
     assert reactions["rx"].degenerate is (outcome is O.DEGENERATE)
     assert outcome is not O.SAME_BASIN or not any(e.calls for e in engines.values())  # no job
 
 
-def test_triple_well_splits_into_two_elementary_children(tmp_run, fake_runtime) -> None:
+@pytest.mark.parametrize("screen", [True, False])  # the well on the GS path or the string
+def test_triple_well_splits_into_two_elementary_children(tmp_run, fake_runtime, screen) -> None:
     view, _ = dft_view(tmp_run, fakes.triple_well())
-    reactions, arts, _ = run_stage(fake_runtime, tmp_run, fakes.triple_well(), view, screen=False)
+    reactions, arts, _ = run_stage(fake_runtime, tmp_run, fakes.triple_well(), view, screen=screen)
     assert reactions["rx"].outcome is O.MULTI_STEP
+    assert reactions["rx"].barrier.verdict == "intermediate"
     children = [reactions[f"rx_split{i}"] for i in (1, 2)]
     assert [c.outcome for c in children] == [O.ELEMENTARY_STEP] * 2
     new_minima = {a.artifact_id for a in arts if a.type == T.MINIMUM}  # the intermediate
@@ -128,7 +132,12 @@ def test_triple_well_splits_into_two_elementary_children(tmp_run, fake_runtime) 
 
 def test_collapsed_saddle_is_validated_as_an_intermediate(tmp_run, fake_runtime) -> None:
     pes = fakes.triple_well()
-    reactions, _, _ = run_stage(fake_runtime, tmp_run, pes, dft_view(tmp_run, pes)[0],
+    view, source = dft_view(tmp_run, pes)
+    ts = fakes.write_geometry(tmp_run, "ts1.xyz", pes.symbols, pes.points["ts1"])
+    found = DiscoveryRecord(discovery_id="d1", source_minimum=source, mechanism="nt2",
+                            outcome="product", product_species="product", ts=ts)
+    view.artifacts.append(Artifact(artifact_id="d1", type=T.DISCOVERY, payload=found))
+    reactions, _, _ = run_stage(fake_runtime, tmp_run, pes, view,  # seeded by the shortcut
                                 saddle=CollapsingSaddle(tmp_run, pes), max_split_depth=0)
     assert reactions["rx"].outcome is O.MULTI_STEP and "rx_split1" not in reactions
     assert '"saddle_collapsed"' in (tmp_run / "stage" / reactions["rx"].log).read_text()

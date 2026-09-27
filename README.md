@@ -27,7 +27,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 | `explore` | 反応 trial を作り、ReaDuct の NT2 / AFIR で生成物を探す(陰性結果も記録する) |
 | `reaction-paths` | 反応仮説ごとに、障壁の事前判定 → saddle → TS の振動数検証 → QRC → 分類 |
 | `sp` | 停留点での一点計算(手法パネル。CCSD(T) は小さい閉殻分子で opt-in) |
-| `thermo` | GoodVibes 4.3.0 の API による qRRHO、整合ゲート、会合量、感度の幅 |
+| `thermo` | GoodVibes 4.3.0 の API による qRRHO、キラリティ(m = 2)、整合ゲート、会合量、感度の幅 |
 | `report` | 順位付け、探索の被覆率、手法パネルの表と HTML |
 
 パイプラインは 3 本である。
@@ -90,7 +90,7 @@ WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD での実測値(第2ラウンド改良
 | 系 | pipeline | 結果 | 所要時間 |
 |---|---|---|---|
 | HCN → HNC | known_endpoints | TS −1128.5i cm⁻¹、ΔG‡ 42.18、ΔG_rxn 12.68 kcal/mol、elementary_step | 1 分 24 秒 |
-| HONO trans → cis | known_endpoints | TS −681.0i cm⁻¹、ΔG‡ 12.23 kcal/mol(旧値 24.11 は撤回) | 5 分 23 秒 |
+| HONO trans → cis | known_endpoints | TS −681.0i cm⁻¹、ΔG‡ 11.82 kcal/mol(TS がキラルで m = 2。旧値 24.11 は撤回) | 5 分 23 秒 |
 | TMA·(HF)₂ | discover | same_basin(プロトン移動の TS はない)。reaction-paths は 0 秒 | 30 分 58 秒(旧実装は約 30 h) |
 
 ## 開発

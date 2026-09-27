@@ -70,6 +70,20 @@
 | R3 `nh3_inversion` | `degenerate_rearrangement`、ΔG‡ 3.8395 | 1:27 |
 | R4 `water_same_basin` | `same_basin` | 0:12 |
 
+**M2 の実測(U3-P2・U5-P6・U5-P1・U5-P3、`/home/user/hfauto_r6/M2/runs/<run>`、pipeline `known_endpoints`)**
+
+| 系 | 結果 | 所要時間 |
+|---|---|---|
+| S4 `ch3o_doublet` | 宣言した `ch3o_to_ch2oh` が `elementary_step`(TS −2015.5i)、ΔE‡ 33.01、ΔG‡ 30.61 kcal/mol。順位は 1 行だけで、鏡像化の擬似反応はない | 8:53 |
+| S12 `dme_rough` | 粗い入力でも basin 構造で判定して `degenerate_rearrangement`、ΔE‡ 2.33、ΔG‡ 1.96 kcal/mol | 9:50 |
+| S13 `h2o2_gauche` | g+ → g− は 1 つの basin の縮退反応(degenerate=True、`same_basin` にならない)。SCREEN は single(1.28 kcal/mol)、鞍点 −290.5i、QRC の接続は失敗して `unresolved_within_budget`(M3 で扱う) | 1:58 |
+| S15 `hono_hno2` | SCREEN の IDPP が single(85.1 kcal/mol)で、その HEI から trans-HONO と HNO2 を直接つなぐ TS(−2085.6i)に到達し `elementary_step`、ΔG‡ 52.06 kcal/mol。cis の井戸は経路に現れず、分割は起きなかった | 4:52 |
+| S17 `hf_dimer_swap` | 2 つの入力は 1 つの basin(degenerate=True)。ただし写像付きで整列した IDPP・string は H が同じ側に回る経路(最大 7.8 / 7.2 kcal/mol)で single になり、鞍点 2 回が maxiter で `unresolved_within_budget`。C2h の入れ替え経路を初期経路が通らないためで、M1 のコードでも経路は同じ(分類器の問題ではない) | 7:11 |
+| R1 `hcn` | `elementary_step`、ΔG‡ 42.1783 | 1:20 |
+| R2 `hono` | `elementary_step`、ΔG‡ 11.8158 = 12.2263 − RT ln 2(TS は C1 でキラル、m = 2)。ΔE‡ 13.671 は同じ | 5:50 |
+| R3 `nh3_inversion` | `degenerate_rearrangement`、ΔG‡ 3.8395。paths のジョブは 22 → 18(SCREEN の DFT freq、両端ノードの SP 2 本、SCREEN の TS の SP がなくなった) | 1:17 |
+| R4 `water_same_basin` | `same_basin` | 0:11 |
+
 ---
 
 以下は v3・v4・v5(第2〜第4ラウンド改良後の再検証、2026-09-26)の記録。第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11、第4ラウンドの小さな改良(コード `13a4340`)後の退行確認 v5 は §12 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。

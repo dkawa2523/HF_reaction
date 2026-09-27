@@ -1,5 +1,5 @@
 """Thermochemistry arithmetic (design §8.2 thermo): the frequencies GoodVibes gets, composite
-G, standard states, ensembles, association and reaction deltas.
+G, the optical isomer term, standard states, ensembles, association and reaction deltas.
 
 Pure functions. Energies are in Hartree unless a name ends in ``_kcal``; free energies of
 single species are gas-phase 1 atm values (GoodVibes' default reference) and are moved to
@@ -55,6 +55,12 @@ def _rt_hartree(T: float) -> float:
     if not (math.isfinite(T) and T > 0.0):
         raise ValueError("temperature must be finite and positive")
     return R_KCAL_MOL_K * T / HARTREE_TO_KCAL_MOL
+
+
+def chiral_G(T: float) -> float:
+    """-RT ln 2 (Hartree): the G term of a chiral structure, whose mirror image is the same
+    basin (optical isomer number m = 2; Fernandez-Ramos et al., Theor. Chem. Acc. 118, 813)."""
+    return -_rt_hartree(T) * math.log(2.0)
 
 
 def boltzmann_populations(G_hartree: Sequence[float], T: float) -> list[float]:

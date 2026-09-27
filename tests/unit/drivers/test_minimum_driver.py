@@ -5,6 +5,7 @@ from dataclasses import replace
 import fakes
 import numpy as np
 import pytest
+from scipy.spatial.distance import pdist
 
 from hfauto.chemistry.xyz import composition_key
 from hfauto.core.method import MethodSpec
@@ -12,6 +13,9 @@ from hfauto.core.records import SpeciesRecord
 from hfauto.drivers.minimum import Registry, relax_to_minimum
 
 M = MethodSpec(id="pbe0", kind="dft", functional="pbe0", basis="def2-svp")
+CHFCLBR = np.array(
+    [[0.0, 0.0, 0.0], [0.63, 0.63, 0.63], [-0.8, -0.8, 0.8], [-1.0, 1.0, -1.0], [1.1, -1.1, -1.1]]
+)
 
 
 def relax(root, pes, point, qm=None, **kw):
@@ -71,5 +75,18 @@ def test_registry_known_new_joined_and_init_hessian(tmp_run) -> None:
     far = replace(a, opt=a.opt.model_copy(update={"energy_hartree": energy + 6e-5}))
     assert add(registry, far, "d").basin_id not in (ra.basin_id, rb.basin_id)
     assert registry.members(ra.basin_id) == ("a", "a2", "c")
-    x, rebuilt = load(b.opt.final), Registry([(rb, b.opt.final)], load)  # (record, geometry)
-    assert rebuilt.find(x.symbols, x.coords, rb.energy_hartree) == rb.basin_id
+    rebuilt = Registry([(rb, b.opt.final)], load)  # (record, geometry)
+    assert rebuilt.find(b.opt) == rb.basin_id and not rb.chiral
+
+
+def test_mirror_images_share_one_chiral_basin_of_one_spin_state(tmp_run) -> None:
+    d0 = pdist(CHFCLBR)  # pairwise springs: both enantiomers are exact minima
+    pes = fakes.PES(("C", "H", "F", "Cl", "Br"),
+                    lambda x: float(np.sum((pdist(np.reshape(x, (-1, 3))) - d0) ** 2)),
+                    {"r": CHFCLBR, "s": CHFCLBR * [-1.0, 1.0, 1.0]})
+    qm, registry = fakes.FakeQM(tmp_run, pes), Registry([], fakes.xyz_loader(tmp_run))
+    r = add(registry, relax(tmp_run, pes, "r", qm), "r")
+    s = relax_to_minimum(pes.molecule("s"), M, qm, known=registry)
+    assert r.chiral and s.status == "known" and s.known_basin == r.basin_id
+    triplet = relax_to_minimum(pes.molecule("s", multiplicity=3), M, qm, known=registry)
+    assert triplet.status == "minimum"  # never known in the singlet basin (U3-I4)

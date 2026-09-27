@@ -2,6 +2,7 @@
 
 import fakes
 import numpy as np
+from scipy.spatial.distance import pdist
 
 from hfauto.backends.protocols import Capability
 from hfauto.chemistry.topology import state_label
@@ -112,3 +113,17 @@ def test_an_atom_is_relaxed_and_registered_like_any_species(fake_runtime, tmp_ru
     both = run("dft", screen.artifacts, **DFT, select={"include": "all"})
     (high,) = [m for m in both.records(T.MINIMUM, MinimumRecord) if m.tier == "dft"]
     assert high.members == ("ar",) and dft.calls == ["optimize", "frequencies"]
+
+
+def test_enantiomers_fall_into_one_chiral_basin(fake_runtime, tmp_run):
+    ref = np.array([[0.0, 0.0, 0.0], [0.63, 0.63, 0.63], [-0.8, -0.8, 0.8], [-1.0, 1.0, -1.0],
+                    [1.1, -1.1, -1.1]])  # CHFClBr held by pairwise springs
+    pes = fakes.PES(("C", "H", "F", "Cl", "Br"),
+                    lambda x: float(np.sum((pdist(np.reshape(x, (-1, 3))) - pdist(ref)) ** 2)),
+                    {"r": ref, "s": ref * [-1.0, 1.0, 1.0]})
+    run, xtb, _ = stage(fake_runtime, tmp_run, pes)
+    screen = run("screen", [species(tmp_run, pes, "r", "r"), species(tmp_run, pes, "s", "s")],
+                 **SCREEN)
+    (low,) = screen.records(T.MINIMUM, MinimumRecord)
+    assert low.chiral and low.members == ("r", "s")
+    assert xtb.calls == ["optimize", "frequencies", "optimize"]  # s is known: no freq job

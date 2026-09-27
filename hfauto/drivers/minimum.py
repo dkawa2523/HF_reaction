@@ -5,17 +5,17 @@ Imports are limited to hfauto.core, hfauto.chemistry and hfauto.backends.protoco
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
 from hfauto.chemistry.gates import Policy, imaginary_tier, is_minimum, spin_ok
-from hfauto.chemistry.identity import assign, same_minimum
+from hfauto.chemistry.identity import assign, is_chiral, same_basin
 from hfauto.chemistry.modes import classify_mode_follow, displace
 from hfauto.chemistry.topology import state_label
-from hfauto.chemistry.xyz import XYZ, Molecule
+from hfauto.chemistry.xyz import XYZ, Molecule, composition_key
 from hfauto.core.evidence import Evidence, Failure, FailureKind, Geometry
 from hfauto.core.method import Deadline, MethodSpec
 from hfauto.core.records import MinimumRecord, SpeciesRecord
@@ -107,8 +107,8 @@ def _labels(source: _Point, sides: list[_Point | None]) -> list[str | None]:
     """Identity labels (source, plus, minus): equal labels mean the same structure."""
 
     def same(a: _Point, b: _Point) -> bool:
-        return same_minimum(a.xyz.symbols, a.xyz.coords, b.xyz.coords,
-                            a.opt.energy_hartree, b.opt.energy_hartree)
+        return same_basin(a.xyz.symbols, a.xyz.coords, b.xyz.coords,
+                          a.opt.energy_hartree, b.opt.energy_hartree)
 
     seen: list[tuple[_Point, str]] = [(source, "source")]
     labels: list[str | None] = ["source"]
@@ -187,8 +187,7 @@ def relax_to_minimum(
     if isinstance(opt, Failure):
         return _failed(history, opt)
     if known is not None:
-        final = load(opt.final)
-        basin = known.find(final.symbols, final.coords, opt.energy_hartree)
+        basin = known.find(opt)
         if basin is not None:
             history.append(f"known:{basin}")
             return MinimumOutcome("known", opt, None, tuple(history), known_basin=basin)
@@ -211,7 +210,8 @@ class _Entry:
 
 
 class Registry:
-    """Minima per composition × level_key; one identity criterion, identity.assign.
+    """Minima per composition × level_key; one identity criterion, identity.assign (mirror
+    images are one basin).
 
     ``minima`` pairs each existing record with the geometry of its representative
     (MinimumRecord itself carries no geometry).
@@ -224,34 +224,34 @@ class Registry:
             record.basin_id: _Entry(record, load_xyz(geometry)) for record, geometry in minima
         }
 
-    def find(self, symbols: Sequence[str], coords: np.ndarray, energy: float, *,
-             composition_id: str | None = None, level_key: str | None = None) -> str | None:
-        """Basin id uniquely matching the structure (identity.assign) among the basins with
-        the same element list (and the given composition_id / level_key), else None."""
+    def find(self, opt: Evidence) -> str | None:
+        """Basin id that identity.assign uniquely matches with the optimized structure of
+        ``opt``, among the basins of its element list, composition (charge and multiplicity of
+        its Level) and level_key; else None."""
+        xyz, level = self.load_xyz(opt.final), opt.level
+        key = (composition_key(xyz.symbols, level.charge, level.multiplicity), level.full_key())
         candidates = {basin: (entry.xyz.coords, entry.record.energy_hartree)
                       for basin, entry in self._basins.items()
-                      if list(entry.xyz.symbols) == list(symbols)
-                      and composition_id in (None, entry.record.composition_id)
-                      and level_key in (None, entry.record.level_key)}
-        return assign(symbols, coords, energy, candidates)
+                      if list(entry.xyz.symbols) == list(xyz.symbols)
+                      and (entry.record.composition_id, entry.record.level_key) == key}
+        return assign(xyz.symbols, xyz.coords, opt.energy_hartree, candidates)
 
     def members(self, basin_id: str) -> tuple[str, ...]:
         return self._basins[basin_id].record.members
 
     def add(self, outcome: MinimumOutcome, species: SpeciesRecord, *,
             tier: Literal["screen", "dft"]) -> MinimumRecord:
-        """Join the known basin, or the basin of the same composition_id and level_key that
-        identity.assign uniquely matches; else register a new basin."""
+        """Join the known basin, or the basin that ``find`` matches; else register a new
+        basin."""
         if outcome.status == "known" and outcome.known_basin is not None:
             return self._join(outcome.known_basin, species.species_id)
         opt, freq = outcome.opt, outcome.freq
         if outcome.status not in ("minimum", "soft_minimum") or opt is None or freq is None:
             raise ValueError(f"cannot register a {outcome.status!r} outcome")
-        xyz = self.load_xyz(opt.final)
-        basin = self.find(xyz.symbols, xyz.coords, opt.energy_hartree,
-                          composition_id=species.composition_id, level_key=opt.level.full_key())
+        basin = self.find(opt)
         if basin is not None:
             return self._join(basin, species.species_id)
+        xyz = self.load_xyz(opt.final)
         record = _new_record(opt, freq, outcome.notes, species, tier, xyz)
         self._basins[record.basin_id] = _Entry(record, xyz)
         return record
@@ -273,5 +273,5 @@ def _new_record(opt: Evidence, freq: Evidence, notes: tuple[str, ...], species: 
         composition_id=species.composition_id, species_id=species.species_id, tier=tier,
         level_key=level_key, opt_calc=calc_id(opt), freq_calc=calc_id(freq),
         energy_hartree=opt.energy_hartree, state_label=state_label(xyz.symbols, xyz.coords),
-        members=(species.species_id,), notes=notes,
+        members=(species.species_id,), chiral=is_chiral(xyz.symbols, xyz.coords), notes=notes,
     )

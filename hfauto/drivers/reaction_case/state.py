@@ -1,6 +1,6 @@
 """Reaction-case state and the pure decision table (design §7.3).
 
-``decide`` evaluates the 17 rows of ``ROWS`` from the top and returns the first decision.  The
+``decide`` evaluates the 16 rows of ``ROWS`` from the top and returns the first decision.  The
 driver accumulates ``CaseState`` in memory; actions only change the state, never the table.
 """
 
@@ -22,7 +22,6 @@ from hfauto.core.records import (
     SaddleClaim,
 )
 
-PathShape = Literal["single_max", "multi_max", "monotonic", "failed"]
 ConnectionLabel = Literal["elementary", "degenerate", "reassigned", "failed"]
 QRC_AMPLITUDES = 2  # QRC tries at most two amplitudes (§8.1)
 
@@ -68,7 +67,8 @@ class CaseState:
 
     ``minima`` (not in the §7.3 listing) holds the registry records of ``case.minima``, None when
     an endpoint has none: rows 1-3 need their tier, level, basin and energy, which a
-    ReactionRecord does not carry.
+    ReactionRecord does not carry. ``screen`` is the verdict of the latest DFT profile (SCREEN
+    or string), which decides rows 12-13 and goes into the record.
     """
 
     minima: tuple[MinimumRecord | None, MinimumRecord | None] = (None, None)
@@ -81,7 +81,7 @@ class CaseState:
     claim: SaddleClaim | None = None
     connection: ConnectionLabel | None = None
     connection_attempts: int = 0
-    path_runs: tuple[PathShape, ...] = ()
+    path_runs: int = 0  # DFT strings run, failed ones included
     intermediate: Literal["distinct", "same_as_endpoint"] | None = None
 
 
@@ -92,10 +92,13 @@ class Decision:
     outcome: CaseOutcome | None = None
 
 
-def record_path(state: CaseState, shape: PathShape, hei: Seed | None = None) -> CaseState:
-    """Append a DFT path run; its HEI becomes a seed only for a single_max profile (eng P0-4)."""
-    seeds = (*state.seeds, hei) if shape == "single_max" and hei is not None else state.seeds
-    return replace(state, path_runs=(*state.path_runs, shape), seeds=seeds)
+def record_profile(state: CaseState, verdict: BarrierVerdict, seed: Seed | None = None
+                   ) -> CaseState:
+    """A new DFT profile becomes the latest verdict; its peak seeds only a single-step profile
+    (eng P0-4), and the checks of an earlier saddle no longer apply."""
+    seeds = (*state.seeds, seed) if verdict.verdict == "single" and seed else state.seeds
+    return replace(state, screen=verdict, seeds=seeds, last_saddle=None, ts_check=None,
+                   intermediate=None, path_runs=state.path_runs + int(verdict.source == "string"))
 
 
 Row = Callable[[ReactionRecord, CaseState, CasePolicy], Decision | None]
@@ -181,46 +184,40 @@ def _r11_screen(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision |
     return Decision(Action.SCREEN, "screen") if p.screen and s.screen is None else None
 
 
-def _r12_screened(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
+def _r12_barrierless(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
+    # A continuous DFT path between the two DFT minima bounds the saddle from above.
     if s.screen is not None and s.screen.verdict == "barrierless":
-        return _complete(CaseOutcome.BARRIERLESS, "screen:barrierless")
-    return None  # proceed / unavailable continue below
-
-
-def _r13_multi_max(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
-    if s.path_runs[-1:] == ("multi_max",) and s.intermediate is None:
-        return Decision(Action.VALIDATE_INTERMEDIATE, "path_multi_max")
+        return _complete(CaseOutcome.BARRIERLESS, f"{s.screen.source}:barrierless")
     return None
 
 
-def _r14_monotonic(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
-    # Any continuous DFT path bounds the saddle from above: one monotonic string suffices.
-    if s.path_runs[-1:] == ("monotonic",):
-        return _complete(CaseOutcome.BARRIERLESS, "dft_path_monotonic")
+def _r13_intermediate(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
+    if s.screen is not None and s.screen.verdict == "intermediate" and s.intermediate is None:
+        return Decision(Action.VALIDATE_INTERMEDIATE, "path_intermediate")  # the lowest well
     return None
 
 
-def _r15_seed(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
+def _r14_seed(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
     if s.seeds and s.saddle_attempts < p.max_saddle_attempts:
         return Decision(Action.REFINE_SADDLE, f"seed:{s.seeds[0].source}")
     return None
 
 
-def _r16_no_path(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
+def _r15_no_path(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
     return Decision(Action.FIND_PATH, "no_dft_path") if not s.path_runs else None
 
 
-def _r17_exhausted(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
+def _r16_exhausted(case: ReactionRecord, s: CaseState, p: CasePolicy) -> Decision | None:
     return _complete(CaseOutcome.UNRESOLVED, "attempts_exhausted")
 
 
 ROWS: tuple[Row, ...] = (
     _r01_one_pes, _r02_same_basin, _r03_window, _r04_walltime, _r05_connection, _r06_claim,
-    _r07_saddle, _r08_collapsed, _r09_distinct, _r10_higher_order, _r11_screen, _r12_screened,
-    _r13_multi_max, _r14_monotonic, _r15_seed, _r16_no_path, _r17_exhausted,
+    _r07_saddle, _r08_collapsed, _r09_distinct, _r10_higher_order, _r11_screen,
+    _r12_barrierless, _r13_intermediate, _r14_seed, _r15_no_path, _r16_exhausted,
 )
 
 
 def decide(case: ReactionRecord, state: CaseState, policy: CasePolicy) -> Decision:
-    """First matching row of the table (pure, no IO); row 17 always matches."""
+    """First matching row of the table (pure, no IO); row 16 always matches."""
     return next(d for row in ROWS if (d := row(case, state, policy)) is not None)

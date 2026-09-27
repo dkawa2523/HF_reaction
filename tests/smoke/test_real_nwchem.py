@@ -15,7 +15,7 @@ import pytest
 
 from hfauto.backends.protocols import Capability
 from hfauto.chemistry.gates import is_first_order_saddle, is_minimum
-from hfauto.chemistry.profile import energies_settled, shape
+from hfauto.chemistry.profile import classify, energies_settled
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
@@ -114,4 +114,4 @@ def test_string_bead_energies_settle_hcn_sto3g(real_engine, tmp_path):
     profile = string.find_path(start, end, sto3g, images=9, initial_path=initial)
     assert isinstance(profile, PathProfile), profile
     assert energies_settled(profile.energy_history, 0.1 / HARTREE_TO_KCAL_MOL)
-    assert shape(profile.energies_hartree, 1 / HARTREE_TO_KCAL_MOL) == "single_max"
+    assert classify(profile.energies_hartree, 1 / HARTREE_TO_KCAL_MOL) == "single"
