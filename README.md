@@ -24,7 +24,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 | `structures` | system ファイルの化学種(xyz / SMILES)を読み、電子状態と宣言反応の原子順序を検査する |
 | `conformers` | CREST による配座探索と、錯体の配置 seed(H 結合の円錐、剛体のランダム配置) |
 | `minima` | opt → 別ジョブの freq → 虚振動に沿った mode-follow → 極小のレジストリ |
-| `explore` | 反応 trial を作り、ReaDuct の NT2 / AFIR で生成物を探す(陰性結果も記録する) |
+| `explore` | 元素に依らない結合変化のテンプレート(移動 / リレー / 形成 / 切断)で反応 trial を作り、ReaDuct の NT2 / AFIR で生成物を探す(陰性結果も記録する) |
 | `reaction-paths` | 反応仮説ごとに、障壁の事前判定 → saddle → TS の振動数検証 → QRC → 分類 |
 | `sp` | 停留点での一点計算(手法パネル。CCSD(T) は小さい閉殻分子で opt-in) |
 | `thermo` | GoodVibes 4.3.0 の API による qRRHO、キラリティ(m = 2)、整合ゲート、会合量、感度の幅 |

@@ -28,7 +28,7 @@ PAYLOADS = {
         state_label="CHN:ab12cd34", members=("s1",), chiral=True, notes=("soft",)),
     AT.DISCOVERY: r.DiscoveryRecord(
         discovery_id="d1", source_minimum="m1", mechanism="nt2", outcome="product",
-        trial=r.ReactionTrial(trial_id="t1", source_minimum="m1", kind="h_shift",
+        trial=r.ReactionTrial(trial_id="t1", source_minimum="m1", kind="transfer",
                               mechanism="nt2", associations=((0, 2),), perturbed=True),
         product_species="s2", ts=GEO, ts_imag_cm1=-1200.0, barrier_kj_mol=190.0),
     AT.REACTION: r.ReactionRecord(

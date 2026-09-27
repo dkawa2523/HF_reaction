@@ -3,7 +3,9 @@
 Priority: declared reactions, discovery products (low-level TS first), mode-follow TS candidates,
 conformer pairs.  Declared reactions are always kept so that decide() classifies them (blocked,
 same basin, out of window); the others must join two DFT basins of one level inside the window
-and show a change (CH-07).  ``minima`` includes the screen minima that discoveries start from.
+and show a change (CH-07).  A discovery whose two ends fall into one DFT basin is kept when its
+ends map onto each other by a non-identity permutation: a degenerate rearrangement, evaluated
+like a declared one.  ``minima`` includes the screen minima that discoveries start from.
 Degeneracy, bond changes and torsions are judged on the basins' optimized structures in the
 endpoints' atom order and handedness (``identity.basin_coords``), never on input coordinates.
 Negative discoveries never veto a hypothesis (review X1); only the summary reports them.
@@ -38,7 +40,8 @@ from hfauto.core.system import ReactionInput
 
 LoadXYZ = Callable[[Geometry], XYZ]
 Source = Literal["declared", "discovery", "mode_follow", "conformer"]
-Candidate = tuple[Source, MinimumRecord | None, MinimumRecord | None, Geometry | None]
+Ends = tuple[str, str] | None  # a discovery's source and product species
+Candidate = tuple[Source, MinimumRecord | None, MinimumRecord | None, Geometry | None, Ends]
 
 
 def pick_endpoints(
@@ -175,27 +178,44 @@ def _candidates(pool: _Pool, discoveries: Sequence[DiscoveryRecord]) -> Iterator
     for d in sorted(products, key=lambda d: (d.mechanism == "mode_follow", d.ts is None)):
         source: Source = "mode_follow" if d.mechanism == "mode_follow" else "discovery"
         product = pool.basin_of.get(d.product_species or "")
-        yield source, pool.dft_basin(d.source_minimum), product, d.ts
+        start = pool.minima.get(d.source_minimum)
+        ends = (start.species_id, d.product_species or "") if start else None
+        yield source, pool.dft_basin(d.source_minimum), product, d.ts, ends
     groups: defaultdict[tuple[str, str, str], list[MinimumRecord]] = defaultdict(list)
     for m in sorted(pool.minima.values(), key=lambda m: (m.energy_hartree, m.minimum_id)):
         if m.tier == "dft":
             groups[(m.composition_id, m.state_label, m.level_key)].append(m)
     for group in groups.values():
         for ma, mb in itertools.combinations(group, 2):
-            yield "conformer", ma, mb, None
+            yield "conformer", ma, mb, None, None
+
+
+def _degenerate(pool: _Pool, rid: str, source: Source, basin: MinimumRecord, ends: Ends,
+                ts: Geometry | None) -> ReactionRecord | None:
+    """Both ends of a discovery in one basin: a degenerate rearrangement when the basin in the
+    atom orders of the two ends differs as labelled (``_record``), else no reaction."""
+    sa, sb = (pool.species.get(e) for e in ends) if ends else (None, None)
+    if sa is None or sb is None:
+        return None
+    coords = (pool.coords(basin, sa), pool.coords(basin, sb))
+    record = _record(rid, source, (basin, basin), (sa, sb), coords, low_level_ts=ts)
+    return record if record.degenerate else None
 
 
 def _auto(pool: _Pool, source: Source, ma: MinimumRecord, mb: MinimumRecord,
-          ts: Geometry | None) -> ReactionRecord | None:
+          ts: Geometry | None, ends: Ends) -> ReactionRecord | None:
     same_level = ma.tier == mb.tier == "dft" and ma.level_key == mb.level_key
-    if not same_level or ma.composition_id != mb.composition_id or ma.basin_id == mb.basin_id:
+    if not same_level or ma.composition_id != mb.composition_id:
         return None
+    rid = reaction_id(source, sha256_text(f"{ma.minimum_id}|{mb.minimum_id}")[:10])
+    if ma.basin_id == mb.basin_id:
+        return _degenerate(pool, rid, source, ma, ends, ts)
     if (mb.energy_hartree - ma.energy_hartree) * HARTREE_TO_KCAL_MOL > pool.window_kcal:
         return None
-    ends = pick_endpoints(pool.members(ma), pool.members(mb), pool.load)
-    if ends is None:
+    picked = pick_endpoints(pool.members(ma), pool.members(mb), pool.load)
+    if picked is None:
         return None
-    sa, sb = pool.species[ends[0]], pool.species[ends[1]]
+    sa, sb = pool.species[picked[0]], pool.species[picked[1]]
     xa, xb = pool.coords(ma, sa), pool.coords(mb, sb)
     changed = any(topology.bond_changes(sa.geometry.symbols, xa, xb))
     twisted = _max_torsion_change(sa.geometry.symbols, xa, xb) >= pool.min_angle_deg
@@ -203,7 +223,6 @@ def _auto(pool: _Pool, source: Source, ma: MinimumRecord, mb: MinimumRecord,
     moved = changed or twisted or _max_distance_change(xa, xb) >= pool.min_distance_A
     if not ((twisted and not changed) if source == "conformer" else moved):
         return None
-    rid = reaction_id(source, sha256_text(f"{ma.minimum_id}|{mb.minimum_id}")[:10])
     return _record(rid, source, (ma, mb), (sa, sb), (xa, xb), low_level_ts=ts)
 
 
@@ -241,7 +260,7 @@ def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[S
     records = [_declared(pool, r) for r in declared]
     index = {frozenset(r.minima): i for i, r in enumerate(records)}
     per_composition = Counter(r.reactants[0].composition_id for r in records if r.reactants)
-    for source, ma, mb, ts in _candidates(pool, found):
+    for source, ma, mb, ts, ends in _candidates(pool, found):
         if ma is None or mb is None:
             continue
         pair = frozenset((ma.minimum_id, mb.minimum_id))
@@ -250,7 +269,7 @@ def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[S
             continue
         if per_composition[ma.composition_id] >= max_per_composition:
             continue
-        record = _auto(pool, source, ma, mb, ts)
+        record = _auto(pool, source, ma, mb, ts, ends)
         if record is not None:
             index[pair] = len(records)
             records.append(record)

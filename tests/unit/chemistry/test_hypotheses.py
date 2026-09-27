@@ -1,11 +1,12 @@
-"""Reaction hypotheses (design §8.2): priority, degeneracy on basin structures, conformer pairs,
-CH-07, chem 13."""
+"""Reaction hypotheses (design §8.2): priority, degeneracy on basin structures (declared and
+discovered), conformer pairs, CH-07, chem 13."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
 import numpy as np
+from fakes import NH3_HF, NH3_HF_EXCHANGED, NH3_HF_SYMBOLS
 
 from hfauto.chemistry import identity
 from hfauto.chemistry.hypotheses import pick_endpoints, select
@@ -69,10 +70,8 @@ def test_declared_reaction_comes_first_and_borrows_the_discovery_ts():
     hcn = species("hcn", "HCN", [[0.0, 0, 0], [1.06, 0, 0], [2.22, 0, 0]])
     hnc = species("hnc", "HCN", [[3.22, 0, 0], [1.06, 0, 0], [2.22, 0, 0]])
     minima = [minimum("m_hcn", "hcn"), minimum("m_hnc", "hnc", -0.98)]
-    trial = r.ReactionTrial(trial_id="t", source_minimum="m_hcn", kind="h_shift", mechanism="afir",
-                            associations=((2, 0),), dissociations=((0, 1),))
     negative = r.DiscoveryRecord(discovery_id="d2", source_minimum="m_hcn", mechanism="afir",
-                                 outcome="negative", reason="monotonic_uphill", trial=trial)
+                                 outcome="negative", reason="monotonic_uphill")
     found = [product("d1", "m_hcn", "hnc", ts=hnc.geometry), negative]
     term = r.CoordinateTerm(kind="distance", atoms=(0, 2))
     iso = ReactionInput(id="iso", reactant="hcn", product="hnc", coordinate=[term])
@@ -125,6 +124,32 @@ def test_a_declared_enantiomerization_is_degenerate_not_same_basin():
     [rec] = select(basins(basin), [r_form, s_form], [],
                    [ReactionInput(id="rs", reactant="r_form", product="s_form")], load)
     assert rec.degenerate and rec.minima == ("m_chfclbr", "m_chfclbr")
+
+
+def test_a_discovery_within_one_basin_is_a_degenerate_hypothesis():
+    """U4-P5: the NH3·HF double H exchange found by explore ends in the source's basin with H3
+    and H4 swapped; it is evaluated as degenerate like a declared one."""
+    source = species("xch_src", NH3_HF_SYMBOLS, NH3_HF)
+    swapped = species("xch_prod", NH3_HF_SYMBOLS, NH3_HF_EXCHANGED)
+    screen = minimum("s_xch", "xch_src").model_copy(update={"tier": "screen"})
+    basin = minimum("d_xch", "xch_src", members=("xch_prod",))
+    ts = species("xch_ts", NH3_HF_SYMBOLS, (NH3_HF + NH3_HF_EXCHANGED) / 2).geometry
+    found = [product("disc_xch", "s_xch", "xch_prod", ts=ts)]
+
+    [rec] = select(basins(screen, basin), [source, swapped], found, [], load)
+    assert (rec.source, rec.minima, rec.endpoints) == ("discovery", ("d_xch", "d_xch"),
+                                                       ("xch_src", "xch_prod"))
+    assert rec.degenerate and not rec.torsional and rec.n_h_transferred == 2
+    assert rec.low_level_ts == ts
+
+
+def test_a_discovery_mapped_onto_its_source_is_no_hypothesis():
+    source = species("same_src", NH3_HF_SYMBOLS, NH3_HF)
+    again = species("same_prod", NH3_HF_SYMBOLS, NH3_HF + 0.01)  # identity mapping
+    screen = minimum("s_same", "same_src").model_copy(update={"tier": "screen"})
+    basin = minimum("d_same", "same_src", members=("same_prod",))
+    found = [product("disc_same", "s_same", "same_prod")]
+    assert select(basins(screen, basin), [source, again], found, [], load) == []
 
 
 def test_declared_endpoint_without_minimum_is_kept_for_blocking():

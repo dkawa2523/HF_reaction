@@ -67,6 +67,7 @@ class _Explorer:
                optimized: Geometry) -> list[Artifact]:
         xyz = self.rt.load_xyz(optimized)
         start, drives = trials.generate(minimum.minimum_id, xyz.symbols, xyz.coords,
+                                        charge=species.charge, multiplicity=species.multiplicity,
                                         max_trials=self.config.max_trials_per_source)
         mol = Molecule(XYZ(list(xyz.symbols), start), species.charge, species.multiplicity)
         out: list[Artifact] = []

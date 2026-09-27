@@ -7,10 +7,12 @@ Flow (design §6.3): the source is relaxed first (reference energy and structure
 sources arrive perturbed). NT2 → Bofill TS optimization with
 ``automatic_mode_selection = sorted(associations ∪ dissociations)`` → projected frequencies
 (exactly one ν < −cutoff) → IRC → both ends optimized with n_imag = 0 → one end must have the
-source's state label (bond graph), the other is the product. AFIR (γ, then the retry γ once) →
-unbiased optimization. An SCC failure reruns the attempt once at the retry electronic
-temperature; the energies of the source, TS and product are then recomputed at the base
-temperature (chem 11).
+source's bond set, the other is the product. Bond sets are compared atom by atom in the source's
+atom order, so a relabelled image of the source (a degenerate rearrangement such as a double H
+exchange) is a product and a conformer or stereoisomer is not; the product keeps the source's
+atom order. AFIR (γ, then the retry γ once) → unbiased optimization. An SCC failure reruns the
+attempt once at the retry electronic temperature; the energies of the source, TS and product are
+then recomputed at the base temperature (chem 11).
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from typing import Any
 
 import numpy as np
 
-from hfauto.chemistry.topology import state_label
+from hfauto.chemistry.topology import bonds
 from hfauto.chemistry.vibrations import projected_frequencies
 from hfauto.chemistry.xyz import XYZ, write_xyz
 from hfauto.core.constants import BOHR_TO_ANGSTROM, HARTREE_TO_KJ_MOL
@@ -48,8 +50,9 @@ def imaginary_count(freqs_cm1: Sequence[float] | np.ndarray, cutoff_cm1: float) 
 
 
 def matches_source(symbols: Sequence[str], source: np.ndarray, end: np.ndarray) -> bool:
-    """Same state label (bond graph up to permutation); conformers of the source match."""
-    return state_label(symbols, end) == state_label(symbols, source)
+    """Same atom-indexed bond set: conformers and stereoisomers of the source match, a
+    relabelled image of it (degenerate rearrangement) does not."""
+    return bonds(symbols, end) == bonds(symbols, source)
 
 
 def irc_product(symbols: Sequence[str], source: np.ndarray,

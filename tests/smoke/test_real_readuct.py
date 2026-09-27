@@ -13,7 +13,7 @@ from hfauto.core.method import MethodSpec
 def test_nt2_on_bent_hcn_finds_hnc_through_a_first_order_saddle(real_engine):
     symbols, hcn = ["H", "C", "N"], np.array([[0, 0, -1.066], [0, 0, 0], [0, 0, 1.156]])
     start, drives = trials.generate("hcn", symbols, hcn)
-    [shift] = [t for t in drives if t.kind == "h_shift"]
+    [shift] = [t for t in drives if t.kind == "transfer"]
     result = real_engine(Capability.DISCOVERY, "readuct").explore(
         Molecule(XYZ(symbols, start), 0, 1), shift, MethodSpec(id="gfn2", kind="xtb", gfn=2),
         DiscoverySettings())

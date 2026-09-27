@@ -3,12 +3,13 @@
 import json
 
 import numpy as np
-from fakes import write_geometry
+from fakes import NH3_HF, NH3_HF_EXCHANGED, NH3_HF_SYMBOLS, write_geometry
 
 from hfauto.backends import engines
 from hfauto.backends.protocols import Capability, DiscoveryEngine, DiscoverySettings
 from hfauto.backends.readuct import worker
 from hfauto.backends.readuct.engine import _Adapter
+from hfauto.chemistry.topology import bond_changes, state_label
 from hfauto.chemistry.xyz import XYZ, Molecule
 from hfauto.core.constants import HARTREE_TO_KJ_MOL as KJ
 from hfauto.core.evidence import FailureKind
@@ -27,8 +28,8 @@ def test_worker_helpers():
     swapped = x[[0, 2, 1]] + 0.01
     opened = np.array([[0, 0, 0], [0.96, 0, 0], [-0.6, 0.77, 0]])  # same graph, RMSD > 0.1
     moved = np.array([[0, 0, 0], [0.96, 0, 0], [1.7, 0, 0]])  # H–H bond: another graph
-    assert worker.matches_source(symbols, x, swapped)
-    assert worker.matches_source(symbols, x, opened)  # a conformer is the source (state label)
+    assert worker.matches_source(symbols, x, swapped)  # same bonds atom by atom
+    assert worker.matches_source(symbols, x, opened)  # a conformer is the source
     assert not worker.matches_source(symbols, x, moved)
     assert worker.irc_product(symbols, x, [swapped, moved]) == (1, None)
     assert worker.irc_product(symbols, x, [moved, opened]) == (0, None)
@@ -45,12 +46,22 @@ def test_worker_helpers():
     assert worker.is_scc_failure("scf: Self consistent charge iterator did not converge")
 
 
+def test_a_degenerate_rearrangement_is_a_product():
+    """U4-P5: the amine_pilot2 double H exchange (−1265i) has the source's state label but other
+    bonds atom by atom; it was discarded as same_as_source."""
+    symbols, x, exchanged = NH3_HF_SYMBOLS, NH3_HF, NH3_HF_EXCHANGED
+    assert state_label(symbols, exchanged) == state_label(symbols, x)
+    assert bond_changes(symbols, x, exchanged) == ({(0, 4), (3, 5)}, {(0, 3), (4, 5)})
+    assert not worker.matches_source(symbols, x, exchanged)
+    assert worker.irc_product(symbols, x, [x + 0.01, exchanged]) == (1, None)
+
+
 def test_explore_writes_the_worker_job_in_the_attempt_directory(tmp_run):
     jobs = JobRunner(JobStore(tmp_run / "jobs"), cores=1)
     site = EngineSite(version="6.1.0", python=str(tmp_run / "missing-python"))
     engine = engines.create(Capability.DISCOVERY, "readuct", jobs=jobs, site=site)
     assert isinstance(engine, DiscoveryEngine) and engine.supports(GFN2)
-    trial = ReactionTrial(trial_id="t", source_minimum="m", kind="h_shift", mechanism="nt2",
+    trial = ReactionTrial(trial_id="t", source_minimum="m", kind="transfer", mechanism="nt2",
                           associations=((0, 2),), dissociations=((0, 1),))
     mol = Molecule(XYZ(["H", "C", "N"], np.eye(3)), 0, 1)
     assert engine.explore(mol, trial, GFN2, DiscoverySettings()).kind == "executable_missing"

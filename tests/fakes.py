@@ -94,6 +94,13 @@ triple_well = partial(_wells, ("N", "H", "O"), (-1, -0.5, 0, 0.5, 1),
                       names=("reactant", "ts1", "intermediate", "ts2", "product"))
 flat_uphill = partial(_wells, ("N", "H", "O"), (-1, 0.9, 1), ref=(0, 2))
 
+# NH3·HF with H3 pointing at F: the double H exchange (amine_pilot2, −1265i) is the source
+# relabelled, H3 ↔ H4 (formed (0,4),(3,5), broken (0,3),(4,5)), one state label and one basin.
+NH3_HF_SYMBOLS = ("N", "H", "H", "H", "H", "F")
+NH3_HF = np.array([[0.0, 0.0, 0.0], [-0.37, 0.47, 0.83], [-0.37, 0.47, -0.83], [0.55, 0.85, 0.0],
+                   [1.694, 0.391, 0.0], [2.6, 0.6, 0.0]])
+NH3_HF_EXCHANGED = NH3_HF[[0, 1, 2, 4, 3, 5]]
+
 
 def _ref(root: Path, path: Path) -> FileRef:
     return FileRef(path=path.relative_to(root).as_posix(), sha256=sha256_file(path))

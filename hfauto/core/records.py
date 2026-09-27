@@ -62,7 +62,7 @@ class ReactionTrial(BaseModel):
     model_config = _FROZEN
     trial_id: str
     source_minimum: str
-    kind: Literal["polar_h", "h_shift", "heavy_bond", "association"]
+    kind: Literal["transfer", "relay", "formation", "dissociation"]  # chemistry.trials
     mechanism: Literal["nt2", "afir"]
     associations: tuple[tuple[int, int], ...] = ()
     dissociations: tuple[tuple[int, int], ...] = ()

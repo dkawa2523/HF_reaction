@@ -1,5 +1,5 @@
-"""Covalent topology with hysteresis, fragments, labile H, acceptors, state labels (§5.5)
-and the value and gradient of a declared reaction coordinate.
+"""Covalent topology with hysteresis, fragments, labile H, acceptors, WL atom classes, state
+labels (§5.5) and the value and gradient of a declared reaction coordinate.
 
 A pair is bonded at r ≤ 1.15 Σr_cov and non-bonded at r ≥ 1.45 Σr_cov.  In between it keeps
 its previous state; with no previous state it counts as bonded, so strong and symmetric
@@ -179,32 +179,41 @@ def acceptor_atoms(symbols: Sequence[str], coords: np.ndarray) -> tuple[int, ...
     )
 
 
-def _wl_hash(symbols: Sequence[str], bonded: Collection[Bond]) -> str:
-    """Weisfeiler–Lehman hash of the element-labelled graph (permutation invariant)."""
+def _wl_rounds(symbols: Sequence[str], bonded: Collection[Bond]) -> list[list[str]]:
+    """Weisfeiler–Lehman atom labels of the element-labelled graph, round 0 (elements) to 3."""
 
     neighbours: list[list[int]] = [[] for _ in symbols]
     for i, j in bonded:
         neighbours[i].append(j)
         neighbours[j].append(i)
-    labels = list(symbols)
-    seen = Counter(labels)
+    rounds = [list(symbols)]
     for _ in range(_WL_ITERATIONS):
-        labels = [
+        labels = rounds[-1]
+        rounds.append([
             hashlib.sha256(
                 f"{labels[i]}|{','.join(sorted(labels[j] for j in neighbours[i]))}".encode()
             ).hexdigest()[:16]
             for i in range(len(labels))
-        ]
-        seen.update(labels)
-    return hashlib.sha256(json.dumps(sorted(seen.items())).encode()).hexdigest()
+        ])
+    return rounds
+
+
+def wl_classes(symbols: Sequence[str], bonded: Collection[Bond]) -> tuple[int, ...]:
+    """Atom equivalence class per atom (last WL round); the numbering is permutation invariant."""
+
+    last = _wl_rounds(symbols, bonded)[-1]
+    rank = {label: k for k, label in enumerate(sorted(set(last)))}
+    return tuple(rank[label] for label in last)
 
 
 def state_label(symbols: Sequence[str], coords: np.ndarray) -> str:
-    """Sorted fragment formulas plus the first 8 hex digits of the WL hash."""
+    """Sorted fragment formulas plus the first 8 hex digits of the hash of all WL labels."""
 
     bonded = bonds(symbols, coords)
     formulas = sorted(
         hill_formula([symbols[i] for i in group])
         for group in _components(len(symbols), bonded)
     )
-    return f"{'+'.join(formulas)}_{_wl_hash(symbols, bonded)[:8]}"
+    seen = Counter(label for labels in _wl_rounds(symbols, bonded) for label in labels)
+    digest = hashlib.sha256(json.dumps(sorted(seen.items())).encode()).hexdigest()
+    return f"{'+'.join(formulas)}_{digest[:8]}"

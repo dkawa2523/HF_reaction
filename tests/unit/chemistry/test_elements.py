@@ -1,4 +1,5 @@
-"""The element table: supported range, Z and masses against RDKit, today's values kept."""
+"""The element table: supported range, Z and masses against RDKit, today's values kept, the
+maximum coordination of reaction trials."""
 
 import pytest
 
@@ -29,3 +30,9 @@ def test_values_of_h_to_kr_and_i_are_unchanged():
         1.53, 1.32, 1.39)
     assert (el.vdw_radius("C"), el.vdw_radius("N"), el.vdw_radius("Ni")) == (1.70, 1.55, 1.63)
     assert (el.atomic_number("Te"), el.vdw_radius("Fe"), el.vdw_radius("Rn")) == (52, 2.44, 2.20)
+
+
+def test_max_coordination_rule():
+    for n, symbols in ((1, "H F Cl I At"), (3, "O"), (4, "B C N"), (0, "He Ne"),
+                       (6, "Al Si P S Se Te Xe Pb Bi"), (9, "Li Na Mg Fe Pt La Hg")):
+        assert {el.max_coordination(s) for s in symbols.split()} == {n}

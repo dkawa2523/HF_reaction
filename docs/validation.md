@@ -96,6 +96,22 @@
 | R3 `nh3_inversion` | `degenerate_rearrangement`、ΔG‡ 3.8395、saddle 3 歩(xTB Hessian、重なり 1.00) | 1:16 |
 | R4 `water_same_basin` | `same_basin` | 0:12 |
 
+**M4 の実測(U4-P2・U4-P1・U4-P5、`/home/user/hfauto_r6/M4/runs/<run>`、S 系は `discover --to explore`、S10 は `discover` 全体)**
+
+| 系 | 結果 | 所要時間 |
+|---|---|---|
+| S1 `sn2_cl` | 2 つの錯体とも trial 0 が背面 SN2 の T1(C–Cl′ 形成、C–Cl 切断)。NT2 で TS −431.8i(ΔE‡ 44.36 kJ/mol)、IRC の端は状態ラベルが source と同じで C–Cl′ に結合した恒等 SN2 の生成物として残る(以前は same_as_source)。16 attempt で生成物 6(すべて恒等 SN2。重複は U4-P7) | 0:28 |
+| S6 `oh_ch4` | GFN2-xTB では引き抜きが障壁なしで、placement の seed は screen で CH3···H2O に崩壊する(`collapsed_to:CH3+H2O` の緩和の発見 2 件)。H2O + CH3• は screen 極小として残り、explore の出発点もこの CH3···H2O なので、13 attempt は逆向き(生成物 0)。引き抜きの T1 は単体テストの CH4···OH で先頭に出るが、ReaDuct の実計算(O···H 2.30 Å)では NT2 が `ts_not_converged`、AFIR が `same_as_source` | 0:14 |
+| S7 `nh3_icl` | 2 断片の錯体 2 つで T1 のハロゲン移動(N–I 形成・I–Cl 切断)と N–Cl 形成・I–Cl 切断。polar_h の drive はない。NT2 で NH2I + HCl(−193.6i、124.4 kJ/mol)、AFIR で 2 生成物 | 0:17 |
+| S10 `amine_pilot2` | NH3·HF の二重 H 交換(交換リレー、形成 (0,4),(1,5)、切断 (4,5),(0,1))は 1 attempt で −1265.3i の TS に到達し、生成物として残った(W7 は単独の移動 3 件がすべて same_as_source)。`paths` で発見の縮退 case が走り `degenerate_rearrangement`、DFT の TS −1081.2i、ΔE‡ 32.89、ΔG‡ 32.29 kcal/mol。TMA の 1,2-H 移動 ×9 の同じ drive は 1 件になり、376.37 kJ/mol の TS は W7 の 6 回から 3 回(1,2-H 移動 1 件と、同じ TS に落ちるメチル間のリレー 2 件)に減った。explore 全体は 37 attempt・生成物 1(W7 は 44・0) | 23:35 |
+| R1 `hcn` | `elementary_step`、ΔG‡ 42.1783(停止した S10 の NWChem が約 40 秒重なった) | 1:54 |
+| R2 `hono` | `elementary_step`、ΔG‡ 11.8158 | 3:22 |
+| R3 `nh3_inversion` | `degenerate_rearrangement`、ΔG‡ 3.8395 | 1:20 |
+| R4 `water_same_basin` | `same_basin` | 0:12 |
+
+- 実 run で見つかった列挙の穴: CREST の NH3·HF では F···H(N) が 3.03 Å で Σr_vdW(2.67 Å)を超え、レビューどおりの接触の規則では二重 H 交換のリレーが作られなかった。2 つ目の H が 1 つ目の受容原子から供与原子へ移る交換は、1 つ目の移動で両原子が近づくので 2 つ目の接触を問わないことにした(単体テストはこの CREST 構造)。
+- M3・S6 の −289i の TMA·(HF)₂ の HF 交換(下の §5)は、M4 からは same_as_source ではなく生成物(縮退転位)になる。
+
 ---
 
 以下は v3・v4・v5(第2〜第4ラウンド改良後の再検証、2026-09-26)の記録。第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11、第4ラウンドの小さな改良(コード `13a4340`)後の退行確認 v5 は §12 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。

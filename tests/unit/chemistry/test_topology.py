@@ -1,4 +1,5 @@
-"""Hysteresis bonds, fragments, proton transfer and state labels (design §5.5, CH-07)."""
+"""Hysteresis bonds, fragments, proton transfer, WL atom classes and state labels (design §5.5,
+CH-07)."""
 
 import numpy as np
 import pytest
@@ -43,3 +44,13 @@ def test_state_label_is_permutation_invariant():
     permuted = top.state_label([NH3_HF[i] for i in order], NEUTRAL[order])
     assert permuted == top.state_label(NH3_HF, NEUTRAL)
     assert top.state_label(NH3_HF, ION_PAIR) != top.state_label(NH3_HF, NEUTRAL)
+
+
+def test_wl_classes_are_atom_equivalence_and_permutation_invariant():
+    bonded = top.bonds(NH3_HF, NEUTRAL)
+    classes = top.wl_classes(NH3_HF, bonded)
+    assert classes[1] == classes[2] == classes[3] and len(set(classes)) == 4  # N, 3 H, H, F
+    order = [5, 3, 0, 4, 1, 2]
+    permuted = top.wl_classes([NH3_HF[i] for i in order], top.bonds(
+        [NH3_HF[i] for i in order], NEUTRAL[order]))
+    assert permuted == tuple(classes[i] for i in order)

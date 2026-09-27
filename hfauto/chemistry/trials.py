@@ -1,166 +1,145 @@
-"""Generic reaction trials for single-ended discovery and relaxation discoveries (§8.2 explore).
+"""Reaction trials for single-ended discovery and relaxation discoveries (§8.2 explore).
 
-A trial is a product-free drive (atom pairs to join / separate); the discovery engine finds the
-product. Trials come in four tiers, in this order, capped per source minimum (chem 9):
+A trial is a product-free drive (bonds to form and to break); the discovery engine finds the
+product. One element-independent enumerator uses formation candidates (a, b): not bonded,
+r_ab ≤ Σr_vdW, at least three bonds apart (inside or across fragments).
 
-1. ``polar_h``: a labile H moves to an acceptor; with two or more labile H, two-step relays
-   (A ← H1–D1 ← H2–D2) come before single transfers.
-2. ``h_shift``: 1,2- / 1,3-H shifts that break or form a C–H bond (H within 3 Å of the target).
-3. ``heavy_bond``: at most two heavy-atom bond changes inside a fragment (3.5 Å, no aromatic
-   ring bond).
-4. ``association``: the closest heavy-atom pair of two fragments.
+- ``transfer`` (T1): form a–b, break b–c (c ≠ a): H transfer, 1,2- / 1,3-shift, SN2, H
+  abstraction, ligand exchange. a–b may be two bonds apart only when c bridges them (1,2-shift).
+- ``relay`` (T2): two chained H transfers, the second H moving into the atom the first one left
+  (an exchange, the second H leaving the first acceptor, needs no contact of its own).
+- ``formation`` (T3): form a–b only (addition, association, ring closure).
+- ``dissociation`` (T4): break one bond; only for open-shell or charged sources (a closed-shell
+  neutral homolysis is not a restricted Kohn–Sham reaction).
 
-Linear molecules are bent by 10° and randomly displaced by 0.05 Å per atom (seeded), so that
-NT2 does not start on a symmetry line (CH-30). Torsional isomerizations are not trials: they
-are conformer pairs in ``hypotheses``.
+An atom that gains bonds may not end above ``elements.max_coordination`` bonded neighbours.
+The templates take turns T1 → T2 → T3 → T4 up to the cap, each ordered by r_ab/Σr_cov (a relay
+by its farther contact, several c of one transfer by the a–b–c angle closest to linear, a
+dissociation by the most stretched bond). 1,2-shifts come after the through-space contacts:
+their r_ab is set by the bond angle, not by how the source is arranged. Drives with the same
+WL atom classes and formed-pair distances (0.1 Å) are one trial. Linear molecules are bent by
+10° and displaced by 0.05 Å per atom (seeded), so that NT2 does not start on a symmetry line
+(CH-30). Torsions are conformer pairs in ``hypotheses``.
 """
 
 from __future__ import annotations
 
 import itertools
 import math
-from collections.abc import Iterable, Sequence
+from collections import Counter
+from collections.abc import Hashable, Iterable, Sequence
 from typing import Literal
 
 import numpy as np
+from scipy.sparse.csgraph import shortest_path
 
 from hfauto.chemistry import topology
+from hfauto.chemistry.elements import covalent_radius, max_coordination, vdw_radius
 from hfauto.chemistry.vibrations import external_basis
 from hfauto.core.hashing import sha256_text
 from hfauto.core.records import DiscoveryRecord, MinimumRecord, ReactionTrial, SpeciesRecord
 
 Pair = tuple[int, int]
-Kind = Literal["polar_h", "h_shift", "heavy_bond", "association"]
-Drive = tuple[Kind, tuple[Pair, ...], tuple[Pair, ...]]  # kind, associations, dissociations
+Kind = Literal["transfer", "relay", "formation", "dissociation"]
+Order = tuple[bool, float]  # (1,2-shift, r/Σr_cov) within a template
+Drive = tuple[Order, tuple[Pair, ...], tuple[Pair, ...]]  # order, form, break
+Trial = tuple[Kind, tuple[Pair, ...], tuple[Pair, ...]]
 
-RELAY_CONTACT_MAX_A = 3.2  # A···H1 and D1···H2 contacts of a two-step relay
-H_SHIFT_MAX_A = 3.0
-HEAVY_BOND_MAX_A = 3.5
 LINEAR_BEND_DEG = 10.0
 PERTURB_A = 0.05
 RNG_SEED = 20260925
-_AROMATIC_ELEMENTS = frozenset({"C", "N", "O", "S"})
-_RING_SIZES = (5, 6)
-_PLANAR_TOL_A = 0.1
 
 
 def _pair(i: int, j: int) -> Pair:
     return (min(i, j), max(i, j))
 
 
-def _neighbours(n_atoms: int, bonded: Iterable[Pair]) -> list[set[int]]:
-    out: list[set[int]] = [set() for _ in range(n_atoms)]
-    for i, j in bonded:
-        out[i].add(j)
-        out[j].add(i)
-    return out
+class _Source:
+    """Bond graph, contacts and free valences of one source structure."""
+
+    def __init__(self, symbols: Sequence[str], x: np.ndarray) -> None:
+        self.symbols, self.x = symbols, x
+        self.bonded = topology.bonds(symbols, x)
+        adjacency = np.zeros((len(symbols), len(symbols)), dtype=bool)
+        for i, j in self.bonded:
+            adjacency[i, j] = adjacency[j, i] = True
+        self.nbr = [set(np.flatnonzero(row).tolist()) for row in adjacency]
+        self.hops = shortest_path(adjacency, unweighted=True)  # inf across fragments
+        self.r = np.linalg.norm(x[:, None] - x[None], axis=-1)
+        cov, vdw = (np.array([f(s) for s in symbols]) for f in (covalent_radius, vdw_radius))
+        self.ratio = self.r / (cov[:, None] + cov[None])
+        self.contact = (self.r <= vdw[:, None] + vdw[None]) & (self.hops >= 2)
+        self.room = [max_coordination(s) - len(self.nbr[i]) for i, s in enumerate(symbols)]
+        self.classes = topology.wl_classes(symbols, self.bonded)
+
+    def fits(self, formed: Sequence[Pair], broken: Sequence[Pair]) -> bool:
+        """No atom that gains bonds ends above its maximum coordination."""
+        net = Counter(i for pair in formed for i in pair)
+        net.subtract(i for pair in broken for i in pair)
+        return all(gain <= self.room[i] for i, gain in net.items() if gain > 0)
+
+    def _cos(self, a: int, b: int, c: int) -> float:
+        u, v = self.x[a] - self.x[b], self.x[c] - self.x[b]
+        return float(u @ v / (np.linalg.norm(u) * np.linalg.norm(v)))
+
+    def steps(self) -> list[tuple[Order, int, int, int]]:
+        """(order, a, b, c): form a–b and break b–c, valence not checked. The c of one (a, b)
+        come by the a–b–c angle, closest to linear first."""
+        found = sorted(((bool(self.hops[a, b] == 2), float(self.ratio[a, b])),
+                        self._cos(a, b, c), a, b, c)
+                       for a, b in _pairs(self.contact) for c in sorted(self.nbr[b] - {a})
+                       if self.hops[a, b] >= 3 or c in self.nbr[a])
+        return [(s, a, b, c) for s, _, a, b, c in found]
+
+    def relays(self, h_steps: list[tuple[Order, int, int, int]]) -> list[Drive]:
+        """h1 moves c -> a, then h2 moves d -> c. An exchange (d = a) needs no second contact:
+        the first transfer already holds a and c together (NH3·HF double H exchange)."""
+        chains = [(s1, a, h1, c, s2, h2, d) for s1, a, h1, c in h_steps
+                  for s2, into, h2, d in h_steps if into == c and d != a]
+        chains += [(s1, a, h1, c, (False, float(self.ratio[c, h2])), h2, a)
+                   for s1, a, h1, c in h_steps for h2 in sorted(self.nbr[a])
+                   if self.symbols[h2] == "H" and self.hops[c, h2] >= 3]
+        return [(max(s1, s2), (_pair(a, h1), _pair(c, h2)), (_pair(h1, c), _pair(h2, d)))
+                for s1, a, h1, c, s2, h2, d in chains]
+
+    def templates(self, open_or_charged: bool) -> dict[Kind, list[Drive]]:
+        """Each template's drives in order; drives that break the valence rule are left out."""
+        steps = self.steps()
+        relays = self.relays([step for step in steps if self.symbols[step[2]] == "H"])
+        formations = _pairs(np.triu(self.contact & (self.hops >= 3)))
+        cuts = sorted(self.bonded) if open_or_charged else []
+        found: dict[Kind, list[Drive]] = {
+            "transfer": [(s, (_pair(a, b),), (_pair(b, c),)) for s, a, b, c in steps],
+            "relay": sorted(relays),
+            "formation": sorted(((False, float(self.ratio[p])), (p,), ()) for p in formations),
+            "dissociation": sorted(((False, -float(self.ratio[p])), (), (p,)) for p in cuts),
+        }
+        return {kind: [d for d in ds if self.fits(d[1], d[2])] for kind, ds in found.items()}
+
+    def key(self, drive: Drive) -> Hashable:
+        """WL class pairs of the formed and broken bonds and the formed-pair distances (0.1 Å)."""
+        _, formed, broken = drive
+        classes = [frozenset(tuple(sorted((self.classes[i], self.classes[j]))) for i, j in bonds)
+                   for bonds in (formed, broken)]
+        return (*classes, tuple(sorted(round(float(self.r[i, j]), 1) for i, j in formed)))
 
 
-def _polar_h(symbols: Sequence[str], x: np.ndarray, nbr: list[set[int]]) -> list[Drive]:
-    """Relays first (two or more labile H), then single transfers; nearest contacts first."""
-    acceptors = set(topology.acceptor_atoms(symbols, x))
-    donors = [(h, d) for h in topology.labile_hydrogens(symbols, x) for d in sorted(nbr[h])
-              if symbols[d] != "H"]
-    r = np.linalg.norm(x[:, None] - x[None], axis=-1)
-    relays: list[tuple[float, Drive]] = []
-    for (h1, d1), (h2, d2) in itertools.permutations(donors, 2):
-        if h1 == h2 or d1 == d2 or d1 not in acceptors or r[d1, h2] > RELAY_CONTACT_MAX_A:
-            continue
-        for a in sorted(acceptors - {d1, d2} - nbr[h1]):
-            if r[a, h1] <= RELAY_CONTACT_MAX_A:
-                drive: Drive = ("polar_h", (_pair(a, h1), _pair(d1, h2)),
-                                (_pair(d1, h1), _pair(d2, h2)))
-                relays.append((r[a, h1] + r[d1, h2], drive))
-    singles: list[tuple[float, Drive]] = [
-        (r[a, h], ("polar_h", (_pair(a, h),), (_pair(d, h),)))
-        for h, d in donors for a in sorted(acceptors - {d} - nbr[h])]
-    return [drive for _, drive in sorted(relays) + sorted(singles)]
+def _pairs(mask: np.ndarray) -> list[Pair]:
+    return [(int(i), int(j)) for i, j in zip(*np.nonzero(mask), strict=True)]
 
 
-def _h_shifts(symbols: Sequence[str], x: np.ndarray, nbr: list[set[int]]) -> list[Drive]:
-    """1,2- and 1,3-shifts of an H between heavy atoms, one of them carbon."""
-    out: list[tuple[float, Drive]] = []
-    for h in (i for i, s in enumerate(symbols) if s == "H"):
-        for d in sorted(i for i in nbr[h] if symbols[i] != "H"):
-            near = nbr[d] | {k for j in nbr[d] for k in nbr[j]}
-            for t in sorted(near - {d} - nbr[h]):
-                dist = float(np.linalg.norm(x[t] - x[h]))
-                if symbols[t] != "H" and "C" in (symbols[d], symbols[t]) and dist <= H_SHIFT_MAX_A:
-                    out.append((dist, ("h_shift", (_pair(t, h),), (_pair(d, h),))))
-    return [drive for _, drive in sorted(out)]
-
-
-def _rings(heavy_nbr: list[set[int]]) -> list[tuple[int, ...]]:
-    """Simple cycles of 5 or 6 atoms (each once, as an ordered path)."""
-    found: dict[frozenset[int], tuple[int, ...]] = {}
-
-    def walk(path: tuple[int, ...]) -> None:
-        if len(path) in _RING_SIZES and path[0] in heavy_nbr[path[-1]]:
-            found.setdefault(frozenset(path), path)
-        if len(path) < max(_RING_SIZES):
-            for nxt in sorted(heavy_nbr[path[-1]]):
-                if nxt > path[0] and nxt not in path:
-                    walk((*path, nxt))
-
-    for start in range(len(heavy_nbr)):
-        walk((start,))
-    return list(found.values())
-
-
-def aromatic_bonds(symbols: Sequence[str], x: np.ndarray, nbr: list[set[int]]) -> set[Pair]:
-    """Bonds of planar 5/6-rings of sp2-like C/N/O/S atoms (no RDKit needed)."""
-    heavy_nbr = [{j for j in n if symbols[j] != "H"} if symbols[i] != "H" else set()
-                 for i, n in enumerate(nbr)]
-    out: set[Pair] = set()
-    for ring in _rings(heavy_nbr):
-        atoms = list(ring)
-        centred = x[atoms] - x[atoms].mean(axis=0)
-        planar = np.linalg.svd(centred, compute_uv=False)[-1] / math.sqrt(len(atoms))
-        if (all(symbols[i] in _AROMATIC_ELEMENTS and len(nbr[i]) <= 3 for i in atoms)
-                and planar < _PLANAR_TOL_A):
-            out |= {_pair(a, b) for a, b in zip(atoms, (*atoms[1:], atoms[0]), strict=True)}
-    return out
-
-
-def _breakable(symbols: Sequence[str], x: np.ndarray, nbr: list[set[int]]) -> list[Pair]:
-    """Heavy-atom bonds outside aromatic rings."""
-    fixed = aromatic_bonds(symbols, x, nbr)
-    heavy = [i for i, s in enumerate(symbols) if s != "H"]
-    return sorted(_pair(i, j) for i in heavy for j in nbr[i]
-                  if i < j and symbols[j] != "H" and _pair(i, j) not in fixed)
-
-
-def _formations(symbols: Sequence[str], x: np.ndarray, nbr: list[set[int]],
-                fragment: list[int]) -> list[Pair]:
-    """Non-bonded heavy-atom pairs of one fragment within 3.5 Å, nearest first."""
-    heavy = [i for i, s in enumerate(symbols) if s != "H"]
-    forms = sorted((float(np.linalg.norm(x[i] - x[j])), (i, j))
-                   for i, j in itertools.combinations(heavy, 2)
-                   if j not in nbr[i] and fragment[i] == fragment[j])
-    return [p for r, p in forms if r <= HEAVY_BOND_MAX_A]
-
-
-def _heavy_bonds(symbols: Sequence[str], x: np.ndarray, nbr: list[set[int]],
-                 fragment: list[int]) -> list[Drive]:
-    """Formations, formation + breaking at a shared atom, breakings."""
-    breakable = _breakable(symbols, x, nbr)
-    forms = _formations(symbols, x, nbr, fragment)
-    joins: list[Drive] = [("heavy_bond", (p,), ()) for p in forms]
-    swaps: list[Drive] = [("heavy_bond", (p,), (b,))
-                          for p in forms for b in breakable if set(p) & set(b)]
-    cuts: list[Drive] = [("heavy_bond", (), (b,)) for b in breakable]
-    return joins + swaps + cuts
-
-
-def _associations(symbols: Sequence[str], x: np.ndarray,
-                  groups: Sequence[Sequence[int]]) -> list[Drive]:
-    out: list[tuple[float, Drive]] = []
-    for fa, fb in itertools.combinations(groups, 2):
-        pairs = [(i, j) for i in fa for j in fb if symbols[i] != "H" and symbols[j] != "H"]
-        pairs = pairs or [(i, j) for i in fa for j in fb]
-        dist, i, j = min((float(np.linalg.norm(x[i] - x[j])), i, j) for i, j in pairs)
-        out.append((dist, ("association", (_pair(i, j),), ())))
-    return [drive for _, drive in sorted(out)]
+def _drives(symbols: Sequence[str], x: np.ndarray, open_or_charged: bool) -> list[Trial]:
+    """The distinct drives of one source, the templates taking turns."""
+    source = _Source(symbols, x)
+    seen: set[Hashable] = set()
+    turns: list[list[Trial]] = []
+    for kind, template in source.templates(open_or_charged).items():
+        turns.append([])
+        for drive in template:
+            if (key := source.key(drive)) not in seen:
+                seen.add(key)
+                turns[-1].append((kind, drive[1], drive[2]))
+    return [d for turn in itertools.zip_longest(*turns) for d in turn if d is not None]
 
 
 def is_linear(symbols: Sequence[str], coords: np.ndarray) -> bool:
@@ -186,36 +165,21 @@ def perturb_linear(coords: np.ndarray, *, seed: int = RNG_SEED) -> np.ndarray:
     return bent + PERTURB_A * step / np.linalg.norm(step, axis=1, keepdims=True)
 
 
-def _trial_id(source_minimum: str, drive: Drive) -> str:
-    kind, assoc, dissoc = drive
-    return "trial_" + sha256_text(f"{source_minimum}|{kind}|{assoc}|{dissoc}")
-
-
 def generate(source_minimum: str, symbols: Sequence[str], coords: np.ndarray, *,
+             charge: int = 0, multiplicity: int = 1,
              max_trials: int = 10) -> tuple[np.ndarray, list[ReactionTrial]]:
     """(start coordinates, trials): the start is perturbed for linear molecules.
 
     Every trial starts with NT2; the explore stage falls back to AFIR on the same drive.
     """
     x = np.asarray(coords, dtype=float).reshape(-1, 3)
-    bonded = topology.bonds(symbols, x)
-    nbr = _neighbours(len(symbols), bonded)
-    groups = topology.fragments(symbols, x)
-    fragment = [0] * len(symbols)
-    for index, group in enumerate(groups):
-        for atom in group:
-            fragment[atom] = index
-    drives = [*_polar_h(symbols, x, nbr), *_h_shifts(symbols, x, nbr),
-              *_heavy_bonds(symbols, x, nbr, fragment), *_associations(symbols, x, groups)]
-    unique: dict[tuple[frozenset[Pair], frozenset[Pair]], Drive] = {}
-    for drive in drives:
-        unique.setdefault((frozenset(drive[1]), frozenset(drive[2])), drive)
     perturbed = is_linear(symbols, x)
     trials = [
-        ReactionTrial(trial_id=_trial_id(source_minimum, d), source_minimum=source_minimum,
-                      kind=d[0], mechanism="nt2", associations=d[1], dissociations=d[2],
-                      perturbed=perturbed)
-        for d in list(unique.values())[:max_trials]
+        ReactionTrial(
+            trial_id="trial_" + sha256_text(f"{source_minimum}|{kind}|{form}|{cut}"),
+            source_minimum=source_minimum, kind=kind, mechanism="nt2", associations=form,
+            dissociations=cut, perturbed=perturbed)
+        for kind, form, cut in _drives(symbols, x, multiplicity > 1 or charge != 0)[:max_trials]
     ]
     return (perturb_linear(x) if perturbed else x), trials
 

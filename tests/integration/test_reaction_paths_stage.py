@@ -152,7 +152,7 @@ def test_walltime_low_level_ts_shortcut_and_negative_discoveries_do_not_veto(
     ts = fakes.write_geometry(tmp_run, "ts.xyz", pes.symbols, pes.points["ts"])
     found = DiscoveryRecord(discovery_id="d1", source_minimum=source, mechanism="nt2",
                             outcome="product", product_species="product", ts=ts)
-    trial = ReactionTrial(trial_id="t", source_minimum=source, kind="polar_h", mechanism="afir",
+    trial = ReactionTrial(trial_id="t", source_minimum=source, kind="transfer", mechanism="afir",
                           associations=((1, 2),), dissociations=((0, 1),))
     negative = DiscoveryRecord(discovery_id="d2", source_minimum=source, mechanism="afir",
                                outcome="negative", reason="monotonic_uphill", trial=trial)
