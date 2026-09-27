@@ -13,19 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
+from hfauto.chemistry.elements import mass
 from hfauto.core.constants import AMU_TO_ME, CM1_TO_HARTREE
-
-# Most abundant isotope masses (amu, NIST AME2016, 6 decimals), H..Kr and I.
-ISOTOPIC_MASSES: dict[str, float] = {
-    "H": 1.007825, "He": 4.002603, "Li": 7.016003, "Be": 9.012183, "B": 11.009305,
-    "C": 12.0, "N": 14.003074, "O": 15.994915, "F": 18.998403, "Ne": 19.992440,
-    "Na": 22.989769, "Mg": 23.985042, "Al": 26.981539, "Si": 27.976927, "P": 30.973762,
-    "S": 31.972071, "Cl": 34.968853, "Ar": 39.962383, "K": 38.963706, "Ca": 39.962591,
-    "Sc": 44.955908, "Ti": 47.947942, "V": 50.943957, "Cr": 51.940506, "Mn": 54.938044,
-    "Fe": 55.934936, "Co": 58.933194, "Ni": 57.935342, "Cu": 62.929598, "Zn": 63.929142,
-    "Ga": 68.925574, "Ge": 73.921178, "As": 74.921595, "Se": 79.916522, "Br": 78.918338,
-    "Kr": 83.911498, "I": 126.904472,
-}
 
 # A singular value of the translation/rotation block counts when it exceeds this fraction
 # of the largest one: 1e-4 Å noise on an optimized linear chain stays linear, 179° does not.
@@ -37,15 +26,8 @@ _AMU_KG = 1.66053906660e-27  # CODATA 2018
 _GHZ_AMU_A2 = _PLANCK_J_S / (8.0 * math.pi**2 * _AMU_KG * 1.0e-20) / 1.0e9
 
 
-def _masses(symbols: Sequence[str]) -> np.ndarray:
-    unknown = sorted(set(symbols) - ISOTOPIC_MASSES.keys())
-    if unknown:
-        raise ValueError(f"no isotope mass tabulated for elements {unknown}")
-    return np.array([ISOTOPIC_MASSES[symbol] for symbol in symbols])
-
-
 def _centered(symbols: Sequence[str], coords: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    masses = _masses(symbols)
+    masses = np.array([mass(symbol) for symbol in symbols])
     x = np.asarray(coords, dtype=float).reshape(-1, 3)
     if len(x) != len(masses):
         raise ValueError("symbols and coordinates differ in atom count")

@@ -19,20 +19,26 @@ CH4 = _xyz("C H H H H", [0, 0, 0], [.63, .63, .63], [-.63, -.63, .63], [-.63, .6
            [.63, -.63, -.63])
 MEOH = _xyz("C O H H H H", [0, 0, 0], [1.43, 0, 0], [1.75, .9, 0], [-.36, 1.03, 0],
             [-.36, -.51, .89], [-.36, -.51, -.89])
+FECL3 = _xyz("Fe Cl Cl Cl", [0, 0, 0], [2.13, 0, 0], [-1.065, 1.845, 0], [-1.065, -1.845, 0])
+_CO = [(0, 0, 1), (0, 0, -1), (1, 0, 0), (-.5, .866, 0), (-.5, -.866, 0)]  # trigonal bipyramid
+FE_CO5 = XYZ(["Fe"] + ["C", "O"] * 5,
+             np.vstack([[0, 0, 0], *[np.multiply(u, r) for u in _CO for r in (1.82, 2.97)]]))
+CO2 = _xyz("C O O", [0, 0, 0], [1.16, 0, 0], [-1.16, 0, 0])
 
 
-@pytest.mark.parametrize("host,guests", [(NH3, [HF]), (CH4, [AR]), (NH3, [HF, HF])])
+@pytest.mark.parametrize("host,guests", [(NH3, [HF]), (CH4, [AR]), (NH3, [HF, HF]),
+                                         (FECL3, [CH4]), (FE_CO5, [CO2])])
 def test_seeds_are_rigid_collision_free_and_distinct(host, guests):
     seeds, sizes = placement.seeds(host, guests), [len(m.symbols) for m in (host, *guests)]
     owner, bounds = np.repeat(np.arange(len(sizes)), sizes), np.cumsum([0, *sizes])
     heavy = np.array([s != "H" for s in seeds[0].symbols])
     inter, both = owner[:, None] != owner, np.outer(heavy, heavy)
-    assert len(seeds) == 6  # CH4·Ar has no acceptor: rigid random fallback
+    assert len(seeds) == 6  # CH4·Ar, FeCl3·CH4 and Fe(CO)5·CO2: rigid random fallback
     for seed in seeds:
         d = cdist(seed.coords, seed.coords)
         for m, s, e in zip((host, *guests), bounds[:-1], bounds[1:], strict=True):
             np.testing.assert_allclose(d[s:e, s:e], cdist(m.coords, m.coords), atol=1e-8)  # rigid
-        assert d[inter & both].min() >= 2.2 and d[inter & ~both].min() >= 1.2
+        assert d[inter & both].min() >= 2.2 and (d[inter & ~both] >= 1.2).all()
     assert min(pirmsd(a.symbols, a.coords, b.coords)[0]
                for i, a in enumerate(seeds) for b in seeds[i + 1:]) >= 0.1
 

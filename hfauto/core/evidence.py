@@ -82,7 +82,7 @@ class Evidence(BaseModel):
     energy_hartree: float  # electronic energy at final
     trajectory_energies_hartree: tuple[float, ...] = ()  # opt / saddle steps; first is start
     frequencies_cm1: tuple[float, ...] | None = None  # freq only; projected, imaginary < 0
-    n_external: Literal[5, 6] | None = None  # freq only; 5 for linear molecules
+    n_external: Literal[3, 5, 6] | None = None  # freq only; 5 if linear, 3 for an atom (no mode)
     imaginary_modes: tuple[tuple[float, ...], ...] = ()  # normalized cartesian, input frame
     hessian: FileRef | None = None  # freq only; canonical .npy (3N, 3N) in Eh/bohr^2
     s2: float | None = None  # observed <S^2> (open shell only)

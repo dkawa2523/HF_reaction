@@ -1,4 +1,4 @@
-"""NWChem parser on real outputs (design §10.2: G01, G03-G05, G07, G10, G13, G21-G26)."""
+"""NWChem parser on real outputs (design §10.2: G01, G03-G05, G07, G10, G13, G21-G28)."""
 
 import json
 import re
@@ -25,7 +25,7 @@ pytestmark = pytest.mark.golden
 XFINE = MethodSpec(id="m", kind="dft", functional="pbe0", basis="def2-svpd",
                    dispersion="d3zero", grid="xfine", scf_energy_tol=1e-8)
 SVPD = MethodSpec(id="pbe0-d3bj_def2-svpd", kind="dft", functional="pbe0", basis="def2-svpd",
-                  dispersion="d3bj", grid="fine", scf_energy_tol=1e-7)  # G25, G26
+                  dispersion="d3bj", grid="fine", scf_energy_tol=1e-7)  # G25-G28
 
 
 def test_g01_two_vibrational_blocks(golden):
@@ -123,8 +123,10 @@ def test_final_xyz_numbering_atom_order_and_missing_d3(golden, tmp_path):
 @pytest.mark.parametrize(("stem", "charge", "multiplicity", "energy"), [
     ("G25/oh_opt", 0, 2, -75.601066898809), ("G25/oh_freq", 0, 2, -75.601067860254),
     ("G26/fhf_opt", -1, 1, -200.036913760096), ("G26/fhf_freq", -1, 1, -200.036913730359),
-    ("G26/fhf_sp", -1, 1, -200.036913904367)])
-def test_doublet_and_anion_level_s2_and_energy(golden, stem, charge, multiplicity, energy):
+    ("G26/fhf_sp", -1, 1, -200.036913904367), ("G27/hi_sp", 0, 1, -298.309133268697),
+    ("G28/cl_opt", -1, 1, -459.982266730126), ("G28/cl_freq", -1, 1, -459.982266730122)])
+def test_doublet_anion_ecp_and_atom_level_s2_and_energy(golden, stem, charge, multiplicity,
+                                                        energy):
     text = golden.text(f"nwchem/{stem}.out")  # OH. opt / freq energies: U3-P7 later
     level = nw.observe_level(text)
     assert level_mismatches(SVPD, level, version_pin="7.2.3") == []
@@ -135,10 +137,11 @@ def test_doublet_and_anion_level_s2_and_energy(golden, stem, charge, multiplicit
     assert s2 is None if multiplicity == 1 else s2 == pytest.approx(0.753, abs=0.005)
 
 
-@pytest.mark.parametrize(("stem", "charge", "multiplicity", "n_atoms"), [
-    ("G25/oh_freq", 0, 2, 2), ("G26/fhf_freq", -1, 1, 3)])
-def test_doublet_and_anion_freq_evidence(golden, tmp_path, stem, charge, multiplicity, n_atoms):
-    """The engine's own parse of a recorded job: 3N - 5 modes, spin_ok on the observed <S^2>."""
+@pytest.mark.parametrize(("stem", "charge", "multiplicity", "n_external", "n_modes"), [
+    ("G25/oh_freq", 0, 2, 5, 1), ("G26/fhf_freq", -1, 1, 5, 4), ("G28/cl_freq", -1, 1, 3, 0)])
+def test_doublet_anion_and_atom_freq_evidence(golden, tmp_path, stem, charge, multiplicity,
+                                              n_external, n_modes):
+    """The engine's own parse of a recorded job: 3N - n_external modes, spin_ok on <S^2>."""
     text, work = golden.text(f"nwchem/{stem}.out"), tmp_path / "jobs" / "freq"
     work.mkdir(parents=True)
     (work / STDOUT_NAME).write_text(text, encoding="utf-8")
@@ -151,6 +154,21 @@ def test_doublet_and_anion_freq_evidence(golden, tmp_path, stem, charge, multipl
                 execution=site.execution, inputs={"mol": mol, "start": mol, "method": SVPD})
     result = CommandResult(0, False, 1.0, work / STDOUT_NAME, work / "stderr.txt")
     ev = engine.parse(task, work, result)
-    assert isinstance(ev, Evidence) and ev.n_external == 5
-    assert len(ev.frequencies_cm1) == 3 * n_atoms - 5 and min(ev.frequencies_cm1) > 0
+    assert isinstance(ev, Evidence) and ev.n_external == n_external
+    assert len(ev.frequencies_cm1) == n_modes and all(nu > 0 for nu in ev.frequencies_cm1)
     assert spin_ok(ev) and (ev.s2 is None) == (multiplicity == 1)
+
+
+def test_g27_iodine_ecp_electrons_and_ccsd_t_frozen_core(golden):
+    """def2-ECP on I only: 26 electrons, alpha 13; ``freeze atomic`` freezes no orbital of an
+    ECP atom (its 4s4p4d are correlated)."""
+    sp, cc = golden.text("nwchem/G27/hi_sp.out"), golden.text("nwchem/G27/hi_ccsdt.out")
+    for text in (sp, cc):
+        assert "\necp\n  I library def2-ecp\nend\n" in text and "* library def2-ecp" not in text
+        assert re.search(r"I \(Iodine\) Replaces\s+28 electrons", text)
+    assert re.search(r"Alpha electrons :\s+13\n", sp)
+    level = nw.observe_level(cc)
+    assert (level.method, level.basis, level.charge, level.multiplicity) == (
+        "ccsd(t)", "def2-tzvpd", 0, 1)
+    assert nw.total_energy(cc) == pytest.approx(-297.821560434727, abs=1e-9)
+    assert re.findall(r"number of core\s+(\d+)", cc) == ["0"]

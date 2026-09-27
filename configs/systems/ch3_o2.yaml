@@ -1,0 +1,7 @@
+# S5 (review §6.1): CH3. + O2 association on the declared doublet surface (2 + 3 -> 2 or 4).
+system_id: ch3_o2
+species:
+  - {id: ch3, smiles: "[CH3]"}
+  - {id: o2, smiles: "[O][O]"}
+compositions:
+  - {id: ch3_o2, components: {ch3: 1, o2: 1}, multiplicity: 2}

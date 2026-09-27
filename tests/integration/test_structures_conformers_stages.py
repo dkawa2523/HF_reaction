@@ -103,3 +103,25 @@ def test_a_repeated_topology_stop_fails_and_the_stop_seeds_compositions(tmp_path
     assert len(calls) == 3 and calls[1][1] == calls[0][1] and calls[2][1].nci  # no second retry
     stop = _proton_shift(calls[0][0].xyz.coords)  # the lowest HONO seeds the composition
     assert np.allclose(calls[2][0].xyz.coords[:4], stop)
+
+
+def test_a_composition_takes_the_declared_or_the_only_coupled_multiplicity(tmp_path, fake_runtime):
+    oh = write_xyz(XYZ(["O", "H"], np.array([[0, 0, 0], [0, 0, .97]])), tmp_path / "oh.xyz")
+    comps = [CompositionInput(id=k, components=c, multiplicity=m) for k, c, m in (
+        ("free", {"oh": 2}, None), ("triplet", {"oh": 2}, 3), ("singlet", {"oh": 2}, 1),
+        ("ohf", {"oh": 1, "hf": 1}, None))]
+    species = [SpeciesInput(id="oh", xyz=oh, multiplicity=2), *_species(tmp_path, ("hf",))]
+    system = SystemConfig(system_id="t", species=species, compositions=comps)
+    arts = StructuresStage().run(Manifest(run_id="r", stage_id="s", created_at=""),
+                                 StructuresConfig(), fake_runtime(system, {}, stage_id="s"))
+    calls = []
+    rt = fake_runtime(system, {(Capability.CONFORMERS, "crest"): _crest(lambda: rt, calls, 0)},
+                      methods=GFN2, stage_id="c")
+    out = ConformersStage().run(Manifest(run_id="r", stage_id="s", created_at="", artifacts=arts),
+                                ConformersConfig(engine="crest", method="gfn2"), rt)
+    failed = {a.artifact_id: a.failure.reason for a in out if a.failure}
+    assert all(a.failure.kind == FailureKind.INPUT_INVALID for a in out if a.failure)
+    assert set(failed) == {"conformers_free", "conformers_singlet"}
+    assert failed["conformers_free"] == "declare_multiplicity: candidates (1, 3)"
+    assert failed["conformers_singlet"].startswith("open_shell_singlet_unsupported")
+    assert sorted(m.multiplicity for m, _ in calls) == [2, 3]  # OH·HF doublet, (OH)2 triplet

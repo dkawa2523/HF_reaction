@@ -43,9 +43,11 @@ def test_sites_and_methods_validate():
 def test_system_loads_and_its_xyz_fit_the_state_and_the_reaction_atom_order(path):
     system = load_system(path)
     xyz = {s.id: read_xyz(s.xyz) for s in system.species if s.xyz is not None}
-    for species in system.species:  # charge and multiplicity against the electron count
+    for species in system.species:  # elements, charge and multiplicity (xyz default 1)
         if species.id in xyz:
-            check_electronic_state(xyz[species.id].symbols, species.charge, species.multiplicity)
+            m = species.multiplicity
+            check_electronic_state(xyz[species.id].symbols, species.charge, 1 if m is None else m,
+                                   declared=m is not None)
     for reaction in system.reactions:
         assert xyz[reaction.reactant].symbols == xyz[reaction.product].symbols
 

@@ -103,12 +103,16 @@ def test_frequencies_cache_and_input_checks(nwchem, golden):
     assert grid.kind is FailureKind.METHOD_MISMATCH and "grid" in grid.reason
 
 
-def test_open_shell_wft_is_rejected_without_a_job(nwchem, golden):
+def test_open_shell_wft_and_all_electron_iodine_are_rejected_without_a_job(nwchem, golden):
     jobs, site = nwchem
+    engine = NWChemEngine(jobs=jobs, site=site)
     mp2 = MethodSpec(id="mp2", kind="wft", wft_method="mp2", basis="def2-svp")
-    doublet = Molecule(_hcn_ts(golden).xyz, 1, 2)
-    failure = NWChemEngine(jobs=jobs, site=site).energy(doublet, mp2)
+    failure = engine.energy(Molecule(_hcn_ts(golden).xyz, 1, 2), mp2)
     assert (failure.kind, failure.reason) == (FailureKind.INPUT_INVALID, "wft_closed_shell_only")
+    hi = Molecule(XYZ(["H", "I"], np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.61]])), 0, 1)
+    failure = engine.energy(hi, mp2.model_copy(update={"basis": "cc-pVDZ"}))
+    assert (failure.kind, failure.reason) == (FailureKind.INPUT_INVALID,
+                                              "no_ecp_for_basis:cc-pVDZ:I")
     assert (jobs.stats().hits, jobs.stats().misses) == (0, 0)
 
 

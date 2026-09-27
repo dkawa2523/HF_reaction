@@ -132,6 +132,10 @@ class _NWChem:
 
     def _run(self, kind: str, payload: Mapping[str, Any], inputs: Mapping[str, Any],
              deadline: Deadline | None) -> Any:
+        try:  # no all-electron deck for an element that needs an ECP
+            nw_in.ecp(inputs["mol"].xyz.symbols, inputs["method"].basis)
+        except ValueError as exc:
+            return _invalid(str(exc))
         task = Task(engine=self.name, version_pin=self._site.version, kind=kind,
                     key_payload={"method": inputs["method"].signature(), **payload},
                     execution=self._site.execution, inputs=inputs)

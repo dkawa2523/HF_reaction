@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from hfauto.chemistry import vibrations as vib
+from hfauto.chemistry.elements import mass
 from hfauto.core.constants import AMU_TO_ME, CM1_TO_HARTREE
 
 WATER = (
@@ -28,7 +29,7 @@ def test_projection_removes_rotational_contamination():
     internal = q[:, 6:]
     rotations = external[:, -2:]  # smallest singular values: rotations
     h_mw = internal @ np.diag([-0.05, 0.3, 0.6]) @ internal.T - 0.02 * rotations @ rotations.T
-    root = np.sqrt(np.repeat([vib.ISOTOPIC_MASSES[s] for s in symbols], 3))
+    root = np.sqrt(np.repeat([mass(s) for s in symbols], 3))
     freqs, modes, k = vib.projected_frequencies(h_mw * np.outer(root, root), symbols, x)
     assert np.count_nonzero(np.linalg.eigvalsh(h_mw) < -1e-8) == 3  # unprojected
     assert k == 6 and np.count_nonzero(freqs < 0) == 1
@@ -67,5 +68,3 @@ def test_canonical_npy(tmp_path):
     h = np.diag([0.5] + [0.0] * 5)  # Eh/bohr², atom 0 along x
     out = vib.to_canonical_npy(h, tmp_path / "freq" / "hessian.npy")
     assert np.array_equal(np.load(out), h)
-    with pytest.raises(ValueError):
-        vib.projected_frequencies(h, ["Xx", "H"], np.zeros((2, 3)))

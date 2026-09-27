@@ -68,6 +68,19 @@ def test_charge_multiplicity_dispersion_solvation_and_frame():
         nw.render_energy(WATER, PBE0.model_copy(update={"dispersion": "d4"}))
 
 
+def test_def2_writes_one_ecp_line_per_element_beyond_kr():
+    ch3i = Molecule(XYZ(["C", "I", "H", "H", "H"], np.zeros((5, 3))), 0, 1)
+    ccsd_t = MP2.model_copy(update={"wft_method": "ccsd(t)", "basis": "def2-tzvpd"})
+    for deck in (nw.render_energy(ch3i, PBE0), nw.render_wft(ch3i, ccsd_t),
+                 nw.render_string(ch3i, ch3i, PBE0, nbeads=5)):
+        assert "end\necp\n  I library def2-ecp\nend" in deck and "* library def2-ecp" not in deck
+    assert "ecp" not in nw.render_energy(WATER, PBE0)
+    assert nw.ecp(["Te", "I", "Xe", "I", "H"], "def2-svp") == [
+        "ecp", "  Te library def2-ecp", "  I library def2-ecp", "  Xe library def2-ecp", "end"]
+    with pytest.raises(ValueError, match="no_ecp_for_basis:cc-pVDZ:I"):  # no all-electron I
+        nw.render_wft(ch3i, ccsd_t.model_copy(update={"basis": "cc-pVDZ"}))
+
+
 def test_wft_single_points_and_hess_round_trip(tmp_path):
     mp2 = nw.render_wft(WATER, MP2)
     assert "task mp2 energy" in mp2 and "freeze atomic" in mp2 and "dft" not in mp2

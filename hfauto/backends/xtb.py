@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, cast
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 
@@ -183,9 +183,9 @@ class _Adapter:
         npy = to_canonical_npy(hessian, workdir / "hessian.npy")
         imaginary = tuple(tuple(float(x) for x in mode)
                           for f, mode in zip(freqs, modes, strict=True) if f < 0)
+        base |= {"n_external": n_external}  # 3 (an atom: no mode), 5 (linear) or 6
         return Evidence(final=base["start"], frequencies_cm1=tuple(float(f) for f in freqs),
-                        n_external=cast(Literal[5, 6], n_external), imaginary_modes=imaginary,
-                        hessian=self.file_ref(npy), **base)
+                        imaginary_modes=imaginary, hessian=self.file_ref(npy), **base)
 
     def _geometry(self, path: Path, xyz: XYZ) -> Geometry:
         """Fingerprint of the coordinates in memory, so an opt's final geometry read back

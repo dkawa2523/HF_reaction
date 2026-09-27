@@ -43,9 +43,3 @@ def test_state_label_is_permutation_invariant():
     permuted = top.state_label([NH3_HF[i] for i in order], NEUTRAL[order])
     assert permuted == top.state_label(NH3_HF, NEUTRAL)
     assert top.state_label(NH3_HF, ION_PAIR) != top.state_label(NH3_HF, NEUTRAL)
-
-
-def test_vdw_radius_table():
-    assert top.vdw_radius("H") == 1.20 and top.vdw_radius("N") == 1.55
-    with pytest.raises(ValueError):
-        top.vdw_radius("Xx")

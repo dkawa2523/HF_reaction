@@ -560,5 +560,79 @@
   "refs": [
    "review-2026-09-27 §6.2"
   ]
+ },
+ {
+  "id": "G27",
+  "files": [
+   {
+    "golden": "nwchem/G27/hi_sp.out",
+    "source": "/home/user/hfauto_r6/m1/golden/jobs/68/68ed20d9e93cd0fb6ce04e0b3476e6e3cace1b451375688cc63aac1e0afed7ec/attempt_00/stdout.txt",
+    "source_sha256": "87689cf33f5c6be7973bf0a78fa59183c65346224a5c5d05f86c685fa877858f",
+    "method": "copy"
+   },
+   {
+    "golden": "nwchem/G27/hi_ccsdt.out",
+    "source": "/home/user/hfauto_r6/m1/golden/jobs/b8/b845db27825ad29bd9741a623b04c4d7d35893f4dc23f7e308679479beeb57bd/attempt_00/stdout.txt",
+    "source_sha256": "a3038f407262a4f2d7f5d2f1a464c43c12e93fdd36baefeaea6475e6e02ef668",
+    "method": "copy"
+   }
+  ],
+  "expect": "HI(r=1.61 Å)の SP。PBE0-D3BJ/def2-SVPD(E −298.309133268697)と CCSD(T)/def2-TZVPD(E −297.821560434727)、hfauto の NWChemEngine で生成。デッキは I だけに `I library def2-ecp` を書き(`*` は書かない)、I の芯 28 電子を置き換えて全 26 電子・α 13。Level の basis 観測は要求どおり。`freeze atomic` は ECP の原子の軌道を凍結しない(number of core 0 で I の 4s4p4d を相関させる。CH3I では C 1s の 1 だけ)",
+  "refs": [
+   "review-2026-09-27 §6.2",
+   "U0-P1"
+  ]
+ },
+ {
+  "id": "G28",
+  "files": [
+   {
+    "golden": "xtb/G28/opt_stdout.txt",
+    "source": "/home/user/hfauto_r6/m1/golden/jobs/2e/2e9259ceabf8073051876841e58e3a81f3bf147ad45136ab7bcfdd0de5239130/attempt_00/stdout.txt",
+    "source_sha256": "c2e02c318b9b56ebe9e122d9e4dbbe525b15c85adedf4a4452af9afef9563a7f",
+    "method": "copy"
+   },
+   {
+    "golden": "xtb/G28/xtbopt.xyz",
+    "source": "/home/user/hfauto_r6/m1/golden/jobs/2e/2e9259ceabf8073051876841e58e3a81f3bf147ad45136ab7bcfdd0de5239130/attempt_00/xtbopt.xyz",
+    "source_sha256": "a265f8c4345898c4d3970e3f5b6f21fd39375b3cbf39c315583fc9f401d6a613",
+    "method": "copy"
+   },
+   {
+    "golden": "xtb/G28/hess_stdout.txt",
+    "source": "/home/user/hfauto_r6/m1/golden/jobs/39/39be8c9ad33f5c7432d0f2b3517826a8b11abe45721af40d09faee127ba499fa/attempt_00/stdout.txt",
+    "source_sha256": "08847fe5362ed4d650a0d28d5ac2dcbbca7bdf23f6d7cdea9145cc16b3458fc3",
+    "method": "copy"
+   },
+   {
+    "golden": "xtb/G28/hessian",
+    "source": "/home/user/hfauto_r6/m1/golden/jobs/39/39be8c9ad33f5c7432d0f2b3517826a8b11abe45721af40d09faee127ba499fa/attempt_00/hessian",
+    "source_sha256": "2558f891fc4b3800bf78565a8902b225b6082131320ed49838589ea3fb4f0809",
+    "method": "copy"
+   },
+   {
+    "golden": "nwchem/G28/cl_opt.out",
+    "source": "/home/user/hfauto_r6/m1/golden/jobs/f0/f0b8c813200602d4096331552438ded26d577ec8cfff4be98dc6aa4a18eeddeb/attempt_00/stdout.txt",
+    "source_sha256": "40d48b87925ff0a5881160c467a97f4b2bad2e716bb88b0912a4126cd42c9361",
+    "method": "nwchem"
+   },
+   {
+    "golden": "nwchem/G28/cl_freq.out",
+    "source": "/home/user/hfauto_r6/m1/golden/jobs/30/30da9ef8b1804d46b5a3fd57e7ccb5372385c0651db9481f9a38f404655a5111/attempt_00/stdout.txt",
+    "source_sha256": "eacac9de65de8413109899f615bda568207ffb9e170d3f075d798b0deb7773ad",
+    "method": "nwchem"
+   },
+   {
+    "golden": "nwchem/G28/cl_freq.hess",
+    "source": "/home/user/hfauto_r6/m1/golden/jobs/30/30da9ef8b1804d46b5a3fd57e7ccb5372385c0651db9481f9a38f404655a5111/attempt_00/job.hess",
+    "source_sha256": "f04e16738f285519ac92a11470dea70703fdbf1f378d06fa511567ef960c6024",
+    "method": "copy"
+   }
+  ],
+  "expect": "Cl⁻(単原子、電荷 −1)の opt と freq。xTB GFN2(E −4.785133953761)と PBE0-D3BJ/def2-SVPD(opt −459.982266730126、freq −459.982266730122)、hfauto の XTBEngine・NWChemEngine で生成。どちらの driver も 1 原子を普通に扱い、.hess は 3×3。振動数 ()、n_external 3",
+  "refs": [
+   "review-2026-09-27 §6.2",
+   "U3-P1"
+  ]
  }
 ]

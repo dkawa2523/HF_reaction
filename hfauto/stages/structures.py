@@ -1,7 +1,8 @@
 """structures stage (design §4.1 #1, §8.2): system species → ``species`` artifacts.
 
 xyz files are copied into the stage directory and SMILES are embedded once (RDKit ETKDG).
-Charge and multiplicity are checked with ``check_electronic_state``; both ends of a
+An undeclared multiplicity is the SMILES radical electrons + 1, or 1 for xyz. Elements,
+charge and multiplicity are checked once here with ``check_electronic_state``; both ends of a
 declared reaction must share composition id (formula, charge, multiplicity) and atom order,
 and its coordinate indices must fall inside the molecule. Every problem becomes a failed
 artifact with ``INPUT_INVALID``.
@@ -45,23 +46,28 @@ def _failed(species_id: str, kind: FailureKind, reason: str) -> Artifact:
                     status="failed", failure=Failure(kind=kind, reason=reason))
 
 
-def _write(species: SpeciesInput, target: Path) -> Path:
+def _write(species: SpeciesInput, target: Path) -> int:
+    """Write the input structure to ``target`` and return its multiplicity."""
     target.parent.mkdir(parents=True, exist_ok=True)
     if species.xyz is not None:  # SpeciesInput guarantees exactly one of xyz and smiles
         shutil.copyfile(species.xyz, target)
-        return target
+        return 1 if species.multiplicity is None else species.multiplicity
     mol = smiles_to_molecule(cast(str, species.smiles), species.charge, species.multiplicity)
-    return mol.write(target)
+    mol.write(target)
+    return mol.multiplicity
 
 
 def _species(species: SpeciesInput, rt: StageRuntime) -> Artifact:
+    path = rt.stage_dir / "xyz" / f"{species.id}.xyz"
     try:
-        geometry, xyz = geometry_of(_write(species, rt.stage_dir / "xyz" / f"{species.id}.xyz"), rt)
-        check_electronic_state(xyz.symbols, species.charge, species.multiplicity)
+        mult = _write(species, path)
+        geometry, xyz = geometry_of(path, rt)
+        check_electronic_state(xyz.symbols, species.charge, mult,
+                               declared=species.multiplicity is not None)
         record = SpeciesRecord(
             species_id=species.id,
-            composition_id=composition_key(xyz.symbols, species.charge, species.multiplicity),
-            charge=species.charge, multiplicity=species.multiplicity, geometry=geometry,
+            composition_id=composition_key(xyz.symbols, species.charge, mult),
+            charge=species.charge, multiplicity=mult, geometry=geometry,
             source="input", state_label=state_label(xyz.symbols, xyz.coords),
         )
     except ImportError as exc:

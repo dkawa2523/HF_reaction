@@ -6,7 +6,9 @@
 
 - 対象: 気相の分子と非共有結合錯体。電荷を持つ系と開殻系(多重度 > 1。<S²> を観測する)も扱う。溶媒は PES の指定(NWChem の COSMO、xTB の ALPB)として扱うだけである。
 - 求めるもの: 候補生成物、同一 PES 上で検証した極小、1 次の鞍点(別ジョブの振動数で検証)と QRC による接続の確認、qRRHO の熱化学(会合量を含む)、証拠の階層と不確かさの幅に基づく順位。
-- 範囲外: wet-etch の反応器・表面モデル、broken-symmetry(閉殻一重項ジラジカルの TS。検出もしない)、速度論、公開 DB による同定。
+- 対応元素: Z=1〜57、72〜86(計算できる範囲で、遷移金属は未検証)。Z>36 は def2 系の基底だけで扱い、def2-ECP を自動で書く。単原子の化学種も通常の経路を通る(explore の出発点にはならない)。
+- スピン状態: 化学種と組成の多重度は利用者が宣言する。未宣言なら SMILES は不対電子数 + 1(原子は高スピン仮定)、xyz は 1、組成はスピン結合で値が 1 つに決まるときだけその値。d ブロック元素を含む化学種は宣言が必須。
+- 範囲外: wet-etch の反応器・表面モデル、開殻一重項(ビラジカル、ラジカル対。BS-UKS は使わず、ラジカル再結合の生成物は単量体として宣言する)と MECP・スピン交差、速度論、公開 DB による同定。
 - fail-closed: ダミーエンジンや内部フォールバックの熱化学はない。外部ジョブの失敗は `FailureKind` 付きの failed artifact として残る。
 
 ## 処理の流れ
@@ -44,7 +46,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 |---|---|---|
 | site | `configs/sites/` | 実行ファイルの絶対パス、scratch、コア数とメモリ、エンジンごとの版数の pin と実行設定 |
 | method | `configs/methods/` | 汎関数・基底・分散補正・grid・SCF 閾値(xTB は GFN と電子温度) |
-| system | `configs/systems/`(xyz は `configs/systems/xyz/`) | 化学種、組成、宣言反応。hcn、hono、nh3_inversion、formaldehyde、tma_hf2、amine_hf_panel、water_same_basin と、レビュー §6 の検証セット(sn2_cl ほか 15 系。対応は docs/validation.md の r6) |
+| system | `configs/systems/`(xyz は `configs/systems/xyz/`) | 化学種、組成、宣言反応。hcn、hono、nh3_inversion、formaldehyde、tma_hf2、amine_hf_panel、water_same_basin と、レビュー §6 の検証セット(sn2_cl ほか 17 系。対応は docs/validation.md の r6) |
 | pipeline | `configs/pipelines/` | stage の並びと設定、温度と標準状態、ゲート閾値の上書き(`gates:`) |
 
 ## インストール

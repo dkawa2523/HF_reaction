@@ -21,7 +21,7 @@ class SpeciesInput(BaseModel):
     xyz: Path | None = None
     smiles: str | None = None
     charge: int = 0
-    multiplicity: int = 1
+    multiplicity: int | None = None  # None: SMILES radicals + 1, xyz 1; d-block must declare
     role: Literal["monomer", "endpoint"] = "monomer"
 
     @model_validator(mode="after")
@@ -34,7 +34,8 @@ class SpeciesInput(BaseModel):
 class CompositionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
-    components: dict[str, PositiveInt]  # species id -> count; charge and multiplicity follow
+    components: dict[str, PositiveInt]  # species id -> count; the charge is their sum
+    multiplicity: int | None = None  # None: the only one spin coupling allows
 
 
 class ReactionInput(BaseModel):

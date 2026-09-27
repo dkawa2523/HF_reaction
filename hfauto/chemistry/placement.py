@@ -17,8 +17,9 @@ from itertools import product
 
 import numpy as np
 
+from hfauto.chemistry.elements import vdw_radius
 from hfauto.chemistry.identity import permutation_invariant_rmsd
-from hfauto.chemistry.topology import acceptor_atoms, bonds, labile_hydrogens, vdw_radius
+from hfauto.chemistry.topology import acceptor_atoms, bonds, labile_hydrogens
 from hfauto.chemistry.xyz import XYZ
 
 CONE_DEG = (110.0, 120.0)  # A···H direction measured from the acceptor's bonds

@@ -15,6 +15,7 @@ from collections.abc import Collection, Sequence
 
 import numpy as np
 
+from hfauto.chemistry.elements import covalent_radius
 from hfauto.chemistry.xyz import hill_formula
 from hfauto.core.records import CoordinateTerm
 
@@ -26,37 +27,9 @@ NONBOND_MIN_RATIO = 1.45
 PROTON_Q_MIN_A = 0.3
 _WL_ITERATIONS = 3
 
-# Cordero et al., Dalton Trans. 2008.
-_COVALENT_RADII_A = {
-    "H": 0.31, "He": 0.28, "Li": 1.28, "Be": 0.96, "B": 0.84, "C": 0.76, "N": 0.71,
-    "O": 0.66, "F": 0.57, "Ne": 0.58, "Na": 1.66, "Mg": 1.41, "Al": 1.21, "Si": 1.11,
-    "P": 1.07, "S": 1.05, "Cl": 1.02, "Ar": 1.06, "K": 2.03, "Ca": 1.76, "Sc": 1.70,
-    "Ti": 1.60, "V": 1.53, "Cr": 1.39, "Mn": 1.39, "Fe": 1.32, "Co": 1.26, "Ni": 1.24,
-    "Cu": 1.32, "Zn": 1.22, "Ga": 1.22, "Ge": 1.20, "As": 1.19, "Se": 1.20, "Br": 1.20,
-    "Kr": 1.16, "I": 1.39,
-}
-# Bondi, J. Phys. Chem. 1964; Be, B, Al, Ca, Ge from Mantina et al., JPCA 2009.
-_VDW_RADII_A = {
-    "H": 1.20, "He": 1.40, "Li": 1.82, "Be": 1.53, "B": 1.92, "C": 1.70, "N": 1.55,
-    "O": 1.52, "F": 1.47, "Ne": 1.54, "Na": 2.27, "Mg": 1.73, "Al": 1.84, "Si": 2.10,
-    "P": 1.80, "S": 1.80, "Cl": 1.75, "Ar": 1.88, "K": 2.75, "Ca": 2.31, "Ni": 1.63,
-    "Cu": 1.40, "Zn": 1.39, "Ga": 1.87, "Ge": 2.11, "As": 1.85, "Se": 1.90, "Br": 1.85,
-    "Kr": 2.02, "I": 1.98,
-}
 _LABILE_PARTNERS = frozenset({"N", "O", "F", "S", "Cl", "Br", "I", "P"})
 # An atom with a lone pair left: at most this many covalent partners.
 _ACCEPTOR_MAX_BONDS = {"N": 3, "P": 3, "O": 2, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
-
-
-def _lookup(table: dict[str, float], symbol: str, what: str) -> float:
-    try:
-        return table[symbol]
-    except KeyError:
-        raise ValueError(f"no {what} radius tabulated for element {symbol!r}") from None
-
-
-def vdw_radius(symbol: str) -> float:
-    return _lookup(_VDW_RADII_A, symbol, "van der Waals")
 
 
 def _ratios(symbols: Sequence[str], coords: np.ndarray) -> np.ndarray:
@@ -65,7 +38,7 @@ def _ratios(symbols: Sequence[str], coords: np.ndarray) -> np.ndarray:
     x = np.asarray(coords, dtype=float).reshape(-1, 3)
     if len(x) != len(symbols):
         raise ValueError("symbols and coordinates differ in atom count")
-    radii = np.array([_lookup(_COVALENT_RADII_A, s, "covalent") for s in symbols])
+    radii = np.array([covalent_radius(s) for s in symbols])
     ratio = np.linalg.norm(x[:, None] - x[None], axis=-1) / (radii[:, None] + radii[None])
     np.fill_diagonal(ratio, np.inf)
     return ratio

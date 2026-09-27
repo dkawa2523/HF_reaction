@@ -6,6 +6,7 @@ PBE0-D3BJ/def2-SVP its Hessian has exactly two negative eigenvalues (NH2 inversi
 coordinates, with moddir set by its place among the negative P·H·P eigenvectors.
 """
 
+import re
 import shutil
 from pathlib import Path
 
@@ -38,6 +39,7 @@ PLANAR_NH3 = _mol(("N", 0, 0, 0), ("H", 1.01, 0, 0), ("H", -0.505, 0.874686, 0),
 PLANAR_NH2OH = _mol(("N", 0, 0, 0), ("O", 1.42, 0, 0), ("H", -0.5, 0.866, 0),
                     ("H", -0.5, -0.866, 0), ("H", 1.74, 0.91, 0))
 HCN = _mol(("H", 0, 0, -1.066), ("C", 0, 0, 0), ("N", 0, 0, 1.156))
+HI = _mol(("H", 0, 0, 0), ("I", 0, 0, 1.61))
 
 
 def _final(tmp_path, ev: Evidence) -> Molecule:
@@ -70,6 +72,20 @@ def test_moddir_follows_the_second_negative_mode(real_engine):
     assert sum(f < -50 for f in hessian.frequencies_cm1) == 2
     ts = saddle.refine(PLANAR_NH2OH, PBE0, hessian=hessian, mode_index=1)
     assert isinstance(ts, Evidence) and ts.task == "saddle", ts
+
+
+def test_iodine_def2_ecp_and_a_chloride_atom(real_engine, tmp_path):
+    """HI: the def2-ECP of I leaves 26 electrons (alpha 13); Cl-: opt and freq of one atom."""
+    qm = real_engine(Capability.QM, "nwchem")
+    sp = qm.energy(HI, PBE0)
+    assert isinstance(sp, Evidence), sp
+    assert re.search(r"Alpha electrons :\s+13\n", (tmp_path / "run" / sp.output.path).read_text())
+    chloride = Molecule(XYZ(["Cl"], np.zeros((1, 3))), -1, 1)
+    opt = qm.optimize(chloride, PBE0)
+    assert isinstance(opt, Evidence), opt
+    freq = qm.frequencies(Molecule(_final(tmp_path, opt).xyz, -1, 1), PBE0)
+    assert isinstance(freq, Evidence), freq
+    assert (freq.frequencies_cm1, freq.n_external) == ((), 3) and is_minimum(freq, opt=opt)
 
 
 def test_mp2_single_point_and_the_wb97x_d3_level(real_engine):

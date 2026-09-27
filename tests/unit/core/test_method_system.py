@@ -84,7 +84,7 @@ def test_load_system_resolves_relative_xyz(tmp_path):
     config = load_system(write_system(tmp_path, SYSTEM))
     hcn, _, hf = config.species
     assert hcn.xyz == (tmp_path / "systems" / "xyz" / "hcn.xyz").resolve()
-    assert hf.xyz is None
+    assert hf.xyz is None and hf.multiplicity is None and config.compositions[0].multiplicity is None
     assert config.reactions[0].coordinate[0].atoms == (0, 1, 2)
 
 

@@ -28,23 +28,28 @@ def _optimized(i):  # the screen-optimized HCN of m{i}: the input displaced by 0
 
 def _inputs(root):
     """Three HCN screen minima of one state (each with its opt calculation); m0 also holds a
-    seed that relaxed from HNC."""
-    geo = write_geometry(root, "in/hcn.xyz", SYMBOLS, HCN)
+    seed that relaxed from HNC. m3 is an Ar atom: never a source."""
+    geo, ar = (write_geometry(root, f"in/{n}.xyz", s, x) for n, s, x in (
+        ("hcn", SYMBOLS, HCN), ("ar", ["Ar"], np.zeros((1, 3)))))
     out = [Artifact(artifact_id=sid, type=SPECIES, payload=SpeciesRecord(
-        species_id=sid, composition_id="CHN_q0_m1", charge=0, multiplicity=1,
-        geometry=geo, source="conformer", state_label=state_label(SYMBOLS, x)))
-        for sid, x in (("seed", HNC), ("s0", HCN), ("s1", HCN), ("s2", HCN))]
-    for i in range(3):
-        final = write_geometry(root, f"opt/m{i}.xyz", SYMBOLS, _optimized(i))
+        species_id=sid, composition_id=comp, charge=0, multiplicity=1, geometry=g,
+        source="conformer", state_label=state_label(g.symbols, x)))
+        for sid, comp, g, x in (("seed", "CHN_q0_m1", geo, HNC), ("s0", "CHN_q0_m1", geo, HCN),
+                                ("s1", "CHN_q0_m1", geo, HCN), ("s2", "CHN_q0_m1", geo, HCN),
+                                ("s3", "Ar_q0_m1", ar, np.zeros((1, 3))))]
+    for i in range(4):
+        final = ar if i == 3 else write_geometry(root, f"opt/m{i}.xyz", SYMBOLS, _optimized(i))
         out.append(Artifact(artifact_id=f"opt{i}", type=ArtifactType.CALCULATION, payload=Evidence(
-            engine="fake", task="opt", level=LEVEL, start=geo, final=final, energy_hartree=i / 10,
-            output=final.file, job_key=f"opt{i}")))
+            engine="fake", task="opt", level=LEVEL, start=final if i == 3 else geo, final=final,
+            energy_hartree=i / 10, output=final.file, job_key=f"opt{i}")))
     return Manifest(run_id="r", stage_id="screen", created_at="t", artifacts=out + [
         Artifact(artifact_id=f"m{i}", type=MINIMUM, payload=MinimumRecord(
-            minimum_id=f"m{i}", basin_id=f"b{i}", composition_id="CHN_q0_m1", species_id=f"s{i}",
-            tier="screen", level_key="k", opt_calc=f"opt{i}", freq_calc="f", energy_hartree=i / 10,
-            state_label=LABEL, members=(f"s{i}", "seed")[: 2 - min(i, 1)]))
-        for i in range(3)])
+            minimum_id=f"m{i}", basin_id=f"b{i}", species_id=f"s{i}", tier="screen",
+            composition_id="Ar_q0_m1" if i == 3 else "CHN_q0_m1", level_key="k",
+            opt_calc=f"opt{i}", freq_calc="f", energy_hartree=i / 10,
+            state_label=state_label(["Ar"], np.zeros((1, 3))) if i == 3 else LABEL,
+            members=(f"s{i}", "seed")[: 2 - min(i, 1)]))
+        for i in range(4)])
 
 
 def test_explore_records_every_attempt(fake_runtime, tmp_run):
@@ -74,7 +79,7 @@ def test_explore_records_every_attempt(fake_runtime, tmp_run):
     assert got[("m0", "heavy_bond", "nt2")] == ("negative", "monotonic_uphill")
     assert found[("m0", "heavy_bond", "afir")].failure.kind == FailureKind.NONZERO_EXIT
     assert got[("m0", None, "relaxation")] == ("negative", f"collapsed_to:{LABEL}")
-    assert {c[1].source_minimum for c in fake.calls} == {"m0", "m1"}  # m2 is the third lowest
+    assert {c[1].source_minimum for c in fake.calls} == {"m0", "m1"}  # m2: third lowest; m3: Ar
     assert all(c[1].perturbed for c in fake.calls)  # linear HCN starts bent
     for source, trial, *_ in fake.calls:  # from the opt final, not from species.geometry
         i = int(trial.source_minimum[1:])

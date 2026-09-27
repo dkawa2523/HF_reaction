@@ -4,10 +4,11 @@
 
 Small rigid monomers skip the search and pass their input through. A topology-change stop is kept
 as a ``crest_topology`` species and the search reruns once from that structure with the same
-settings (a second stop fails). Compositions take the summed charge and the high-spin multiplicity
-of their components and get ``--notopo`` on labile H and acceptor atoms when they have both. When a
-search fails its input (monomer) or placement seeds (composition) are output instead. Users set
-quick, ewin_kcal, seeds_per_composition and keep_per_state; CREST threads come from the site.
+settings (a second stop fails). Compositions take the summed charge of their components and the
+declared multiplicity (or the only one spin coupling allows; otherwise INPUT_INVALID), and get
+``--notopo`` on labile H and acceptor atoms when they have both. When a search fails its input
+(monomer) or placement seeds (composition) are output instead. Users set quick, ewin_kcal,
+seeds_per_composition and keep_per_state; CREST threads come from the site.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from typing import ClassVar, Literal, cast
 
 from hfauto.backends import protocols as bp
 from hfauto.chemistry import placement
-from hfauto.chemistry.electronic_state import check_electronic_state, coupled_multiplicities
+from hfauto.chemistry.electronic_state import composition_multiplicity
 from hfauto.chemistry.identity import permutation_invariant_rmsd
 from hfauto.chemistry.topology import acceptor_atoms, labile_hydrogens, state_label
 from hfauto.chemistry.xyz import (
@@ -204,9 +205,9 @@ def _composition(comp: CompositionInput, species: dict[str, SpeciesRecord],
                     for sid, n in comp.components.items() for _ in range(n)),
                    key=lambda p: (-len(p[1].symbols), p[0]))
     charge = sum(species[sid].charge for sid, _ in parts)
-    mult = coupled_multiplicities([species[sid].multiplicity for sid, _ in parts])[-1]
     try:
-        check_electronic_state([s for _, xyz in parts for s in xyz.symbols], charge, mult)
+        mult = composition_multiplicity([species[sid].multiplicity for sid, _ in parts],
+                                        comp.multiplicity)
     except ValueError as exc:
         return reject(FailureKind.INPUT_INVALID, str(exc))
     seeds = placement.seeds(parts[0][1], [xyz for _, xyz in parts[1:]],

@@ -1,0 +1,7 @@
+# S9 (review §6.1): FeCl3.CH4 through structures and conformers (Fe: d block, spin declared).
+system_id: fecl3_ch4
+species:
+  - {id: fecl3, xyz: xyz/fecl3_ch4/fecl3.xyz, multiplicity: 6}
+  - {id: ch4, smiles: "C"}
+compositions:
+  - {id: fecl3_ch4, components: {fecl3: 1, ch4: 1}, multiplicity: 6}

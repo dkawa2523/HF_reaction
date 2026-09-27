@@ -2,9 +2,10 @@
 
 Every deck writes the top-level ``charge``, the geometry in the input frame
 (``units angstrom nocenter noautosym``, plus ``noautoz`` for Cartesian coordinates), a
-spherical basis and, for DFT, xc / mult (``odft`` when open shell) / grid / energy
-convergence / dispersion. Optimizations and saddles never compute a Hessian: frequencies
-are a job of their own, and an initial Hessian is read from ``<name>.hess`` (``inhess 2``).
+spherical basis with the def2-ECP of every element beyond Kr and, for DFT, xc / mult
+(``odft`` when open shell) / grid / energy convergence / dispersion. Optimizations and
+saddles never compute a Hessian: frequencies are a job of their own, and an initial Hessian
+is read from ``<name>.hess`` (``inhess 2``).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from hfauto.chemistry.elements import atomic_number
 from hfauto.chemistry.xyz import XYZ, Molecule
 from hfauto.core.method import MethodSpec
 
@@ -70,9 +72,22 @@ def _geometry(xyz: XYZ, *, cartesian: bool, label: str = "") -> list[str]:
     return [*lines, "end"]
 
 
+def ecp(symbols: Sequence[str], basis: str) -> list[str]:
+    """The ``ecp`` block: def2 defines Rb-Rn together with the def2-ECP (Weigend & Ahlrichs,
+    PCCP 7, 3297 (2005)), one line per element (``*`` aborts NWChem 7.2.3 on H-Kr). Any other
+    basis with such an element raises ValueError: an all-electron deck would be silently wrong.
+    """
+    heavy = sorted({s for s in symbols if atomic_number(s) > 36}, key=atomic_number)
+    if not heavy:
+        return []
+    if not basis.lower().startswith("def2"):
+        raise ValueError(f"no_ecp_for_basis:{basis}:{','.join(heavy)}")
+    return ["ecp", *(f"  {s} library def2-ecp" for s in heavy), "end"]
+
+
 def _system(mol: Molecule, method: MethodSpec, setup: Setup, *, cartesian: bool = False,
             end: Molecule | None = None) -> list[str]:
-    """Geometry (and the string's end geometry), charge, basis and COSMO."""
+    """Geometry (and the string's end geometry), charge, basis, ECP and COSMO."""
     if not method.basis:
         raise ValueError(f"method {method.id!r} names no basis set")
     noautoz = setup.cartesian or cartesian
@@ -80,6 +95,7 @@ def _system(mol: Molecule, method: MethodSpec, setup: Setup, *, cartesian: bool 
     if end is not None:
         lines += _geometry(end.xyz, cartesian=noautoz, label="endgeom")
     lines += [f"charge {mol.charge}", "basis spherical", f"  * library {method.basis}", "end"]
+    lines += ecp(mol.xyz.symbols, method.basis)
     eps = cosmo_dielectric(method)
     return lines + ([] if eps is None else ["cosmo", f"  dielec {eps:g}", "end"])
 
@@ -156,6 +172,7 @@ def render_string(start: Molecule, end: Molecule, method: MethodSpec, setup: Set
 def render_wft(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:
     """MP2 or CCSD(T) single point with frozen atomic cores; closed shell only (RHF reference).
 
+    ``freeze atomic`` freezes no orbital of an ECP atom (I keeps 4s4p4d correlated, G27).
     CCSD may take 50 iterations (default 20); the scf block only restarts from <name>.movecs.
     """
     if method.kind != "wft" or method.wft_method is None:

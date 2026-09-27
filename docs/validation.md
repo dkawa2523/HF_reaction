@@ -22,11 +22,11 @@
 | S2 | I⁻ + CH3I | `sn2_i` | M0(完走と report)、M1(合否) |
 | S3 | H2Te | `h2te` | M0(完走と report)、M1(合否) |
 | S4 | CH3O• → CH2OH•(生成物は Cs) | `ch3o_doublet` | M2 |
-| S5 | CH3• + O2(m=2 を宣言) | M1 で追加 | M1 |
+| S5 | CH3• + O2(m=2 を宣言) | `ch3_o2` | M1 |
 | S6 | OH• + CH4 | `oh_ch4` | M4 |
 | S7 | NH3···ICl | `nh3_icl` | M4 |
 | S8 | SO2·NMe3 | `so2_nme3` | S-C |
-| S9 | FeCl3·CH4 | M1 で追加 | M1 |
+| S9 | FeCl3·CH4(Fe を m=6 と宣言) | `fecl3_ch4` | M1 |
 | S10 | NH3·HF、TMA·HF | `amine_pilot2` | M4 |
 | S11 | DME の C2v 重なり形 | config なし(`/home/user/hfauto_probe_r5/ho_harness.py`) | S-B |
 | S12 | DME(粗い入力) | `dme_rough` | M2 |
@@ -54,6 +54,21 @@
 | R4 `water_same_basin` | `same_basin` | 0 | 0:11 | 4(0) |
 
 - 7 run ともトレースバックなしで終わり、report.html・ranking.csv・coverage.csv がある。入力のない stage の warning は stderr に出る。実エンジンの smoke(`-m real tests/smoke`)は 12 件合格(71 秒)。
+
+**M1 の実測(U1-P1・U1-P3・U0-P1・U3-P1、`/home/user/hfauto_r6/M1/runs/<run>`)**
+
+| 系 | 結果 | 所要時間 |
+|---|---|---|
+| golden・smoke | WSL の既定 suite 351 件、`-m real tests/smoke` 13 件が合格。G27 は HI の SP(PBE0-D3BJ/def2-SVPD、I に def2-ECP、alpha 13、E −298.3091 Eh)と CCSD(T)/def2-TZVPD(`freeze atomic` は ECP 原子の軌道を凍結せず `number of core 0`)。G28 は Cl⁻ の xTB opt/hess と NWChem opt/freq(n_external 3、振動なし)。Ar の S(298.15 K、1 bar)は 154.850 J/mol/K(JANAF 154.846) | 1:17 |
+| S1 `sn2_cl` | Cl⁻ の極小を登録。`sn2_identity` は `degenerate_rearrangement`、ΔE‡ 10.446、ΔG‡ 11.077、ΔG_assoc −5.08、ΔG‡(解離極限基準)+6.00 kcal/mol(1 atm の G で、会合のエントロピー損失を含む。レビューの参考値 −0.74 とは基準が違うとみられ、合否の基準ではない) | 9:25 |
+| S2 `sn2_i` | 全ジョブ alpha 30(`I library def2-ecp`)、観測 Level は一致。`degenerate_rearrangement`、ΔE‡ 6.55、ΔG‡ 6.88 kcal/mol(参考の中央障壁 約 8) | 14:23 |
+| S3 `h2te` | structures → dft → thermo を通過(`Te library def2-ecp`、G −269.2188 Eh) | 0:17 |
+| S5 `ch3_o2` | 組成の多重度を外した複製は conformers で `INPUT_INVALID`(`declare_multiplicity: candidates (2, 4)`)。宣言 2 では `discover --to screen` の CREST の argv に `--uhf 1`、組成 id `CH3O2_q0_m2`(CREST は TRIALMD で signal 11 になり、placement の 6 seed が出た。開殻の組成の既知の挙動)。`known_endpoints --to dft` で CH3 の極小は UKS(`odft`)、Level の多重度 2、⟨S²⟩ 0.7544 | 0:04 / 0:43 |
+| S9 `fecl3_ch4` | 多重度を外した複製は `species_fecl3` が `INPUT_INVALID`(`declare_multiplicity: d-block element(s) Fe`)。宣言 6 では `--to conformers` が例外なく終わり、CREST で 6 構造(`CH4Cl3Fe_q0_m6`) | 0:30 |
+| R1 `hcn` | `elementary_step`、ΔG‡ 42.1783 | 1:26 |
+| R2 `hono` | `elementary_step`、ΔG‡ 12.2263(v5 比 −0.0002、string の揺らぎの範囲)、ΔE‡ 13.671 | 5:51 |
+| R3 `nh3_inversion` | `degenerate_rearrangement`、ΔG‡ 3.8395 | 1:27 |
+| R4 `water_same_basin` | `same_basin` | 0:12 |
 
 ---
 

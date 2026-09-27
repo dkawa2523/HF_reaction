@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import math
 
 import pytest
 from fakes import FakeQM, harmonic
@@ -10,6 +11,7 @@ from hfauto.backends.goodvibes.engine import GoodVibesEngine
 from hfauto.backends.goodvibes.worker import compute, qcdata_fields
 from hfauto.chemistry.gates import zpe_hartree
 from hfauto.chemistry.thermo import thermo_frequencies
+from hfauto.core.constants import HARTREE_TO_KJ_MOL
 from hfauto.core.method import EngineSite, MethodSpec, ThermoSettings
 from hfauto.execution.jobs import JobRunner
 from hfauto.execution.jobstore import JobStore
@@ -34,6 +36,18 @@ def test_linear_molecule_qcdata_and_worker(tmp_path):  # port of test_goodvibes_
         [r] = compute(HNC | {"frequencies_cm1": sent}, tmp_path)["results"]
         assert r["S_rot"] > 0 and r["n_real"] == 4
         assert r["zpe_hartree"] == pytest.approx(zpe_hartree(sent, scale=0.985), abs=1e-8)
+
+
+def test_argon_standard_entropy_through_goodvibes(tmp_path):
+    """An atom: translation (Sackur-Tetrode) only. JANAF Ar S(298.15 K, 1 bar) = 154.846 J/mol/K;
+    GoodVibes refers to 1 atm, and S(1 bar) = S(1 atm) + R ln 1.01325."""
+    pytest.importorskip("goodvibes")
+    argon = HNC | {"symbols": ["Ar"], "coords": [[0.0, 0.0, 0.0]], "frequencies_cm1": [],
+                   "n_external": 3}
+    [r] = compute(argon, tmp_path)["results"]
+    s_1atm = (r["H_hartree"] - r["G_hartree"]) / 298.15 * HARTREE_TO_KJ_MOL * 1e3
+    assert s_1atm + 8.314462618 * math.log(1.01325) == pytest.approx(154.846, abs=0.01)
+    assert (r["zpe_hartree"], r["n_real"], r["S_rot"]) == (0.0, 0, 0.0)
 
 
 def test_engine_job_key_and_fail_closed_worker(tmp_run):  # the key follows the modes sent

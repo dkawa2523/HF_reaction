@@ -1,30 +1,32 @@
-"""Electronic-state checks: electron-count parity and spin coupling of components."""
+"""Electronic state of the input: supported elements, the spin declaration, electron-count
+parity, and the multiplicity of a composition from its components."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 
-_ELEMENTS = """
-H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn
-Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La
-Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po
-At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr Rf Db Sg Bh Hs Mt Ds Rg
-Cn Nh Fl Mc Lv Ts Og
-""".split()  # noqa: SIM905 - compact periodic-table data is clearer as grouped text
-_ATOMIC_NUMBERS = {symbol.upper(): number for number, symbol in enumerate(_ELEMENTS, 1)}
+from hfauto.chemistry.elements import ELEMENTS
+
+# d-block (Sc–Zn, Y–Cd, La, Hf–Hg): neither RDKit radicals nor the xyz default give the spin.
+_D_BLOCK = frozenset((*range(21, 31), *range(39, 49), 57, *range(72, 81)))
 
 
-def check_electronic_state(symbols: Iterable[str], charge: int, multiplicity: int) -> None:
-    """Raise ValueError for an unknown element, a non-positive multiplicity or one the electron
-    count cannot have."""
+def check_electronic_state(symbols: Iterable[str], charge: int, multiplicity: int, *,
+                           declared: bool = True) -> None:
+    """Raise ValueError for an element outside the table (``unsupported_element``), a species
+    with a d-block element whose multiplicity was not declared (``declare_multiplicity``), or a
+    multiplicity the electron count cannot have."""
 
+    names = list(symbols)
+    unsupported = sorted({name for name in names if name not in ELEMENTS})
+    if unsupported:
+        raise ValueError(f"unsupported_element:{','.join(unsupported)}")
+    metals = sorted({name for name in names if ELEMENTS[name].z in _D_BLOCK})
+    if metals and not declared:
+        raise ValueError(f"declare_multiplicity: d-block element(s) {','.join(metals)}")
     if multiplicity < 1:
         raise ValueError(f"Multiplicity must be positive, got {multiplicity}")
-    names = [symbol.strip() for symbol in symbols]
-    unknown = sorted({name for name in names if name.upper() not in _ATOMIC_NUMBERS})
-    if unknown:
-        raise ValueError(f"unknown element(s): {', '.join(unknown)}")
-    electron_count = sum(_ATOMIC_NUMBERS[name.upper()] for name in names) - charge
+    electron_count = sum(ELEMENTS[name].z for name in names) - charge
     unpaired = multiplicity - 1
     if electron_count < unpaired or (electron_count - unpaired) % 2:
         raise ValueError(
@@ -56,3 +58,28 @@ def coupled_multiplicities(component_multiplicities: Iterable[int]) -> tuple[int
             )
         }
     return tuple(sorted(value + 1 for value in coupled_twice_spins))
+
+
+def composition_multiplicity(component_multiplicities: Iterable[int],
+                             declared: int | None) -> int:
+    """The declared multiplicity of a composition, or the only one coupling allows.
+
+    Raise ValueError when several are allowed and none is declared, when the declared one is
+    not allowed, or when it is a singlet built from open-shell components (open-shell singlets
+    need broken-symmetry UKS, which hfauto does not do; declare a radical-recombination
+    product as a monomer instead).
+    """
+
+    components = list(component_multiplicities)
+    allowed = coupled_multiplicities(components)
+    listed = ", ".join(map(str, allowed))
+    if declared is None:
+        if len(allowed) > 1:
+            raise ValueError(f"declare_multiplicity: candidates ({listed})")
+        return allowed[0]
+    if declared not in allowed:
+        raise ValueError(f"multiplicity {declared} is not among the coupled ones ({listed})")
+    if declared == 1 and any(m > 1 for m in components):
+        raise ValueError("open_shell_singlet_unsupported: declare a radical-recombination "
+                         "product as a monomer; broken-symmetry UKS is out of scope")
+    return declared

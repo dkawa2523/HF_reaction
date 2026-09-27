@@ -99,3 +99,16 @@ def test_soft_mode_known_minimum_and_init_hessian(fake_runtime, tmp_run):
     again = run("dft2", first.artifacts, **DFT, **init)
     assert dft.calls == ["optimize+init_hessian"]  # known basin: no freq job
     assert {m.members for m in again.records(T.MINIMUM, MinimumRecord)} == {("r",)}  # joined
+
+
+def test_an_atom_is_relaxed_and_registered_like_any_species(fake_runtime, tmp_run):
+    pes = fakes.PES(("Ar",), lambda x: -527.0, {"atom": np.zeros((1, 3))})
+    run, xtb, dft = stage(fake_runtime, tmp_run, pes)
+    screen = run("screen", [species(tmp_run, pes, "ar", "atom")], **SCREEN)
+    (low,) = screen.records(T.MINIMUM, MinimumRecord)
+    freq = screen.evidence(low.freq_calc)
+    assert xtb.calls == ["optimize", "frequencies"] and low.notes == ()
+    assert (freq.frequencies_cm1, freq.n_external) == ((), 3)  # 3N - 3 = 0 modes
+    both = run("dft", screen.artifacts, **DFT, select={"include": "all"})
+    (high,) = [m for m in both.records(T.MINIMUM, MinimumRecord) if m.tier == "dft"]
+    assert high.members == ("ar",) and dft.calls == ["optimize", "frequencies"]

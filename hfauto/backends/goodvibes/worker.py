@@ -12,7 +12,9 @@ actually reads for the numbers:
   stays None.
 - ``rotemp`` (K): S_rot and the calculation gate (empty -> no thermochemistry);
   ``linear_mol`` selects the linear formula, which uses ``rotemp[0]``; ``symmno``: sigma in
-  S_rot (kept 1: ``symm=True`` adds -R ln sigma from pymsym itself).
+  S_rot (kept 1: ``symm=True`` adds -R ln sigma from pymsym itself). An atom's rotemp is
+  (0, 0, 0): not empty, and with no frequency every rotational and vibrational term is 0, so
+  G holds the translational, electronic and pV terms only.
 - ``zero_point_corr``: only a gate (None -> no thermochemistry) and the monatomic test
   (== 0.0); its value is never used.
 - ``atom_nums`` and ``cartesians``: pymsym's point group when ``symm=True``.
@@ -30,13 +32,12 @@ from typing import Any
 
 import numpy as np
 
+from hfauto.chemistry.elements import atomic_number, mass
 from hfauto.chemistry.gates import zpe_hartree
-from hfauto.chemistry.vibrations import ISOTOPIC_MASSES, rotational_constants_ghz
+from hfauto.chemistry.vibrations import rotational_constants_ghz
 
 _QCDATA_FILE = "hfauto-qcdata-without-file"  # never created: see the module docstring
 _K_PER_GHZ = 0.0479924307  # h / k_B in K per GHz (CODATA 2018)
-# ISOTOPIC_MASSES lists H..Kr in atomic-number order, then I.
-_ATOMIC_NUMBERS = {s: z for z, s in enumerate(list(ISOTOPIC_MASSES)[:36], 1)} | {"I": 53}
 
 
 def qcdata_fields(job: dict[str, Any]) -> dict[str, Any]:
@@ -59,12 +60,12 @@ def qcdata_fields(job: dict[str, Any]) -> dict[str, Any]:
         "charge": int(job["charge"]),
         "multiplicity": int(job["multiplicity"]),
         "atom_types": list(symbols),
-        "atom_nums": [_ATOMIC_NUMBERS[s] for s in symbols],
+        "atom_nums": [atomic_number(s) for s in symbols],
         "cartesians": coords.tolist(),
         "frequency_wn": [nu for nu in freqs if nu > 0.0],
         "im_frequency_wn": [nu for nu in freqs if nu < 0.0],
         "linear_mol": linear,
-        "molecular_mass": float(sum(ISOTOPIC_MASSES[s] for s in symbols)),
+        "molecular_mass": sum(mass(s) for s in symbols),
         "symmno": 1,
         "roconst": list(constants),
         "rotemp": [b * _K_PER_GHZ for b in constants],
@@ -88,12 +89,13 @@ def compute(job: dict[str, Any], workdir: Path) -> dict[str, Any]:
         found, pin = goodvibes.__version__, job["version_pin"]
         return _error("method_mismatch", f"goodvibes {found} != version pin {pin}")
     fields = qcdata_fields(job)
+    atom = len(fields["atom_nums"]) == 1
     results = []
     for s in job["settings"]:
         for T in job["temperatures_K"]:
-            s_rot = calc_rotational_entropy(T, fields["rotemp"], symmno=1,
+            s_rot = calc_rotational_entropy(T, fields["rotemp"], symmno=1, monatomic=atom,
                                             linear=fields["linear_mol"]) / J_TO_AU
-            if not s_rot > 0.0:
+            if not (atom or s_rot > 0.0):
                 return _error("input_invalid", f"nonpositive_rotational_entropy:{s_rot}")
             r = compute_thermo(
                 qcdata=QCData(**fields), QS=s["qs"], s_freq_cutoff=s["cutoff_cm1"],

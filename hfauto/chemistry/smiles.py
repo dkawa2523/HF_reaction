@@ -7,12 +7,14 @@ import numpy as np
 from hfauto.chemistry.xyz import XYZ, Molecule
 
 
-def smiles_to_molecule(smiles: str, charge: int, multiplicity: int, *,
+def smiles_to_molecule(smiles: str, charge: int, multiplicity: int | None, *,
                        random_seed: int = 20260925) -> Molecule:
     """One ETKDG embedding with explicit hydrogens.
 
     A multi-fragment SMILES ('.') is rejected: complexes are compositions (CH-23). The SMILES
-    formal charge must equal ``charge`` and isotopes are rejected. ImportError without RDKit.
+    formal charge must equal ``charge`` and isotopes are rejected. An undeclared multiplicity
+    is RDKit's radical electrons + 1 (high spin: [O][O] is a triplet, [C] a quintet).
+    ImportError without RDKit.
     """
     if "." in smiles:
         raise ValueError(f"multi-fragment SMILES {smiles!r}: declare a composition instead")
@@ -28,6 +30,8 @@ def smiles_to_molecule(smiles: str, charge: int, multiplicity: int, *,
     if any(a.GetIsotope() for a in mol.GetAtoms()):
         raise ValueError(f"SMILES {smiles!r} specifies isotopes; "
                          "hfauto uses most-abundant-isotope masses")
+    if multiplicity is None:
+        multiplicity = sum(atom.GetNumRadicalElectrons() for atom in mol.GetAtoms()) + 1
     mol = Chem.AddHs(mol)
     params = rdDistGeom.ETKDGv3()
     params.randomSeed = random_seed
