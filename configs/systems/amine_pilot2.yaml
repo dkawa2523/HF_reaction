@@ -1,0 +1,9 @@
+# S10 (review §6.1): amine_hf_panel pilot NH3.HF and TMA.HF: degenerate double H exchange.
+system_id: amine_pilot2
+species:
+  - {id: nh3, smiles: "N"}
+  - {id: tma, smiles: "CN(C)C"}
+  - {id: hf, xyz: xyz/amine_hf_panel/hf.xyz}
+compositions:
+  - {id: nh3_hf1, components: {nh3: 1, hf: 1}}
+  - {id: tma_hf1, components: {tma: 1, hf: 1}}

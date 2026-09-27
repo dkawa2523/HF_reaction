@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from collections import Counter
 from collections.abc import Callable, Generator, Mapping, Sequence
@@ -148,7 +149,14 @@ class JobRunner:
                 result = run_command(cmd, timeout_s=timeout_s)
             except (FileNotFoundError, PermissionError) as exc:
                 return Failure(kind=FailureKind.EXECUTABLE_MISSING, reason=f"{cmd.argv[0]}: {exc}")
-        return adapter.parse(task, workdir, result)
+        try:
+            return adapter.parse(task, workdir, result)
+        except Exception as exc:  # an unforeseen output fails this job only
+            if os.environ.get("HFAUTO_STRICT") == "1":
+                raise
+            first = (str(exc).splitlines() or [""])[0][:200]
+            return Failure(kind=FailureKind.INCOMPLETE_OUTPUT,
+                           reason=f"parse:{type(exc).__name__}: {first}")
 
     def _record(self, hit: bool, result: BaseModel) -> None:
         with self._lock:

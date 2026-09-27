@@ -16,8 +16,8 @@ ENTRIES = json.loads((HERE / "SOURCES.json").read_text(encoding="utf-8"))
 FILES = [f for e in ENTRIES for f in e["files"]]
 
 
-def test_ids_are_g01_to_g24() -> None:
-    assert [e["id"] for e in ENTRIES] == [f"G{i:02d}" for i in range(1, 25)]
+def test_ids_are_consecutive_from_g01() -> None:
+    assert [e["id"] for e in ENTRIES] == [f"G{i:02d}" for i in range(1, len(ENTRIES) + 1)]
     assert all(e["expect"] and isinstance(e["refs"], list) for e in ENTRIES)
 
 

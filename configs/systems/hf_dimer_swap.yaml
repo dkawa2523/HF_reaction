@@ -1,0 +1,7 @@
+# S17 (review §6.1): (HF)2 donor-acceptor interchange (barrier below the resolution: barrierless).
+system_id: hf_dimer_swap
+species:
+  - {id: donor1, xyz: xyz/hf_dimer_swap/donor1.xyz, role: endpoint}
+  - {id: donor2, xyz: xyz/hf_dimer_swap/donor2.xyz, role: endpoint}
+reactions:
+  - {id: hf_dimer_swap, reactant: donor1, product: donor2}

@@ -7,6 +7,11 @@ import pytest
 from hfauto.backends import engines
 
 
+@pytest.fixture(autouse=True)
+def strict(monkeypatch):  # unforeseen exceptions re-raise; a containment test deletes it
+    monkeypatch.setenv("HFAUTO_STRICT", "1")
+
+
 @pytest.fixture
 def override_engine():  # override_engine(capability, name, engine) until the test ends
     with ExitStack() as stack:

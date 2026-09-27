@@ -1,22 +1,31 @@
-"""NWChem parser on real outputs (design §10.2: G01, G03-G05, G07, G10, G13, G21-G24)."""
+"""NWChem parser on real outputs (design §10.2: G01, G03-G05, G07, G10, G13, G21-G26)."""
 
 import json
 import re
+import shutil
 
 import numpy as np
 import pytest
 
 from hfauto.backends.nwchem import output as nw
+from hfauto.backends.nwchem.engine import NWChemEngine
+from hfauto.chemistry.gates import spin_ok
 from hfauto.chemistry.profile import energies_settled
 from hfauto.chemistry.vibrations import external_basis, projected_frequencies
-from hfauto.chemistry.xyz import read_xyz
+from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
 from hfauto.core.constants import BOHR_TO_ANGSTROM, HARTREE_TO_KCAL_MOL
+from hfauto.core.evidence import Evidence
 from hfauto.core.evidence import FailureKind as Kind
-from hfauto.core.method import MethodSpec, level_mismatches
+from hfauto.core.method import EngineSite, MethodSpec, level_mismatches
+from hfauto.execution.jobs import JobRunner, Task
+from hfauto.execution.jobstore import JobStore
+from hfauto.execution.process import STDOUT_NAME, CommandResult
 
 pytestmark = pytest.mark.golden
 XFINE = MethodSpec(id="m", kind="dft", functional="pbe0", basis="def2-svpd",
                    dispersion="d3zero", grid="xfine", scf_energy_tol=1e-8)
+SVPD = MethodSpec(id="pbe0-d3bj_def2-svpd", kind="dft", functional="pbe0", basis="def2-svpd",
+                  dispersion="d3bj", grid="fine", scf_energy_tol=1e-7)  # G25, G26
 
 
 def test_g01_two_vibrational_blocks(golden):
@@ -109,3 +118,39 @@ def test_final_xyz_numbering_atom_order_and_missing_d3(golden, tmp_path):
     text = golden.text("nwchem/G03/hono_trans.out").replace("DFT-D3 Model", "")
     mismatches = level_mismatches(XFINE, nw.observe_level(text), version_pin="7.2.3")
     assert [m.split(":")[0] for m in mismatches] == ["dispersion"]  # ported K case: no D3
+
+
+@pytest.mark.parametrize(("stem", "charge", "multiplicity", "energy"), [
+    ("G25/oh_opt", 0, 2, -75.601066898809), ("G25/oh_freq", 0, 2, -75.601067860254),
+    ("G26/fhf_opt", -1, 1, -200.036913760096), ("G26/fhf_freq", -1, 1, -200.036913730359),
+    ("G26/fhf_sp", -1, 1, -200.036913904367)])
+def test_doublet_and_anion_level_s2_and_energy(golden, stem, charge, multiplicity, energy):
+    text = golden.text(f"nwchem/{stem}.out")  # OH. opt / freq energies: U3-P7 later
+    level = nw.observe_level(text)
+    assert level_mismatches(SVPD, level, version_pin="7.2.3") == []
+    assert (level.charge, level.multiplicity) == (charge, multiplicity)
+    assert nw.classify_failure(text, returncode=0, timed_out=False) is None
+    assert nw.total_energy(text) == pytest.approx(energy, abs=1e-9)
+    s2 = nw.s2(text)
+    assert s2 is None if multiplicity == 1 else s2 == pytest.approx(0.753, abs=0.005)
+
+
+@pytest.mark.parametrize(("stem", "charge", "multiplicity", "n_atoms"), [
+    ("G25/oh_freq", 0, 2, 2), ("G26/fhf_freq", -1, 1, 3)])
+def test_doublet_and_anion_freq_evidence(golden, tmp_path, stem, charge, multiplicity, n_atoms):
+    """The engine's own parse of a recorded job: 3N - 5 modes, spin_ok on the observed <S^2>."""
+    text, work = golden.text(f"nwchem/{stem}.out"), tmp_path / "jobs" / "freq"
+    work.mkdir(parents=True)
+    (work / STDOUT_NAME).write_text(text, encoding="utf-8")
+    shutil.copyfile(golden.path(f"nwchem/{stem}.hess"), work / "job.hess")
+    symbols, coords = nw.geometry_block(text, 0)
+    mol = Molecule(XYZ(list(symbols), coords), charge, multiplicity)
+    site = EngineSite(version="7.2.3")
+    engine = NWChemEngine(jobs=JobRunner(JobStore(tmp_path / "jobs"), cores=1), site=site)
+    task = Task(engine="nwchem", version_pin="7.2.3", kind="frequencies", key_payload={},
+                execution=site.execution, inputs={"mol": mol, "start": mol, "method": SVPD})
+    result = CommandResult(0, False, 1.0, work / STDOUT_NAME, work / "stderr.txt")
+    ev = engine.parse(task, work, result)
+    assert isinstance(ev, Evidence) and ev.n_external == 5
+    assert len(ev.frequencies_cm1) == 3 * n_atoms - 5 and min(ev.frequencies_cm1) > 0
+    assert spin_ok(ev) and (ev.s2 is None) == (multiplicity == 1)

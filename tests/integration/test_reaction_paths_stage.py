@@ -1,5 +1,6 @@
 """reaction-paths stage on fake engines (§7.3, §8.2), including the CH-05 regression."""
 
+import json
 from pathlib import Path
 
 import fakes
@@ -14,6 +15,7 @@ from hfauto.core.records import CaseOutcome as O
 from hfauto.core.records import DiscoveryRecord, ReactionRecord, ReactionTrial, SpeciesRecord
 from hfauto.core.system import ReactionInput, SpeciesInput, SystemConfig
 from hfauto.drivers.minimum import Registry, calc_id, relax_to_minimum
+from hfauto.stages import reaction_paths
 from hfauto.stages.reaction_paths import ReactionPathsConfig, ReactionPathsStage
 
 pytestmark = pytest.mark.integration
@@ -54,10 +56,11 @@ def dft_view(root, pes, points=ENDS):
     return Manifest(run_id="run", stage_id="dft", created_at="now", artifacts=artifacts), source
 
 
-def run_stage(fake_runtime, root, pes, view, *, screen=True, saddle=None, **policy):
+def run_stage(fake_runtime, root, pes, view, *, screen=True, saddle=None, system=SYSTEM,
+              **policy):
     engines = {key: cls(root, pes) for key, cls in FAKES.items()}
     engines[Cap.SADDLE, "nwchem_saddle"] = saddle or fakes.FakeSaddle(root, pes)
-    rt = fake_runtime(SYSTEM, engines, methods={"pbe0": DFT, "gfn2": XTB})
+    rt = fake_runtime(system, engines, methods={"pbe0": DFT, "gfn2": XTB})
     config = ReactionPathsConfig(method="pbe0", policy=policy, engines={
         "qm": "nwchem", "saddle": "nwchem_saddle", "path": "nwchem_string"},
         screen={"method": "gfn2", "qm": "xtb", "path": "pysis_gs"} if screen else None)
@@ -74,6 +77,30 @@ def test_declared_reaction_becomes_a_typed_elementary_step(tmp_run, fake_runtime
     calcs = {a.artifact_id for a in arts if a.type == T.CALCULATION}
     assert {rx.saddle.saddle_calc, rx.saddle.freq_calc, *rx.connection.side_calcs} <= calcs
     assert (tmp_run / "stage" / rx.log).read_text().count("\n") >= 5
+
+
+def test_a_case_that_raises_is_unresolved_and_the_next_case_runs(
+        tmp_run, fake_runtime, monkeypatch) -> None:
+    real = reaction_paths.drive_case
+
+    def drive_case(case, rt, policy):
+        if case.reaction_id == "rx":
+            raise KeyError("Te")
+        return real(case, rt, policy)
+
+    monkeypatch.setattr(reaction_paths, "drive_case", drive_case)
+    pes, again = fakes.double_well(), ReactionInput(id="rx2", reactant="reactant", product="product")
+    system = SYSTEM.model_copy(update={"reactions": [*SYSTEM.reactions, again]})
+    view = dft_view(tmp_run, pes)[0]
+    with pytest.raises(KeyError):  # HFAUTO_STRICT=1 re-raises
+        run_stage(fake_runtime, tmp_run, pes, view, system=system)
+    monkeypatch.delenv("HFAUTO_STRICT")
+    reactions = run_stage(fake_runtime, tmp_run, pes, view, system=system)[0]
+    rx = reactions["rx"]
+    assert rx.outcome is O.UNRESOLVED and rx.reasons == ("error:KeyError",)
+    assert json.loads((tmp_run / "stage" / rx.log).read_text()) == {
+        "action": "error", "reason": "error:KeyError", "detail": "'Te'"}
+    assert reactions["rx2"].outcome is O.ELEMENTARY_STEP
 
 
 @pytest.mark.parametrize("pes,points,outcome", [

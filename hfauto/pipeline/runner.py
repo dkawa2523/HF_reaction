@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -13,8 +14,9 @@ from hfauto.chemistry.gates import Policy
 from hfauto.chemistry.xyz import XYZ, read_xyz
 from hfauto.core.evidence import FileRef, Geometry
 from hfauto.core.hashing import sha256_file
-from hfauto.core.manifest import Manifest, save_manifest
+from hfauto.core.manifest import Artifact, Manifest, save_manifest
 from hfauto.core.method import Deadline, MethodSpec
+from hfauto.core.records import ArtifactType
 from hfauto.core.system import Conditions, SystemConfig
 from hfauto.pipeline.config import ResolvedConfig, SiteConfig, StageEntry, method_ids
 from hfauto.pipeline.layout import JobCounts, RunLayout, now
@@ -26,6 +28,7 @@ if TYPE_CHECKING:
 
 ItemT = TypeVar("ItemT")
 ResultT = TypeVar("ResultT")
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -136,11 +139,25 @@ def _job_counts(before: JobStats, after: JobStats) -> JobCounts:
     )
 
 
+def _missing_input(inputs: Manifest, consumes: Sequence[ArtifactType]) -> str | None:
+    """None when every consumed type has a successful artifact; else the missing types and
+    up to 3 failed upstream artifacts and why."""
+    missing = [t.value for t in consumes if not inputs.of(t)]
+    if not missing:
+        return None
+    failed = sorted({f"{a.artifact_id}: {a.failure.reason}" for t in consumes
+                     for a in inputs.of(t, ok_only=False) if a.failure is not None})[:3]
+    why = f"; upstream failures: {', '.join(failed)}" if failed else ""
+    return f"no input of type {missing}{why}"
+
+
 def execute_stage(
     entry: StageEntry, resolved: ResolvedConfig, layout: RunLayout, runtime: Runtime
 ) -> Manifest:
-    """The only way a stage runs: validate, check consumes (a missing type names up to 3 failed
-    upstream artifacts and why), run, check produces, save, record."""
+    """The only way a stage runs: validate, check consumes, run, check produces, save, record.
+
+    A stage missing a consumed type is done with no artifacts (the log says why), so the
+    later stages, report included, still run."""
     pipeline_id = resolved.pipeline.pipeline_id
     layout.begin(entry.id, pipeline_id)
     before = runtime.jobs.stats()
@@ -149,15 +166,14 @@ def execute_stage(
         spec = stage_cls.spec
         config = spec.config.model_validate(entry.settings())
         inputs = layout.view(entry.id)
-        missing = [t.value for t in spec.consumes if not inputs.of(t)]
-        if missing:
-            failed = sorted({f"{a.artifact_id}: {a.failure.reason}" for t in spec.consumes
-                             for a in inputs.of(t, ok_only=False) if a.failure is not None})[:3]
-            why = f"; upstream failures: {', '.join(failed)}" if failed else ""
-            raise ValueError(f"stage {entry.id!r} ({spec.name}) has no input of type {missing}{why}")
-        stage_dir = layout.stage_dir(entry.id)
-        stage_dir.mkdir(parents=True, exist_ok=True)
-        artifacts = stage_cls().run(inputs, config, runtime.bind(entry.id, stage_dir))
+        problem = _missing_input(inputs, spec.consumes)
+        artifacts: list[Artifact] = []
+        if problem is None:
+            stage_dir = layout.stage_dir(entry.id)
+            stage_dir.mkdir(parents=True, exist_ok=True)
+            artifacts = stage_cls().run(inputs, config, runtime.bind(entry.id, stage_dir))
+        else:
+            _log.warning("stage %r (%s) has %s", entry.id, spec.name, problem)
         unexpected = sorted({a.type.value for a in artifacts} - {t.value for t in spec.produces})
         if unexpected:
             raise ValueError(f"stage {entry.id!r} ({spec.name}) produced {unexpected}")

@@ -1,0 +1,11 @@
+# S1 (review §6.1): Cl- + CH3Cl identity SN2, the chloride atom as a monomer (charge -1).
+system_id: sn2_cl
+species:
+  - {id: cl, xyz: xyz/sn2_cl/cl.xyz, charge: -1}
+  - {id: ch3cl, xyz: xyz/sn2_cl/ch3cl.xyz}
+  - {id: rc, xyz: xyz/sn2_cl/rc.xyz, charge: -1, role: endpoint}
+  - {id: pc, xyz: xyz/sn2_cl/pc.xyz, charge: -1, role: endpoint}
+compositions:
+  - {id: cl_ch3cl, components: {cl: 1, ch3cl: 1}}
+reactions:
+  - {id: sn2_identity, reactant: rc, product: pc}

@@ -1,0 +1,7 @@
+# S6 (review §6.1): OH. + CH4 complex (doublet) for the explore stage: H abstraction.
+system_id: oh_ch4
+species:
+  - {id: oh, xyz: xyz/oh_ch4/oh.xyz, multiplicity: 2}
+  - {id: ch4, smiles: "C"}
+compositions:
+  - {id: oh_ch4, components: {oh: 1, ch4: 1}}

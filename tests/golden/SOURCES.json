@@ -499,5 +499,66 @@
   "refs": [
    "AR-26"
   ]
+ },
+ {
+  "id": "G25",
+  "files": [
+   {
+    "golden": "nwchem/G25/oh_opt.out",
+    "source": "/home/user/hfauto_r6/m0/golden/jobs/91/91cb2122dee7b4b2d9ef8b5ae9859c1dcf1fe2c916cf5afd0565c7b9772d8c57/attempt_00/stdout.txt",
+    "source_sha256": "74b0a03896c780b7370b21560c6024c97eb722fbbc5c35194a6e1b9102d00a98",
+    "method": "nwchem"
+   },
+   {
+    "golden": "nwchem/G25/oh_freq.out",
+    "source": "/home/user/hfauto_r6/m0/golden/jobs/2e/2e8129a13f95ecb796a8b3d40927d74e89b07046ca17765334b54f9dd9fe7468/attempt_00/stdout.txt",
+    "source_sha256": "38804fd84dc9d696ed946265cbb86480a76f616d191dc98b4ac8347c9b7554df",
+    "method": "nwchem"
+   },
+   {
+    "golden": "nwchem/G25/oh_freq.hess",
+    "source": "/home/user/hfauto_r6/m0/golden/jobs/2e/2e8129a13f95ecb796a8b3d40927d74e89b07046ca17765334b54f9dd9fe7468/attempt_00/job.hess",
+    "source_sha256": "2ee2a133f543060642103cfd8186f17ce282d421112d6a14e7793b75c5457b63",
+    "method": "copy"
+   }
+  ],
+  "expect": "OH•(二重項、UKS)の opt と freq(PBE0-D3BJ/def2-SVPD、hfauto の NWChemEngine で生成)。Level の mult 2、<S2> 0.7526 で spin_ok 合格、振動 1 本(3N−5)。opt と freq の最終エネルギー(−75.601066898809 と −75.601067860254、差 9.6e-7 Eh)は U3-P7 の一致判定に使う",
+  "refs": [
+   "review-2026-09-27 §6.2",
+   "U3-P7"
+  ]
+ },
+ {
+  "id": "G26",
+  "files": [
+   {
+    "golden": "nwchem/G26/fhf_opt.out",
+    "source": "/home/user/hfauto_r6/m0/golden/jobs/b7/b7629843069dc87d493ab4022bd638e4da27c7dc075fff65a965dbb97eb79145/attempt_00/stdout.txt",
+    "source_sha256": "4dc20c7910ca0373406ab22770c64444869b9b08f6c3a023afb5b179336d1d66",
+    "method": "nwchem"
+   },
+   {
+    "golden": "nwchem/G26/fhf_freq.out",
+    "source": "/home/user/hfauto_r6/m0/golden/jobs/20/20b992201fa942822cdd5c65ee2859f587f03172b6816a333f0273974ab4dd17/attempt_00/stdout.txt",
+    "source_sha256": "70e817c6fa84ec74f42938d7fac1c5b6d3998b467dadc8877e1c19d8b9626418",
+    "method": "nwchem"
+   },
+   {
+    "golden": "nwchem/G26/fhf_freq.hess",
+    "source": "/home/user/hfauto_r6/m0/golden/jobs/20/20b992201fa942822cdd5c65ee2859f587f03172b6816a333f0273974ab4dd17/attempt_00/job.hess",
+    "source_sha256": "acd0868874019f0b722e545bd8e398080f8b1401b258dd15a809c0493829e91a",
+    "method": "copy"
+   },
+   {
+    "golden": "nwchem/G26/fhf_sp.out",
+    "source": "/home/user/hfauto_r6/m0/golden/jobs/a8/a8039cc3a12379830e05eb32ab2f5afde21e2df62cf5fad11e867e1c6d31e225/attempt_00/stdout.txt",
+    "source_sha256": "5a26f58da0c67eac7f2079b2592d81dd92b6d5814233371d1e49b53901576a2c",
+    "method": "nwchem"
+   }
+  ],
+  "expect": "FHF⁻(電荷 −1、閉殻)の opt・freq・SP(PBE0-D3BJ/def2-SVPD、hfauto の NWChemEngine で生成)。Level の charge −1、<S2> なし、振動 4 本(3N−5)",
+  "refs": [
+   "review-2026-09-27 §6.2"
+  ]
  }
 ]

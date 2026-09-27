@@ -5,6 +5,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import pytest
 import yaml
 
+from hfauto.chemistry.electronic_state import check_electronic_state
 from hfauto.chemistry.xyz import read_xyz
 from hfauto.core.system import load_system
 from hfauto.pipeline import config
@@ -39,12 +40,14 @@ def test_sites_and_methods_validate():
 
 
 @pytest.mark.parametrize("path", files("systems"), ids=lambda p: p.stem)
-def test_system_xyz_exist_and_declared_reactions_keep_the_atom_order(path):
+def test_system_loads_and_its_xyz_fit_the_state_and_the_reaction_atom_order(path):
     system = load_system(path)
-    xyz = {s.id: s.xyz for s in system.species if s.xyz is not None}
-    assert all(p.is_file() for p in xyz.values())
+    xyz = {s.id: read_xyz(s.xyz) for s in system.species if s.xyz is not None}
+    for species in system.species:  # charge and multiplicity against the electron count
+        if species.id in xyz:
+            check_electronic_state(xyz[species.id].symbols, species.charge, species.multiplicity)
     for reaction in system.reactions:
-        assert read_xyz(xyz[reaction.reactant]).symbols == read_xyz(xyz[reaction.product]).symbols
+        assert xyz[reaction.reactant].symbols == xyz[reaction.product].symbols
 
 
 def test_no_forbidden_keys_and_absolute_paths_only_in_sites():

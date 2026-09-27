@@ -1,0 +1,7 @@
+# S8 (review §6.1): SO2.NMe3 dative adduct (S, neutral): CREST must keep the adduct.
+system_id: so2_nme3
+species:
+  - {id: so2, smiles: "O=S=O"}
+  - {id: nme3, smiles: "CN(C)C"}
+compositions:
+  - {id: so2_nme3, components: {so2: 1, nme3: 1}}

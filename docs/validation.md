@@ -1,6 +1,63 @@
-# 実計算による検証(v3・v4・v5: 第2〜第4ラウンド改良後の再検証、2026-09-26)
+# 実計算による検証(r6 の基準と検証セット、v3・v4・v5 の記録)
 
-第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11、第4ラウンドの小さな改良(コード `13a4340`)後の退行確認 v5 は §12 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。
+## r6: 計算基盤の抜本改良
+
+`docs/reviews/2026-09-27_platform_review.md`(以下レビュー)の M0〜M5・S-A〜S-D を段ごとに入れ、各段で下の基準値とレビュー §6 の検証セットを確かめる。run は WSL の `/home/user/hfauto_r6/<段>/<run>`(すべて新しい run dir)に置く。環境と停留点の手法(`pbe0-d3bj_def2-svpd`)は v5 と同じ。
+
+**基準値(v5、コード `13a4340`、pipeline `known_endpoints`)**
+
+| # | 系(config) | v5 の結果 | 所要時間 | r6 で期待する変化 |
+|---|---|---|---|---|
+| R1 | HCN→HNC(`hcn`) | `elementary_step`、ΔG‡ 42.1783 kcal/mol | 1:22 | なし |
+| R2 | HONO trans→cis(`hono`) | `elementary_step`、ΔG‡ 12.2265 kcal/mol | 5:32 | M2(U3-P2)の後、RT ln 2 だけ下がる(約 11.82) |
+| R3 | NH3 反転(`nh3_inversion`) | `degenerate_rearrangement`、ΔG‡ 3.8395 kcal/mol | 1:25 | なし |
+| R4 | 水(`water_same_basin`) | `same_basin` | 0:11 | なし |
+
+**検証セット(レビュー §6.1)と最初に確かめる段**
+
+| # | 系 | config(`configs/systems/`) | 最初の段 |
+|---|---|---|---|
+| R1〜R4 | 上の基準値 | `hcn`、`hono`、`nh3_inversion`、`water_same_basin` | M0(以後の各段) |
+| S1 | Cl⁻ + CH3Cl(Cl⁻ を単量体に含む) | `sn2_cl` | M0(完走と report)、M1(合否) |
+| S2 | I⁻ + CH3I | `sn2_i` | M0(完走と report)、M1(合否) |
+| S3 | H2Te | `h2te` | M0(完走と report)、M1(合否) |
+| S4 | CH3O• → CH2OH•(生成物は Cs) | `ch3o_doublet` | M2 |
+| S5 | CH3• + O2(m=2 を宣言) | M1 で追加 | M1 |
+| S6 | OH• + CH4 | `oh_ch4` | M4 |
+| S7 | NH3···ICl | `nh3_icl` | M4 |
+| S8 | SO2·NMe3 | `so2_nme3` | S-C |
+| S9 | FeCl3·CH4 | M1 で追加 | M1 |
+| S10 | NH3·HF、TMA·HF | `amine_pilot2` | M4 |
+| S11 | DME の C2v 重なり形 | config なし(`/home/user/hfauto_probe_r5/ho_harness.py`) | S-B |
+| S12 | DME(粗い入力) | `dme_rough` | M2 |
+| S13 | H2O2 gauche(+)→gauche(−) | `h2o2_gauche` | M2 |
+| S14 | マロンアルデヒドの PT | `malonaldehyde` | M5 |
+| S15 | trans-HONO → HNO2 | `hono_hno2` | M2 |
+| S16 | アセチルアセトンの PT | `acac` | M3 |
+| S17 | (HF)₂ の供与体・受容体の入れ替え | `hf_dimer_swap` | M2 |
+| S18 | H + H2(共線の vdW 錯体) | `h3_doublet` | S-A |
+| S19・S20 | 複数条件、手法パネル | S-A で pipeline に追記 | S-A |
+
+- 入力の出所: S1〜S4・S12〜S14・S16・S18 は `/home/user/hfauto_probe_r5/systems` の xyz、S10 は W7 の `amine_pilot2`。S15 の HNO2 は `[H][N+](=O)[O-]` の RDKit ETKDG 構造を GFN2-xTB で最適化し、trans-HONO と同じ原子順(H O N O)に並べて重ねた。S17 は文献に近い trans 屈曲の (HF)₂(F···F 2.72 Å)と、2 つの HF の座標を入れ替えた構造(原子順は同じ)。GFN2-xTB では (HF)₂ がほぼ直線になるので、最適化していない。
+- golden(レビュー §6.2): G25 は OH•(二重項、UKS)の opt と freq、G26 は FHF⁻ の opt・freq・SP。今のコードの `NWChemEngine` で生成した(`/home/user/hfauto_r6/m0/golden`)。G25 の ⟨S²⟩ は 0.7526、振動は 1 本(3N−5)。opt と freq のエネルギーの差は 9.6e-7 Eh で、U3-P7 の一致判定に使う。
+
+**M0 の実測(U9-P1、`/home/user/hfauto_r6/M0/runs/<系>_known_endpoints`)**
+
+| 系 | 結果 | 終了コード | 所要時間 | ジョブ(ヒット) |
+|---|---|---|---|---|
+| S3 `h2te` | structures で `species_h2te` が失敗(Te の共有結合半径がない)。dft・paths・thermo は 0 artifact で done、report を出力 | 1 | 0:02 | 0 |
+| S2 `sn2_i` | dft の 2 極小が `scf`(ECP なし、SCF 未収束)。paths・thermo は 0 artifact で done、report を出力 | 1 | 2:43 | 4(0) |
+| S1 `sn2_cl` | Cl⁻ の極小が `incomplete_output`(`parse:ValidationError: ...`)。`sn2_identity` は `degenerate_rearrangement`、ΔE‡ 10.446、ΔG‡ 11.077 kcal/mol | 1 | 9:11 | 34(1) |
+| R1 `hcn` | `elementary_step`、ΔG‡ 42.1783 | 0 | 1:24 | 29(2) |
+| R2 `hono` | `elementary_step`、ΔG‡ 12.2275(v5 比 +0.0010。GS の失敗から FIND_PATH の経路は同じで、ΔE‡ 13.671。v4→v5 の −0.0002 と同じ string の揺らぎ) | 0 | 5:40 | 16(0) |
+| R3 `nh3_inversion` | `degenerate_rearrangement`、ΔG‡ 3.8395 | 0 | 1:27 | 27(1) |
+| R4 `water_same_basin` | `same_basin` | 0 | 0:11 | 4(0) |
+
+- 7 run ともトレースバックなしで終わり、report.html・ranking.csv・coverage.csv がある。入力のない stage の warning は stderr に出る。実エンジンの smoke(`-m real tests/smoke`)は 12 件合格(71 秒)。
+
+---
+
+以下は v3・v4・v5(第2〜第4ラウンド改良後の再検証、2026-09-26)の記録。第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11、第4ラウンドの小さな改良(コード `13a4340`)後の退行確認 v5 は §12 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。
 
 - 環境: WSL2 Ubuntu(4 vCPU / 11 GB)、`configs/sites/wsl_local.yaml`(NWChem 7.2.3 を 4 rank × 1,200 MB、xTB 6.7.1、CREST 3.0.2、SCINE ReaDuct 6.1.0、pysisyphus 1.0、GoodVibes 4.3.0)。
 - 手法: DFT は `pbe0-d3bj_def2-svpd`(grid fine、SCF 1e-7)、低レベルは GFN2-xTB。設定は `configs/` のまま使い、amine パイロット・(HF)₃ の配座・FIND_PATH・A/B だけ一時 system / pipeline を使った(v2 の `/home/user/hfauto_v2/configs/` を `/home/user/hfauto_v3/configs/` に複製。内容は同じ)。
@@ -60,7 +117,7 @@ HONO の TS は別の Hessian(v2 は DFT、v3 は xTB)から精密化したの�
 - **S20(moddir の明示)**: 4 つの鞍点(HCN、HONO、NH3、STO-3G)はどれも虚振動 1 本で、`moddir 1` を書いた。AUTOZ の再試行はどの run にもない。負モード 2 本以上の Cartesian・P·H·P の分岐は、実 run では通っていない(プローブ `/home/user/hfauto_v3_probe/w1b_moddir` でだけ確認)。
 - **S21(初期 Hessian ありの opt は trust 0.3)**: job.nw は、QRC の両側と錯体の opt が `trust 0.3` と `inhess 2`、それ以外の opt が `trust 0.1` だった。QRC は §2 のとおり約半分になった。xTB の初期 Hessian を渡す錯体の opt(A/B の A と TMA·(HF)₂)は、点数が 4 構造とも v2 と同じで、時間は 5% 減った。v2(trust 0.1)でも、4 錯体の opt の 1〜5 歩目で NWChem は歩幅を制限していた(`Restricting large step` 計 34 回、全体の縮小 計 7 回。v3 は 3 回と 2 回)。歩数が同じなのは、line search が制限された歩みを伸ばして補っていたことと、TMA·(HF)₂ の 4〜8 歩目が勾配の収束後に XMAX / XRMS を満たすための小さな歩みであることによる。5% の短縮は同じ軌跡の run どうしの差(約 2%)より大きいが、n = 2〜3 の比較での観測で、その原因(後半の歩みの SCF が軽くなった)は推定である。trust はジョブキーに入らないので、v2 のキャッシュが残る run dir で再開すると trust 0.1 の結果が再利用される(同じ極小なので害はない)。
 - **S22(rankable の理由)**: 順位を付けない `same_basin`(水、TMA·(HF)₂)の blocker は `outcome:same_basin` だけになった。順位の付く 3 反応は v2 と同じ rank 1。
-- **S24・S25(同位体と上流の理由)**: 一時 system(`/home/user/hfauto_v3_probe/s24_s25`、scratch を分けた一時 site)で確かめた。SMILES `[2H]O[2H]` の species は `INPUT_INVALID`(`SMILES '[2H]O[2H]' specifies isotopes; hfauto uses natural-abundance masses`)になり、次の stage が `stage 'dft' (minima) has no input of type ['species']; upstream failures: species_d2o: SMILES '[2H]O[2H]' specifies isotopes; ...` で止まった(終了コード 1)。xyz の `D` は `unknown element(s): D` になった。CLI はこのメッセージの前に Rich のトレースバックを表示する(従来どおり)。メッセージの文言は、のちに実際の質量(主同位体)に合わせて `hfauto uses most-abundant-isotope masses` に変えた(C40)。
+- **S24・S25(同位体と上流の理由)**: 一時 system(`/home/user/hfauto_v3_probe/s24_s25`、scratch を分けた一時 site)で確かめた。SMILES `[2H]O[2H]` の species は `INPUT_INVALID`(`SMILES '[2H]O[2H]' specifies isotopes; hfauto uses natural-abundance masses`)になり、次の stage が `stage 'dft' (minima) has no input of type ['species']; upstream failures: species_d2o: SMILES '[2H]O[2H]' specifies isotopes; ...` で止まった(終了コード 1)。xyz の `D` は `unknown element(s): D` になった。CLI はこのメッセージの前に Rich のトレースバックを表示する(従来どおり。r6 の M0 以後は、この stage は 0 artifact で done になり、report まで書かれる)。メッセージの文言は、のちに実際の質量(主同位体)に合わせて `hfauto uses most-abundant-isotope masses` に変えた(C40)。
 - v3 の run で通っていない改良: C2(CCSD の maxiter 50)と S23(composite G の手順)は v3 の run では実行していない。どちらも下の「レビューのプローブ」で確認した。
 
 ### レビューのプローブ

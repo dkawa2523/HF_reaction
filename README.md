@@ -44,7 +44,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 |---|---|---|
 | site | `configs/sites/` | 実行ファイルの絶対パス、scratch、コア数とメモリ、エンジンごとの版数の pin と実行設定 |
 | method | `configs/methods/` | 汎関数・基底・分散補正・grid・SCF 閾値(xTB は GFN と電子温度) |
-| system | `configs/systems/`(xyz は `configs/systems/xyz/`) | 化学種、組成、宣言反応。hcn、hono、nh3_inversion、formaldehyde、tma_hf2、amine_hf_panel、water_same_basin |
+| system | `configs/systems/`(xyz は `configs/systems/xyz/`) | 化学種、組成、宣言反応。hcn、hono、nh3_inversion、formaldehyde、tma_hf2、amine_hf_panel、water_same_basin と、レビュー §6 の検証セット(sn2_cl ほか 15 系。対応は docs/validation.md の r6) |
 | pipeline | `configs/pipelines/` | stage の並びと設定、温度と標準状態、ゲート閾値の上書き(`gates:`) |
 
 ## インストール
@@ -64,7 +64,7 @@ hfauto doctor --site configs/sites/wsl_local.yaml
 | コマンド | 役割 |
 |---|---|
 | `hfauto doctor [--site SITE]` | site の全エンジンを検査する(問題があれば終了コード 1) |
-| `hfauto run PIPELINE --system SYSTEM --site SITE [--run-dir DIR] [--from ID] [--to ID] [--dry-run] [--retry-failed KINDS]` | パイプラインを実行する。同じ run ディレクトリでは続きから再開する |
+| `hfauto run PIPELINE --system SYSTEM --site SITE [--run-dir DIR] [--from ID] [--to ID] [--dry-run] [--retry-failed KINDS]` | パイプラインを実行する。同じ run ディレクトリでは続きから再開する。stage の失敗か failed の artifact があれば終了コード 1 |
 | `hfauto status RUN_DIR` | stage の状態、FailureKind 別の失敗数、ジョブの再利用率を表示する |
 | `hfauto report RUN_DIR` | run 全体の HTML レポートを書く |
 | `hfauto case RUN_DIR REACTION_ID` | 反応ケースの判断ログを表示する |

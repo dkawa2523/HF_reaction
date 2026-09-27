@@ -8,15 +8,18 @@ import numpy as np
 import pytest
 import yaml
 from scipy.spatial.distance import pdist
+from typer.testing import CliRunner
 
 from hfauto.backends.protocols import Capability as Cap
 from hfauto.backends.protocols import ConformerEnsemble, DiscoveryResult, ThermoResult
 from hfauto.chemistry.gates import zpe_hartree
 from hfauto.chemistry.thermo import settings_sha, thermo_frequencies
+from hfauto.cli.main import app
 from hfauto.core import records as R
 from hfauto.core.evidence import Evidence
 from hfauto.core.manifest import load_manifest
 from hfauto.pipeline.config import load
+from hfauto.pipeline.layout import RunLayout
 from hfauto.pipeline.runner import run_pipeline
 from hfauto.stages import catalog
 
@@ -110,3 +113,22 @@ def test_discover_flows_from_discovery_to_report(pipeline):
              if r.outcome is R.CaseOutcome.ELEMENTARY_STEP}
     (report,) = view.records(T.REPORT, R.ReportRecord)  # rankable: thermo and report ran
     assert steps & {row.reaction_id for row in report.rows if row.rankable}
+
+
+def test_a_run_whose_inputs_all_fail_still_writes_the_report(pipeline, tmp_path, tmp_run,
+                                                            monkeypatch):
+    monkeypatch.delenv("HFAUTO_STRICT")
+    system = yaml.safe_load((tmp_path / "system.yaml").read_text(encoding="utf-8"))
+    for species in system["species"]:  # an even electron count: no doublet
+        species["multiplicity"] = 2
+    (tmp_path / "doublets.yaml").write_text(yaml.safe_dump(system), encoding="utf-8")
+    args = ["run", str(PIPELINES / "known_endpoints.yaml"), "--system", "doublets.yaml",
+            "--site", "site.yaml", "--run-dir", str(tmp_run)]
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 1, result.output
+    states = {s.stage_id: s for s in RunLayout(tmp_run).read_state()}
+    assert (states["structures"].n_ok, states["structures"].n_failed) == (0, 3)
+    assert all((states[s].status, states[s].n_ok, states[s].n_failed) == ("done", 0, 0)
+               for s in ("dft", "paths", "thermo"))
+    assert (tmp_run / "report" / "report.html").is_file()

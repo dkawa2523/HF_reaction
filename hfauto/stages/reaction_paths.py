@@ -5,6 +5,8 @@ Engines have no defaults here; the pipeline YAML names them (``engines`` and ``s
 
 from __future__ import annotations
 
+import json
+import os
 from collections import deque
 from dataclasses import fields, replace
 from typing import Any, ClassVar, cast
@@ -14,16 +16,18 @@ from pydantic import Field, field_validator
 from hfauto.backends.protocols import Capability, PathEngine, QMEngine, SaddleRefiner
 from hfauto.chemistry.gates import Policy
 from hfauto.chemistry.hypotheses import select
+from hfauto.core.ids import path_token
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.records import (
     ArtifactType,
+    CaseOutcome,
     DiscoveryRecord,
     MinimumRecord,
     ReactionRecord,
     SpeciesRecord,
 )
 from hfauto.drivers.minimum import Registry
-from hfauto.drivers.reaction_case.driver import CaseRuntime, drive_case
+from hfauto.drivers.reaction_case.driver import CaseResult, CaseRuntime, drive_case
 from hfauto.drivers.reaction_case.state import CasePolicy
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
@@ -93,6 +97,26 @@ def _case_runtime(config: ReactionPathsConfig, rt: StageRuntime, inputs: Manifes
     )
 
 
+def _drive(case: ReactionRecord, rt: CaseRuntime, policy: CasePolicy) -> CaseResult:
+    """drive_case; an exception leaves only this case UNRESOLVED (``error:<type>``)."""
+    try:
+        return drive_case(case, rt, policy)
+    except Exception as exc:
+        if os.environ.get("HFAUTO_STRICT") == "1":
+            raise
+        reason = f"error:{type(exc).__name__}"
+        folder = rt.case_dir / path_token(case.reaction_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        entry = {"action": "error", "reason": reason, "detail": str(exc)[:500]}
+        with (folder / "log.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(entry, sort_keys=True) + "\n")
+        record = case.model_copy(update={"outcome": CaseOutcome.UNRESOLVED, "reasons": (reason,),
+                                         "log": f"cases/{folder.name}/log.jsonl"})
+        artifact = Artifact(artifact_id=record.reaction_id, type=ArtifactType.REACTION,
+                            payload=record, parents=tuple(m for m in record.minima if m))
+        return CaseResult(record, (), (artifact,))
+
+
 class ReactionPathsStage:
     spec: ClassVar[StageSpec] = StageSpec(
         name="reaction-paths",
@@ -119,7 +143,7 @@ class ReactionPathsStage:
         artifacts: dict[str, Artifact] = {}  # a job shared by cases is emitted once
         while queue:  # serial (§7.1); split children follow up to max_split_depth
             case, depth = queue.popleft()
-            result = drive_case(case, case_rt, policy)
+            result = _drive(case, case_rt, policy)
             artifacts.update((a.artifact_id, a) for a in result.artifacts)
             if depth < policy.max_split_depth:
                 queue.extend((child, depth + 1) for child in result.children)

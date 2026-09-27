@@ -9,7 +9,7 @@ import hfauto.execution.jobs as jobs_module
 from hfauto.backends import engines
 from hfauto.backends.protocols import Capability
 from hfauto.core.evidence import Failure, FailureKind, Geometry
-from hfauto.core.manifest import Artifact
+from hfauto.core.manifest import Artifact, load_manifest
 from hfauto.core.method import EngineSite
 from hfauto.core.records import ArtifactType, ReportRecord
 from hfauto.core.system import SpeciesInput, SystemConfig
@@ -92,19 +92,20 @@ def test_resume_from_config_change_and_appending_pipeline(tmp_path):
 
 
 def test_consumes_and_produces_are_checked(tmp_path):
-    with pytest.raises(ValueError, match="no input of type"):
-        run_pipeline(resolved(tmp_path, "p", C), tmp_path / "r1")
-    assert RunLayout(tmp_path / "r1").state("c").status == "failed" and CALLS == []
+    layout = run_pipeline(resolved(tmp_path, "p", C, E), tmp_path / "r1")  # c has no input
+    assert CALLS == ["e"] and load_manifest(layout.manifest_path("c")).artifacts == []
+    assert (layout.state("c").status, layout.state("c").n_ok) == ("done", 0)
     with pytest.raises(ValueError, match="produced"):
         run_pipeline(resolved(tmp_path, "p", {"id": "b", "stage": "bad"}), tmp_path / "r2")
+    assert RunLayout(tmp_path / "r2").state("b").status == "failed"
 
 
-def test_missing_input_names_up_to_three_upstream_failures(tmp_path):
+def test_missing_input_logs_up_to_three_upstream_failures(tmp_path, caplog):
     fail = {"id": "f", "stage": "fail", "ids": ["a", "b", "c", "d"]}
-    with pytest.raises(ValueError, match="upstream failures: f.a: reaction iso: atom") as exc:
-        run_pipeline(resolved(tmp_path, "p", fail, C), tmp_path / "r")
-    assert "f.c: reaction iso: atom index out of range" in str(exc.value)
-    assert "f.d" not in str(exc.value)
+    run_pipeline(resolved(tmp_path, "p", fail, C), tmp_path / "r")
+    assert "upstream failures: f.a: reaction iso: atom" in caplog.text
+    assert "f.c: reaction iso: atom index out of range" in caplog.text
+    assert "f.d" not in caplog.text
 
 
 class StubQM:  # structurally a QMEngine

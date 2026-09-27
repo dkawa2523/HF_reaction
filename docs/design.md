@@ -154,6 +154,7 @@ id の規則: species は `species_<species_id>`、minimum は `min_<species>_<l
 - JobStore(`hfauto/execution/jobstore.py`)は run ごとの内容アドレス型キャッシュで、`<run>/jobs/<k[:2]>/<key>/` に job.json、result.json、attempt_NN/ を置く。キーは正規化 JSON {engine, version_pin, kind, key_payload} の sha256 で、`ExecutionSpec`(ranks、メモリ、timeout、パス)は含めない。再利用時はファイルの sha を照合し、`adapter.result_type` で復元する(検証に失敗したら miss)。
 - 終端的な失敗(input_invalid、method_mismatch、executable_missing、incomplete_output)も記録し、`--retry-failed` で指定した種類だけを再実行する。ジョブ単位の排他は `.lock` を O_EXCL で作る。
 - ladder(`hfauto/execution/jobs.py` の `LADDER`。これ以外の自動再試行はしない): timeout と geometry_maxiter は `continuation` で 2 回まで継続(NWChem は最新構造・movecs・drv.hess、xTB は最終構造)、input_invalid(autoz)は Cartesian で 1 回、scf_not_converged は前回の vectors に damping と level shift をかけて 1 回。初期 Hessian ありの opt の継続は、drv.hess を INHESS 0 の restart で引き継ぎ、trust 0.1 で続ける。attempt の timeout は min(設定値, 残り時間) で、残り 60 s 未満なら `BUDGET_EXHAUSTED`。
+- 失敗の閉じ込め: `adapter.parse` の例外は `Failure(incomplete_output, 'parse:<型>: <1行目>')` になる(終端的で JobStore に残り、ladder には入らない。パーサを直したら `--retry-failed incomplete_output`)。反応ケースの例外はそのケースを `unresolved`(`error:<型>`)にし、log.jsonl に error の行を 1 行書いて、ほかのケースを続ける。消費する型の入力がない stage は 0 artifact で done になり、上流の失敗を最大 3 件 warning に出す。後続の stage(report を含む)は同じコマンドで実行される。`HFAUTO_STRICT=1`(tests/conftest.py が設定)は前 2 つを再送出にする(テスト専用)。
 - 並行実行: `JobRunner` のセマフォで ranks × threads の合計を site の cores 以下に保つ。極小(xTB と DFT)と反応ケースは直列で、CREST と GoodVibes だけを `thread_map` で並列にする。`SiteLock` は `hfauto run` の間ずっと保持し、別の run の同時起動を拒否する。
 - run ディレクトリ: `<run>/<stage_id>/manifest.json`、`<run>/<stage_id>/diagnostics.json`(conformers と minima が書く。読むコードはない)、`<run>/run_state.json`(実行順の stage 状態と JobStore の統計)、`<run>/resolved_config.yaml`。stage の入力 view は、run_state でその stage より前にある done の manifest を実行順に union したもの。done で入力と設定の sha が変わらない stage は飛ばし(再開)、`--from X` は X 以降を stale にする。resolved_config.yaml の code_version は git の sha(追跡中のファイルに差分があれば -dirty、改行コードだけの差は数えない、git がなければ unknown)で、pipeline_id ごとに最後に実行したときの値に上書きされる。done で飛ばした stage を計算した版は残らないので、版をまたいだ結果が要るときは新しい run dir か `--from` で取り直す。
 
@@ -165,7 +166,7 @@ id の規則: species は `species_<species_id>`、minimum は `min_<species>_<l
 |---|---|---|
 | site | `configs/sites/wsl_local.yaml` | scratch_root、cores、エンジン別の `EngineSite`(版数の pin、実行ファイル、`ExecutionSpec`、worker の python、scratch_dir) |
 | method | `configs/methods/` | `MethodSpec`(JobStore のキーに入る): `gfn2`、`pbe0-d3bj_def2-svpd`(停留点)、`pbe0-d3bj_def2-tzvpd` と `wb97x-d3_def2-tzvpd`(手法パネル)、`ccsd-t_def2-tzvpd`(小さい閉殻分子で opt-in)。停留点の method は minima(dft)と reaction-paths に書き、食い違えば読み込み時に拒否する |
-| system | `configs/systems/`(xyz は `configs/systems/xyz/`) | species(xyz / SMILES、電荷、多重度、役割)、compositions、宣言反応: hcn、hono、nh3_inversion、formaldehyde、tma_hf2、amine_hf_panel、water_same_basin |
+| system | `configs/systems/`(xyz は `configs/systems/xyz/`) | species(xyz / SMILES、電荷、多重度、役割)、compositions、宣言反応: hcn、hono、nh3_inversion、formaldehyde、tma_hf2、amine_hf_panel、water_same_basin と、レビュー §6 の検証セット(sn2_cl ほか 15 系。対応は docs/validation.md の r6) |
 | pipeline | `configs/pipelines/` | stage の並びと設定、`conditions`、`gates:`(`Policy` の上書き): discover、known_endpoints、method_panel |
 
 ## 10. stage 表(生成)

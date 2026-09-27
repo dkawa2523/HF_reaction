@@ -1,0 +1,7 @@
+# S4 (review §6.1): doublet 1,2-H shift CH3O. -> CH2OH. with the product given in Cs symmetry.
+system_id: ch3o_doublet
+species:
+  - {id: ch3o, xyz: xyz/ch3o_doublet/r.xyz, multiplicity: 2, role: endpoint}
+  - {id: ch2oh, xyz: xyz/ch3o_doublet/p.xyz, multiplicity: 2, role: endpoint}
+reactions:
+  - {id: ch3o_to_ch2oh, reactant: ch3o, product: ch2oh}

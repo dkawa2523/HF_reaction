@@ -31,6 +31,7 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 - リポジトリは Windows 側にあり、WSL からは `/mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline` に見える。editable で入れるので、コードの変更はそのまま WSL に反映される。
 - 外部プログラムを conda でそろえる場合は `environment.production.yml` を使う(版数は `hfauto doctor` で pin と照合する)。
 - `hfauto doctor` は site の全エンジンについて、実行ファイル、版数の pin、worker 側の Python モジュール、scratch の場所を検査し、問題があれば終了コード 1 を返す。`hfauto run` も実行前に同じ検査(preflight)を行う。
+- パーサが例外を出したジョブは `incomplete_output` の失敗として JobStore に残る。パーサを直した後は `--retry-failed incomplete_output` で取り直す(JobStore の鍵にコード版数は入らない)。
 
 ## 3. WSL の資源
 

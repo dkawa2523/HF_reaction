@@ -1,0 +1,7 @@
+# S2 (review §6.1): I- + CH3I identity SN2 between ion-dipole complexes (Z > 36, def2 ECP).
+system_id: sn2_i
+species:
+  - {id: rc, xyz: xyz/sn2_i/rc.xyz, charge: -1, role: endpoint}
+  - {id: pc, xyz: xyz/sn2_i/pc.xyz, charge: -1, role: endpoint}
+reactions:
+  - {id: sn2_i_identity, reactant: rc, product: pc}

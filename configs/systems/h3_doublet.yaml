@@ -1,0 +1,7 @@
+# S18 (review §6.1): doublet H + H2 -> H2 + H between collinear vdW complexes (abstraction).
+system_id: h3_doublet
+species:
+  - {id: rc, xyz: xyz/h3_doublet/r.xyz, multiplicity: 2, role: endpoint}
+  - {id: pc, xyz: xyz/h3_doublet/p.xyz, multiplicity: 2, role: endpoint}
+reactions:
+  - {id: h_exchange, reactant: rc, product: pc}

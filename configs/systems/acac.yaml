@@ -1,0 +1,7 @@
+# S16 (review §6.1): acetylacetone enol proton transfer (15 atoms, two methyl rotors).
+system_id: acac
+species:
+  - {id: acac_a, xyz: xyz/acac/reactant.xyz, role: endpoint}
+  - {id: acac_b, xyz: xyz/acac/product.xyz, role: endpoint}
+reactions:
+  - {id: acac_pt, reactant: acac_a, product: acac_b}

@@ -74,6 +74,12 @@ def _site_probe(site: config.SiteConfig) -> config.ResolvedConfig:
     )
 
 
+def _failed_stages(layout: RunLayout) -> list[str]:
+    """Stages that failed or saved an artifact carrying a failure."""
+    return [s.stage_id for s in layout.read_state()
+            if s.status == "failed" or (s.status == "done" and s.n_failed > 0)]
+
+
 def _print_problems(problems: list[str]) -> None:
     for problem in problems:
         console.print(f"[red]problem[/red] {escape(problem)}")
@@ -114,7 +120,9 @@ def run(
     dry_run: bool = typer.Option(False, help="Check the configs and print the plan only"),
     retry_failed: str = typer.Option("", help="FailureKinds whose cached failures are retried"),
 ) -> None:
-    """Run a pipeline for a system on a site (resumes a run directory)."""
+    """Run a pipeline for a system on a site (resumes a run directory).
+
+    Exit code 1 when a stage failed or a saved artifact carries a failure."""
     kinds = _failure_kinds(retry_failed)
     paths = [config_path(k, v) for k, v in (("pipelines", pipeline), ("systems", system),
                                             ("sites", site))]
@@ -137,6 +145,11 @@ def run(
         console.print(table)
         return
     runner.run_pipeline(resolved, target, start=start, stop=stop, retry_failed=kinds)
+    failed = _failed_stages(RunLayout(target))
+    if failed:
+        console.print(f"[yellow]done with failures[/yellow] in {escape(', '.join(failed))}:"
+                      f" {escape(str(target))}", soft_wrap=True)
+        raise typer.Exit(1)
     console.print(f"[green]done[/green] {escape(str(target))}", soft_wrap=True)
 
 

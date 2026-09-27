@@ -1,0 +1,7 @@
+# S15 (review §6.1): trans-HONO -> HNO2 (H-NO2), two steps through cis-HONO (multi-step case).
+system_id: hono_hno2
+species:
+  - {id: trans_hono, xyz: xyz/hono/trans.xyz, role: endpoint}
+  - {id: hno2, xyz: xyz/hono_hno2/hno2.xyz, role: endpoint}
+reactions:
+  - {id: trans_hono_to_hno2, reactant: trans_hono, product: hno2}

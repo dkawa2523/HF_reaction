@@ -2,6 +2,7 @@ import sys
 from dataclasses import replace
 from typing import Literal
 
+import pytest
 from pydantic import BaseModel
 
 from hfauto.core.evidence import Failure, FailureKind, FileRef
@@ -105,6 +106,26 @@ def test_budget_and_missing_executable(tmp_path):
     missing = runner.run(missing, adapter)
     assert missing.kind is FailureKind.EXECUTABLE_MISSING
     assert (runner.store.job_dir(missing.job_key) / "result.json").exists()
+
+
+def test_parse_exception_is_a_remembered_incomplete_output(tmp_path, monkeypatch):
+    runner, adapter = _setup(tmp_path)
+
+    def parse(task, workdir, result):
+        raise ValueError("no energy line\nin the output")
+
+    adapter.parse = parse
+    task = _task(OK, OK, name="p")  # a continuation exists but is not offered
+    with pytest.raises(ValueError, match="no energy line"):  # HFAUTO_STRICT=1 re-raises
+        runner.run(task, adapter)
+    monkeypatch.delenv("HFAUTO_STRICT")
+    out = runner.run(task, adapter)
+    assert out == Failure(kind=FailureKind.INCOMPLETE_OUTPUT, job_key=runner.store.key(task),
+                          reason="parse:ValueError: no energy line")
+    fresh, _ = _setup(tmp_path)  # replayed from the JobStore on disk
+    assert fresh.run(task, adapter) == out and _runs(tmp_path) == 2
+    retry, _ = _setup(tmp_path, retry_failed=["incomplete_output"])
+    assert retry.run(task, adapter) == out and _runs(tmp_path) == 3
 
 
 def _meet(runner, adapter, room, wait_s, ranks):
