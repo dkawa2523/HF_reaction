@@ -41,6 +41,7 @@ from hfauto.core.records import (
     ReactionThermo,
     SpeciesRecord,
     SpeciesThermo,
+    StandardState,
 )
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
@@ -54,7 +55,7 @@ class ThermoConfig(StageConfig):
     settings: ThermoSettings = ThermoSettings()
     energy_method: str | None = None  # sp layer of the composite G
     temperatures_K: tuple[float, ...] = (298.15,)
-    standard_states: tuple[th.StandardState, ...] = ("1atm",)
+    standard_states: tuple[StandardState, ...] = ("1atm",)
 
 
 @dataclass(frozen=True)
@@ -132,7 +133,7 @@ def _same_level(subs: Sequence[_Subject], *, state: bool = True) -> bool:
 
 
 def _association(names: tuple[str, ...], subjects: dict[str, _Subject], monomers: Monomers,
-                 table: Table, T: float, state: th.StandardState, with_ts: bool
+                 table: Table, T: float, state: StandardState, with_ts: bool
                  ) -> tuple[float | None, float | None]:
     """dG_assoc and dG_act_vs_separated against the ensemble G of each monomer's state (same
     LOT apart from charge and multiplicity; a monomer without G fails closed)."""
@@ -218,7 +219,7 @@ def _effective(rx: ReactionRecord, names: tuple[str, ...], subjects: dict[str, _
 
 
 def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject], monomers: Monomers, T: float,
-              state: th.StandardState, tables: Sequence[Table], policy: Policy
+              state: StandardState, tables: Sequence[Table], policy: Policy
               ) -> ReactionThermo:
     """tables: the thermo of every settings variant at T (index 0 = main settings)."""
     names, table = th.participants(rx), tables[0]

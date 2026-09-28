@@ -25,7 +25,7 @@ from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, Geometry, Level
 from hfauto.core.method import Deadline, EngineSite, MethodSpec, level_mismatches
 from hfauto.execution.jobs import Task
-from hfauto.execution.process import STDOUT_NAME, Command, CommandResult, resolve_executable
+from hfauto.execution.process import Command, CommandResult, resolve_executable
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -36,7 +36,6 @@ INPUT_NAME = "input.xyz"
 _RUN_FLAGS = {"energy": ("--sp",), "optimize": ("--opt", "vtight"), "frequencies": ("--hess",)}
 _TASKS = {"energy": "sp", "optimize": "opt", "frequencies": "freq"}
 _TOTAL_ENERGY = re.compile(r"\|\s*TOTAL ENERGY\s+(-?\d+\.\d+)\s+Eh")
-_CYCLE_ENERGY = re.compile(r"^\s*\* total energy\s*:\s*(-?\d+\.\d+)\s+Eh", re.MULTILINE)
 _VERSION = re.compile(r"xtb version (\S+)")
 _HAMILTONIAN = re.compile(r"Hamiltonian\s+(GFN\d)-xTB", re.IGNORECASE)
 _ETEMP = re.compile(r"electronic temp\.\s+(\d+(?:\.\d*)?)\s+K")
@@ -115,12 +114,10 @@ class _Adapter:
         if task.kind != "optimize" or not restart.is_file():
             return None
         mol: Molecule = task.inputs["mol"]
-        text = (workdir / STDOUT_NAME).read_text(encoding="utf-8", errors="replace")
         inputs = {
             **task.inputs,
             "mol": Molecule(read_xyz(restart), mol.charge, mol.multiplicity),
             "start": task.inputs.get("start") or self._geometry(workdir / INPUT_NAME, mol.xyz),
-            "trajectory": (*task.inputs.get("trajectory", ()), *_cycle_energies(text)),
         }
         return replace(task, inputs=inputs)
 
@@ -149,23 +146,19 @@ class _Adapter:
             "output": self.file_ref(result.stdout), "job_key": "",
         }
         if task.kind == "optimize":
-            return self._optimized(task, workdir, text, base)
+            return self._optimized(task, workdir, base)
         if task.kind == "frequencies":
             return self._frequencies(workdir, mol, base)
         return Evidence(final=start, **base)
 
-    def _optimized(self, task: Task, workdir: Path, text: str, base: dict[str, Any]
-                   ) -> Evidence | Failure:
+    def _optimized(self, task: Task, workdir: Path, base: dict[str, Any]) -> Evidence | Failure:
         path = workdir / "xtbopt.xyz"
         if not path.is_file():
             return _fail(FailureKind.INCOMPLETE_OUTPUT, "xtbopt.xyz missing")
         final = read_xyz(path)
         if list(final.symbols) != list(task.inputs["mol"].xyz.symbols):
             return _fail(FailureKind.METHOD_MISMATCH, "atom order changed")
-        trajectory = (*task.inputs.get("trajectory", ()), *_cycle_energies(text),
-                      base["energy_hartree"])
-        return Evidence(final=self._geometry(path, final), trajectory_energies_hartree=trajectory,
-                        **base)
+        return Evidence(final=self._geometry(path, final), **base)
 
     def _frequencies(self, workdir: Path, mol: Molecule, base: dict[str, Any]
                      ) -> Evidence | Failure:
@@ -185,11 +178,6 @@ class _Adapter:
         from its file and handed to a freq job keeps the same fingerprint."""
         return Geometry(file=self.file_ref(path), symbols=tuple(xyz.symbols),
                         fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords))
-
-
-def _cycle_energies(text: str) -> tuple[float, ...]:
-    """Energies of the optimization cycles; the first one is the starting structure's."""
-    return tuple(float(e) for e in _CYCLE_ENERGY.findall(text))
 
 
 class XTBEngine:

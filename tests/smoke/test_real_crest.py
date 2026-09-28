@@ -35,7 +35,7 @@ def test_crest_receives_charge_and_spin(real_engine, tmp_path):
 def test_anion_composition_runs_with_noopt(real_engine, tmp_path):
     """F-·(HF)2 stopped on the initial topology check without --noopt (about 25 s)."""
     seed = seeds(HF, [HF, XYZ(["F"], np.zeros((1, 3)))], n_seeds=1)[0]
-    settings = ConformerSettings(nci=True, notopo_atoms=tuple(range(5)))  # every H and F
+    settings = ConformerSettings(nci=True)  # --notopo on every H and F
     ens = real_engine(Capability.CONFORMERS, "crest").search(Molecule(seed, -1, 1), GFN2, settings)
     assert isinstance(ens, ConformerEnsemble) and len(ens.members) >= 1, ens
     assert "--noopt" in _stdout(tmp_path, ens.job_key)

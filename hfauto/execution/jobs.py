@@ -55,10 +55,19 @@ class Adapter(Protocol[T]):
 
 
 class JobStats(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    """Cache hits, misses and failures by kind of a JobRunner, or of one stage (``since``)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
     hits: int = 0
     misses: int = 0
     failures_by_kind: dict[str, int] = {}
+
+    def since(self, before: JobStats) -> JobStats:
+        """The counts added after ``before`` (the counters only grow)."""
+        failures = {kind: n - before.failures_by_kind.get(kind, 0)
+                    for kind, n in self.failures_by_kind.items()}
+        return JobStats(hits=self.hits - before.hits, misses=self.misses - before.misses,
+                        failures_by_kind={kind: n for kind, n in failures.items() if n})
 
 
 class _CoreSemaphore:

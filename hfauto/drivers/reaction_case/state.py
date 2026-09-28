@@ -15,12 +15,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from hfauto.chemistry.gates import ConnectionLabel, Policy
+from hfauto.chemistry.gates import Policy
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Geometry
 from hfauto.core.records import (
+    CONNECTED_OUTCOMES,
     BarrierVerdict,
     CaseOutcome,
+    ConnectionLabel,
     MinimumRecord,
     ReactionRecord,
     SaddleClaim,
@@ -139,16 +141,9 @@ def _r03_window(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | 
     return None
 
 
-_CONNECTED = {
-    "elementary": CaseOutcome.ELEMENTARY_STEP,
-    "degenerate": CaseOutcome.DEGENERATE,
-    "reassigned": CaseOutcome.REASSIGNED,
-}
-
-
 def _r04_connected(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
-    if s.connection in _CONNECTED:
-        return _complete(_CONNECTED[s.connection], f"connection:{s.connection}")
+    if s.connection in CONNECTED_OUTCOMES:
+        return _complete(CONNECTED_OUTCOMES[s.connection], f"connection:{s.connection}")
     return None
 
 

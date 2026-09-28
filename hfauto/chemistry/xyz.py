@@ -1,19 +1,18 @@
-"""Minimal XYZ geometry model and file I/O.
-
-This module has no reaction-family assumptions.  Chemistry builders consume
-it, while path, conformer, and quantum backends can use it directly.
-"""
+"""XYZ structures: the model, file I/O (one structure or a trajectory), fingerprints and
+formulas."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+
+from hfauto.core.evidence import FileRef, Geometry
 
 
 @dataclass
@@ -23,38 +22,82 @@ class XYZ:
     comment: str = ""
 
 
+def _block(xyz: XYZ) -> list[str]:
+    rows = zip(xyz.symbols, xyz.coords)
+    return [str(len(xyz.symbols)), xyz.comment or "generated_by=hfauto",
+            *(f"{s:2s} {x: .8f} {y: .8f} {z: .8f}" for s, (x, y, z) in rows)]
+
+
+def read_xyz_trajectory(path: str | Path) -> list[XYZ]:
+    """Concatenated XYZ blocks; malformed or partial data is a ValueError."""
+
+    source = Path(path)
+    lines = source.read_text(encoding="utf-8").splitlines()
+    images: list[XYZ] = []
+    cursor = 0
+    while cursor < len(lines):
+        if not lines[cursor].strip():
+            cursor += 1
+            continue
+        try:
+            atom_count = int(lines[cursor].strip())
+        except ValueError as exc:
+            raise ValueError(f"invalid XYZ atom count at line {cursor + 1} in {source}") from exc
+        if atom_count <= 0 or cursor + atom_count + 2 > len(lines):
+            raise ValueError(f"incomplete XYZ block at line {cursor + 1} in {source}")
+        symbols: list[str] = []
+        coordinates: list[list[float]] = []
+        for number, line in enumerate(lines[cursor + 2 : cursor + atom_count + 2], cursor + 3):
+            fields = line.split()
+            try:
+                if len(fields) < 4:
+                    raise ValueError(line)
+                coordinates.append([float(value) for value in fields[1:4]])
+            except ValueError as exc:
+                raise ValueError(f"invalid XYZ row at line {number} in {source}") from exc
+            symbols.append(fields[0])
+        images.append(XYZ(symbols, np.asarray(coordinates, dtype=float), lines[cursor + 1]))
+        cursor += atom_count + 2
+    if not images:
+        raise ValueError(f"XYZ file contains no structure: {source}")
+    return images
+
+
 def read_xyz(path: str | Path) -> XYZ:
-    lines = Path(path).read_text(encoding="utf-8").splitlines()
-    if not lines:
-        raise ValueError(f"Empty XYZ file: {path}")
-    atom_count = int(lines[0].strip())
-    comment = lines[1] if len(lines) > 1 else ""
-    symbols: list[str] = []
-    coords: list[list[float]] = []
-    for line in lines[2 : 2 + atom_count]:
-        parts = line.split()
-        if len(parts) < 4:
-            raise ValueError(f"Invalid XYZ line in {path}: {line!r}")
-        symbols.append(parts[0])
-        coords.append([float(parts[1]), float(parts[2]), float(parts[3])])
-    if len(symbols) != atom_count:
-        raise ValueError(
-            f"XYZ atom count mismatch in {path}: "
-            f"header={atom_count}, parsed={len(symbols)}"
-        )
-    return XYZ(
-        symbols=symbols,
-        coords=np.asarray(coords, dtype=float),
-        comment=comment,
-    )
+    """The one structure of an XYZ file."""
+
+    images = read_xyz_trajectory(path)
+    if len(images) != 1:
+        raise ValueError(f"{path}: {len(images)} structures, expected one")
+    return images[0]
+
+
+def written_geometry(path: str | Path, file_ref: Callable[[Path], FileRef]) -> Geometry:
+    """The Geometry of an xyz file: its FileRef and the fingerprint of the coordinates as the
+    file holds them (8 decimals)."""
+
+    xyz = read_xyz(path)
+    return Geometry(file=file_ref(Path(path)), symbols=tuple(xyz.symbols),
+                    fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords))
 
 
 def write_xyz(xyz: XYZ, path: str | Path) -> Path:
+    return _write(_block(xyz), path)
+
+
+def write_xyz_trajectory(images: list[XYZ], path: str | Path) -> Path:
+    """A multi-XYZ path of at least two images with one atom list."""
+
+    if len(images) < 2:
+        raise ValueError("XYZ trajectory must contain at least two images")
+    if any(image.symbols != images[0].symbols for image in images):
+        raise ValueError("XYZ trajectory atom symbols/order are inconsistent")
+    return _write([line for image in images for line in _block(image)], path)
+
+
+def _write(lines: list[str], path: str | Path) -> Path:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    lines = [str(len(xyz.symbols)), xyz.comment or "generated_by=hfauto"]
-    for symbol, (x, y, z) in zip(xyz.symbols, xyz.coords):
-        lines.append(f"{symbol:2s} {x: .8f} {y: .8f} {z: .8f}")
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return target
 

@@ -1,11 +1,10 @@
-"""Engine registry: the final table, KeyError for unknown keys, test overrides (§6.2)."""
+"""Engine registry: the final table, KeyError for unknown keys, the Protocol check (§6.2)."""
 
 import fakes
 import pytest
 
 from hfauto.backends import engines
 from hfauto.backends.protocols import Capability as C
-from hfauto.backends.protocols import Requirements
 from hfauto.core.method import EngineSite
 
 
@@ -30,24 +29,17 @@ def test_unknown_keys_raise_key_error() -> None:
         create(C.SADDLE, "xtb")  # a registered name, but not for this capability
     with pytest.raises(KeyError):
         engines.requirements_for({C.DISCOVERY: ["internal"]})
-    with pytest.raises(KeyError), engines.override(C.QM, "dummy", fakes.FakeQM):
-        pass
 
 
-def test_overrides_nest_restore_and_check_the_protocol(tmp_run, override_engine) -> None:
-    first, second = (fakes.FakeQM(tmp_run, fakes.harmonic()) for _ in range(2))
-    with engines.override(C.QM, "xtb", lambda **_: first):
-        with engines.override(C.QM, "xtb", lambda **_: second):
-            assert create(C.QM, "xtb") is second
-        assert create(C.QM, "xtb") is first
-        assert engines.requirements_for({C.QM: ["xtb"]}) == {"xtb": Requirements()}
-    assert not engines._OVERRIDES
-    override_engine(C.QM, "nwchem", fakes.FakePath(tmp_run, fakes.harmonic()))
+def test_requirements_come_from_the_classes() -> None:
+    found = engines.requirements_for({C.QM: ["xtb"], C.SADDLE: ["nwchem_saddle"]})
+    assert found["xtb"].version_command == ("xtb", "--version")
+    assert found["nwchem_saddle"].executables == ("nwchem",)
+
+
+def test_create_checks_the_capability_protocol(tmp_run, monkeypatch) -> None:
+    path = fakes.FakePath(tmp_run, fakes.harmonic())
+    monkeypatch.setattr(engines, "_load", lambda target: lambda **_: path)
     with pytest.raises(TypeError, match="QMEngine"):
         create(C.QM, "nwchem")
-    override_engine(C.DISCOVERY, "readuct", fakes.FakeDiscovery(["scripted"]))
-    discovery = create(C.DISCOVERY, "readuct")
-    assert discovery.explore(None, None, None, None) == "scripted"
-    assert discovery.calls == [(None, None, None, None)]
-    with pytest.raises(AssertionError, match="script exhausted"):
-        discovery.explore(None, None, None, None)
+    assert create(C.PATH, "nwchem_string") is path

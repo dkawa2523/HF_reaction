@@ -30,12 +30,11 @@ def test_command_carries_charge_uhf_and_etemp(tmp_run):
     assert xtb.supports(method) and not xtb.supports(MethodSpec(id="d", kind="dft"))
 
 
-def test_optimization_continues_from_xtbopt_with_its_energies(tmp_run):
+def test_optimization_continues_from_xtbopt(tmp_run):
     xtb, work = engine(tmp_run), tmp_run / "attempt_00"
     task = xtb.task("optimize", Molecule(WATER, 0, 1), GFN1)
     xtb.adapter.prepare(task, work)
     write_xyz(XYZ(WATER.symbols, WATER.coords * 1.01), work / "xtbopt.xyz")
-    (work / "stdout.txt").write_text(" * total energy  :    -5.0700000 Eh     change 1E-3 Eh\n")
     new = xtb.adapter.continuation(task, work, Failure(kind="geometry_maxiter", reason="")).inputs
-    assert np.allclose(new["mol"].xyz.coords, WATER.coords * 1.01) and new["trajectory"] == (-5.07,)
+    assert np.allclose(new["mol"].xyz.coords, WATER.coords * 1.01)
     assert new["start"].file.path == "attempt_00/input.xyz"

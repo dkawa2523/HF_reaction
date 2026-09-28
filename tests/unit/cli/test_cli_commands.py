@@ -7,7 +7,8 @@ import typer
 from typer.testing import CliRunner
 
 from hfauto.cli.main import app
-from hfauto.pipeline.layout import JobCounts, RunLayout, StageState
+from hfauto.execution.jobs import JobStats
+from hfauto.pipeline.layout import RunLayout, StageState
 
 cli = CliRunner()
 
@@ -32,9 +33,9 @@ def test_run_dry_run_resolves_names_and_writes_nothing(tmp_path, monkeypatch, ex
 def test_status_sums_failures_by_kind_and_job_reuse(tmp_path):
     RunLayout(tmp_path).write_state([
         StageState(stage_id="dft", pipeline_id="p", status="done", n_ok=3,
-                   jobs=JobCounts(hits=1, misses=3, failures_by_kind={"timeout": 2})),
+                   jobs=JobStats(hits=1, misses=3, failures_by_kind={"timeout": 2})),
         StageState(stage_id="paths", pipeline_id="p", status="failed",
-                   jobs=JobCounts(hits=1, failures_by_kind={"timeout": 1, "nonzero_exit": 1}))])
+                   jobs=JobStats(hits=1, failures_by_kind={"timeout": 1, "nonzero_exit": 1}))])
     result = cli.invoke(app, ["status", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert "job failures: nonzero_exit=1, timeout=3" in result.output

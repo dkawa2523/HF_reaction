@@ -26,6 +26,7 @@ from hfauto.chemistry.topology import fragments, state_label
 from hfauto.chemistry.xyz import Molecule
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FailureKind, Geometry
+from hfauto.core.ids import species_artifact_id
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec, level_mismatches
 from hfauto.core.records import ArtifactType, DiscoveryRecord, MinimumRecord, Payload, SpeciesRecord
@@ -133,7 +134,8 @@ class _Run:
                                                  reason=f"relaxed_to_{outcome.status}")
             self.extra.append(Artifact(
                 artifact_id=f"min_{job.species.species_id}_{self.rt.stage_id}", type=T.MINIMUM,
-                status="failed", failure=failure, parents=(f"species_{job.species.species_id}",)))
+                status="failed", failure=failure,
+                parents=(species_artifact_id(job.species.species_id),)))
         return None
 
     def sides(self, done: _Relaxed) -> list[_Job]:
@@ -254,5 +256,6 @@ class MinimaStage:
                 run.extra.append(_artifact(found.discovery_id, found))
         (rt.stage_dir / "diagnostics.json").write_text(json.dumps(run.history, indent=1))
         return [*(_artifact(k, ev) for k, ev in run.calcs.items()),
-                *(_artifact(f"species_{j.species.species_id}", j.species) for j in side_jobs),
+                *(_artifact(species_artifact_id(j.species.species_id), j.species)
+                  for j in side_jobs),
                 *(_artifact(m.minimum_id, m) for m in run.minima.values()), *run.extra]

@@ -24,15 +24,9 @@ from hfauto.backends import protocols as bp
 from hfauto.chemistry import placement
 from hfauto.chemistry.electronic_state import composition_multiplicity
 from hfauto.chemistry.topology import state_label
-from hfauto.chemistry.xyz import (
-    XYZ,
-    Molecule,
-    composition_key,
-    geometry_fingerprint,
-    read_xyz,
-    write_xyz,
-)
+from hfauto.chemistry.xyz import XYZ, Molecule, composition_key, write_xyz, written_geometry
 from hfauto.core.evidence import Failure, FailureKind, Geometry
+from hfauto.core.ids import species_artifact_id
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
 from hfauto.core.records import ArtifactType, SpeciesRecord
@@ -77,10 +71,6 @@ class _Cand:
     source: Source
     xyz: XYZ
     label: str
-
-
-def artifact_id(species_id: str) -> str:
-    return f"species_{species_id}"
 
 
 def _failed(base: str, parents: tuple[str, ...], failure: Failure) -> Artifact:
@@ -130,15 +120,15 @@ def _artifacts(found: _Found, rt: StageRuntime, cfg: ConformersConfig) -> list[A
             multiplicity=mult, geometry=c.geometry, source=c.source, state_label=c.label,
             energy_hartree=c.energy,
         )
-        out.append(Artifact(artifact_id=artifact_id(record.species_id), type=ArtifactType.SPECIES,
-                            parents=item.parents, payload=record))
+        out.append(Artifact(artifact_id=species_artifact_id(record.species_id),
+                            type=ArtifactType.SPECIES, parents=item.parents, payload=record))
     return out
 
 
 def _monomer(sp: SpeciesRecord, rt: StageRuntime, cfg: ConformersConfig) -> _Item:
     xyz = rt.load_xyz(sp.geometry)
     settings = bp.ConformerSettings(quick=cfg.quick, ewin_kcal=cfg.ewin_kcal)
-    return _Item(sp.species_id, (artifact_id(sp.species_id),),
+    return _Item(sp.species_id, (species_artifact_id(sp.species_id),),
                  Molecule(xyz, sp.charge, sp.multiplicity), settings,
                  ((sp.geometry, None, "conformer"),),
                  skip=placement.is_small_rigid(xyz.symbols, xyz.coords))
@@ -157,13 +147,9 @@ def _lowest(found: _Found, rt: StageRuntime) -> XYZ:
 
 
 def _seed_geometries(comp_id: str, seeds: list[XYZ], rt: StageRuntime) -> list[Geometry]:
-    geoms = []
-    for k, seed in enumerate(seeds):
-        path = write_xyz(seed, rt.stage_dir / "placement" / f"{comp_id}_seed{k:02d}.xyz")
-        xyz = read_xyz(path)  # fingerprint the file as written
-        geoms.append(Geometry(file=rt.file_ref(path), symbols=tuple(xyz.symbols),
-                              fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords)))
-    return geoms
+    folder = rt.stage_dir / "placement"
+    return [written_geometry(write_xyz(seed, folder / f"{comp_id}_seed{k:02d}.xyz"), rt.file_ref)
+            for k, seed in enumerate(seeds)]
 
 
 def _composition(comp: CompositionInput, species: dict[str, SpeciesRecord],
@@ -190,9 +176,8 @@ def _composition(comp: CompositionInput, species: dict[str, SpeciesRecord],
         return reject(FailureKind.GATE_REJECTED, "no_collision_free_seed")
     geoms = _seed_geometries(comp.id, seeds, rt)
     first = rt.load_xyz(geoms[0])
-    settings = bp.ConformerSettings(nci=True, quick=cfg.quick, ewin_kcal=cfg.ewin_kcal,
-                                    notopo_atoms=tuple(range(len(first.symbols))))
-    parents = tuple(dict.fromkeys(artifact_id(sid) for sid, _ in parts))
+    settings = bp.ConformerSettings(nci=True, quick=cfg.quick, ewin_kcal=cfg.ewin_kcal)
+    parents = tuple(dict.fromkeys(species_artifact_id(sid) for sid, _ in parts))
     return _Item(comp.id, parents, Molecule(first, charge, mult), settings,
                  tuple((g, None, "placement") for g in geoms))
 

@@ -27,6 +27,7 @@ from hfauto.backends.protocols import (
 from hfauto.chemistry import gates, identity, topology, trials
 from hfauto.chemistry.xyz import XYZ, Molecule
 from hfauto.core.evidence import Failure, Geometry
+from hfauto.core.ids import species_artifact_id
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.records import (
     ArtifactType,
@@ -140,7 +141,7 @@ class _Recorder:
         out = [Artifact(artifact_id=discovery_id, type=ArtifactType.DISCOVERY, parents=parents,
                         payload=record)]
         if new is not None:
-            out.append(Artifact(artifact_id=f"species_{new.species_id}",
+            out.append(Artifact(artifact_id=species_artifact_id(new.species_id),
                                 type=ArtifactType.SPECIES, parents=(discovery_id,), payload=new))
         return out
 

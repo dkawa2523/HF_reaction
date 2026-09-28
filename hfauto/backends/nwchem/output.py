@@ -110,12 +110,6 @@ def total_energy(text: str) -> float | None:
     return None if value is None else _number(value)
 
 
-def trajectory_energies(text: str) -> tuple[float, ...]:
-    """Driver energies per step (``@`` lines; the repeated last step counts once)."""
-    steps = {int(n): _number(e) for n, e in re.findall(r"^@\s+(\d+)\s+(\S+)", text, re.MULTILINE)}
-    return tuple(steps[n] for n in sorted(steps))
-
-
 def s2(text: str) -> float | None:
     value = _last(r"<S2> =\s+(\S+)", text)
     return None if value is None else _number(value)

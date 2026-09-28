@@ -80,7 +80,7 @@ def test_structures_then_conformers(tmp_path, fake_runtime):
     assert np.allclose(retry.xyz.coords, _proton_shift(first.xyz.coords)) and again == on
     assert (retry.charge, retry.multiplicity) == (first.charge, first.multiplicity) and not on.nci
     compositions = {len(m.xyz.symbols): s for m, s in calls[2:]}  # searched concurrently
-    assert all(s.nci and s.notopo_atoms == tuple(range(n)) for n, s in compositions.items())
+    assert all(s.nci for s in compositions.values())
     assert {s.ewin_kcal for _, s in calls} == {5.0} and set(compositions) == {4, 6}
 
 

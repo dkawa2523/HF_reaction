@@ -15,6 +15,8 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+from hfauto.chemistry.geometry import kabsch
+
 _RMSD_A = 0.05  # one basin: permutation-invariant RMSD (mirror image included) ...
 _DE_HARTREE = 5.0e-5  # ... and |dE|, with the best match clearly ahead of the runner-up
 _RUNNER_UP_RATIO, _RUNNER_UP_GAP_A = 3.0, 0.1
@@ -32,14 +34,6 @@ def _centered(coords: np.ndarray) -> np.ndarray:
 
 def _mirror(coords: np.ndarray) -> np.ndarray:
     return np.asarray(coords, dtype=float).reshape(-1, 3) * [-1.0, 1.0, 1.0]
-
-
-def _rotation(mobile: np.ndarray, fixed: np.ndarray) -> np.ndarray:
-    """Proper rotation R minimizing |mobile @ R − fixed| (both centered)."""
-
-    u, _, vt = np.linalg.svd(mobile.T @ fixed)
-    handedness = 1.0 if np.linalg.det(u @ vt) >= 0 else -1.0
-    return u @ np.diag([1.0, 1.0, handedness]) @ vt
 
 
 def _rmsd(a: np.ndarray, b: np.ndarray) -> float:
@@ -100,18 +94,18 @@ def permutation_invariant_rmsd(
     xa, xb = _check(symbols, a, b)
     moments, frame_a = _principal_frame(xa)
     _, frame_b = _principal_frame(xb)
-    starts = [_rotation(xb, xa)]  # identity mapping first
+    starts = [kabsch(xb, xa)]  # identity mapping first
     spins = _spins(moments)
     starts += [frame_b @ flip @ spin @ frame_a.T for flip in _SIGN_FLIPS for spin in spins]
     best = (math.inf, np.arange(len(xa)))
     for start in starts:
         perm = _assign(symbols, xa, xb @ start)
         for _ in range(_MAX_REFINE):
-            new_perm = _assign(symbols, xa, xb @ _rotation(xb[perm], xa))
+            new_perm = _assign(symbols, xa, xb @ kabsch(xb[perm], xa))
             if np.array_equal(new_perm, perm):
                 break
             perm = new_perm
-        value = _rmsd(xb[perm] @ _rotation(xb[perm], xa), xa)
+        value = _rmsd(xb[perm] @ kabsch(xb[perm], xa), xa)
         if value < best[0]:
             best = (value, perm)
     return best
@@ -123,7 +117,7 @@ def mapped_rmsd(a: np.ndarray, b: np.ndarray) -> float:
     xa, xb = _centered(a), _centered(b)
     if xa.shape != xb.shape:
         raise ValueError("structures differ in atom count")
-    return _rmsd(xb @ _rotation(xb, xa), xa)
+    return _rmsd(xb @ kabsch(xb, xa), xa)
 
 
 def _basin_match(symbols: Sequence[str], a: np.ndarray, b: np.ndarray

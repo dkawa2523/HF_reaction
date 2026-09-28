@@ -15,6 +15,7 @@ from collections.abc import Collection, Sequence
 import numpy as np
 
 from hfauto.chemistry.elements import covalent_radius
+from hfauto.chemistry.geometry import neighbours
 from hfauto.chemistry.xyz import hill_formula
 
 Bond = tuple[int, int]  # (i, j) with i < j
@@ -64,19 +65,26 @@ def bond_changes(
     return after - before, before - after
 
 
+def reaction_centre(symbols: Sequence[str], a: np.ndarray, b: np.ndarray
+                    ) -> tuple[set[int], frozenset[Bond]]:
+    """Atoms whose bonds change from a to b and their neighbours in a; the bonds of a."""
+
+    formed, broken = bond_changes(symbols, a, b)
+    changed, bonded = {i for pair in formed | broken for i in pair}, bonds(symbols, a)
+    partners = neighbours(bonded)
+    return changed.union(*(partners.get(i, ()) for i in changed)), bonded
+
+
 def _wl_rounds(symbols: Sequence[str], bonded: Collection[Bond]) -> list[list[str]]:
     """Weisfeiler–Lehman atom labels of the element-labelled graph, round 0 (elements) to 3."""
 
-    neighbours: list[list[int]] = [[] for _ in symbols]
-    for i, j in bonded:
-        neighbours[i].append(j)
-        neighbours[j].append(i)
+    partners = neighbours(bonded)
     rounds = [list(symbols)]
     for _ in range(_WL_ITERATIONS):
         labels = rounds[-1]
         rounds.append([
             hashlib.sha256(
-                f"{labels[i]}|{','.join(sorted(labels[j] for j in neighbours[i]))}".encode()
+                f"{labels[i]}|{','.join(sorted(labels[j] for j in partners.get(i, ())))}".encode()
             ).hexdigest()[:16]
             for i in range(len(labels))
         ])

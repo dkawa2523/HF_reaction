@@ -16,8 +16,7 @@ import pytest
 from hfauto.backends.protocols import Capability
 from hfauto.chemistry.gates import is_first_order_saddle, is_minimum
 from hfauto.chemistry.profile import classify
-from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
-from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
+from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz, read_xyz_trajectory
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, FileRef, PathProfile
 from hfauto.core.hashing import sha256_file

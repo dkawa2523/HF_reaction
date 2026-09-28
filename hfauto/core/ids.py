@@ -13,6 +13,11 @@ def species_id(*parts: object) -> str:
     return "spc_" + "_".join(slug(str(p)) for p in parts if p is not None and str(p) != "")
 
 
+def species_artifact_id(species_id: str) -> str:
+    """The artifact id of a SpeciesRecord, in every stage that emits or names one."""
+    return f"species_{species_id}"
+
+
 def reaction_id(*parts: object) -> str:
     return "rxn_" + "_".join(slug(str(p)) for p in parts if p is not None and str(p) != "")
 

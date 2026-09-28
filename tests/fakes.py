@@ -20,8 +20,15 @@ from hfauto.backends import protocols as bp
 from hfauto.chemistry.profile import hei
 from hfauto.chemistry.thermo import Thermal, thermo_frequencies
 from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian, to_canonical_npy
-from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz, write_xyz
-from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
+from hfauto.chemistry.xyz import (
+    XYZ,
+    Molecule,
+    read_xyz,
+    read_xyz_trajectory,
+    write_xyz,
+    write_xyz_trajectory,
+    written_geometry,
+)
 from hfauto.core.constants import BOHR_TO_ANGSTROM as BOHR
 from hfauto.core.constants import CM1_TO_HARTREE
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry, Level, PathProfile
@@ -113,9 +120,7 @@ def write_geometry(root: Path, path: str | Path, symbols: Sequence[str], coords:
     """Write an xyz (``path`` relative to root); the fingerprint is of the file as written."""
     target = write_xyz(XYZ(list(symbols), np.asarray(coords, dtype=float).reshape(-1, 3)),
                        Path(root) / path)
-    xyz = read_xyz(target)
-    return Geometry(file=_ref(Path(root), target), symbols=tuple(xyz.symbols),
-                    fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords))
+    return written_geometry(target, partial(_ref, Path(root)))
 
 
 def xyz_loader(root: Path) -> Callable[[Geometry], XYZ]:
@@ -136,46 +141,44 @@ def _cap(step: np.ndarray, limit: float) -> np.ndarray:
 
 
 def _minimize(pes: PES, x0: np.ndarray, h0: np.ndarray | None, maxiter: int = 500
-              ) -> tuple[np.ndarray, list[float], bool]:
+              ) -> tuple[np.ndarray, bool]:
     """BFGS with Armijo backtracking; h0 (Eh/bohr²) seeds the inverse Hessian."""
     x, inv = np.asarray(x0, dtype=float).ravel(), np.eye(np.size(x0)) * 2.0
     if h0 is not None:
         w, vecs = np.linalg.eigh(h0 / BOHR**2)
         inv = vecs @ np.diag(1.0 / np.maximum(np.abs(w), 0.05)) @ vecs.T
-    g, energies = pes.gradient(x), [pes.energy(x)]
+    g, e = pes.gradient(x), pes.energy(x)
     for _ in range(maxiter):
         if np.abs(g).max() * BOHR < GMAX_TOL:
-            return x.reshape(-1, 3), energies, True
+            return x.reshape(-1, 3), True
         step, t = _cap(-inv @ g, 0.2), 1.0
-        while pes.energy(x + t * step) > energies[-1] + 1e-4 * t * (g @ step) and t > 1e-6:
+        while pes.energy(x + t * step) > e + 1e-4 * t * (g @ step) and t > 1e-6:
             t *= 0.5
         x, s = x + t * step, t * step
-        g_old, g = g, pes.gradient(x)
+        g_old, g, e = g, pes.gradient(x), pes.energy(x)
         y = g - g_old
-        energies.append(pes.energy(x))
         if y @ s > 1e-12:
             m = np.eye(x.size) - np.outer(s, y) / (y @ s)
             inv = m @ inv @ m.T + np.outer(s, s) / (y @ s)
-    return x.reshape(-1, 3), energies, False
+    return x.reshape(-1, 3), False
 
 
 def _saddle(pes: PES, x0: np.ndarray, mode: np.ndarray | None, maxiter: int = 200
-            ) -> tuple[np.ndarray, list[float], bool]:
+            ) -> tuple[np.ndarray, bool]:
     """Eigenvector following: climb along the tracked mode (initially ``mode``, else the
     lowest one) and descend along all others."""
-    x, v, energies = np.asarray(x0, dtype=float).ravel(), mode, [pes.energy(x0)]
+    x, v = np.asarray(x0, dtype=float).ravel(), mode
     for _ in range(maxiter):
         g = pes.gradient(x)
         if np.abs(g).max() * BOHR < GMAX_TOL:
-            return x.reshape(-1, 3), energies, True
+            return x.reshape(-1, 3), True
         w, vecs = np.linalg.eigh(pes.hessian(x) / BOHR**2)
         w, vecs = w[np.abs(w) > 1e-6], vecs[:, np.abs(w) > 1e-6]  # drop external modes
         i = 0 if v is None else int(np.argmax(np.abs(vecs.T @ np.ravel(v))))
         v, dq = vecs[:, i], -(vecs.T @ g) / np.abs(w)
         dq[i] = -dq[i]
         x = x + _cap(vecs @ dq, 0.1)
-        energies.append(pes.energy(x))
-    return x.reshape(-1, 3), energies, False
+    return x.reshape(-1, 3), False
 
 
 class _Fake:
@@ -239,11 +242,10 @@ class FakeQM(_Surface):  # calls: "energy", "optimize" / "optimize+init_hessian"
         h0 = None if init_hessian is None else self._hessian(init_hessian, start, key, 0.5)
         if isinstance(h0, Failure):
             return h0
-        x, energies, ok = _minimize(self.pes, mol.xyz.coords, h0)
+        x, ok = _minimize(self.pes, mol.xyz.coords, h0)
         if not ok:
             return Failure(kind=Kind.GEOMETRY_MAXITER, reason="maxiter", job_key=key)
-        return self._evidence("opt", mol, method, key, start, x,
-                              trajectory_energies_hartree=tuple(energies))
+        return self._evidence("opt", mol, method, key, start, x)
 
     def frequencies(self, mol, method, *, deadline=None) -> Evidence | Failure:
         self.calls.append("frequencies")
@@ -268,12 +270,11 @@ class FakeSaddle(_Surface):  # calls: "refine"; like NWChemSaddle: a Hessian wit
         if isinstance(h, Failure):
             return h
         _, vectors = np.linalg.eigh(shape_hessian(h, seed.xyz.coords, mode))
-        x, energies, ok = _saddle(self.pes, seed.xyz.coords, vectors[:, 0])
+        x, ok = _saddle(self.pes, seed.xyz.coords, vectors[:, 0])
         if not ok:
             last = write_geometry(self.root, f"fake/{key[:16]}/last.xyz", seed.xyz.symbols, x)
             return Failure(kind=Kind.GEOMETRY_MAXITER, reason="maxiter", final=last, job_key=key)
-        return self._evidence("saddle", seed, method, key, start, x,
-                              trajectory_energies_hartree=tuple(energies))
+        return self._evidence("saddle", seed, method, key, start, x)
 
 
 class FakePath(_Surface):
@@ -304,8 +305,8 @@ class FakePath(_Surface):
         folder = self.root / "fake" / key[:16]
         xyz = write_xyz_trajectory([XYZ(list(start.xyz.symbols), f) for f in frames],
                                    folder / "images.xyz")
-        x, _, ok = (_saddle(self.pes, hei(frames, e, 1 + int(np.argmax(e[1:-1])))[2], None)
-                    if self.tsopt else (None, [], False))
+        x, ok = (_saddle(self.pes, hei(frames, e, 1 + int(np.argmax(e[1:-1])))[2], None)
+                 if self.tsopt else (None, False))
         ts = write_geometry(self.root, folder / "ts.xyz", start.xyz.symbols, x) if ok else None
         return PathProfile(engine=self.name, level=fake_level(method, start), ts=ts,
                            images=_ref(self.root, xyz), energies_hartree=tuple(e.tolist()),

@@ -38,7 +38,6 @@ def test_g17_converged_optimization_level_and_hessian(tmp_path, golden):
     assert opt.task == "opt" and opt.energy_hartree == pytest.approx(-9.6707491583, abs=1e-10)
     level = opt.level
     assert (level.version, level.method, level.electronic_temperature_K) == ("6.7.1", "gfn2", 300)
-    assert opt.trajectory_energies_hartree == pytest.approx((-9.6707492, -9.6707491583))
     assert opt.final.fingerprint == geometry_fingerprint(mol.xyz.symbols, mol.xyz.coords)
     hessian = tmp_path / "run" / "jobs" / "ab" / "abc" / "attempt_00" / "hessian"
     hessian.write_text("$hessian\n" + " ".join(map(str, (0.3 * np.eye(18)).ravel())) + "\n$end")

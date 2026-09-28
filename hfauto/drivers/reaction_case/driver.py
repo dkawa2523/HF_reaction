@@ -16,7 +16,7 @@ from hfauto.chemistry.identity import basin_coords
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.xyz import XYZ
 from hfauto.core.evidence import FileRef, Geometry
-from hfauto.core.ids import path_token
+from hfauto.core.ids import path_token, species_artifact_id
 from hfauto.core.manifest import Artifact
 from hfauto.core.method import Deadline, MethodSpec
 from hfauto.core.records import (
@@ -90,8 +90,8 @@ def open_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline:
 def _artifacts(record: ReactionRecord, work: actions.Work) -> tuple[Artifact, ...]:
     out = [Artifact(artifact_id=k, type=ArtifactType.CALCULATION, payload=ev)
            for k, ev in work.calcs.items()]
-    out += [Artifact(artifact_id=f"species_{s.species_id}", type=ArtifactType.SPECIES, payload=s)
-            for s in work.species.values()]
+    out += [Artifact(artifact_id=species_artifact_id(s.species_id), type=ArtifactType.SPECIES,
+                     payload=s) for s in work.species.values()]
     out += [Artifact(artifact_id=m.minimum_id, type=ArtifactType.MINIMUM, payload=m,
                      parents=(m.opt_calc, m.freq_calc)) for m in work.minima.values()]
     out.append(Artifact(artifact_id=record.reaction_id, type=ArtifactType.REACTION,

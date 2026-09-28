@@ -8,7 +8,7 @@ import pytest
 
 from hfauto.chemistry.gates import barrier_verdict
 from hfauto.chemistry.interpolation import idpp, min_interatomic_distance
-from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
+from hfauto.chemistry.xyz import read_xyz_trajectory
 
 pytestmark = pytest.mark.golden
 

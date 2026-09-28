@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-import hfauto.execution.jobs as jobs_module
 from hfauto.backends import engines
 from hfauto.backends.protocols import Capability
 from hfauto.core.evidence import Failure, FailureKind, Geometry
@@ -56,11 +55,10 @@ class Fail(Emit):  # leaves only failed artifacts
 
 
 @pytest.fixture(autouse=True)
-def dummy_stages():
+def dummy_stages(monkeypatch):  # the runner finds these stage names through catalog.get
     CALLS.clear()
-    with catalog.override("emit", Emit), catalog.override("collect", Collect):  # noqa: SIM117
-        with catalog.override("bad", Bad), catalog.override("fail", Fail):
-            yield
+    stages, get = {"emit": Emit, "collect": Collect, "bad": Bad, "fail": Fail}, catalog.get
+    monkeypatch.setattr(catalog, "get", lambda name: stages.get(name) or get(name))
 
 
 def resolved(tmp_path, pipeline_id: str, *stages: dict) -> ResolvedConfig:
@@ -108,23 +106,14 @@ def test_missing_input_logs_up_to_three_upstream_failures(tmp_path, caplog):
     assert "f.d" not in caplog.text
 
 
-class StubQM:  # structurally a QMEngine
-    name = "xtb"
-    requirements = supports = energy = optimize = frequencies = lambda self, *a, **k: True
-
-    def __init__(self, jobs, site):
-        self.jobs, self.site = jobs, site
-
-
-def test_build_runtime_with_stub_runner_and_engine(tmp_path, monkeypatch):
-    monkeypatch.setattr(jobs_module, "JobRunner",
-                        lambda store, *, cores: SimpleNamespace(store=store, cores=cores))
+def test_build_runtime_with_stub_engine(tmp_path, monkeypatch):
+    monkeypatch.setattr(engines, "create", lambda capability, name, *, jobs, site: (
+        SimpleNamespace(jobs=jobs, site=site)))
     layout = RunLayout(tmp_path)
-    with engines.override(Capability.QM, "xtb", StubQM):
-        rt = build_runtime(resolved(tmp_path, "p"), layout).bind("s", layout.stage_dir("s"))
-        qm = rt.engine(Capability.QM, "xtb")
-        assert rt.engine(Capability.QM, "xtb") is qm and qm.site.version == "6.7.1"
-        assert qm.jobs.cores == 2 and qm.jobs.store.root == layout.jobs_dir
+    rt = build_runtime(resolved(tmp_path, "p"), layout).bind("s", layout.stage_dir("s"))
+    qm = rt.engine(Capability.QM, "xtb")
+    assert rt.engine(Capability.QM, "xtb") is qm and qm.site.version == "6.7.1"
+    assert qm.jobs.cores == 2 and qm.jobs.store.root == layout.jobs_dir
     with pytest.raises(KeyError):
         rt.engine(Capability.QM, "nwchem")  # not configured in the site
     (xyz := tmp_path / "h.xyz").write_text("1\n\nH 0 0 0\n", encoding="utf-8")

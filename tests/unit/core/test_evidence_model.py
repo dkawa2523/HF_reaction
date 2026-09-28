@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from hfauto.core.constants import BOHR_TO_ANGSTROM, CM1_TO_HARTREE
-from hfauto.core.evidence import Failure, FailureKind, FileRef, Level
+from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, Geometry, Level
 
 LEVEL = Level(program="NWChem", version="7.2.3", method="PBE0", basis="def2-SVPD",
               dispersion="d3bj", charge=0, multiplicity=1, grid="fine", scf_tol=1e-7)
@@ -26,6 +26,24 @@ def test_models_are_frozen_and_forbid_extra_fields():
         LEVEL.method = "b3lyp"  # type: ignore[misc]
     with pytest.raises(ValidationError):
         FileRef(path="a", sha256="b", size=1)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(("freqs", "modes", "valid"), [
+    ((-900.0, 1000.0, 3000.0), 1, True), ((1000.0, 3000.0), 0, False),  # 3N - 6 = 3 for HCN
+    ((-900.0, 1000.0, 3000.0), 0, False), (None, 0, False)])
+def test_a_freq_evidence_holds_3n_minus_external_modes_and_its_imaginary_ones(freqs, modes, valid):
+    ref = FileRef(path="a", sha256="0")
+    geo = Geometry(file=ref, fingerprint="f", symbols=("H", "C", "N"))
+    make = lambda task: Evidence(
+        engine="nwchem", task=task, level=LEVEL, start=geo, final=geo, energy_hartree=-93.0,
+        frequencies_cm1=freqs, n_external=6, imaginary_modes=((0.1,) * 9,) * modes, output=ref,
+        job_key="k")
+    make("sp")  # only a freq is checked
+    if valid:
+        make("freq")
+    else:
+        with pytest.raises(ValidationError):
+            make("freq")
 
 
 def test_failure_kinds_and_constants():

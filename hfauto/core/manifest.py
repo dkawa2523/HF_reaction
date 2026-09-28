@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +10,7 @@ from typing import Literal, TypeVar
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from hfauto.core.evidence import Evidence, Failure
+from hfauto.core.files import write_atomic
 from hfauto.core.records import ArtifactType, Payload
 
 T = TypeVar("T", bound=BaseModel)
@@ -96,17 +95,4 @@ def load_manifest(path: Path) -> Manifest:
 
 
 def save_manifest(manifest: Manifest, path: Path) -> Path:
-    """Write atomically: a temporary file in the same directory, then os.replace."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(manifest.model_dump_json(indent=2))
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
-    return path
+    return write_atomic(path, manifest.model_dump_json(indent=2))

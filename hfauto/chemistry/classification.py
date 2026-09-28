@@ -8,6 +8,7 @@ import numpy as np
 
 from hfauto.chemistry.topology import bond_changes
 from hfauto.core.records import (
+    CONNECTED_OUTCOMES,
     BarrierVerdict,
     CaseOutcome,
     ConnectionClaim,
@@ -15,10 +16,6 @@ from hfauto.core.records import (
     ReactionRecord,
     SaddleClaim,
     SpeciesRecord,
-)
-
-_CONNECTED = frozenset(
-    {CaseOutcome.ELEMENTARY_STEP, CaseOutcome.DEGENERATE, CaseOutcome.REASSIGNED}
 )
 
 
@@ -55,7 +52,7 @@ def finalize(
     outcome = decision.outcome
     if outcome is None:
         raise ValueError(f"{case.reaction_id}: decision {decision.reason!r} is not terminal")
-    if outcome in _CONNECTED and (claim is None or connection is None):
+    if outcome in CONNECTED_OUTCOMES.values() and (claim is None or connection is None):
         raise ValueError(f"{case.reaction_id}: {outcome.value} needs saddle and connection claims")
     update: dict[str, object] = {
         "outcome": outcome,

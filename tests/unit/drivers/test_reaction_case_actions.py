@@ -12,8 +12,13 @@ from hfauto.chemistry.geometry import declared_coordinate_gradient
 from hfauto.chemistry.identity import mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.modes import BOUNDS_A, overlap
-from hfauto.chemistry.xyz import XYZ, composition_key, read_xyz
-from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
+from hfauto.chemistry.xyz import (
+    XYZ,
+    composition_key,
+    read_xyz,
+    read_xyz_trajectory,
+    write_xyz_trajectory,
+)
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.method import Deadline, MethodSpec

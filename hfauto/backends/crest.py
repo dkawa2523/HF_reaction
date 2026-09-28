@@ -21,8 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from hfauto.backends.protocols import ConformerEnsemble, ConformerSettings, Requirements
-from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz, write_xyz
-from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
+from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz_trajectory, write_xyz, written_geometry
 from hfauto.core.evidence import Failure, FailureKind, FileRef, Geometry
 from hfauto.core.method import Deadline, EngineSite, MethodSpec
 from hfauto.execution.jobs import Task
@@ -42,18 +41,19 @@ _FLOAT = re.compile(r"[-+]?\d+\.\d*(?:[Ee][-+]?\d+)?")
 
 def command(mol: Molecule, method: MethodSpec, settings: ConformerSettings, *, threads: int,
             executable: str = "crest") -> tuple[str, ...]:
-    """``--gfnN [--nci] [--quick] -T n --ewin e --chrg q --uhf m-1 [--notopo atoms]
-    [--noopt]``; atoms are 1-based on the CLI."""
+    """``--gfnN [--nci] [--quick] -T n --ewin e --chrg q --uhf m-1``; a composition (nci) adds
+    ``--notopo`` on every atom (hfauto's state label decides the state, CREST only samples) and
+    ``--noopt``."""
     argv = [executable, INPUT, f"--gfn{method.gfn}"]
     argv += ["--nci"] if settings.nci else []
     argv += ["--quick"] if settings.quick else []
     argv += ["-T", str(threads), "--ewin", f"{settings.ewin_kcal:g}",
              "--chrg", str(mol.charge), "--uhf", str(mol.multiplicity - 1)]
-    if settings.notopo_atoms:
-        argv += ["--notopo", ",".join(str(i + 1) for i in settings.notopo_atoms)]
-    # CREST 3.0.2's initial topology check after the pre-optimization ignores --notopo
-    # (setuptest.f90), so acid-base and anion complexes stopped there; --noopt skips it.
-    argv += ["--noopt"] if settings.nci else []
+    if settings.nci:
+        # CREST 3.0.2's initial topology check after the pre-optimization ignores --notopo
+        # (setuptest.f90), so acid-base and anion complexes stopped there; --noopt skips it.
+        atoms = ",".join(str(i + 1) for i in range(len(mol.xyz.symbols)))
+        argv += ["--notopo", atoms, "--noopt"]
     return tuple(argv)
 
 
@@ -68,9 +68,8 @@ def _energy(comment: str) -> float | None:
 
 
 def _geometry(xyz: XYZ, path: Path, file_ref: Callable[[Path], FileRef]) -> Geometry:
-    written = read_xyz(write_xyz(XYZ(xyz.symbols, xyz.coords, "generated_by=crest"), path))
-    return Geometry(file=file_ref(path), symbols=tuple(written.symbols),
-                    fingerprint=geometry_fingerprint(written.symbols, written.coords))
+    return written_geometry(write_xyz(XYZ(xyz.symbols, xyz.coords, "generated_by=crest"), path),
+                            file_ref)
 
 
 def parse_outputs(workdir: Path, stdout: str, symbols: Sequence[str],

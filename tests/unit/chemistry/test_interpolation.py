@@ -1,4 +1,6 @@
-"""Mapped alignment and IDPP (design §5.5, CH-09)."""
+"""Mapped alignment, resampling and IDPP (design §5.5, CH-09)."""
+
+from itertools import pairwise
 
 import numpy as np
 import pytest
@@ -31,6 +33,16 @@ def test_idpp_inversion_path_is_smooth_with_fixed_ends():
     assert np.array_equal(path[-1], itp.align_mapped(NH3, inverted))
     assert max_node_spacing(path) < 0.1
     assert min(itp.min_interatomic_distance(x) for x in path) > 0.9
+
+
+def test_resample_spaces_points_evenly_and_keeps_the_ends():
+    frames = [NH3, NH3 + [0.1, 0.0, 0.0], NH3 + [0.4, 0.0, 0.0]]  # arc lengths 0.2 and 0.6
+    out = itp.resample(frames, 5)
+    steps = [np.linalg.norm(b - a) for a, b in pairwise(out)]
+    assert len(out) == 5 and np.allclose(steps, steps[0])
+    assert np.array_equal(out[0], NH3) and np.array_equal(out[-1], frames[-1])
+    with pytest.raises(ValueError, match="zero-length"):
+        itp.resample([NH3, NH3], 5)
 
 
 def test_idpp_rejects_short_contacts():

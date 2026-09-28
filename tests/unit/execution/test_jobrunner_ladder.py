@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from hfauto.core.evidence import Failure, FailureKind, FileRef
 from hfauto.core.method import Deadline, ExecutionSpec
-from hfauto.execution.jobs import JobRunner, Task, thread_map
+from hfauto.execution.jobs import JobRunner, JobStats, Task, thread_map
 from hfauto.execution.jobstore import JobStore
 from hfauto.execution.process import Command
 
@@ -87,11 +87,12 @@ def test_ladder_limits_and_terminal_failure_memory(tmp_path):
     assert runner.run(_task(BAD, BAD, OK), adapter) == first and _runs(tmp_path) == 2
     assert runner.run(_task(BAD, name="b"), adapter).kind is FailureKind.INPUT_INVALID
     assert _runs(tmp_path) == 3  # no continuation offered: a single attempt
-    nonzero = _task("import sys; sys.exit(1)", OK, name="c")
+    before, nonzero = runner.stats(), _task("import sys; sys.exit(1)", OK, name="c")
     assert runner.run(nonzero, adapter).kind is FailureKind.NONZERO_EXIT  # never continued
     assert runner.run(nonzero, adapter).kind is FailureKind.NONZERO_EXIT  # nor remembered
     assert _runs(tmp_path) == 5
     assert runner.stats().failures_by_kind == {"input_invalid": 3, "nonzero_exit": 2}
+    assert runner.stats().since(before) == JobStats(misses=2, failures_by_kind={"nonzero_exit": 2})
     retry, _ = _setup(tmp_path, retry_failed=["input_invalid"])
     assert isinstance(retry.run(_task(BAD, BAD, OK), adapter), Failure) and _runs(tmp_path) == 7
 

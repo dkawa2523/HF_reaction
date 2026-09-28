@@ -47,7 +47,10 @@ def _inputs(tmp_run: Path, outcome: O | None) -> tuple[Manifest, dict[str, Evide
         if k not in freq:
             geom = write_geometry(tmp_run, f"{k}.xyz", list(symbols),
                                   (1 + i) * np.eye(3)[: len(symbols)])
-            freq[k] = freq["r"].model_copy(update={"start": geom, "final": geom, "job_key": k})
+            external = {1: 3, 2: 5}.get(len(symbols), 6)  # an atom, a diatomic, the rest
+            freq[k] = freq["r"].model_copy(update={
+                "start": geom, "final": geom, "job_key": k, "n_external": external,
+                "frequencies_cm1": (1000.0,) * (3 * len(symbols) - external)})
     arts = [Artifact(artifact_id=calc_id(e), type=T.CALCULATION, payload=e)
             for e in (*freq.values(), ts)]
     arts += [Artifact(artifact_id=f"m_{k}", type=T.MINIMUM, payload=R.MinimumRecord(

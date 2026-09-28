@@ -11,8 +11,7 @@ import pytest
 
 from hfauto.backends.pysis.engine import NEB_MAX_CYCLES, PysisNEB, neb_input
 from hfauto.backends.pysis.worker import run_neb
-from hfauto.chemistry.xyz import XYZ, Molecule
-from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
+from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz_trajectory, write_xyz_trajectory
 from hfauto.core.constants import BOHR_TO_ANGSTROM
 from hfauto.core.evidence import FailureKind, FileRef
 from hfauto.core.hashing import sha256_file

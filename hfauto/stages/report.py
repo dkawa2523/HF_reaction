@@ -4,7 +4,7 @@ and the static HTML page (reporting.html) of the whole view.
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal
+from typing import ClassVar
 
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.records import (
@@ -14,6 +14,7 @@ from hfauto.core.records import (
     ReactionRecord,
     ReactionThermo,
     ReportRecord,
+    StandardState,
 )
 from hfauto.reporting import html, summary
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
@@ -23,7 +24,7 @@ class ReportConfig(StageConfig):
     """None: the first (T, state) of the ReactionThermo records in the view."""
 
     T_K: float | None = None
-    standard_state: Literal["1atm", "1bar", "1M"] | None = None
+    standard_state: StandardState | None = None
 
 
 class ReportStage:

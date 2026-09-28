@@ -24,14 +24,14 @@ def modes(*low: float) -> tuple[float, ...]:  # 3N - 6 = 6 modes of a tetra-atom
     return (*low, *(500.0 + 100.0 * i for i in range(6 - len(low))))
 
 
-def ev(task: Task = "freq", freqs: tuple[float, ...] | None = None, *, fp: str = "g0",
-       energy: float = E_TS, traj: tuple[float, ...] = (), level: Level = LEVEL,
-       s2: float | None = None) -> Evidence:
+def ev(task: Task = "freq", freqs: tuple[float, ...] = modes(), *, fp: str = "g0",
+       energy: float = E_TS, level: Level = LEVEL, s2: float | None = None) -> Evidence:
     geo = Geometry(file=REF, fingerprint=fp, symbols=("N", "H", "H", "H"))
+    vibrations = {} if task != "freq" else {
+        "frequencies_cm1": freqs, "n_external": 6,
+        "imaginary_modes": tuple((0.0,) * 12 for f in freqs if f < 0)}
     return Evidence(engine="fake", task=task, level=level, start=geo, final=geo,
-                    energy_hartree=energy, trajectory_energies_hartree=traj,
-                    frequencies_cm1=freqs, n_external=6 if freqs is not None else None,
-                    s2=s2, output=REF, job_key="k")
+                    energy_hartree=energy, s2=s2, output=REF, job_key="k", **vibrations)
 
 
 @pytest.mark.parametrize(("low", "notes"), [
@@ -48,7 +48,6 @@ def test_is_minimum_rejections():
     opt = ev("opt")
     assert g.is_minimum(ev(freqs=modes(-120.0)), opt=opt).reasons == ("imaginary_mode",)
     assert "geometry_mismatch" in g.is_minimum(ev(freqs=modes(), fp="g1"), opt=opt).reasons
-    assert not g.is_minimum(ev(freqs=modes()[:5]), opt=opt)
     assert not g.is_minimum(ev(freqs=modes()), opt=ev("saddle"))
     fine_opt = ev("opt", level=LEVEL.model_copy(update={"grid": "xfine"}))
     assert "pes_mismatch:grid" in g.is_minimum(ev(freqs=modes()), opt=fine_opt).reasons
@@ -107,8 +106,7 @@ AB = frozenset({"A", "B"})
 
 
 def connect(sides=(DOWN, DOWN), assigned=("A", "B"), expected=AB, **kw):
-    pair = (ev("opt", traj=sides[0], energy=sides[0][-1]),
-            ev("opt", traj=sides[1], energy=sides[1][-1]))
+    pair = (ev("opt", energy=sides[0][-1]), ev("opt", energy=sides[1][-1]))  # where each ends
     return g.connection(ev(freqs=modes(-700.0)), pair, assigned, expected,
                         degenerate=kw.pop("degenerate", False), **kw)
 

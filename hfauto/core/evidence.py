@@ -11,7 +11,7 @@ import json
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 _FROZEN = ConfigDict(frozen=True, extra="forbid")
 
@@ -79,7 +79,6 @@ class Evidence(BaseModel):
     start: Geometry
     final: Geometry  # equals start for sp / freq
     energy_hartree: float  # electronic energy at final
-    trajectory_energies_hartree: tuple[float, ...] = ()  # opt / saddle steps; first is start
     frequencies_cm1: tuple[float, ...] | None = None  # freq only; projected, imaginary < 0
     n_external: Literal[3, 5, 6] | None = None  # freq only; 5 if linear, 3 for an atom (no mode)
     imaginary_modes: tuple[tuple[float, ...], ...] = ()  # normalized cartesian, input frame
@@ -87,6 +86,22 @@ class Evidence(BaseModel):
     s2: float | None = None  # observed <S^2> (open shell only)
     output: FileRef
     job_key: str
+
+    @model_validator(mode="after")
+    def _freq_modes(self) -> Evidence:
+        """Guarantee (3), checked once here: 3N - n_external frequencies and one imaginary
+        mode per negative frequency."""
+        if self.task != "freq":
+            return self
+        if self.frequencies_cm1 is None or self.n_external is None:
+            raise ValueError("a freq Evidence needs frequencies_cm1 and n_external")
+        expected = 3 * len(self.final.symbols) - self.n_external
+        if len(self.frequencies_cm1) != expected:
+            raise ValueError(f"frequency_count:{len(self.frequencies_cm1)}!={expected}")
+        negative = sum(f < 0 for f in self.frequencies_cm1)
+        if len(self.imaginary_modes) != negative:
+            raise ValueError(f"imaginary_modes:{len(self.imaginary_modes)}!={negative}")
+        return self
 
 
 class PathProfile(BaseModel):

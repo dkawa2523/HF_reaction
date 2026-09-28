@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
 
+from hfauto.core.files import write_atomic
+
 STDOUT_NAME = "stdout.txt"
 STDERR_NAME = "stderr.txt"
 RESULT_NAME = "command_result.json"
@@ -169,7 +171,4 @@ def _write_sidecar(cmd: Command, result: CommandResult) -> None:
         "stdout": str(result.stdout),
         "stderr": str(result.stderr),
     }
-    path = Path(cmd.cwd) / RESULT_NAME
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=1), encoding="utf-8")
-    os.replace(tmp, path)
+    write_atomic(Path(cmd.cwd) / RESULT_NAME, json.dumps(payload, indent=1))

@@ -25,8 +25,10 @@ def calc(cid, fp, energy, grid, *subjects):  # an sp names its subjects in its p
     level = Level(program="nwchem", version="7.2.3", method="pbe0", basis="def2-svpd",
                   charge=0, multiplicity=1, grid=grid)
     g = Geometry(file=FileRef(path=f"{fp}.xyz", sha256="0"), fingerprint=fp, symbols=("H",))
+    freq = {} if subjects else {"frequencies_cm1": (), "n_external": 3}  # an atom: no mode
     payload = Evidence(engine="nwchem", task="freq" if not subjects else "sp", level=level,
-                       start=g, final=g, energy_hartree=energy, output=g.file, job_key=cid)
+                       start=g, final=g, energy_hartree=energy, output=g.file, job_key=cid,
+                       **freq)
     return Artifact(artifact_id=cid, type=rec.ArtifactType.CALCULATION, payload=payload,
                     parents=subjects)
 

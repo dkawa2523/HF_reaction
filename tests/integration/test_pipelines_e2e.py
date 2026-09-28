@@ -10,6 +10,7 @@ import yaml
 from scipy.spatial.distance import pdist
 from typer.testing import CliRunner
 
+from hfauto.backends import engines
 from hfauto.backends.protocols import Capability as Cap
 from hfauto.backends.protocols import ConformerEnsemble, DiscoveryResult
 from hfauto.chemistry import thermo
@@ -29,7 +30,7 @@ T, PIPELINES = R.ArtifactType, REPO / "configs" / "pipelines"
 
 
 @pytest.fixture
-def pipeline(tmp_path, tmp_run, override_engine, monkeypatch):
+def pipeline(tmp_path, tmp_run, monkeypatch):
     """``pipeline(name)`` runs configs/pipelines/<name>.yaml in tmp_run with every engine faked."""
     monkeypatch.chdir(REPO)  # the methods come from configs/methods, as for the CLI
     well = fakes.double_well()
@@ -57,10 +58,10 @@ def pipeline(tmp_path, tmp_run, override_engine, monkeypatch):
             (Cap.PATH, "nwchem_string"): path, (Cap.PATH, "pysis_neb"): path,
             (Cap.CONFORMERS, "crest"): fakes.FakeConformers(search),
             (Cap.DISCOVERY, "readuct"): fakes.FakeDiscovery(explore)}
-    for (capability, name), engine in fake.items():
-        override_engine(capability, name, engine)
+    # build_runtime looks engines.create up when it runs: every registry engine is a fake
+    monkeypatch.setattr(engines, "create", lambda capability, name, **_: fake[(capability, name)])
     monkeypatch.setattr(thermo, "species_thermo", fakes.fake_species_thermo)
-    monkeypatch.setattr(preflight, "goodvibes_problems", lambda pipeline: [])
+    monkeypatch.setattr(preflight, "preflight", lambda resolved, dry_run=False: [])
     ends = [{"id": n, "xyz": f"run/in/{n}.xyz", "role": "endpoint"}
             for n in ("reactant", "product")]
     cfg = {"system": {"system_id": "dw", "species": [*ends, {"id": "hf", "xyz": "run/in/hf.xyz"}],

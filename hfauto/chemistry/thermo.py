@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Literal, NamedTuple
+from typing import NamedTuple
 
 from hfauto.chemistry.elements import atomic_number, mass
 from hfauto.chemistry.vibrations import rotational_constants_ghz
@@ -19,10 +19,15 @@ from hfauto.chemistry.xyz import XYZ, hill_formula
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
 from hfauto.core.hashing import fingerprint_dict
 from hfauto.core.method import ThermoSettings
-from hfauto.core.records import CaseOutcome, ReactionRecord, SpeciesRecord, SpeciesThermo
+from hfauto.core.records import (
+    CONNECTED_OUTCOMES,
+    ReactionRecord,
+    SpeciesRecord,
+    SpeciesThermo,
+    StandardState,
+)
 from hfauto.core.system import CompositionInput
 
-StandardState = Literal["1atm", "1bar", "1M"]
 State = tuple[str, str]  # (composition_id, state_label)
 Monomers = dict[tuple[str, int], list[tuple[State, int]]]  # complex (Hill, charge) -> parts
 
@@ -30,9 +35,6 @@ GOODVIBES_VERSION = "4.3.0"  # species_thermo is validated against it (tests/gol
 _K_PER_GHZ = 0.0479924307  # h / k_B in K per GHz (CODATA 2018)
 _L_ATM_PER_MOL_K = 0.082057366080960  # gas constant in L atm / (mol K), CODATA 2018
 _ATM_PER_BAR = 1.0 / 1.01325
-_TS_OUTCOMES = frozenset(
-    {CaseOutcome.ELEMENTARY_STEP, CaseOutcome.DEGENERATE, CaseOutcome.REASSIGNED}
-)
 
 
 def thermo_frequencies(freqs_cm1: Sequence[float], *, saddle: bool) -> tuple[float, ...]:
@@ -155,7 +157,7 @@ def _kcal(a: float | None, b: float | None) -> float | None:
 def participants(reaction: ReactionRecord) -> tuple[str, ...]:
     """Thermo subjects of a reaction: both minima, then the TS (SaddleClaim.freq_calc) for
     elementary / degenerate / reassigned outcomes with a saddle claim."""
-    if reaction.saddle is None or reaction.outcome not in _TS_OUTCOMES:
+    if reaction.saddle is None or reaction.outcome not in CONNECTED_OUTCOMES.values():
         return reaction.minima
     return (*reaction.minima, reaction.saddle.freq_calc)
 

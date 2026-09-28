@@ -19,12 +19,12 @@ from hfauto.core.method import Deadline, MethodSpec
 from hfauto.core.records import ArtifactType
 from hfauto.core.system import SystemConfig
 from hfauto.pipeline.config import ResolvedConfig, SiteConfig, StageEntry, method_ids
-from hfauto.pipeline.layout import JobCounts, RunLayout, now
+from hfauto.pipeline.layout import RunLayout, now
 from hfauto.stages import catalog
 
 if TYPE_CHECKING:
     from hfauto.backends.protocols import Capability, Engine
-    from hfauto.execution.jobs import JobRunner, JobStats
+    from hfauto.execution.jobs import JobRunner
 
 ItemT = TypeVar("ItemT")
 ResultT = TypeVar("ResultT")
@@ -66,15 +66,16 @@ class Runtime:
         return self.methods[method_id]
 
     def load_xyz(self, geometry: Geometry) -> XYZ:
-        path = self.run_dir / geometry.file.path
+        path = self.resolve(geometry.file)
         if sha256_file(path) != geometry.file.sha256:
             raise ValueError(f"{geometry.file.path}: sha256 differs from the recorded FileRef")
         return read_xyz(path)
 
     def file_ref(self, path: Path) -> FileRef:
-        resolved = Path(path).resolve()
-        rel = resolved.relative_to(self.run_dir)  # ValueError outside the run directory
-        return FileRef(path=rel.as_posix(), sha256=sha256_file(resolved))
+        return self.jobs.store.file_ref(path)  # ValueError outside the run directory
+
+    def resolve(self, ref: FileRef) -> Path:
+        return self.jobs.store.resolve(ref)
 
     def thread_map(self, fn: Callable[[ItemT], ResultT], items: Sequence[ItemT]) -> list[ResultT]:
         """``[fn(x) for x in items]`` on site.cores threads, in input order; the JobRunner's core
@@ -123,18 +124,6 @@ def config_sha(entry: StageEntry, resolved: ResolvedConfig) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _job_counts(before: JobStats, after: JobStats) -> JobCounts:
-    failures = {
-        kind: n - before.failures_by_kind.get(kind, 0)
-        for kind, n in after.failures_by_kind.items()  # counters only grow
-    }
-    return JobCounts(
-        hits=after.hits - before.hits,
-        misses=after.misses - before.misses,
-        failures_by_kind={kind: n for kind, n in failures.items() if n},
-    )
-
-
 def _missing_input(inputs: Manifest, consumes: Sequence[ArtifactType]) -> str | None:
     """None when every consumed type has a successful artifact; else the missing types and
     up to 3 failed upstream artifacts and why."""
@@ -178,7 +167,7 @@ def execute_stage(
         )
         save_manifest(manifest, layout.manifest_path(entry.id))
     except BaseException:
-        jobs = _job_counts(before, runtime.jobs.stats())
+        jobs = runtime.jobs.stats().since(before)
         layout.update(entry.id, status="failed", finished=now(), jobs=jobs)
         raise
     layout.update(
@@ -189,7 +178,7 @@ def execute_stage(
         config_sha=config_sha(entry, resolved),
         n_ok=sum(a.status == "success" for a in artifacts),
         n_failed=sum(a.status == "failed" for a in artifacts),
-        jobs=_job_counts(before, runtime.jobs.stats()),
+        jobs=runtime.jobs.stats().since(before),
     )
     return manifest
 

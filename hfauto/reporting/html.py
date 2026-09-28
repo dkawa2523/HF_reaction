@@ -19,13 +19,7 @@ import numpy as np
 from hfauto.chemistry.xyz import XYZ
 from hfauto.core.evidence import Geometry
 from hfauto.core.manifest import Manifest
-from hfauto.core.records import (
-    ArtifactType,
-    RankRow,
-    ReactionRecord,
-    ReactionThermo,
-    ReportRecord,
-)
+from hfauto.core.records import ArtifactType, RankRow, ReactionRecord, ReactionThermo, ReportRecord
 
 THREEDMOL_JS = "https://cdn.jsdelivr.net/npm/3dmol@2.5.5/build/3Dmol-min.js"
 MODE_AMPLITUDE_A = 0.5  # largest atomic displacement of the animated imaginary mode (Å)
@@ -171,8 +165,7 @@ def _connection(reaction: ReactionRecord) -> str:
     claim = reaction.connection
     if claim is None:
         return "not confirmed" if reaction.saddle is not None else _DASH
-    text = f"{claim.method.upper()}: {claim.minima[0]} ↔ {claim.minima[1]}"
-    return escape(text + (f" ({', '.join(claim.notes)})" if claim.notes else ""))
+    return escape(f"QRC: {claim.minima[0]} ↔ {claim.minima[1]}")
 
 
 def _band(thermo: ReactionThermo) -> str:

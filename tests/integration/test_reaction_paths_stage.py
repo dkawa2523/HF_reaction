@@ -34,7 +34,7 @@ class CollapsingSaddle(fakes.FakeSaddle):  # every saddle search falls into the 
     def refine(self, seed, method, *, hessian, mode, deadline=None):
         key = self._key("collapse", seed.fingerprint())
         return self._evidence("saddle", seed, method, key, self._start(seed, key),
-                              self.pes.points["intermediate"], trajectory_energies_hartree=(0.0,))
+                              self.pes.points["intermediate"])
 
 
 class SlowQM(fakes.FakeQM):  # an optimization uses up the rest of its hypothesis' walltime

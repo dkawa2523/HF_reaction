@@ -11,7 +11,7 @@ import pytest
 from hfauto.backends.nwchem.output import geometry_block
 from hfauto.chemistry import thermo as th
 from hfauto.chemistry.xyz import XYZ
-from hfauto.core.constants import HARTREE_TO_KCAL_MOL, HARTREE_TO_KJ_MOL, R_KCAL_MOL_K
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
 from hfauto.core.method import ThermoSettings
 
 pytestmark = pytest.mark.golden
@@ -77,7 +77,7 @@ def test_argon_standard_entropy():
     """An atom: translation only. JANAF S(298.15 K, 1 bar) = 154.846 J/mol/K; GoodVibes refers
     to 1 atm, and S(1 bar) = S(1 atm) + R ln 1.01325."""
     ar = _thermo(XYZ(["Ar"], np.zeros((1, 3))), ())
-    s_1atm = (ar.H - ar.G) / T * HARTREE_TO_KJ_MOL * 1e3
+    s_1atm = (ar.H - ar.G) / T * HARTREE_TO_KCAL_MOL * 4184.0  # J/mol/K
     assert s_1atm + 8.314462618 * math.log(1.01325) == pytest.approx(154.846, abs=0.01)
     assert ar.zpe == 0.0 and ar.H == pytest.approx(2.5 * RT, rel=1e-6)
 

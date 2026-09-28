@@ -54,7 +54,8 @@ class JobQM(fakes.FakeQM):
     frequencies = partialmethod(_job, "frequencies")
 
 
-def test_interrupted_run_resumes_and_from_reruns_the_downstream_stages(tmp_path, tmp_run):
+def test_interrupted_run_resumes_and_from_reruns_the_downstream_stages(tmp_path, tmp_run,
+                                                                       monkeypatch):
     ends = [{"id": n, "role": "endpoint", "xyz": write_xyz(fakes.double_well().molecule(n).xyz,
                                                            tmp_path / f"{n}.xyz")}
             for n in ("reactant", "product")]
@@ -67,7 +68,8 @@ def test_interrupted_run_resumes_and_from_reruns_the_downstream_stages(tmp_path,
                     for b in ("svp", "tzvp")}})
     made: list[JobQM] = []  # one engine (and JobRunner) per run; the first one crashes
 
-    def factory(*, jobs, site):
+    def create(capability, name, *, jobs, site):  # engines.create for the only engine
+        assert (capability, name) == (Capability.QM, "nwchem")
         made.append(JobQM(tmp_run, jobs, crash=not made))
         return made[-1]
 
@@ -75,16 +77,16 @@ def test_interrupted_run_resumes_and_from_reruns_the_downstream_stages(tmp_path,
         states, stats = run_pipeline(resolved, tmp_run, **kw).read_state(), made[-1].jobs.stats()
         return {s.stage_id: s.status for s in states}, (stats.hits, stats.misses)
 
-    with engines.override(Capability.QM, "nwchem", factory):
-        with pytest.raises(RuntimeError, match="interrupted"):
-            run()
-        assert len(made[0].calls) == 6  # opt + freq per endpoint in screen, one in dft
-        done = {s["id"]: "done" for s in STAGES}
-        assert run() == (done, (2, 2))  # screen is skipped; dft's finished opt + freq are hits
-        assert made[1].calls == ["optimize", "frequencies"]
-        assert run(start="screen", stop="screen") == (
-            {**done, "dft": "stale", "report": "stale"}, (4, 0))
-        assert not made[2].calls and run() == (done, (4, 0))  # dft and report run again
+    monkeypatch.setattr(engines, "create", create)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        run()
+    assert len(made[0].calls) == 6  # opt + freq per endpoint in screen, one in dft
+    done = {s["id"]: "done" for s in STAGES}
+    assert run() == (done, (2, 2))  # screen is skipped; dft's finished opt + freq are hits
+    assert made[1].calls == ["optimize", "frequencies"]
+    assert run(start="screen", stop="screen") == (
+        {**done, "dft": "stale", "report": "stale"}, (4, 0))
+    assert not made[2].calls and run() == (done, (4, 0))  # dft and report run again
     with SiteLock(tmp_path / "scratch", tmp_path / "other"), pytest.raises(RuntimeError,
                                                                            match="site lock"):
         run_pipeline(resolved, tmp_run)  # another run holds the site

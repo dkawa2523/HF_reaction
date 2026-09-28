@@ -18,18 +18,6 @@
   "id": "G02",
   "files": [
    {
-    "golden": "goodvibes/G02/hono_cis.csv",
-    "source": "hono_isomerization_v3/09_thermo/backend_runs/combined_thermo_source_spc_hono_cis/Goodvibes.csv",
-    "source_sha256": "82ce8d89ea9d9e9d8a30782860ef993f8cb7e774677a842a4757c9aafdac7e6d",
-    "method": "copy"
-   },
-   {
-    "golden": "goodvibes/G02/hono_trans.csv",
-    "source": "hono_isomerization_v3/09_thermo/backend_runs/combined_thermo_source_spc_hono_trans/Goodvibes.csv",
-    "source_sha256": "e49d768db5cbd1b30efe0712dc644dbddf8c39352a43b1f12073b6bd43a18115",
-    "method": "copy"
-   },
-   {
     "golden": "goodvibes/G02/ts.csv",
     "source": "hono_isomerization_v3/09_thermo/backend_runs/combined_thermo_source_ts_candidate_dft_basins_a4130bf1b004a237/Goodvibes.csv",
     "source_sha256": "e270d5a14f3e9a68c2987c6d4d2f86ba99ef3e3f8f0ee41dbe0909242d204d33",

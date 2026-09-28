@@ -11,6 +11,9 @@ from hfauto.core.evidence import Evidence, FileRef, Geometry
 
 _FROZEN = ConfigDict(frozen=True, extra="forbid")
 
+StandardState = Literal["1atm", "1bar", "1M"]
+ConnectionLabel = Literal["elementary", "degenerate", "reassigned", "failed"]  # gates.connection
+
 
 class ArtifactType(StrEnum):
     SPECIES = "species"
@@ -119,12 +122,12 @@ class SaddleClaim(BaseModel):
 
 
 class ConnectionClaim(BaseModel):
+    """The QRC sides of a validated TS and the minima they reached."""
+
     model_config = _FROZEN
-    method: Literal["qrc"] = "qrc"
     side_calcs: tuple[str, str]
     minima: tuple[str, str]
-    amplitude_A: float
-    notes: tuple[str, ...] = ()
+    amplitude_A: float  # the displacement used
 
 
 class CaseOutcome(StrEnum):
@@ -137,6 +140,14 @@ class CaseOutcome(StrEnum):
     OUT_OF_WINDOW = "out_of_window"
     UNRESOLVED = "unresolved_within_budget"
     BLOCKED = "blocked_upstream"
+
+
+# the outcome of each connected label: a validated TS whose QRC sides reached assigned minima
+CONNECTED_OUTCOMES: dict[ConnectionLabel, CaseOutcome] = {
+    "elementary": CaseOutcome.ELEMENTARY_STEP,
+    "degenerate": CaseOutcome.DEGENERATE,
+    "reassigned": CaseOutcome.REASSIGNED,
+}
 
 
 class ReactionRecord(BaseModel):
@@ -179,7 +190,7 @@ class ReactionThermo(BaseModel):
     kind: Literal["reaction_thermo"] = "reaction_thermo"
     reaction_id: str
     T_K: float
-    standard_state: Literal["1atm", "1bar", "1M"]
+    standard_state: StandardState
     dE_act_kcal: float | None
     dE_rxn_kcal: float | None
     dzpe_act_kcal: float | None  # dE0(act) - dE(act)

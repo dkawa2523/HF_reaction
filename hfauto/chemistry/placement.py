@@ -21,6 +21,7 @@ from itertools import product
 import numpy as np
 
 from hfauto.chemistry.elements import vdw_radius
+from hfauto.chemistry.geometry import rotation_about
 from hfauto.chemistry.identity import permutation_invariant_rmsd
 from hfauto.chemistry.topology import bonds
 from hfauto.chemistry.xyz import XYZ
@@ -42,14 +43,6 @@ _ACCEPTOR_MAX_BONDS = {"N": 3, "P": 3, "O": 2, "S": 2, "F": 1, "Cl": 1, "Br": 1,
 
 def _unit(v: np.ndarray) -> np.ndarray:
     return v / np.linalg.norm(v)
-
-
-def _rotation(axis: np.ndarray, degrees: float) -> np.ndarray:
-    """Rodrigues rotation matrix about the unit ``axis``."""
-    x, y, z = axis
-    k = np.array([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
-    t = np.radians(degrees)
-    return np.eye(3) + np.sin(t) * k + (1.0 - np.cos(t)) * (k @ k)
 
 
 def _perpendicular(axis: np.ndarray, hint: np.ndarray | None) -> np.ndarray:
@@ -151,7 +144,7 @@ def _hbond(donor: XYZ, h: int, acceptor: XYZ, a: int, azimuth: float, sign: floa
     g1 = _perpendicular(d, acc[1])
     target = np.array([d, g1, np.cross(d, g1)])
     alpha = rng.uniform(0.0, 2.0 * np.pi)
-    tilt = _rotation(np.cos(alpha) * g1 + np.sin(alpha) * target[2], sign * TILT_DEG)
+    tilt = rotation_about(np.cos(alpha) * g1 + np.sin(alpha) * target[2], sign * TILT_DEG)
     # X–H of the donor points along d, away from the acceptor, before the tilt
     rot = tilt @ target.T @ _frame(xd, xd[h], _unit(xd[heavy] - xd[h]))
     h_at = xa[a] + HBOND_SCALE * (vdw_radius("H") + vdw_radius(acceptor.symbols[a])) * d

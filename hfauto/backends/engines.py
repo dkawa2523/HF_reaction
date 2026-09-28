@@ -1,14 +1,13 @@
 """Typed lazy engine registry (design §6.2). Only hfauto.pipeline may import it.
 
-The table is final: seven entries, no aliases and no test keys. Tests swap an entry with
-``override``; an unknown (capability, name) is a KeyError everywhere.
+The table is final: seven entries, no aliases and no test keys; an unknown (capability, name)
+is a KeyError everywhere. Tests give the Runtime fakes through its ``create``.
 """
 
 from __future__ import annotations
 
 import importlib
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from hfauto.backends.protocols import (
@@ -45,9 +44,6 @@ _PROTOCOLS: dict[Capability, type] = {  # runtime_checkable Protocols
     Capability.DISCOVERY: DiscoveryEngine,
 }
 
-_OVERRIDES: dict[tuple[Capability, str], Callable[..., Engine]] = {}
-
-
 def _target(capability: Capability, name: str) -> str:
     try:
         return _TABLE[capability][name]
@@ -62,8 +58,7 @@ def _load(target: str) -> Any:
 
 def create(capability: Capability, name: str, *, jobs: JobRunner, site: EngineSite) -> Engine:
     """Import and build the engine, checking it implements the capability's Protocol."""
-    target = _target(capability, name)
-    factory: EngineFactory = _OVERRIDES.get((Capability(capability), name)) or _load(target)
+    factory: EngineFactory = _load(_target(capability, name))
     engine = factory(jobs=jobs, site=site)
     protocol = _PROTOCOLS[Capability(capability)]
     if not isinstance(engine, protocol):
@@ -72,31 +67,6 @@ def create(capability: Capability, name: str, *, jobs: JobRunner, site: EngineSi
 
 
 def requirements_for(selection: Mapping[Capability, Sequence[str]]) -> dict[str, Requirements]:
-    """Requirements per engine name; overridden (test) engines require nothing."""
-    out: dict[str, Requirements] = {}
-    for capability, names in selection.items():
-        for name in names:
-            target = _target(capability, name)
-            if (Capability(capability), name) in _OVERRIDES:
-                out[name] = Requirements()
-            else:
-                out[name] = _load(target).requirements()
-    return out
-
-
-@contextmanager
-def override(
-    capability: Capability, name: str, factory: Callable[..., Engine]
-) -> Iterator[None]:
-    """Test only: ``create`` calls ``factory(jobs=..., site=...)`` for this existing key."""
-    _target(capability, name)
-    key = (Capability(capability), name)
-    previous = _OVERRIDES.get(key)
-    _OVERRIDES[key] = factory
-    try:
-        yield
-    finally:
-        if previous is None:
-            _OVERRIDES.pop(key, None)
-        else:
-            _OVERRIDES[key] = previous
+    """Requirements per engine name, read from the classes without building an engine."""
+    return {name: _load(_target(capability, name)).requirements()
+            for capability, names in selection.items() for name in names}

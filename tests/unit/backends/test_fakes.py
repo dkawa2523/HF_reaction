@@ -5,8 +5,7 @@ import numpy as np
 import pytest
 
 from hfauto.chemistry.profile import classify
-from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
-from hfauto.chemistry.xyz_trajectory import write_xyz_trajectory
+from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz, write_xyz_trajectory
 from hfauto.core.evidence import FailureKind, FileRef
 from hfauto.core.hashing import sha256_file
 from hfauto.core.method import MethodSpec
@@ -18,7 +17,7 @@ def test_harmonic_minimum_has_only_real_frequencies(tmp_run) -> None:
     p = fakes.harmonic()
     qm = fakes.FakeQM(tmp_run, p)
     opt = qm.optimize(p.molecule("start"), M)
-    assert opt.trajectory_energies_hartree[0] == p.energy(p.points["start"]) > opt.energy_hartree
+    assert p.energy(p.points["start"]) > opt.energy_hartree
     freq = qm.frequencies(Molecule(fakes.xyz_loader(tmp_run)(opt.final), 0, 1), M)
     assert freq.start.fingerprint == opt.final.fingerprint and freq.level.program == "fake"
     assert freq.n_external == 6 and len(freq.frequencies_cm1) == 3 and min(freq.frequencies_cm1) > 0

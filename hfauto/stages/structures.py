@@ -17,8 +17,9 @@ from typing import ClassVar, cast
 from hfauto.chemistry.electronic_state import check_electronic_state
 from hfauto.chemistry.smiles import smiles_to_molecule
 from hfauto.chemistry.topology import state_label
-from hfauto.chemistry.xyz import XYZ, composition_key, geometry_fingerprint, read_xyz
-from hfauto.core.evidence import Failure, FailureKind, Geometry
+from hfauto.chemistry.xyz import composition_key, read_xyz, written_geometry
+from hfauto.core.evidence import Failure, FailureKind
+from hfauto.core.ids import species_artifact_id
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.records import ArtifactType, SpeciesRecord
 from hfauto.core.system import SpeciesInput
@@ -29,20 +30,8 @@ class StructuresConfig(StageConfig):
     pass
 
 
-def artifact_id(species_id: str) -> str:
-    return f"species_{species_id}"
-
-
-def geometry_of(path: Path, rt: StageRuntime) -> tuple[Geometry, XYZ]:
-    """Geometry of an xyz file in the run directory, fingerprinted as written."""
-    xyz = read_xyz(path)
-    fingerprint = geometry_fingerprint(xyz.symbols, xyz.coords)
-    geometry = Geometry(file=rt.file_ref(path), fingerprint=fingerprint, symbols=tuple(xyz.symbols))
-    return geometry, xyz
-
-
 def _failed(species_id: str, kind: FailureKind, reason: str) -> Artifact:
-    return Artifact(artifact_id=artifact_id(species_id), type=ArtifactType.SPECIES,
+    return Artifact(artifact_id=species_artifact_id(species_id), type=ArtifactType.SPECIES,
                     status="failed", failure=Failure(kind=kind, reason=reason))
 
 
@@ -61,7 +50,7 @@ def _species(species: SpeciesInput, rt: StageRuntime) -> Artifact:
     path = rt.stage_dir / "xyz" / f"{species.id}.xyz"
     try:
         mult = _write(species, path)
-        geometry, xyz = geometry_of(path, rt)
+        geometry, xyz = written_geometry(path, rt.file_ref), read_xyz(path)
         check_electronic_state(xyz.symbols, species.charge, mult,
                                declared=species.multiplicity is not None)
         record = SpeciesRecord(
@@ -74,7 +63,8 @@ def _species(species: SpeciesInput, rt: StageRuntime) -> Artifact:
         return _failed(species.id, FailureKind.EXECUTABLE_MISSING, f"rdkit: {exc}")
     except (OSError, ValueError) as exc:
         return _failed(species.id, FailureKind.INPUT_INVALID, str(exc))
-    return Artifact(artifact_id=artifact_id(species.id), type=ArtifactType.SPECIES, payload=record)
+    return Artifact(artifact_id=species_artifact_id(species.id), type=ArtifactType.SPECIES,
+                    payload=record)
 
 
 class StructuresStage:

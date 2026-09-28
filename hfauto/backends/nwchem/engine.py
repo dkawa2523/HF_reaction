@@ -24,8 +24,15 @@ from hfauto.backends.nwchem import input as nw_in
 from hfauto.backends.nwchem import output as nw_out
 from hfauto.backends.protocols import Requirements
 from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian
-from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz, write_xyz
-from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
+from hfauto.chemistry.xyz import (
+    XYZ,
+    Molecule,
+    geometry_fingerprint,
+    read_xyz,
+    read_xyz_trajectory,
+    write_xyz,
+    written_geometry,
+)
 from hfauto.core.evidence import (
     Evidence,
     Failure,
@@ -139,12 +146,12 @@ class _NWChem:
                       ) -> Path | Failure:
         """The canonical .npy of a freq Evidence (any Level) computed at exactly ``mol`` or,
         with ``near_A``, at the same atoms in the same frame within ``near_A`` per atom."""
-        run_dir = self._jobs.store.run_dir
+        store = self._jobs.store
         if freq.task != "freq" or freq.hessian is None:
             return _invalid("hessian_geometry_mismatch")
         at = (freq.final.fingerprint == _written_fingerprint(mol) if near_A is None
-              else _max_shift_A(read_xyz(run_dir / freq.final.file.path), mol) <= near_A)
-        return run_dir / freq.hessian.path if at else _invalid("hessian_geometry_mismatch")
+              else _max_shift_A(read_xyz(store.resolve(freq.final.file)), mol) <= near_A)
+        return store.resolve(freq.hessian) if at else _invalid("hessian_geometry_mismatch")
 
     # --- Adapter side ------------------------------------------------------------------
 
@@ -199,9 +206,7 @@ class _NWChem:
                   "scf_rescue": rescue or task.inputs.get("scf_rescue", False)}
         if latest is not None:
             inputs |= {"mol": Molecule(read_xyz(latest), mol.charge, mol.multiplicity),
-                       "hessian": None,
-                       "trajectory": (*task.inputs.get("trajectory", ()),
-                                      *nw_out.trajectory_energies(_read(workdir / STDOUT_NAME)))}
+                       "hessian": None}
         return replace(task, inputs=inputs)
 
     def _scratch(self, workdir: Path) -> Path:
@@ -248,9 +253,7 @@ class _NWChem:
         return level
 
     def _geometry(self, path: Path) -> Geometry:
-        xyz = read_xyz(path)
-        return Geometry(file=self._jobs.store.file_ref(path), symbols=tuple(xyz.symbols),
-                        fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords))
+        return written_geometry(path, self._jobs.store.file_ref)
 
     def _evidence(self, task: Task, workdir: Path, text: str, level: Level) -> Evidence | Failure:
         energy, start_mol, s2 = nw_out.total_energy(text), task.inputs["start"], nw_out.s2(text)
@@ -265,8 +268,6 @@ class _NWChem:
             if path is None:
                 return _incomplete("final_xyz_missing_or_atom_order_changed")
             final = self._geometry(path)
-            extra["trajectory_energies_hartree"] = (*task.inputs.get("trajectory", ()),
-                                                    *nw_out.trajectory_energies(text))
         elif task.kind == "frequencies":
             vibrations = self._frequencies(workdir, text, start_mol)
             if isinstance(vibrations, Failure):
@@ -384,5 +385,5 @@ class NWChemString(_NWChem):
         payload = {"start": start.fingerprint(), "end": end.fingerprint(), "images": images,
                    "initial_path": initial_path.sha256}
         inputs = {"mol": start, "start": start, "end": end, "method": method, "images": images,
-                  "initial_path": self._jobs.store.run_dir / initial_path.path}
+                  "initial_path": self._jobs.store.resolve(initial_path)}
         return self._run("string", payload, inputs, deadline)

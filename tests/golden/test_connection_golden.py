@@ -18,20 +18,24 @@ LEVEL = Level(program="nwchem", version="7.2.3", method="pbe0", charge=0, multip
 GEO = Geometry(file=FileRef(path="x.xyz", sha256="0" * 64), fingerprint="f", symbols=("H",))
 
 
-def _ev(task, e):
+def _ev(task, e):  # an atom: a freq has no mode
+    atom = {"frequencies_cm1": (), "n_external": 3} if task == "freq" else {}
     return Evidence(engine="nwchem", task=task, level=LEVEL, start=GEO, final=GEO, output=GEO.file,
-                    energy_hartree=e[-1], trajectory_energies_hartree=tuple(e), job_key=task)
+                    energy_hartree=e, job_key=task, **atom)
 
 
 def branches(text):
-    """TS freq and both branches: the displaced start (E_TS − actual lowering) + each step's dE."""
+    """TS freq, both branches (where each ends) and their starts: the displaced start is
+    E_TS − actual lowering, then each step adds its dE."""
     e_ts = float(re.search(r"TS:\s+(-?[\d.]+) hartree", text).group(1))
-    sides = []
+    sides, starts = [], []
     for part in text.split("# IRC - ")[1:]:
         lowering = float(re.search(r"Actual energy lowering:\s+(-?[\d.]+) au", part).group(1))
         steps = re.findall(r"(?m)^\s+\d+\s+-?[\d.]+\s+(-?[\d.]+)\s+[\d.]+\s+[\d.]+\s*$", part)
-        sides.append(_ev("opt", list(accumulate(map(float, steps), initial=e_ts - lowering))))
-    return _ev("freq", [e_ts]), (sides[0], sides[1])
+        path = list(accumulate(map(float, steps), initial=e_ts - lowering))
+        sides.append(_ev("opt", path[-1]))
+        starts.append(path[0])
+    return _ev("freq", e_ts), (sides[0], sides[1]), starts
 
 
 @pytest.mark.parametrize("gid,reasons", [
@@ -39,14 +43,14 @@ def branches(text):
     ("G11", ()),  # the backward branch rises at step 0 but ends below E_TS - drop
 ])
 def test_a_branch_is_judged_by_where_it_ends(golden, gid, reasons) -> None:
-    ts, sides = branches(golden.text(f"pysisyphus/{gid}/pysis_irc.out"))
+    ts, sides, _ = branches(golden.text(f"pysisyphus/{gid}/pysis_irc.out"))
     gate, label = connection(ts, sides, ("a", "b"), frozenset({"a", "b"}), degenerate=False)
     assert gate.reasons == reasons and label == ("failed" if reasons else "elementary")
 
 
 def test_g12_hono_branches_start_above_the_ts_and_connect_trans_and_cis(golden) -> None:
-    ts, sides = branches(golden.text("pysisyphus/G12/pysis_irc.out"))  # displaced 1-2 mEh up
-    assert all(side.trajectory_energies_hartree[0] > ts.energy_hartree for side in sides)
+    ts, sides, starts = branches(golden.text("pysisyphus/G12/pysis_irc.out"))
+    assert all(start > ts.energy_hartree for start in starts)  # displaced 1-2 mEh up
     assert connection(ts, sides, ("trans", "cis"), frozenset({"trans", "cis"}),
                       degenerate=False) == (Gate(True), "elementary")
     candidates = {n: (read_xyz(golden.path(f"nwchem/G03/hono_{n}_final.xyz")).coords, float(

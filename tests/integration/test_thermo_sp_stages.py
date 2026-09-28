@@ -46,11 +46,11 @@ def _setup(fake_runtime, tmp_run, states=NEUTRAL):
           for p in ("reactant", "product", "ts")}
     medium = ev["product"].level.model_copy(update={"grid": "medium"})
     ev["p2"] = ev["product"].model_copy(update={"job_key": "p2", "level": medium})  # other LOT
-    for tag, symbols, nu in (("nh", ["N", "H"], (3000.0,)), ("o", ["O"], ())):
+    for tag, symbols, nu, external in (("nh", ["N", "H"], (3000.0,), 5), ("o", ["O"], (), 3)):
         geom = write_geometry(tmp_run, f"{tag}.xyz", symbols, np.eye(3)[: len(symbols)])
         ev[tag] = _state(ev["reactant"], *states[tag]).model_copy(update={
             "start": geom, "final": geom, "job_key": tag, "frequencies_cm1": nu,
-            "energy_hartree": part})
+            "n_external": external, "energy_hartree": part})
     ev["o2"] = ev["o"].model_copy(update={"job_key": "o2"})
     arts = [Artifact(artifact_id=calc_id(e), type=T.CALCULATION, payload=e) for e in ev.values()]
     arts += [Artifact(artifact_id=t, type=T.SPECIES, payload=R.SpeciesRecord(

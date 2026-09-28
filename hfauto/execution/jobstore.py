@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import tempfile
 import time
 from collections.abc import Generator, Iterable, Iterator, Mapping
 from contextlib import contextmanager
@@ -21,6 +20,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from hfauto.core.evidence import Failure, FailureKind, FileRef
+from hfauto.core.files import write_atomic
 from hfauto.core.hashing import sha256_file
 from hfauto.execution.lock import release, try_acquire
 
@@ -68,15 +68,8 @@ def _jsonable(value: Any) -> Any:
     raise TypeError(f"not JSON serializable in a job key: {type(value).__name__}")
 
 
-def write_json_atomic(path: Path, data: Any) -> None:
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            stream.write(json.dumps(data, indent=1, sort_keys=True, default=_jsonable))
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+def _write_json(path: Path, data: Any) -> None:
+    write_atomic(path, json.dumps(data, indent=1, sort_keys=True, default=_jsonable))
 
 
 def file_refs(value: Any) -> Iterator[FileRef]:
@@ -146,7 +139,7 @@ class JobStore:
         """Write ``job.json``; returns the index of the first new attempt directory."""
         job_dir = self.job_dir(key)
         job_dir.mkdir(parents=True, exist_ok=True)
-        write_json_atomic(job_dir / "job.json", key_document(task))
+        _write_json(job_dir / "job.json", key_document(task))
         return len(list(job_dir.glob("attempt_*")))
 
     def save(self, key: str, result: BaseModel) -> None:
@@ -158,13 +151,17 @@ class JobStore:
         kind = _FAILURE_KIND if isinstance(result, Failure) else getattr(result, "kind", None)
         files = {ref.path: ref.sha256 for ref in file_refs(result)}
         record = {"kind": kind, "data": result.model_dump(mode="json"), "files": files}
-        path.parent.mkdir(parents=True, exist_ok=True)
-        write_json_atomic(path, record)
+        _write_json(path, record)
 
     def file_ref(self, path: Path) -> FileRef:
-        """FileRef of a file below the run directory (POSIX path relative to it)."""
+        """FileRef of a file below the run directory (POSIX path relative to it); the only
+        place that makes one."""
         rel = Path(path).resolve().relative_to(self.run_dir.resolve())
         return FileRef(path=rel.as_posix(), sha256=sha256_file(path))
+
+    def resolve(self, ref: FileRef) -> Path:
+        """The file a FileRef of this run names."""
+        return self.run_dir / ref.path
 
     def _files_intact(self, files: dict[str, str]) -> bool:
         for rel, sha in files.items():

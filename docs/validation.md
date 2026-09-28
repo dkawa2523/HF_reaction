@@ -277,6 +277,52 @@ structures → conformers → screen(GFN2)。組成はすべて全原子を `--n
 - 判定: R1〜R4 の outcome と表示桁の値は S-C と同じ。全桁では δG_eff が 2e-7〜1.4e-6 kcal/mol 違う。同じデッキ(scratch_dir だけ違う)の HCN の最初の opt でも E が 7.7e-10 Eh 違うので、NWChem の実行ごとの揺らぎ(ジョブの鍵が変わって再計算した)で、thermo の変更によるものではない(保存済みの Evidence からの再計算は 1.1e-13 Eh で一致)。種ごとの差は G で 3e-9 Eh 以下。
 - 外部の timeout の後に NWChem が残らないので、runcase.sh の pgrep / pkill の回避策は要らない。
 
+**FINAL の実測(レビュー §6.1 の全体を 1 回、作業ツリー、`/home/user/hfauto_r6/FINAL/runs/<run>`)**
+
+FINAL で Evidence の `trajectory_energies_hartree` と ConnectionClaim の `method`・`notes` を消した(`extra="forbid"`)ので、以前の run の Evidence と manifest は読めない。ジョブの鍵は変わらないが、すべて新しい run dir で流した。S19 と S20 は同じ表の run の複製に pipeline を追記し、S11 は S-B の harness を今の API に合わせた複製(`/home/user/hfauto_r6/FINAL/ho_harness.py`)で流した。ジョブは misses + hits(括弧内は hits)。
+
+| 系 | 結果 | 所要時間 | ジョブ |
+|---|---|---|---|
+| smoke | `-m real tests/smoke` 13 件合格 | 1:04 | — |
+| R1 `hcn` | `elementary_step`、δG_eff 42.1783(S-D と同じ) | 1:16 | 20(1) |
+| R2 `hono` | `elementary_step`、δG_eff 11.8158(同じ) | 3:03 | 20(1) |
+| R3 `nh3_inversion` | `degenerate_rearrangement`、δG_eff 3.8395(同じ) | 1:15 | 19(1) |
+| R4 `water_same_basin` | `same_basin`(同じ) | 0:11 | 3(0) |
+| S1 `sn2_cl` | `degenerate_rearrangement`、ΔE‡ 10.446、ΔG‡ 11.0773、`dG_act_vs_separated` 6.00 | 7:20 | 25(1) |
+| S2 `sn2_i` | 全ジョブ alpha 30(`I library def2-ecp`)、`degenerate_rearrangement`、ΔG‡ 6.88 | 13:11 | 21(1) |
+| S3 `h2te` | structures → dft → thermo を通過 | 0:17 | 2(0) |
+| S4 `ch3o_doublet` | 宣言反応 `elementary_step` ΔG‡ 30.6117、mode-follow の縮退 case(torsional)3.877 が順位 1(S-B と同じ) | 13:27 | 34(2) |
+| S5 `ch3_o2` | 多重度を外した複製は conformers で `INPUT_INVALID`(`declare_multiplicity: candidates (2, 4)`)。宣言 2 では CREST(`--uhf 1`)が rc −11(既知)で placement の 6 seed を screen。`--to dft` で CH3 は m 2・⟨S²⟩ 0.7544、O2 は m 3・⟨S²⟩ 2.0096 | 0:01 / 0:04 / 0:43 | — |
+| S6 `oh_ch4` | explore 11 attempt(AFIR 3)、生成物は CH3OH + H の 2 件(ΔE‡ 31.6 / 37.8、S-C と同じ。引き抜きは GFN2 で障壁なし) | 0:06 | 25(2) |
+| S7 `nh3_icl` | 4 attempt、生成物 0、polar_h の drive なし(S-C と同じ) | 0:13 | 22(2) |
+| S8 `so2_nme3` | 付加体は screen 極小として残る。24 attempt(AFIR 5)、生成物 0 | 1:02 | 35(1) |
+| S9 `fecl3_ch4` | 多重度を外した複製は `species_fecl3` が `INPUT_INVALID`(`declare_multiplicity: d-block element(s) Fe`)。宣言 6 では `--to conformers` が例外なく終わり、組成の CREST 配座 6 | 0:01 / 0:31 | 2(0) |
+| S10 `amine_pilot2`(`discover`) | explore 24 attempt(AFIR 3)、生成物 1、発見の case が `degenerate_rearrangement` ΔG‡ 32.2887(同じ)。dft 1,195 s | 22:41 | 65(5) |
+| S11 DME の C2v 種(harness) | 1 回目: xTB Hessian(重なり 0.30)で 135 s、2 次の saddle(−232.1i / −128.6i、ΔE 4.03)→ `higher_order`。−128.6i に 0.23 Å 押し、TS freq を Hessian に 2 回目が 281 s で一次鞍点 −226.9i、ΔE‡ 2.33。停滞は再現せず、`max_saddle_attempts` 2 の中で終わる(S-B は 2 回目が maxiter で 3 回目の再開が要った) | 7:02 | — |
+| S12 `dme_rough` | `degenerate_rearrangement`、ΔG‡ 1.9638(同じ) | 9:49 | 19(1) |
+| S13 `h2o2_gauche` | `degenerate_rearrangement`、ΔG‡ 1.1802(同じ) | 1:37 | 19(0) |
+| S14 `malonaldehyde` | `degenerate_rearrangement`、注記 `submerged_barrier`、δG_eff 0.0(ΔG‡ 0.2498) | 16:12 | 19(1) |
+| S15 `hono_hno2` | `elementary_step`、δG_eff 52.0163(直接の TS、分割なし) | 2:45 | 20(1) |
+| S16 `acac` | `degenerate_rearrangement`(xTB Hessian、重なり 1.00、種の DFT Hessian 0 本)、ΔE‡ 1.980、ΔG‡ −0.93、注記 `submerged_barrier`、δG_eff 0.0(S-B と同じ)。dft 1,326 s、paths 4,138 s | 1:31:05 | 19(1) |
+| S17 `hf_dimer_swap` | `degenerate_rearrangement`(C2h の入れ替え)、ΔG‡ 1.3917(同じ) | 1:34 | 21(1) |
+| S18 `h3_doublet` | `degenerate_rearrangement`、δG_eff 4.0909(同じ) | 0:47 | 21(0) |
+| S19 `tma_hf2`(`discover`) | explore 15 attempt(すべて NT2)、生成物 0、宣言反応は `same_basin`。dft 1,733 s | 29:46 | 41(2) |
+| S19 複数条件(上の複製に thermo → report を追記) | ΔG_assoc は 1 atm で −14.52 / −11.53 / −5.11、1 M で −17.52 / −15.32 / −10.66 kcal/mol(250 / 298.15 / 400 K、S-A と同じ) | 0:03 | 0 |
+| S20 HCN(R1 の複製に CCSD(T) 入りのパネル) | `energy_level` `wb97x-d3/def2-tzvpd`、δG_eff 41.9261。ΔE‡: PBE0/SVPD 46.621、PBE0/TZVPD 46.429、ωB97X-D3 46.369、CCSD(T) 47.807。panel min / max は method_panel.csv と一致 | 1:23 | 9 |
+| S20 SN2(S1 の複製) | δG_eff 15.7324、`dG_act_vs_separated` 11.43(ωB97X 層、Cl⁻ と CH3Cl の SP を含む)。ΔE‡ 10.446 / 11.146 / 15.101 / 13.436 | 10:33 | 12 |
+| S20 CH3O•(S4 の複製) | ROHF-CCSD(T) の ΔE‡ 33.372、δG_eff 31.1776。mode-follow の case は 4.212 | 6:08 | 12 |
+
+- 判定: R1〜R4 と S 系の outcome・数値は、比べられるものはすべて以前の段と同じ(FINAL は定義の統合と読まれない欄の削除で、化学は変えていない)。orphan の NWChem は全 run で 0。
+- 全体の壁時計時間は 4:06(smoke から S16 まで直列。S16 が 1:31、S19 が 0:30、S10 が 0:23)。
+
+到達表(`log.jsonl` の decide の reason と job.json から数えた。数は通った run の数):
+
+| 対象 | 実計算で通ったもの | 実計算で通らないもの(QM なしのテストで確認) |
+|---|---|---|
+| 決定表の行 | 2 same_basin(3)、4 connection(17)、9 ts_validated・10 saddle_converged・12 screen・14 seed(各 17) | 1・3・5〜8・11・13・15〜17(17 行すべての reason を `tests/unit/drivers/test_reaction_case_decide.py` が確かめる) |
+| saddle の種と Hessian | 種 `screen_ts` 14・`screen_hei` 2・`discovery_ts` 3、S11 の `higher_order_retry`。Hessian は xTB 15・DFT 2・TS freq(S11) | `path_hei`、`saddle_restart` |
+| エンジン | CREST・xTB opt/freq・ReaDuct の NT2/AFIR・pysis NEB・NWChem の opt/freq/SP(PBE0 SVPD/TZVPD、ωB97X-D3、閉殻 CCSD(T)、ROHF-CCSD(T))・nwchem_saddle。GoodVibes は同一プロセス(ジョブなし) | nwchem_string(FIND_PATH)は smoke の 1 チャンクだけ |
+
 ---
 
 以下は v3・v4・v5(第2〜第4ラウンド改良後の再検証、2026-09-26)の記録。第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11、第4ラウンドの小さな改良(コード `13a4340`)後の退行確認 v5 は §12 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。

@@ -25,7 +25,6 @@ WL atom classes and formed-pair distances (0.1 Å) are one trial. Linear molecul
 from __future__ import annotations
 
 import itertools
-import math
 from collections import Counter
 from collections.abc import Hashable, Sequence
 from typing import Literal
@@ -35,6 +34,7 @@ from scipy.sparse.csgraph import shortest_path
 
 from hfauto.chemistry import topology
 from hfauto.chemistry.elements import covalent_radius, max_coordination, vdw_radius
+from hfauto.chemistry.geometry import rotation_about
 from hfauto.chemistry.vibrations import external_basis
 from hfauto.core.hashing import sha256_text
 from hfauto.core.records import ReactionTrial
@@ -153,11 +153,7 @@ def perturb_linear(coords: np.ndarray, *, seed: int = RNG_SEED) -> np.ndarray:
     along = (x - x.mean(axis=0)) @ axis
     pivot = int(np.argsort(along)[len(along) // 2])
     normal = np.cross(axis, np.eye(3)[int(np.argmin(np.abs(axis)))])
-    normal /= np.linalg.norm(normal)
-    angle = math.radians(LINEAR_BEND_DEG)
-    k = np.array([[0, -normal[2], normal[1]], [normal[2], 0, -normal[0]],
-                  [-normal[1], normal[0], 0]])
-    rotation = np.eye(3) + math.sin(angle) * k + (1 - math.cos(angle)) * k @ k
+    rotation = rotation_about(normal / np.linalg.norm(normal), LINEAR_BEND_DEG)
     bent = x.copy()
     side = along < along[pivot]
     bent[side] = (x[side] - x[pivot]) @ rotation.T + x[pivot]

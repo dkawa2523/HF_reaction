@@ -1,5 +1,5 @@
-"""Small geometry primitives shared by chemistry workflows, and the value and gradient of a
-declared reaction coordinate."""
+"""Geometry primitives of chemistry (Kabsch rotation, rotation about an axis, dihedral angle,
+bonded neighbours) and the value and gradient of a declared reaction coordinate."""
 
 from __future__ import annotations
 
@@ -12,28 +12,31 @@ from hfauto.core.records import CoordinateTerm
 _FD_STEP_A = 1.0e-4  # central-difference step of a declared coordinate's gradient
 
 
-def align_coordinates(reference: np.ndarray, moving: np.ndarray) -> np.ndarray:
-    """Rigidly align ``moving`` onto ``reference`` (same atom order, Kabsch)."""
+def kabsch(mobile: np.ndarray, fixed: np.ndarray) -> np.ndarray:
+    """Proper rotation R minimizing |mobile @ R − fixed| (both centered, N×3)."""
 
-    fixed = np.asarray(reference, dtype=float)
-    mobile = np.asarray(moving, dtype=float)
-    if (
-        fixed.shape != mobile.shape
-        or fixed.ndim != 2
-        or fixed.shape[1] != 3
-        or len(fixed) == 0
-        or not np.isfinite(fixed).all()
-        or not np.isfinite(mobile).all()
-    ):
-        raise ValueError("coordinate arrays must be finite, non-empty Nx3 arrays")
-    fixed_center = fixed.mean(axis=0)
-    mobile_center = mobile.mean(axis=0)
-    try:
-        u, _singular_values, vt = np.linalg.svd((mobile - mobile_center).T @ (fixed - fixed_center))
-    except np.linalg.LinAlgError as exc:
-        raise ValueError("Kabsch alignment failed") from exc
-    rotation = u @ np.diag([1.0, 1.0, np.linalg.det(u @ vt)]) @ vt
-    return (mobile - mobile_center) @ rotation + fixed_center
+    u, _, vt = np.linalg.svd(mobile.T @ fixed)
+    handedness = 1.0 if np.linalg.det(u @ vt) >= 0 else -1.0
+    return u @ np.diag([1.0, 1.0, handedness]) @ vt
+
+
+def rotation_about(axis: np.ndarray, degrees: float) -> np.ndarray:
+    """Rodrigues rotation matrix about the unit ``axis`` (x @ R.T rotates the rows of x)."""
+
+    x, y, z = axis
+    k = np.array([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
+    t = np.radians(degrees)
+    return np.eye(3) + np.sin(t) * k + (1.0 - np.cos(t)) * (k @ k)
+
+
+def neighbours(bonded: Collection[tuple[int, int]]) -> dict[int, set[int]]:
+    """Bonded partners of every atom that has one."""
+
+    out: dict[int, set[int]] = {}
+    for i, j in bonded:
+        out.setdefault(i, set()).add(j)
+        out.setdefault(j, set()).add(i)
+    return out
 
 
 def dihedral_deg(coords: np.ndarray, atoms: Sequence[int]) -> float:
@@ -80,12 +83,9 @@ def most_changed_dihedral(bonded: Collection[tuple[int, int]], a: np.ndarray, b:
     the structures ``a`` and ``b``, as a declared coordinate; () when the bond graph has no such
     chain."""
 
-    neighbours: dict[int, set[int]] = {}
-    for i, j in bonded:
-        neighbours.setdefault(i, set()).add(j)
-        neighbours.setdefault(j, set()).add(i)
-    chains = [(i, j, k, m) for j, k in bonded for i in neighbours[j] - {k}
-              for m in neighbours[k] - {i, j}]
+    partners = neighbours(bonded)
+    chains = [(i, j, k, m) for j, k in bonded for i in partners[j] - {k}
+              for m in partners[k] - {i, j}]
     if not chains:
         return ()
     change = [abs((dihedral_deg(b, c) - dihedral_deg(a, c) + 180.0) % 360.0 - 180.0)

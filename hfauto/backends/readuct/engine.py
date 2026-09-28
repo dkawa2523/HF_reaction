@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from hfauto.backends.protocols import DiscoveryResult, DiscoverySettings, Requirements
-from hfauto.chemistry.xyz import Molecule, geometry_fingerprint, read_xyz
+from hfauto.chemistry.xyz import Molecule, written_geometry
 from hfauto.core.evidence import Failure, FailureKind, Geometry
 from hfauto.core.method import Deadline, EngineSite, MethodSpec
 from hfauto.core.records import ReactionTrial
@@ -104,11 +104,8 @@ class _Adapter:
         )
 
     def _geometry(self, workdir: Path, name: str | None) -> Geometry | None:
-        if name is None:
-            return None
-        xyz = read_xyz(workdir / name)
-        return Geometry(file=self.jobs.store.file_ref(workdir / name), symbols=tuple(xyz.symbols),
-                        fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords))
+        return None if name is None else written_geometry(workdir / name,
+                                                          self.jobs.store.file_ref)
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
         return None

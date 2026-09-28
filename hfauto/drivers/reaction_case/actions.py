@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 import numpy as np
 
 from hfauto.chemistry import profile, topology
-from hfauto.chemistry import xyz_trajectory as trajectory
 from hfauto.chemistry.gates import (
     barrier_verdict,
     connection,
@@ -26,9 +25,16 @@ from hfauto.chemistry.geometry import (
     most_changed_dihedral,
 )
 from hfauto.chemistry.identity import mapped_equivalent, periodic_nearest
-from hfauto.chemistry.interpolation import align_mapped, align_sequential, idpp
+from hfauto.chemistry.interpolation import align_mapped, align_sequential, idpp, resample
 from hfauto.chemistry.modes import BOUNDS_A, TARGET_HARTREE, amplitude, displace, overlap
-from hfauto.chemistry.xyz import XYZ, Molecule, composition_key, geometry_fingerprint
+from hfauto.chemistry.xyz import (
+    XYZ,
+    Molecule,
+    composition_key,
+    read_xyz_trajectory,
+    write_xyz_trajectory,
+    written_geometry,
+)
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
 from hfauto.core.ids import species_id
@@ -119,17 +125,15 @@ class Ctx:
         return self.keep(ev).energy_hartree
 
     def geometry(self, name: str, coords: np.ndarray) -> Geometry:
-        path = self.mol(coords).write(self.folder / f"{name}.xyz")
-        xyz = trajectory.read_xyz_trajectory(path)[0]  # fingerprint of the file as written
-        return Geometry(file=self.rt.file_ref(path), symbols=tuple(xyz.symbols),
-                        fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords))
+        return written_geometry(self.mol(coords).write(self.folder / f"{name}.xyz"),
+                                self.rt.file_ref)
 
     def path_file(self, name: str, frames: Sequence[np.ndarray]) -> FileRef:
         images, path = [self.mol(f).xyz for f in frames], self.folder / f"{name}.xyz"
-        return self.rt.file_ref(trajectory.write_xyz_trajectory(images, path))
+        return self.rt.file_ref(write_xyz_trajectory(images, path))
 
     def frames(self, ref: FileRef) -> list[np.ndarray]:
-        images = trajectory.read_xyz_trajectory(self.rt.resolve(ref))
+        images = read_xyz_trajectory(self.rt.resolve(ref))
         return [np.asarray(i.coords, dtype=float) for i in images]
 
     def verdict(self, frames: list[np.ndarray], inner: Sequence[float],
@@ -148,7 +152,7 @@ class Ctx:
         if seed is not None and seed.tangent is not None and seed.source in _MODE_SEEDS:
             return np.asarray(seed.tangent)
         a, b = (align_mapped(x, end) for end in self.ends)
-        centre, bonded = _reaction_centre(self.symbols, a, b)
+        centre, bonded = topology.reaction_centre(self.symbols, a, b)
         if not centre and (terms := self.case.coordinate or most_changed_dihedral(bonded, a, b)):
             return declared_coordinate_gradient(terms, x)
         t = np.reshape(b - a if seed is None or seed.tangent is None else seed.tangent, (-1, 3))
@@ -158,14 +162,6 @@ class Ctx:
 
     def record(self, basin_id: str) -> MinimumRecord:
         return next(r for r, _ in self.rt.minima.values() if r.basin_id == basin_id)
-
-
-def _reaction_centre(symbols: list[str], a: np.ndarray, b: np.ndarray
-                     ) -> tuple[set[int], frozenset[tuple[int, int]]]:
-    """Atoms whose bonds change from a to b and their neighbours; the bonds of a."""
-    formed, broken = topology.bond_changes(symbols, a, b)
-    changed, bonded = {i for pair in formed | broken for i in pair}, topology.bonds(symbols, a)
-    return changed | {k for pair in bonded if changed & set(pair) for k in pair}, bonded
 
 
 def _unavailable(reason: str) -> BarrierVerdict:
@@ -464,8 +460,7 @@ def _initial_path(ctx: Ctx, beads: int, name: str) -> FileRef | None:
         except ValueError as exc:
             ctx.note(f"idpp:{exc}")
             return None
-    images = trajectory.resample_xyz_trajectory([ctx.mol(f).xyz for f in frames], beads)
-    inner = [np.asarray(i.coords, dtype=float) for i in images[1:-1]]
+    inner = resample(frames, beads)[1:-1]
     return ctx.path_file(name, align_sequential([ctx.ends[0], *inner, ctx.ends[1]]))
 
 

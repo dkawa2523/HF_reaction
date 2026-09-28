@@ -11,7 +11,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from hfauto.chemistry.geometry import align_coordinates
+from hfauto.chemistry.geometry import kabsch
 
 MIN_DISTANCE_A = 0.7
 _MAX_ITERATIONS = 5000
@@ -26,7 +26,33 @@ _SYMMETRY_BREAK_A = 0.01
 def align_mapped(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """b rigidly aligned onto a with the identity atom mapping (proper rotation)."""
 
-    return align_coordinates(np.asarray(a, dtype=float), np.asarray(b, dtype=float))
+    fixed, mobile = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+    if fixed.shape != mobile.shape or fixed.ndim != 2 or fixed.shape[1] != 3:
+        raise ValueError("coordinate arrays must be N×3 arrays of the same atoms")
+    fixed_center, mobile_center = fixed.mean(axis=0), mobile.mean(axis=0)
+    return (mobile - mobile_center) @ kabsch(mobile - mobile_center, fixed - fixed_center) + (
+        fixed_center)
+
+
+def resample(frames: Sequence[np.ndarray], count: int) -> list[np.ndarray]:
+    """The path re-discretized at ``count`` points of uniform Cartesian arc length; its ends
+    are kept exactly."""
+
+    x = np.stack([np.asarray(frame, dtype=float).reshape(-1, 3) for frame in frames])
+    if len(x) < 2 or count < 3:
+        raise ValueError("resampling needs a path of two frames and at least three points")
+    lengths = np.linalg.norm(np.diff(x, axis=0).reshape(len(x) - 1, -1), axis=1)
+    cumulative = np.concatenate(([0.0], np.cumsum(lengths)))
+    if not np.isfinite(cumulative).all() or cumulative[-1] <= 1.0e-12:
+        raise ValueError("cannot resample a zero-length or non-finite path")
+    keep = np.concatenate(([True], np.diff(cumulative) > 1.0e-12))
+    cumulative, flat = cumulative[keep], x[keep].reshape(int(keep.sum()), -1)
+    targets = np.linspace(0.0, cumulative[-1], count)
+    sampled = np.column_stack(
+        [np.interp(targets, cumulative, flat[:, column]) for column in range(flat.shape[1])]
+    ).reshape(count, -1, 3)
+    sampled[0], sampled[-1] = x[0], x[-1]
+    return list(sampled)
 
 
 def align_sequential(frames: Sequence[np.ndarray]) -> list[np.ndarray]:

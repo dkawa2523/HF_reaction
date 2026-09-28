@@ -12,7 +12,14 @@ from typing import Literal
 from hfauto.chemistry.profile import classify
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Level
-from hfauto.core.records import BarrierVerdict, CaseOutcome, ReactionRecord, ReactionThermo
+from hfauto.core.records import (
+    CONNECTED_OUTCOMES,
+    BarrierVerdict,
+    CaseOutcome,
+    ConnectionLabel,
+    ReactionRecord,
+    ReactionThermo,
+)
 
 
 @dataclass(frozen=True)
@@ -46,12 +53,7 @@ _PES_FIELDS = (
 )
 _STATE_FIELDS = ("charge", "multiplicity")
 _NUMERICS_FIELDS = ("grid", "scf_tol")
-RANKABLE_OUTCOMES = frozenset({
-    CaseOutcome.ELEMENTARY_STEP, CaseOutcome.DEGENERATE, CaseOutcome.REASSIGNED,
-    CaseOutcome.BARRIERLESS,
-})
-
-ConnectionLabel = Literal["elementary", "degenerate", "reassigned", "failed"]
+RANKABLE_OUTCOMES = frozenset({*CONNECTED_OUTCOMES.values(), CaseOutcome.BARRIERLESS})
 Bonds = frozenset[tuple[int, int]]  # a labelled bond graph (topology.bonds)
 
 
@@ -99,15 +101,6 @@ def spin_ok(ev: Evidence, policy: Policy = _DEFAULT) -> Gate:
     return Gate(False, ("spin_contaminated",))
 
 
-def _mode_count_reasons(freq: Evidence) -> list[str]:
-    if freq.frequencies_cm1 is None or freq.n_external is None:
-        return ["missing_frequencies"]
-    expected = 3 * len(freq.final.symbols) - freq.n_external
-    if len(freq.frequencies_cm1) != expected:
-        return [f"frequency_count:{len(freq.frequencies_cm1)}!={expected}"]
-    return []
-
-
 def _link_reasons(freq: Evidence, parent: Evidence) -> list[str]:
     """The freq job sits on the parent's final geometry, on the same PES incl. numerics, in the
     same SCF solution: an energy within qrc_drop of the parent's (a UKS freq may find another
@@ -124,7 +117,7 @@ def _link_reasons(freq: Evidence, parent: Evidence) -> list[str]:
 def is_minimum(freq: Evidence, *, opt: Evidence, policy: Policy = _DEFAULT) -> Gate:
     reasons = [f"not_{want}_task:{ev.task}" for ev, want in ((freq, "freq"), (opt, "opt"))
                if ev.task != want]
-    reasons += _link_reasons(freq, opt) + _mode_count_reasons(freq)
+    reasons += _link_reasons(freq, opt)
     tier = imaginary_tier(freq.frequencies_cm1 or (), policy)
     notes: tuple[str, ...] = ()
     if tier == "saddle":
@@ -137,7 +130,7 @@ def is_minimum(freq: Evidence, *, opt: Evidence, policy: Policy = _DEFAULT) -> G
 def is_first_order_saddle(freq: Evidence, *, saddle: Evidence, policy: Policy = _DEFAULT) -> Gate:
     """One negative eigenvalue of any size: the lowest mode below -noise_cm1, the second not
     below -saddle_cm1 (higher_order); a second between the two is the note soft_secondary_mode."""
-    reasons = _link_reasons(freq, saddle) + _mode_count_reasons(freq)
+    reasons = _link_reasons(freq, saddle)
     lowest, second = (*sorted(freq.frequencies_cm1 or ()), 0.0, 0.0)[:2]  # missing: 0
     if lowest >= -policy.noise_cm1:
         reasons.append("no_imaginary_mode")

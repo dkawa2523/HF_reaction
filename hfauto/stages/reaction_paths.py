@@ -55,7 +55,6 @@ def _case_runtime(config: ReactionPathsConfig, rt: StageRuntime, inputs: Manifes
     """Engines, methods and the DFT minima registry of this stage."""
     dft = [m for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord) if m.tier == "dft"]
     minima = {m.minimum_id: (m, inputs.evidence(m.opt_calc).final) for m in dft}
-    run_dir = rt.stage_dir.parent  # RunLayout: <run>/<stage_id>/
     screen = config.screen
     return CaseRuntime(
         qm=cast(QMEngine, rt.engine(Capability.QM, config.engines.qm)),
@@ -69,7 +68,7 @@ def _case_runtime(config: ReactionPathsConfig, rt: StageRuntime, inputs: Manifes
         load_xyz=rt.load_xyz,
         file_ref=rt.file_ref,
         case_dir=rt.stage_dir / "cases",
-        resolve=lambda ref: run_dir / ref.path,
+        resolve=rt.resolve,
         minima=minima,
         species=species,
     )

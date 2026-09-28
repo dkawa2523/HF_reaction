@@ -32,15 +32,13 @@ def test_g01_two_vibrational_blocks(golden):
     assert nw.count_frequency_blocks(golden.text("nwchem/G01/nwchem.out")) == 2
 
 
-@pytest.mark.parametrize(("stem", "energy", "steps"), [
-    ("G03/hono_trans", -205.3455299945, 8), ("G03/hono_cis", -205.3452826520, 7),
-    ("G21/water_reference", -76.2956762656, 5), ("G21/water_distorted", -76.2956762657, 8)])
-def test_energy_trajectory_level_and_final_structure(golden, stem, energy, steps):
+@pytest.mark.parametrize(("stem", "energy"), [
+    ("G03/hono_trans", -205.3455299945), ("G03/hono_cis", -205.3452826520),
+    ("G21/water_reference", -76.2956762656), ("G21/water_distorted", -76.2956762657)])
+def test_energy_level_and_final_structure(golden, stem, energy):
     text = golden.text(f"nwchem/{stem}.out")
     assert level_mismatches(XFINE, nw.observe_level(text), version_pin="7.2.3") == []
     assert nw.total_energy(text) == pytest.approx(energy, abs=1e-9)
-    trajectory = nw.trajectory_energies(text)
-    assert len(trajectory) == steps and trajectory[-1] == pytest.approx(energy, abs=1e-8)
     final = read_xyz(golden.path(f"nwchem/{stem}_final.xyz"))
     symbols, coords = nw.geometry_block(text, -1)
     assert symbols == tuple(final.symbols) and np.allclose(coords, final.coords, atol=1e-8)

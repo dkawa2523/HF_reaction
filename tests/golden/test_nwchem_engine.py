@@ -12,8 +12,7 @@ import pytest
 from hfauto.backends.nwchem.engine import NWChemEngine, NWChemSaddle, NWChemString
 from hfauto.backends.nwchem.output import geometry_block, read_hess
 from hfauto.chemistry.vibrations import shape_hessian
-from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
-from hfauto.chemistry.xyz_trajectory import write_xyz_trajectory
+from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz, write_xyz_trajectory
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, PathProfile
 from hfauto.core.hashing import sha256_file
 from hfauto.core.method import EngineSite, MethodSpec
@@ -163,7 +162,6 @@ def test_timeout_continues_from_the_latest_frame(nwchem, golden):
     mol = _hcn_ts(golden)
     ev = NWChemEngine(jobs=jobs, site=site).optimize(mol, FINE)
     assert isinstance(ev, Evidence) and ev.task == "opt"
-    assert len(ev.trajectory_energies_hartree) == 4
     second = jobs.store.attempt_dir(ev.job_key, 1)
     assert (second / "job.drv.hess").is_file() and (second / "job.movecs").is_file()
     assert "vectors input job.movecs" in (second / "job.nw").read_text()

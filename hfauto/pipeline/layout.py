@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -20,18 +18,13 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
+from hfauto.core.files import write_atomic
 from hfauto.core.hashing import sha256_file
 from hfauto.core.manifest import Manifest, load_manifest
+from hfauto.execution.jobs import JobStats
 from hfauto.pipeline.config import ResolvedConfig
 
 Status = Literal["pending", "running", "done", "failed", "stale"]
-
-
-class JobCounts(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-    hits: int = 0
-    misses: int = 0
-    failures_by_kind: dict[str, int] = {}
 
 
 class StageState(BaseModel):
@@ -45,7 +38,7 @@ class StageState(BaseModel):
     finished: str | None = None
     n_ok: int = 0
     n_failed: int = 0
-    jobs: JobCounts = JobCounts()
+    jobs: JobStats = JobStats()  # of this stage's last execution
 
 
 _STATES = TypeAdapter(list[StageState])
@@ -60,20 +53,6 @@ def _index(states: list[StageState], stage_id: str) -> int:
         if state.stage_id == stage_id:
             return i
     raise KeyError(f"stage {stage_id!r} is not in run_state")
-
-
-def _write_atomic(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
 
 
 class RunLayout:
@@ -112,7 +91,7 @@ class RunLayout:
         return _STATES.validate_json(self.run_state_path.read_bytes())
 
     def write_state(self, states: list[StageState]) -> None:
-        _write_atomic(self.run_state_path, _STATES.dump_json(states, indent=2).decode("utf-8"))
+        write_atomic(self.run_state_path, _STATES.dump_json(states, indent=2).decode("utf-8"))
 
     def state(self, stage_id: str) -> StageState | None:
         return next((s for s in self.read_state() if s.stage_id == stage_id), None)
@@ -198,5 +177,5 @@ class RunLayout:
         records = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else None
         records = dict(records or {})
         records[resolved.pipeline.pipeline_id] = resolved.model_dump(mode="json")
-        _write_atomic(path, yaml.safe_dump(records, sort_keys=False, allow_unicode=True))
+        write_atomic(path, yaml.safe_dump(records, sort_keys=False, allow_unicode=True))
         return path

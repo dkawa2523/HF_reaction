@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from hfauto.core import records as r
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry, Level
+from hfauto.core.files import write_atomic
 from hfauto.core.manifest import Artifact, Manifest, load_manifest, save_manifest
 from hfauto.core.records import ArtifactType as AT
 
@@ -88,6 +89,14 @@ def test_every_payload_round_trips(tmp_path):
     path.write_text(path.read_text(encoding="utf-8").replace(".v2", ".v1"), encoding="utf-8")
     with pytest.raises(ValidationError):  # no compatibility with other schema versions
         load_manifest(path)
+
+
+def test_an_atomic_write_leaves_the_old_file_or_the_new_one(tmp_path):
+    target = write_atomic(tmp_path / "new" / "state.json", "one")
+    with pytest.raises(TypeError):
+        write_atomic(target, None)  # type: ignore[arg-type]
+    assert target.read_text(encoding="utf-8") == "one"
+    assert [p.name for p in target.parent.iterdir()] == ["state.json"]
 
 
 def test_union_keeps_first_order_and_last_wins():

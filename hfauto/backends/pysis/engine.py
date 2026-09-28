@@ -24,8 +24,7 @@ import numpy as np
 
 from hfauto.backends.protocols import Requirements
 from hfauto.backends.pysis.worker import neb_images
-from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz, write_xyz
-from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory
+from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz_trajectory, write_xyz, written_geometry
 from hfauto.core.evidence import Failure, FailureKind, FileRef, Geometry, Level, PathProfile
 from hfauto.core.method import Deadline, EngineSite, MethodSpec, level_mismatches
 from hfauto.execution.jobs import Task
@@ -124,9 +123,8 @@ class NEBAdapter:
                            job_key="")
 
     def _geometry(self, path: Path, symbols: list[str], coords: Any) -> Geometry:
-        xyz = read_xyz(write_xyz(XYZ(symbols, np.asarray(coords, dtype=float)), path))
-        return Geometry(file=self.file_ref(path), symbols=tuple(xyz.symbols),
-                        fingerprint=geometry_fingerprint(xyz.symbols, xyz.coords))
+        return written_geometry(write_xyz(XYZ(symbols, np.asarray(coords, dtype=float)), path),
+                                self.file_ref)
 
 
 class PysisNEB:
@@ -156,7 +154,7 @@ class PysisNEB:
                          "initial_path": initial_path.sha256},
             execution=self.site.execution,
             inputs={"start": start, "method": method, "images": images,
-                    "initial_path": self.jobs.store.run_dir / initial_path.path,
+                    "initial_path": self.jobs.store.resolve(initial_path),
                     "run_dict": neb_input(start, method, threads=self.site.execution.threads)},
         )
 
