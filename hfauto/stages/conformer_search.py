@@ -1,29 +1,29 @@
 """conformers stage (design §4.1 #2, §8.2): conformer search of monomers, placement seeds and
-``--nci`` search of compositions, de-duplication, state labels and per state label the
-``keep_per_state`` lowest structures (no energy window: the screen stage selects).
+``--nci`` search of compositions, state labels and per state label the ``keep_per_state``
+lowest structures (no energy window and no own duplicate test: CREGEN's output is unique, and
+the screen stage selects).
 
 Small rigid monomers skip the search and pass their input through. A topology-change stop is kept
 as a ``crest_topology`` species and the search reruns once from that structure with the same
 settings (a second stop fails). Compositions take the summed charge of their components and the
 declared multiplicity (or the only one spin coupling allows; otherwise INPUT_INVALID), and get
-``--notopo`` on labile H and acceptor atoms when they have both. When a search fails its input
-(monomer) or placement seeds (composition) are output instead. Users set quick, ewin_kcal,
+``--notopo`` on every atom: hfauto's state label decides the state, CREST only samples. When a
+search fails its input (monomer) or placement seeds (composition) are output instead (CREST 3.0.2
+fails on open-shell and some small ionic compositions). Users set quick, ewin_kcal,
 seeds_per_composition and keep_per_state; CREST threads come from the site.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import partial
 from typing import ClassVar, Literal, cast
 
 from hfauto.backends import protocols as bp
 from hfauto.chemistry import placement
 from hfauto.chemistry.electronic_state import composition_multiplicity
-from hfauto.chemistry.identity import permutation_invariant_rmsd
-from hfauto.chemistry.topology import acceptor_atoms, labile_hydrogens, state_label
+from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.xyz import (
     XYZ,
     Molecule,
@@ -32,7 +32,6 @@ from hfauto.chemistry.xyz import (
     read_xyz,
     write_xyz,
 )
-from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Failure, FailureKind, Geometry
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
@@ -43,8 +42,6 @@ from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 Source = Literal["conformer", "placement", "crest_topology"]
 Candidate = tuple[Geometry, float | None, Source]
 _TAG = {"conformer": "c", "placement": "p", "crest_topology": "t"}
-DUPLICATE_RMSD_A = 0.1
-DUPLICATE_DE_KCAL = 0.1
 
 
 class ConformersConfig(StageConfig):
@@ -71,7 +68,6 @@ class _Found:
     item: _Item
     candidates: list[Candidate]
     failure: Failure | None = None
-    diagnostics: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -95,7 +91,7 @@ def _failed(base: str, parents: tuple[str, ...], failure: Failure) -> Artifact:
 def _search(engine: bp.ConformerEngine, method: MethodSpec, load_xyz: Callable[[Geometry], XYZ],
             item: _Item) -> _Found:
     if item.skip:
-        return _Found(item, list(item.fallback), diagnostics={"skipped": True})
+        return _Found(item, list(item.fallback))
     result, stops = engine.search(item.mol, method, item.settings), []
     if isinstance(result, bp.ConformerEnsemble) and result.topology_stops:
         stops = [(g, None, cast(Source, "crest_topology")) for g in result.topology_stops]
@@ -103,33 +99,18 @@ def _search(engine: bp.ConformerEngine, method: MethodSpec, load_xyz: Callable[[
         result = engine.search(stop, method, item.settings)
     if isinstance(result, bp.ConformerEnsemble) and result.topology_stops:  # no second retry
         result = Failure(kind=FailureKind.INCOMPLETE_OUTPUT, reason="topology_stop_repeated")
-    diagnostics: dict[str, object] = {"topology_retry": bool(stops)}
     if isinstance(result, Failure):
-        diagnostics["failure"] = f"{result.kind}: {result.reason}"
-        return _Found(item, stops + list(item.fallback), result, diagnostics)
-    diagnostics |= {"crest_version": result.version, "topology_removed": result.topology_removed}
-    members = [(g, e, cast(Source, "conformer")) for g, e in result.members]
-    return _Found(item, stops + members, None, diagnostics)
-
-
-def _same(a: _Cand, b: _Cand) -> bool:
-    de = None if a.energy is None or b.energy is None else abs(a.energy - b.energy)
-    if a.xyz.symbols != b.xyz.symbols or (de or 0.0) * HARTREE_TO_KCAL_MOL >= DUPLICATE_DE_KCAL:
-        return False
-    rmsd, _ = permutation_invariant_rmsd(a.xyz.symbols, a.xyz.coords, b.xyz.coords)
-    return rmsd < DUPLICATE_RMSD_A
+        return _Found(item, stops + list(item.fallback), result)
+    return _Found(item, stops + [(g, e, cast(Source, "conformer")) for g, e in result.members])
 
 
 def _select(cands: list[_Cand], keep_per_state: int) -> list[_Cand]:
-    """Unique structures; per state label the lowest ``keep_per_state``. A missing energy is
-    dropped when the state has energies (BUG-08); a state without energies keeps input order."""
-    unique: list[_Cand] = []
-    for c in sorted(cands, key=lambda c: (c.energy is None, c.energy or 0.0)):
-        if not any(_same(c, u) for u in unique):
-            unique.append(c)
+    """Per state label the lowest ``keep_per_state``. A missing energy is dropped when the state
+    has energies (BUG-08); a state without energies keeps input order."""
+    ranked = sorted(cands, key=lambda c: (c.energy is None, c.energy or 0.0))
     kept: list[_Cand] = []
-    for label in dict.fromkeys(c.label for c in unique):
-        group = [c for c in unique if c.label == label]
+    for label in dict.fromkeys(c.label for c in ranked):
+        group = [c for c in ranked if c.label == label]
         lowest = group[0].energy
         kept += [c for c in group if lowest is None or c.energy is not None][:keep_per_state]
     return kept
@@ -185,13 +166,6 @@ def _seed_geometries(comp_id: str, seeds: list[XYZ], rt: StageRuntime) -> list[G
     return geoms
 
 
-def _notopo(xyz: XYZ) -> tuple[int, ...]:
-    """Labile H and acceptor atoms when the structure has both, else none."""
-    labile = labile_hydrogens(xyz.symbols, xyz.coords)
-    acceptors = acceptor_atoms(xyz.symbols, xyz.coords)
-    return tuple(sorted({*labile, *acceptors})) if labile and acceptors else ()
-
-
 def _composition(comp: CompositionInput, species: dict[str, SpeciesRecord],
                  best: dict[str, XYZ], rt: StageRuntime, cfg: ConformersConfig
                  ) -> _Item | Artifact:
@@ -217,7 +191,7 @@ def _composition(comp: CompositionInput, species: dict[str, SpeciesRecord],
     geoms = _seed_geometries(comp.id, seeds, rt)
     first = rt.load_xyz(geoms[0])
     settings = bp.ConformerSettings(nci=True, quick=cfg.quick, ewin_kcal=cfg.ewin_kcal,
-                                    notopo_atoms=_notopo(first))
+                                    notopo_atoms=tuple(range(len(first.symbols))))
     parents = tuple(dict.fromkeys(artifact_id(sid) for sid, _ in parts))
     return _Item(comp.id, parents, Molecule(first, charge, mult), settings,
                  tuple((g, None, "placement") for g in geoms))
@@ -236,12 +210,10 @@ class ConformersStage:
         species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)
                    if s.source == "input"}
         # the JobRunner core semaphore limits concurrent CREST jobs by the site threads
-        found = rt.thread_map(search, _monomers(species, rt, cfg), threads_per_item=1)
+        found = rt.thread_map(search, _monomers(species, rt, cfg))
         best = {f.item.base: _lowest(f, rt) for f in found}
         built = [_composition(c, species, best, rt, cfg) for c in rt.system.compositions]
         items = [b for b in built if isinstance(b, _Item)]
-        found += rt.thread_map(search, items, threads_per_item=1)
-        diagnostics = json.dumps({f.item.base: f.diagnostics for f in found}, indent=1)
-        (rt.stage_dir / "diagnostics.json").write_text(diagnostics, encoding="utf-8")
+        found += rt.thread_map(search, items)
         failed = [b for b in built if isinstance(b, Artifact)]
         return failed + [a for f in found for a in _artifacts(f, rt, cfg)]

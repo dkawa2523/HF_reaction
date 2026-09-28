@@ -1,17 +1,20 @@
 """Placement seeds for complexes (design §8.2 conformers, chem 10, CH-19).
 
-With a polar H (``topology.labile_hydrogens``) on one side and an acceptor
-(``topology.acceptor_atoms``) on the other, the H sits on the acceptor's lone-pair cone,
+With a polar H (bonded to N/O/F/S/P or a halogen) on one side and an acceptor (N/P/O/S or a
+halogen with a lone pair left) on the other, the H sits on the acceptor's lone-pair cone,
 110–120° from the acceptor's bonds (the lone-pair axis of an sp3 acceptor), at azimuths
 0/120/240°, and the donor fragment is tilted by ±30° about an RNG-drawn axis through that H.
 Otherwise the guest is placed as a rigid body in a random orientation at van der Waals
 contact + 0.5 Å. All directions are taken in molecule-fixed frames, so seeds do not depend
 on the input orientation. Three or more fragments are stacked one at a time. CREST ``--nci``
-does the real sampling; a seed only has to be a collision-free starting point.
+samples from seed00; the seeds themselves are the output when CREST fails (open-shell
+compositions), and there the H-bond cone keeps complex states that rigid contact seeds lose in
+the xTB screen.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterator, Sequence
 from itertools import product
 
@@ -19,7 +22,7 @@ import numpy as np
 
 from hfauto.chemistry.elements import vdw_radius
 from hfauto.chemistry.identity import permutation_invariant_rmsd
-from hfauto.chemistry.topology import acceptor_atoms, bonds, labile_hydrogens
+from hfauto.chemistry.topology import bonds
 from hfauto.chemistry.xyz import XYZ
 
 CONE_DEG = (110.0, 120.0)  # A···H direction measured from the acceptor's bonds
@@ -32,6 +35,9 @@ MIN_HEAVY_A = 2.2  # intermolecular heavy-atom pairs
 MAX_TRIES = 50  # rejection sampling per placement
 DUPLICATE_RMSD_A = 0.1
 _TINY = 1e-3
+_LABILE_PARTNERS = frozenset({"N", "O", "F", "S", "Cl", "Br", "I", "P"})
+# An atom with a lone pair left: at most this many covalent partners.
+_ACCEPTOR_MAX_BONDS = {"N": 3, "P": 3, "O": 2, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
 
 
 def _unit(v: np.ndarray) -> np.ndarray:
@@ -94,6 +100,17 @@ def _partners(symbols: Sequence[str], x: np.ndarray, atom: int) -> list[int]:
     return sorted(i + j - atom for i, j in bonds(symbols, x) if atom in (i, j))
 
 
+def _labile_hydrogens(m: XYZ) -> list[int]:
+    return sorted({h for pair in bonds(m.symbols, m.coords) for h, partner in (pair, pair[::-1])
+                   if m.symbols[h] == "H" and m.symbols[partner] in _LABILE_PARTNERS})
+
+
+def _acceptor_atoms(m: XYZ) -> list[int]:
+    degree = Counter(i for pair in bonds(m.symbols, m.coords) for i in pair)
+    return [i for i, s in enumerate(m.symbols)
+            if s in _ACCEPTOR_MAX_BONDS and degree[i] <= _ACCEPTOR_MAX_BONDS[s]]
+
+
 def _lone_pair(frame: np.ndarray, bond_dirs: np.ndarray, cone_deg: float, azimuth_deg: float
                ) -> np.ndarray:
     """Direction at ``azimuth_deg`` about frame[0] (the bond-sum axis) with the smallest polar
@@ -147,10 +164,8 @@ def _combined(cluster: XYZ, guest: XYZ, coords: np.ndarray) -> XYZ:
 
 def _hbond_placements(cluster: XYZ, guest: XYZ, rng: np.random.Generator) -> Iterator[XYZ]:
     """Guest H → cluster acceptor pairs first, then cluster H → guest acceptor."""
-    pairs = [(True, h, a) for h in labile_hydrogens(guest.symbols, guest.coords)
-             for a in acceptor_atoms(cluster.symbols, cluster.coords)]
-    pairs += [(False, h, a) for h in labile_hydrogens(cluster.symbols, cluster.coords)
-              for a in acceptor_atoms(guest.symbols, guest.coords)]
+    pairs = [(True, h, a) for h in _labile_hydrogens(guest) for a in _acceptor_atoms(cluster)]
+    pairs += [(False, h, a) for h in _labile_hydrogens(cluster) for a in _acceptor_atoms(guest)]
     for sign, azimuth, (guest_donates, h, a) in product((1.0, -1.0), AZIMUTHS_DEG, pairs):
         for _ in range(MAX_TRIES):
             if guest_donates:

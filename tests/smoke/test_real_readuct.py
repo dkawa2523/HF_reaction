@@ -19,4 +19,4 @@ def test_nt2_on_bent_hcn_finds_hnc_through_a_first_order_saddle(real_engine):
         DiscoverySettings())
     assert isinstance(result, DiscoveryResult), result
     assert (result.outcome, result.irc_connected_to_source) == ("product", True)
-    assert result.ts is not None and result.ts_imag_cm1 < -50.0 and result.barrier_kj_mol > 0
+    assert result.ts is not None and result.ts_imag_cm1 < -50.0 and result.dE_act_kcal > 0

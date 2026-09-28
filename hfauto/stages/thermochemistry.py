@@ -274,7 +274,7 @@ class ThermoStage:
         subjects = _subjects(inputs, method, rt.load_xyz)
         temperatures, variants = cfg.temperatures_K, _variants(cfg.settings)
         rows = rt.thread_map(lambda s: _species(s, engine, variants, temperatures, rt.policy),
-                             list(subjects.values()), threads_per_item=1)
+                             list(subjects.values()))
         monomers = th.monomer_states(inputs.records(ArtifactType.SPECIES, SpeciesRecord),
                                      rt.system.compositions)
         out: list[Artifact] = []

@@ -198,6 +198,20 @@ def thermo(dG_eff: float | None = 12.2, blockers: tuple[str, ...] = ()) -> r.Rea
                             dG_rxn_kcal=1.0, dG_eff_kcal=dG_eff, blockers=blockers)
 
 
+def test_discovery_verdict_window_edges():
+    """U4-P6: the DFT reaction window (40 kcal/mol) and the 50 kcal/mol low-level barrier cap,
+    both inclusive; an NT2 product needs its validated TS, an AFIR product has no barrier."""
+
+    def verdict(mechanism="nt2", act=10.0, rxn=5.0, ts=True, **policy):
+        return g.discovery_verdict(mechanism, ts_validated=ts, dE_act_kcal=act,
+                                   dE_rxn_kcal=rxn, policy=g.Policy(**policy))
+
+    assert verdict() is None and verdict(act=50.0, rxn=40.0) is None
+    assert verdict(act=50.01) == verdict(rxn=40.01) == verdict(rxn=None) == "out_of_window"
+    assert verdict(ts=False) == "ts_not_validated" and verdict("afir", None, ts=False) is None
+    assert verdict(rxn=45.0, reaction_window_kcal=50.0) is None
+
+
 def test_rankable():  # any dZPE; a barrierless outcome ranks by its dG_eff
     assert g.rankable(reaction(), thermo())
     assert g.rankable(reaction(outcome=CaseOutcome.BARRIERLESS), thermo(1.0))

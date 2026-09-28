@@ -1,9 +1,8 @@
-"""Covalent topology with hysteresis, fragments, labile H, acceptors, WL atom classes, state
-labels (§5.5) and the value and gradient of a declared reaction coordinate.
+"""Covalent bond graph, fragments, bond changes, WL atom classes and state labels (§5.5).
 
-A pair is bonded at r ≤ 1.15 Σr_cov and non-bonded at r ≥ 1.45 Σr_cov.  In between it keeps
-its previous state; with no previous state it counts as bonded, so strong and symmetric
-hydrogen bonds such as FHF⁻ stay one fragment.
+A pair is bonded when r < r_cov,i + r_cov,j + 0.4 Å (additive tolerance, Meng & Lewis 1991;
+SCINE BondDetector, OpenBabel). The rule sees one structure only, so ``bond_changes`` is
+symmetric: FHF⁻ (1.14 Å) and I3⁻ (2.92 Å) are bonded, a halogen bond I···N at 2.8 Å is not.
 """
 
 from __future__ import annotations
@@ -16,50 +15,21 @@ from collections.abc import Collection, Sequence
 import numpy as np
 
 from hfauto.chemistry.elements import covalent_radius
-from hfauto.chemistry.geometry import dihedral_deg
 from hfauto.chemistry.xyz import hill_formula
-from hfauto.core.records import CoordinateTerm
 
 Bond = tuple[int, int]  # (i, j) with i < j
-_FD_STEP_A = 1.0e-4  # central-difference step of a declared coordinate's gradient
-
-BOND_MAX_RATIO = 1.15
-NONBOND_MIN_RATIO = 1.45
+BOND_TOLERANCE_A = 0.4
 _WL_ITERATIONS = 3
 
-_LABILE_PARTNERS = frozenset({"N", "O", "F", "S", "Cl", "Br", "I", "P"})
-# An atom with a lone pair left: at most this many covalent partners.
-_ACCEPTOR_MAX_BONDS = {"N": 3, "P": 3, "O": 2, "S": 2, "F": 1, "Cl": 1, "Br": 1, "I": 1}
 
-
-def _ratios(symbols: Sequence[str], coords: np.ndarray) -> np.ndarray:
-    """r_ij / (r_cov,i + r_cov,j); the diagonal is +inf."""
-
+def bonds(symbols: Sequence[str], coords: np.ndarray) -> frozenset[Bond]:
     x = np.asarray(coords, dtype=float).reshape(-1, 3)
     if len(x) != len(symbols):
         raise ValueError("symbols and coordinates differ in atom count")
     radii = np.array([covalent_radius(s) for s in symbols])
-    ratio = np.linalg.norm(x[:, None] - x[None], axis=-1) / (radii[:, None] + radii[None])
-    np.fill_diagonal(ratio, np.inf)
-    return ratio
-
-
-def _pairs(mask: np.ndarray) -> frozenset[Bond]:
-    i, j = np.nonzero(np.triu(mask, 1))
+    r = np.linalg.norm(x[:, None] - x[None], axis=-1)
+    i, j = np.nonzero(np.triu(r < np.add.outer(radii, radii) + BOND_TOLERANCE_A, 1))
     return frozenset(zip(i.tolist(), j.tolist(), strict=True))
-
-
-def bonds(
-    symbols: Sequence[str], coords: np.ndarray, previous: Collection[Bond] | None = None
-) -> frozenset[Bond]:
-    ratio = _ratios(symbols, coords)
-    loose = ratio < NONBOND_MIN_RATIO
-    if previous is None:
-        return _pairs(loose)
-    kept = np.zeros_like(loose)
-    for i, j in previous:
-        kept[i, j] = kept[j, i] = True
-    return _pairs((ratio <= BOND_MAX_RATIO) | (loose & kept))
 
 
 def _components(n_atoms: int, bonded: Collection[Bond]) -> tuple[tuple[int, ...], ...]:
@@ -79,73 +49,19 @@ def _components(n_atoms: int, bonded: Collection[Bond]) -> tuple[tuple[int, ...]
     return tuple(sorted((tuple(g) for g in groups.values()), key=lambda g: (-len(g), g)))
 
 
-def fragments(
-    symbols: Sequence[str], coords: np.ndarray, previous: Collection[Bond] | None = None
-) -> tuple[tuple[int, ...], ...]:
+def fragments(symbols: Sequence[str], coords: np.ndarray) -> tuple[tuple[int, ...], ...]:
     """Connected components, largest first."""
 
-    return _components(len(symbols), bonds(symbols, coords, previous))
+    return _components(len(symbols), bonds(symbols, coords))
 
 
 def bond_changes(
     symbols: Sequence[str], a: np.ndarray, b: np.ndarray
 ) -> tuple[frozenset[Bond], frozenset[Bond]]:
-    """(formed, broken) going from a to b, with a's bonds as the previous state of b."""
+    """(formed, broken) going from a to b: the two set differences of the bond graphs."""
 
-    before = bonds(symbols, a)
-    after = bonds(symbols, b, previous=before)
+    before, after = bonds(symbols, a), bonds(symbols, b)
     return after - before, before - after
-
-
-def declared_coordinate(terms: Sequence[CoordinateTerm], x: np.ndarray) -> float:
-    """Σ coefficient × (distance Å | angle ° | dihedral °)."""
-    total = 0.0
-    for term in terms:
-        p = np.asarray(x, dtype=float).reshape(-1, 3)[list(term.atoms)]
-        if term.kind == "distance":
-            value = float(np.linalg.norm(p[1] - p[0]))
-        elif term.kind == "angle":
-            u, v = p[0] - p[1], p[2] - p[1]
-            value = float(np.degrees(np.arccos(np.clip(
-                u @ v / (np.linalg.norm(u) * np.linalg.norm(v)), -1.0, 1.0))))
-        else:
-            value = dihedral_deg(x, term.atoms)
-        total += term.coefficient * value
-    return total
-
-
-def declared_coordinate_gradient(terms: Sequence[CoordinateTerm], x: np.ndarray) -> np.ndarray:
-    """Central-difference gradient of ``declared_coordinate``; dihedral steps wrap at ±180°."""
-    flat, grad = np.asarray(x, dtype=float).ravel(), np.zeros(np.size(x))
-    for i in range(flat.size):
-        step = np.zeros_like(flat)
-        step[i] = _FD_STEP_A
-        delta = declared_coordinate(terms, flat + step) - declared_coordinate(terms, flat - step)
-        grad[i] = ((delta + 180.0) % 360.0 - 180.0) / (2 * _FD_STEP_A)
-    return grad
-
-
-def labile_hydrogens(symbols: Sequence[str], coords: np.ndarray) -> tuple[int, ...]:
-    """H atoms bonded to N/O/F/S/Cl/Br/I/P."""
-
-    labile = {
-        h
-        for pair in bonds(symbols, coords)
-        for h, partner in (pair, pair[::-1])
-        if symbols[h] == "H" and symbols[partner] in _LABILE_PARTNERS
-    }
-    return tuple(sorted(labile))
-
-
-def acceptor_atoms(symbols: Sequence[str], coords: np.ndarray) -> tuple[int, ...]:
-    """N/P/O/S/halogen atoms that still carry a lone pair (few enough covalent partners)."""
-
-    degree = Counter(i for pair in bonds(symbols, coords) for i in pair)
-    return tuple(
-        i
-        for i, s in enumerate(symbols)
-        if s in _ACCEPTOR_MAX_BONDS and degree[i] <= _ACCEPTOR_MAX_BONDS[s]
-    )
 
 
 def _wl_rounds(symbols: Sequence[str], bonded: Collection[Bond]) -> list[list[str]]:

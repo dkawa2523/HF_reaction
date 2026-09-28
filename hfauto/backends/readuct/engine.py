@@ -97,8 +97,8 @@ class _Adapter:
             outcome=data["outcome"], reason=data["reason"],
             product=self._geometry(workdir, data["product"]),
             ts=self._geometry(workdir, data["ts"]),
-            ts_imag_cm1=data["ts_imag_cm1"], barrier_kj_mol=data["barrier_kj_mol"],
-            reaction_kj_mol=data["reaction_kj_mol"],
+            ts_imag_cm1=data["ts_imag_cm1"], dE_act_kcal=data["dE_act_kcal"],
+            dE_rxn_kcal=data["dE_rxn_kcal"],
             irc_connected_to_source=data["irc_connected_to_source"],
             electronic_temperature_K=data["electronic_temperature_K"], job_key="",
         )

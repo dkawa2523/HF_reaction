@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from hfauto.chemistry import interpolation as itp
+from hfauto.chemistry.geometry import declared_coordinate
 from hfauto.chemistry.profile import max_node_spacing
-from hfauto.chemistry.topology import declared_coordinate
 from hfauto.core.records import CoordinateTerm
 
 SYMBOLS = ["N", "H", "H", "H"]

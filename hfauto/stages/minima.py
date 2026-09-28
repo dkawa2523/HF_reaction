@@ -24,7 +24,7 @@ from hfauto.chemistry.identity import permutation_invariant_rmsd
 from hfauto.chemistry.selection import Candidate, rerank, select_for_refinement
 from hfauto.chemistry.topology import fragments, state_label
 from hfauto.chemistry.xyz import Molecule
-from hfauto.core.constants import HARTREE_TO_KJ_MOL
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FailureKind, Geometry
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec, level_mismatches
@@ -178,8 +178,8 @@ class _Run:
             discovery_id=f"disc_mode_follow_{parent}", source_minimum=a.minimum_id,
             mechanism="mode_follow", outcome="product", product_species=f"{parent}_mf2",
             ts=saddle.final, ts_imag_cm1=min(freq.frequencies_cm1 or (0.0,)),
-            barrier_kj_mol=(saddle.energy_hartree - a.energy_hartree) * HARTREE_TO_KJ_MOL,
-            reaction_kj_mol=(b.energy_hartree - a.energy_hartree) * HARTREE_TO_KJ_MOL,
+            dE_act_kcal=(saddle.energy_hartree - a.energy_hartree) * HARTREE_TO_KCAL_MOL,
+            dE_rxn_kcal=(b.energy_hartree - a.energy_hartree) * HARTREE_TO_KCAL_MOL,
         )
 
 

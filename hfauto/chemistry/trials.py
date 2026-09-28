@@ -1,4 +1,4 @@
-"""Reaction trials for single-ended discovery and relaxation discoveries (§8.2 explore).
+"""Reaction trials for single-ended discovery (§8.2 explore).
 
 A trial is a product-free drive (bonds to form and to break); the discovery engine finds the
 product. One element-independent enumerator uses formation candidates (a, b): not bonded,
@@ -27,7 +27,7 @@ from __future__ import annotations
 import itertools
 import math
 from collections import Counter
-from collections.abc import Hashable, Iterable, Sequence
+from collections.abc import Hashable, Sequence
 from typing import Literal
 
 import numpy as np
@@ -37,7 +37,7 @@ from hfauto.chemistry import topology
 from hfauto.chemistry.elements import covalent_radius, max_coordination, vdw_radius
 from hfauto.chemistry.vibrations import external_basis
 from hfauto.core.hashing import sha256_text
-from hfauto.core.records import DiscoveryRecord, MinimumRecord, ReactionTrial, SpeciesRecord
+from hfauto.core.records import ReactionTrial
 
 Pair = tuple[int, int]
 Kind = Literal["transfer", "relay", "formation", "dissociation"]
@@ -168,51 +168,13 @@ def perturb_linear(coords: np.ndarray, *, seed: int = RNG_SEED) -> np.ndarray:
 def generate(source_minimum: str, symbols: Sequence[str], coords: np.ndarray, *,
              charge: int = 0, multiplicity: int = 1,
              max_trials: int = 10) -> tuple[np.ndarray, list[ReactionTrial]]:
-    """(start coordinates, trials): the start is perturbed for linear molecules.
-
-    Every trial starts with NT2; the explore stage falls back to AFIR on the same drive.
-    """
+    """(start coordinates, NT2 trials): a linear molecule starts bent."""
     x = np.asarray(coords, dtype=float).reshape(-1, 3)
-    perturbed = is_linear(symbols, x)
     trials = [
         ReactionTrial(
             trial_id="trial_" + sha256_text(f"{source_minimum}|{kind}|{form}|{cut}"),
             source_minimum=source_minimum, kind=kind, mechanism="nt2", associations=form,
-            dissociations=cut, perturbed=perturbed)
+            dissociations=cut)
         for kind, form, cut in _drives(symbols, x, multiplicity > 1 or charge != 0)[:max_trials]
     ]
-    return (perturb_linear(x) if perturbed else x), trials
-
-
-def product_verdict(mechanism: str, *, ts_validated: bool, barrier_kj: float | None,
-                    reaction_kj: float | None, barrier_max_kj: float = 150.0,
-                    reaction_max_kj: float = 100.0) -> str | None:
-    """None when a reported product is kept, else the negative reason (CH-28).
-
-    An NT2 product needs its frequency-validated TS and IRC; a reaction energy that could not
-    be evaluated is outside the window (fail-closed). AFIR products have no barrier.
-    """
-    if mechanism == "nt2" and not ts_validated:
-        return "ts_not_validated"
-    if reaction_kj is None or reaction_kj > reaction_max_kj:
-        return "out_of_window"
-    if barrier_kj is not None and barrier_kj > barrier_max_kj:
-        return "out_of_window"
-    return None
-
-
-def relaxation_discoveries(species: Iterable[SpeciesRecord],
-                           minima: Iterable[MinimumRecord]) -> list[DiscoveryRecord]:
-    """A seed whose state label differs from its basin's collapsed without a barrier."""
-    labels = {s.species_id: s.state_label for s in species}
-    out: list[DiscoveryRecord] = []
-    for minimum in minima:
-        for species_id in dict.fromkeys((minimum.species_id, *minimum.members)):
-            label = labels.get(species_id)
-            if label is None or label == minimum.state_label:
-                continue
-            out.append(DiscoveryRecord(
-                discovery_id=f"relax_{minimum.minimum_id}_{species_id}",
-                source_minimum=minimum.minimum_id, mechanism="relaxation", outcome="negative",
-                reason=f"collapsed_to:{minimum.state_label}"))
-    return out
+    return (perturb_linear(x) if is_linear(symbols, x) else x), trials

@@ -15,6 +15,8 @@ def _xyz(symbols: str, *rows) -> XYZ:
 
 NH3 = _xyz("N H H H", [0, 0, .1], [.94, 0, -.25], [-.47, .814, -.25], [-.47, -.814, -.25])
 HF, AR = _xyz("H F", [0, 0, 0], [0, 0, .92]), _xyz("Ar", [0, 0, 0])
+NH4 = _xyz("N H H H H", [0, 0, 0], [.595, .595, .595], [-.595, -.595, .595],
+           [-.595, .595, -.595], [.595, -.595, -.595])
 CH4 = _xyz("C H H H H", [0, 0, 0], [.63, .63, .63], [-.63, -.63, .63], [-.63, .63, -.63],
            [.63, -.63, -.63])
 MEOH = _xyz("C O H H H H", [0, 0, 0], [1.43, 0, 0], [1.75, .9, 0], [-.36, 1.03, 0],
@@ -48,6 +50,13 @@ def test_only_polar_hydrogens_donate():
         d = cdist(seed.coords[:6], seed.coords[6:])
         closest = tuple(int(i) for i in np.unravel_index(np.argmin(d), d.shape))
         assert closest in {(1, 1), (1, 2), (1, 3), (2, 0)}  # N–H···O or O–H···N, never C–H
+
+
+def test_an_atom_without_a_lone_pair_accepts_no_hydrogen():
+    for seed in placement.seeds(NH4, [HF]):  # N has four bonds: only N–H···F
+        d = cdist(seed.coords[:5], seed.coords[5:])
+        i, j = np.unravel_index(np.argmin(d), d.shape)
+        assert (seed.symbols[i], seed.symbols[5 + j]) == ("H", "F")
 
 
 def test_seeds_are_reproducible_and_depend_on_the_rng_seed():

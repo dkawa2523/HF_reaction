@@ -55,8 +55,8 @@ class StageRuntime(Protocol):
 
     def file_ref(self, path: Path) -> FileRef: ...  # path relative to the run directory + sha
 
-    def thread_map(
-        self, fn: Callable[[ItemT], ResultT], items: Sequence[ItemT], *, threads_per_item: int
+    def thread_map(  # in input order; the core semaphore sets how many jobs run at once
+        self, fn: Callable[[ItemT], ResultT], items: Sequence[ItemT]
     ) -> list[ResultT]: ...
 
     def deadline(self, seconds: float) -> Deadline: ...

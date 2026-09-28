@@ -76,13 +76,12 @@ class Runtime:
         rel = resolved.relative_to(self.run_dir)  # ValueError outside the run directory
         return FileRef(path=rel.as_posix(), sha256=sha256_file(resolved))
 
-    def thread_map(
-        self, fn: Callable[[ItemT], ResultT], items: Sequence[ItemT], *, threads_per_item: int
-    ) -> list[ResultT]:
+    def thread_map(self, fn: Callable[[ItemT], ResultT], items: Sequence[ItemT]) -> list[ResultT]:
+        """``[fn(x) for x in items]`` on site.cores threads, in input order; the JobRunner's core
+        semaphore decides how many jobs run at once."""
         from hfauto.execution.jobs import thread_map
 
-        workers = max(1, self.site.cores // max(1, threads_per_item))
-        return thread_map(fn, items, workers=workers)
+        return thread_map(fn, items, workers=self.site.cores)
 
     def deadline(self, seconds: float) -> Deadline:
         return Deadline.after(seconds)

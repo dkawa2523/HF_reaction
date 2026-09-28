@@ -53,7 +53,6 @@ class ConformerEnsemble(BaseModel):
     model_config = _FROZEN
     kind: Literal["conformers"] = "conformers"
     members: tuple[tuple[Geometry, float | None], ...]  # a missing energy stays None
-    topology_removed: int
     topology_stops: tuple[Geometry, ...]
     version: str
     job_key: str
@@ -66,9 +65,11 @@ class DiscoverySettings(BaseModel):
     scc_retry_temperature_K: float = 1000.0
     afir_gamma_kj_mol: float = 125.0
     afir_gamma_retry_kj_mol: float = 300.0
-    nt_total_force_norm: float = 0.1
     imag_cutoff_cm1: float = 50.0
     timeout_s: float = 600.0
+
+
+NO_NT2_MAXIMUM = "no_nt2_maximum"  # the negative reason after which AFIR drives the same pair
 
 
 class DiscoveryResult(BaseModel):
@@ -79,8 +80,8 @@ class DiscoveryResult(BaseModel):
     product: Geometry | None
     ts: Geometry | None
     ts_imag_cm1: float | None
-    barrier_kj_mol: float | None
-    reaction_kj_mol: float | None
+    dE_act_kcal: float | None  # TS - source; kept for a negative that has a TS
+    dE_rxn_kcal: float | None
     irc_connected_to_source: bool
     electronic_temperature_K: float
     job_key: str

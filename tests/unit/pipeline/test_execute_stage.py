@@ -131,4 +131,4 @@ def test_build_runtime_with_stub_runner_and_engine(tmp_path, monkeypatch):
     ref = rt.file_ref(xyz)
     assert ref.path == "h.xyz" and rt.stage_id == "s" and rt.run_id == tmp_path.name
     assert rt.load_xyz(Geometry(file=ref, fingerprint="f", symbols=("H",))).symbols == ["H"]
-    assert rt.thread_map(lambda x: 2 * x, [1, 2, 3], threads_per_item=1) == [2, 4, 6]
+    assert rt.thread_map(lambda x: 2 * x, [1, 2, 3]) == [2, 4, 6]

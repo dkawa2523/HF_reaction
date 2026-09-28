@@ -42,15 +42,15 @@ def pipeline(tmp_path, tmp_run, override_engine, monkeypatch):
     def search(mol, method, settings):  # the (HF)2 placement seed is the only conformer
         seed = fakes.write_geometry(tmp_run, "fake/crest.xyz", mol.xyz.symbols, mol.xyz.coords)
         return ConformerEnsemble(members=((seed, pes.energy(mol.xyz.coords)),), version="0",
-                                 topology_removed=0, topology_stops=(), job_key="crest")
+                                 topology_stops=(), job_key="crest")
 
     def explore(source, trial, method, settings):  # N–H–O reaches the other well
         ok, x = source.xyz.coords.size == 9, source.xyz.coords
         return DiscoveryResult(
-            outcome="product" if ok else "negative", reason=None if ok else "monotonic_uphill",
+            outcome="product" if ok else "negative", reason=None if ok else "no_nt2_maximum",
             product=geo["product" if x[1, 0] < 0 else "reactant"] if ok else None, job_key="rd",
-            ts=geo["ts"] if ok else None, ts_imag_cm1=-1e3, barrier_kj_mol=30.0,
-            reaction_kj_mol=10.0, irc_connected_to_source=ok, electronic_temperature_K=300.0)
+            ts=geo["ts"] if ok else None, ts_imag_cm1=-1e3, dE_act_kcal=7.2,
+            dE_rxn_kcal=2.4, irc_connected_to_source=ok, electronic_temperature_K=300.0)
 
     def goodvibes(freq, settings, temperatures, saddle):  # consistent: G = E + scaled ZPE
         e, nu = freq.energy_hartree, thermo_frequencies(freq.frequencies_cm1, saddle=saddle)

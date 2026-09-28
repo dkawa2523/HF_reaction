@@ -66,7 +66,6 @@ class ReactionTrial(BaseModel):
     mechanism: Literal["nt2", "afir"]
     associations: tuple[tuple[int, int], ...] = ()
     dissociations: tuple[tuple[int, int], ...] = ()
-    perturbed: bool = False  # linear molecule bent or randomly displaced
 
 
 class DiscoveryRecord(BaseModel):
@@ -81,8 +80,8 @@ class DiscoveryRecord(BaseModel):
     product_species: str | None = None
     ts: Geometry | None = None  # low-level TS with one projected imaginary mode
     ts_imag_cm1: float | None = None
-    barrier_kj_mol: float | None = None  # evaluated at 300 K
-    reaction_kj_mol: float | None = None
+    dE_act_kcal: float | None = None  # low level, at the base electronic temperature
+    dE_rxn_kcal: float | None = None
     electronic_temperature_K: float = 300.0
 
 

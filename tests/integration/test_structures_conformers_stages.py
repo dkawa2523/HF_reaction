@@ -21,8 +21,7 @@ GEOMS = {"nh3": ("N H H H", [[0, 0, .1], [.94, 0, -.25], [-.47, .81, -.25], [-.4
          "hono": ("H O N O", [[.95, .3, 0], [0, 0, 0], [-.5, 1.3, 0], [-1.7, 1.3, 0]]),
          "hcn": ("H C N", [[0, 0, -1.07], [0, 0, 0], [0, 0, 1.16]]),
          "cnh": ("C N H", [[0, 0, 0], [0, 0, 1.17], [0, 0, 2.16]])}
-ENSEMBLE = partial(ConformerEnsemble, members=(), topology_removed=2, topology_stops=(),
-                   version="0", job_key="")
+ENSEMBLE = partial(ConformerEnsemble, members=(), topology_stops=(), version="0", job_key="")
 GFN2 = {"gfn2": MethodSpec(id="gfn2", kind="xtb", gfn=2)}
 
 
@@ -37,7 +36,7 @@ def _proton_shift(x):  # HONO's H moved from O to N: CREST's topology stop
 
 
 def _crest(rt, calls, n_stops):
-    """Monomers stop ``n_stops`` times on the proton shift; HF·HF fails; else 3 members."""
+    """Monomers stop ``n_stops`` times on the proton shift; HF·HF fails; else 2 members."""
     def search(mol, method, settings):
         x, sym = mol.xyz.coords, mol.xyz.symbols
         calls.append((mol, settings))
@@ -48,7 +47,7 @@ def _crest(rt, calls, n_stops):
             stop = write_geometry(rt().run_dir, f"{key}s.xyz", sym, _proton_shift(x))
             return ENSEMBLE(topology_stops=(stop,))
         g = [write_geometry(rt().run_dir, f"{key}{i}.xyz", sym, x + i * 1e-3) for i in (0, 1)]
-        return ENSEMBLE(members=((g[0], -10.0), (g[1], -10.0 + 1e-6), (g[0], -9.99)))  # dup; +6.3
+        return ENSEMBLE(members=((g[0], -10.0), (g[1], -9.99)))  # CREGEN-unique; +6.3 kcal/mol
     return FakeConformers(search)
 
 
@@ -75,14 +74,14 @@ def test_structures_then_conformers(tmp_path, fake_runtime):
                                 ConformersConfig(engine="crest", method="gfn2", ewin_kcal=5.0), rt)
     got = sorted(a.payload.species_id for a in out if a.payload)  # tags: c/t/p = source
     assert [k for k in got if not k.startswith("hf2_p")] == [  # +6.3 kcal/mol kept (c01); the
-        "hf_c00", "hono_c00", "hono_c01", "nh3_c00", "nh_c00", "nh_c01"]  # stop is a duplicate
+        "hf_c00", "hono_c00", "hono_c01", "nh3_c00", "nh_c00", "nh_c01"]  # stop has no energy
     assert len(got) > 6 and [a.artifact_id for a in out if a.failure] == ["conformers_hf2"]
     (first, on), (retry, again) = calls[:2]  # HONO retries once from the stop, same settings
     assert np.allclose(retry.xyz.coords, _proton_shift(first.xyz.coords)) and again == on
     assert (retry.charge, retry.multiplicity) == (first.charge, first.multiplicity) and not on.nci
     compositions = {len(m.xyz.symbols): s for m, s in calls[2:]}  # searched concurrently
-    assert compositions[6].nci and compositions[6].notopo_atoms == (0, 1, 2, 3, 4, 5)
-    assert compositions[4].nci and {s.ewin_kcal for _, s in calls} == {5.0}
+    assert all(s.nci and s.notopo_atoms == tuple(range(n)) for n, s in compositions.items())
+    assert {s.ewin_kcal for _, s in calls} == {5.0} and set(compositions) == {4, 6}
 
 
 def test_a_repeated_topology_stop_fails_and_the_stop_seeds_compositions(tmp_path, fake_runtime):

@@ -1,17 +1,20 @@
-"""ReaDuct adapter without SCINE (projected counts: G20, test_vibrations): helpers, job, result."""
+"""ReaDuct adapter without SCINE (projected counts: G20, test_vibrations): helpers, job, result,
+and the minimum optimization on a scripted surface."""
 
 import json
 
 import numpy as np
+import pytest
 from fakes import NH3_HF, NH3_HF_EXCHANGED, NH3_HF_SYMBOLS, write_geometry
 
 from hfauto.backends import engines
 from hfauto.backends.protocols import Capability, DiscoveryEngine, DiscoverySettings
 from hfauto.backends.readuct import worker
 from hfauto.backends.readuct.engine import _Adapter
+from hfauto.chemistry.modes import amplitude
 from hfauto.chemistry.topology import bond_changes, state_label
 from hfauto.chemistry.xyz import XYZ, Molecule
-from hfauto.core.constants import HARTREE_TO_KJ_MOL as KJ
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL as KCAL
 from hfauto.core.evidence import FailureKind
 from hfauto.core.method import EngineSite, ExecutionSpec, MethodSpec
 from hfauto.core.records import ReactionTrial
@@ -40,9 +43,13 @@ def test_worker_helpers():
                          energies={"source": -5.0, "ts": -4.9, "product": -4.95})
     data = worker.result_dict(found, {"source": -5.5, "ts": -5.44, "product": -5.47},
                               temperature_K=1000.0, version="6.1.0")
-    assert data["barrier_kj_mol"] == (-5.44 + 5.5) * KJ
-    assert data["reaction_kj_mol"] == (-5.47 + 5.5) * KJ
+    assert data["dE_act_kcal"] == (-5.44 + 5.5) * KCAL
+    assert data["dE_rxn_kcal"] == (-5.47 + 5.5) * KCAL
     assert data["electronic_temperature_K"] == 1000.0
+    negative = worker.Found("negative", "same_as_source", {"source": 0, "ts": 0},
+                            {"source": -5.0, "ts": -4.9})  # a negative with a TS keeps its barrier
+    data = worker.result_dict(negative, negative.energies, temperature_K=300.0, version="6.1.0")
+    assert data["dE_act_kcal"] == pytest.approx(0.1 * KCAL) and data["dE_rxn_kcal"] is None
     assert worker.is_scc_failure("scf: Self consistent charge iterator did not converge")
 
 
@@ -54,6 +61,52 @@ def test_a_degenerate_rearrangement_is_a_product():
     assert bond_changes(symbols, x, exchanged) == ({(0, 4), (3, 5)}, {(0, 3), (4, 5)})
     assert not worker.matches_source(symbols, x, exchanged)
     assert worker.irc_product(symbols, x, [x + 0.01, exchanged]) == (1, None)
+
+
+SADDLE = np.array([[0.0, 0.0, 0.0], [0.74, 0.0, 0.0]])
+MODE = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+
+
+class _Surface(worker._Scine):
+    """_Scine without SCINE: an optimization from SADDLE stops there (ν −170 cm⁻¹ along MODE);
+    one from a displaced start reaches the minimum 0.5 Å further on its side (energy = x)."""
+
+    def __init__(self, start: np.ndarray) -> None:
+        self.symbols, self.job = ["H", "H"], {"settings": {"imag_cutoff_cm1": 50.0}}
+        self.systems, self.calls, self.loaded = {"end": start}, [], []
+
+    def load(self, name, coords):
+        self.loaded.append(coords)
+        self.systems[name] = coords
+
+    def task(self, run, name, output=(), *, strict=True, **settings):
+        self.calls.append((run, settings))
+        side = np.sign(self.systems[name][1, 0] - SADDLE[1, 0])
+        self.systems[output[0]] = SADDLE + 0.5 * side * MODE.reshape(2, 3)
+        return True
+
+    def imaginary(self, name):
+        stuck = np.array_equal(self.systems[name], SADDLE)
+        return (1, -170.0, MODE) if stuck else (0, 100.0, MODE)
+
+    def coords(self, name):
+        return self.systems[name]
+
+    def energy(self, name):
+        return float(self.systems[name][1, 0])
+
+
+def test_a_minimum_left_on_a_saddle_is_displaced_along_its_lowest_mode():
+    """U4-P4: an end that stops with ν < −cutoff is displaced ± by modes.amplitude, each side
+    optimized once and the lower minimum taken; every optimization may take 500 iterations."""
+    run = _Surface(SADDLE)
+    assert run.minimum("end", "end_opt")
+    step = amplitude(-170.0, MODE, run.symbols)
+    assert [x[1, 0] - SADDLE[1, 0] for x in run.loaded] == pytest.approx([step, -step])
+    assert run.coords("end_opt")[1, 0] == pytest.approx(SADDLE[1, 0] - 0.5)
+    assert [s for _, s in run.calls] == [worker.MAX_ITERATIONS] * 3
+    clean = _Surface(SADDLE + 0.1 * MODE.reshape(2, 3))  # already a minimum: no displacement
+    assert clean.minimum("end", "end_opt") and not clean.loaded
 
 
 def test_explore_writes_the_worker_job_in_the_attempt_directory(tmp_run):

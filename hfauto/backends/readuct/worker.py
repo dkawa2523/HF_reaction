@@ -4,15 +4,16 @@ SCINE is imported only inside ``_Scine``. The decisions (imaginary-mode count on
 frequencies, match with the source, choice of the IRC end, result assembly) are pure helpers.
 
 Flow (design §6.3): the source is relaxed first (reference energy and structure; linear
-sources arrive perturbed). NT2 → Bofill TS optimization with
+sources arrive bent). NT2 → Bofill TS optimization with
 ``automatic_mode_selection = sorted(associations ∪ dissociations)`` → projected frequencies
-(exactly one ν < −cutoff) → IRC → both ends optimized with n_imag = 0 → one end must have the
+(exactly one ν < −cutoff) → IRC → both ends optimized to minima → one end must have the
 source's bond set, the other is the product. Bond sets are compared atom by atom in the source's
 atom order, so a relabelled image of the source (a degenerate rearrangement such as a double H
 exchange) is a product and a conformer or stereoisomer is not; the product keeps the source's
-atom order. AFIR (γ, then the retry γ once) → unbiased optimization. An SCC failure reruns the
-attempt once at the retry electronic temperature; the energies of the source, TS and product are
-then recomputed at the base temperature (chem 11).
+atom order. AFIR (γ, then the retry γ once) → unbiased optimization to a minimum. The IRC and
+minimum optimizations take up to 500 iterations (C13). An SCC failure reruns the attempt once
+at the retry electronic temperature; the energies of the source, TS and product are then
+recomputed at the base temperature (chem 11).
 """
 
 from __future__ import annotations
@@ -26,15 +27,18 @@ from typing import Any
 
 import numpy as np
 
+from hfauto.backends.protocols import NO_NT2_MAXIMUM
+from hfauto.chemistry.modes import amplitude, displace
 from hfauto.chemistry.topology import bonds
 from hfauto.chemistry.vibrations import projected_frequencies
 from hfauto.chemistry.xyz import XYZ, write_xyz
-from hfauto.core.constants import BOHR_TO_ANGSTROM, HARTREE_TO_KJ_MOL
+from hfauto.core.constants import BOHR_TO_ANGSTROM, HARTREE_TO_KCAL_MOL
 
 PRODUCT_FILE, TS_FILE = "product.xyz", "ts.xyz"
 # scine-xtb-wrapper 3.0.2 accepts only "any" and "restricted_open_shell"; the latter is xTB's
 # own treatment (unpaired electrons from the multiplicity), so it is set explicitly.
 SPIN_MODE = "restricted_open_shell"
+MAX_ITERATIONS = {"convergence_max_iterations": 500}  # IRC and minimum optimizations
 
 
 class SccFailure(Exception):
@@ -87,19 +91,20 @@ class Found:
 
 def result_dict(found: Found, energies: Mapping[str, float], *, temperature_K: float,
                 version: str) -> dict[str, Any]:
-    """result.json of the attempt; barrier and reaction energy come from ``energies``."""
+    """result.json of the attempt; barrier and reaction energy come from ``energies`` (a
+    negative with a TS keeps its barrier)."""
 
     def relative(name: str) -> float | None:
-        if found.outcome != "product" or name not in energies or "source" not in energies:
+        if name not in energies or "source" not in energies:
             return None
-        return (energies[name] - energies["source"]) * HARTREE_TO_KJ_MOL
+        return (energies[name] - energies["source"]) * HARTREE_TO_KCAL_MOL
 
     return {
         "version": version, "outcome": found.outcome, "reason": found.reason,
         "product": PRODUCT_FILE if found.outcome == "product" else None,
         "ts": TS_FILE if "ts" in found.structures else None,
-        "ts_imag_cm1": found.ts_imag_cm1, "barrier_kj_mol": relative("ts"),
-        "reaction_kj_mol": relative("product"), "irc_connected_to_source": found.irc_connected,
+        "ts_imag_cm1": found.ts_imag_cm1, "dE_act_kcal": relative("ts"),
+        "dE_rxn_kcal": relative("product"), "irc_connected_to_source": found.irc_connected,
         "electronic_temperature_K": temperature_K,
     }
 
@@ -151,16 +156,35 @@ class _Scine:
     def energy(self, name: str) -> float:
         return float(self.systems[name].get_results().energy)
 
-    def imaginary(self, name: str) -> tuple[int, float]:
-        """(ν < −cutoff count, lowest ν) from projected frequencies; (−1, nan) if it failed."""
+    def imaginary(self, name: str) -> tuple[int, float, np.ndarray]:
+        """(ν < −cutoff count, lowest ν, its mode) from projected frequencies; −1 if it failed."""
         if not self.task("run_hessian_task", name):
-            return -1, float("nan")
-        freqs, _, _ = projected_frequencies(
+            return -1, float("nan"), np.zeros(0)
+        freqs, modes, _ = projected_frequencies(
             self.systems[name].get_results().hessian, self.symbols, self.coords(name))
-        return imaginary_count(freqs, self.job["settings"]["imag_cutoff_cm1"]), float(freqs[0])
+        cutoff = self.job["settings"]["imag_cutoff_cm1"]
+        return imaginary_count(freqs, cutoff), float(freqs[0]), modes[0]
 
     def minimum(self, name: str, output: str) -> bool:
-        return self.task("run_opt_task", name, [output]) and self.imaginary(output)[0] == 0
+        """Optimize ``name`` into the minimum ``output``; one that ends with ν < −cutoff is
+        displaced ± along its lowest mode (modes.amplitude) and the lower side that optimizes
+        to n_imag = 0 is taken."""
+        if not self.task("run_opt_task", name, [output], **MAX_ITERATIONS):
+            return False
+        n_imag, nu, mode = self.imaginary(output)
+        if n_imag <= 0:
+            return n_imag == 0
+        sides = []
+        step = amplitude(nu, mode, self.symbols)
+        for tag, coords in zip("pm", displace(self.coords(output), mode, step), strict=True):
+            start, end = f"{output}_{tag}", f"{output}_{tag}_opt"
+            self.load(start, coords)
+            if (self.task("run_opt_task", start, [end], **MAX_ITERATIONS)
+                    and self.imaginary(end)[0] == 0):
+                sides.append(end)
+        if sides:
+            self.systems[output] = self.systems[min(sides, key=self.energy)]
+        return bool(sides)
 
 
 def _flat(pairs: Sequence[Sequence[int]]) -> list[int]:
@@ -171,27 +195,25 @@ def _nt2(run: _Scine, source: np.ndarray, trial: Mapping[str, Any]) -> Found:
     atoms = sorted(set(_flat(trial["associations"]) + _flat(trial["dissociations"])))
     if not run.task("run_nt2_task", "start", ["guess"],
                     nt_associations=_flat(trial["associations"]),
-                    nt_dissociations=_flat(trial["dissociations"]),
-                    nt_total_force_norm=run.job["settings"]["nt_total_force_norm"]):
-        return Found("negative", "monotonic_uphill")
+                    nt_dissociations=_flat(trial["dissociations"])):
+        return Found("negative", NO_NT2_MAXIMUM)
     if not run.task("run_tsopt_task", "guess", ["ts"], optimizer="bofill",
                     automatic_mode_selection=atoms):
         return Found("negative", "ts_not_converged")
-    n_imag, imag = run.imaginary("ts")
+    n_imag, imag, _ = run.imaginary("ts")
     if n_imag != 1:
         return Found("negative", f"ts_imaginary_modes:{n_imag}")
-    ts = {"ts": run.coords("ts")}
-    if not run.task("run_irc_task", "ts", ["irc_f", "irc_b"], strict=False) or not all(
-        run.minimum(end, f"{end}_opt") for end in ("irc_f", "irc_b")
-    ):
-        return Found("negative", "irc_end_not_minimum", ts, ts_imag_cm1=imag)
+    ts, energy = {"ts": run.coords("ts")}, {"ts": run.energy("ts")}
+    irc = run.task("run_irc_task", "ts", ["irc_f", "irc_b"], strict=False, **MAX_ITERATIONS)
+    if not irc or not all(run.minimum(end, f"{end}_opt") for end in ("irc_f", "irc_b")):
+        return Found("negative", "irc_end_not_minimum", ts, energy, ts_imag_cm1=imag)
     ends = [run.coords("irc_f_opt"), run.coords("irc_b_opt")]
     index, reason = irc_product(run.symbols, source, ends)
     if index is None:
-        return Found("negative", reason, ts, ts_imag_cm1=imag,
+        return Found("negative", reason, ts, energy, ts_imag_cm1=imag,
                      irc_connected=reason == "same_as_source")
     return Found("product", None, {**ts, "product": ends[index]},
-                 {"ts": run.energy("ts"), "product": run.energy(("irc_f_opt", "irc_b_opt")[index])},
+                 {**energy, "product": run.energy(("irc_f_opt", "irc_b_opt")[index])},
                  ts_imag_cm1=imag, irc_connected=True)
 
 
@@ -247,7 +269,7 @@ def _attempt(job: Mapping[str, Any], workdir: Path, temperature_K: float,
     found = _explore(job, workdir, temperature_K)
     base_K = job["settings"]["electronic_temperature_K"]
     energies = found.energies
-    if temperature_K != base_K and found.outcome == "product":
+    if temperature_K != base_K and len(energies) > 1:  # a TS or a product besides the source
         energies = _single_points(job, workdir, found, base_K)
     for name, file in (("ts", TS_FILE), ("product", PRODUCT_FILE)):
         if name in found.structures:

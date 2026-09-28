@@ -71,7 +71,7 @@ def test_declared_reaction_comes_first_and_borrows_the_discovery_ts():
     hnc = species("hnc", "HCN", [[3.22, 0, 0], [1.06, 0, 0], [2.22, 0, 0]])
     minima = [minimum("m_hcn", "hcn"), minimum("m_hnc", "hnc", -0.98)]
     negative = r.DiscoveryRecord(discovery_id="d2", source_minimum="m_hcn", mechanism="afir",
-                                 outcome="negative", reason="monotonic_uphill")
+                                 outcome="negative", reason="no_nt2_maximum")
     found = [product("d1", "m_hcn", "hnc", ts=hnc.geometry), negative]
     term = r.CoordinateTerm(kind="distance", atoms=(0, 2))
     iso = ReactionInput(id="iso", reactant="hcn", product="hnc", coordinate=[term])

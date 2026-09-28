@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from hfauto.backends import engines
-from hfauto.backends.crest import command, topology_removed
+from hfauto.backends.crest import command
 from hfauto.backends.protocols import Capability
 from hfauto.backends.protocols import ConformerSettings as CS
 from hfauto.chemistry.xyz import XYZ, Molecule
@@ -26,11 +26,9 @@ def test_command_maps_every_setting():
                               " --uhf 1 --notopo 1,5,6 --noopt --alpb water")
     plain = command(ION, GFN2, CS(quick=False), threads=1)  # a monomer
     assert " ".join(plain) == "crest input.xyz --gfn2 -T 1 --ewin 6 --chrg -1 --uhf 1"
-    assert topology_removed("CREGEN> number of topology-based structure removals: 23\n"
-                            "CREGEN> number of topology-based structure removals: 22\n") == 45
 
 
-def test_search_keys_noopt_and_runs_on_site_threads(tmp_path, monkeypatch):
+def test_search_runs_on_site_threads(tmp_path, monkeypatch):
     site = EngineSite(version="3.0.2", execution=ExecutionSpec(threads=3))
     crest = engines.create(Capability.CONFORMERS, "crest", site=site,
                            jobs=JobRunner(JobStore(tmp_path / "jobs"), cores=4))
@@ -38,7 +36,7 @@ def test_search_keys_noopt_and_runs_on_site_threads(tmp_path, monkeypatch):
     monkeypatch.setattr(crest.jobs, "run", lambda task, adapter, deadline=None: tasks.append(task))
     for nci in (False, True):
         crest.search(ION, GFN2, CS(nci=nci))
-    assert [t.key_payload["noopt"] for t in tasks] == [False, True]
+    assert all(set(t.key_payload) == {"molecule", "method", "settings"} for t in tasks)
     assert all(t.execution.threads == 3 for t in tasks)
     cmd = crest._adapter.prepare(tasks[1], tmp_path / "w")
     assert cmd.argv[cmd.argv.index("-T") + 1] == "3" and "--noopt" in cmd.argv

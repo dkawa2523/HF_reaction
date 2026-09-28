@@ -1,30 +1,33 @@
 """explore stage (design §4.1 #4, §8.2): reaction trials on screen minima with a discovery engine.
 
 Sources are the ``sources_per_state`` lowest screen minima of each composition × state label,
-each started from its screen-optimized structure (the final geometry of ``opt_calc``). Every
-trial runs NT2 first and falls back to AFIR on the same drive when NT2 gives no product (an
-out-of-window product counts as found). Seeds that relaxed into another state become
-``relaxation`` discoveries. Every attempt is recorded: product, negative or failed.
+started from their screen-optimized structures. Each (source, trial) unit runs NT2, and AFIR on
+the same drive only when NT2 found no maximum; the units run through ``thread_map`` and every
+attempt is recorded in input order: product, negative or failed. A kept product joins a known
+basin (a screen minimum or an earlier product of its composition: state label and permutation-
+invariant RMSD; ReaDuct's and the screen's xTB energies are not compared) or becomes a species;
+a degenerate one (the source's label) also needs the same atom-indexed bonds, so it never joins
+its source. Seeds that relaxed into another state become ``relaxation`` discoveries.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from typing import ClassVar, cast
 
-from pydantic import BaseModel, ConfigDict
-
 from hfauto.backends.protocols import (
+    NO_NT2_MAXIMUM,
     Capability,
     DiscoveryEngine,
     DiscoveryResult,
     DiscoverySettings,
 )
-from hfauto.chemistry import topology, trials
-from hfauto.chemistry.xyz import XYZ, Molecule, composition_key
+from hfauto.chemistry import gates, identity, topology, trials
+from hfauto.chemistry.xyz import XYZ, Molecule
 from hfauto.core.evidence import Failure, Geometry
 from hfauto.core.manifest import Artifact, Manifest
-from hfauto.core.method import MethodSpec
 from hfauto.core.records import (
     ArtifactType,
     DiscoveryRecord,
@@ -34,11 +37,7 @@ from hfauto.core.records import (
 )
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
-
-class Window(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    barrier_kj: float = 150.0  # ΔE‡ at 300 K (low level)
-    reaction_kj: float = 100.0
+Attempt = tuple[ReactionTrial, DiscoveryResult | Failure]
 
 
 class ExploreConfig(StageConfig):
@@ -47,7 +46,34 @@ class ExploreConfig(StageConfig):
     sources_per_state: int = 2
     max_trials_per_source: int = 10
     settings: DiscoverySettings = DiscoverySettings()
-    window: Window = Window()
+
+
+@dataclass(frozen=True)
+class _Unit:
+    minimum: MinimumRecord
+    start: Molecule
+    trial: ReactionTrial
+
+
+@dataclass(frozen=True)
+class _Basin:
+    """A known structure of one composition: a screen minimum's or a kept product's."""
+
+    species_id: str
+    state_label: str
+    xyz: XYZ
+
+
+def _basin_of(product: _Basin, known: Sequence[_Basin], *, degenerate: bool) -> str | None:
+    """The species id of the known basin that holds ``product`` (identity.assign without the
+    energy criterion), else None. A degenerate product also needs the atom-indexed bonds."""
+    bonded = topology.bonds(product.xyz.symbols, product.xyz.coords)
+    candidates = {
+        k.species_id: (k.xyz.coords, 0.0) for k in known
+        if k.state_label == product.state_label and list(k.xyz.symbols) == list(product.xyz.symbols)
+        and not (degenerate and topology.bonds(k.xyz.symbols, k.xyz.coords) != bonded)
+    }
+    return identity.assign(product.xyz.symbols, product.xyz.coords, 0.0, candidates)
 
 
 def _sources(minima: list[MinimumRecord], per_state: int) -> list[MinimumRecord]:
@@ -57,76 +83,81 @@ def _sources(minima: list[MinimumRecord], per_state: int) -> list[MinimumRecord]
     return [m for group in groups.values() for m in group[:per_state]]
 
 
-class _Explorer:
-    def __init__(self, config: ExploreConfig, rt: StageRuntime) -> None:
-        self.config, self.rt = config, rt
-        self.engine = cast(DiscoveryEngine, rt.engine(Capability.DISCOVERY, config.engine))
-        self.method: MethodSpec = rt.method(config.method)
+def _relaxations(species: Iterable[SpeciesRecord],
+                 minima: Iterable[MinimumRecord]) -> list[DiscoveryRecord]:
+    """A seed whose state label differs from its basin's collapsed without a barrier."""
+    labels = {s.species_id: s.state_label for s in species}
+    return [
+        DiscoveryRecord(discovery_id=f"relax_{m.minimum_id}_{sid}", source_minimum=m.minimum_id,
+                        mechanism="relaxation", outcome="negative",
+                        reason=f"collapsed_to:{m.state_label}")
+        for m in minima for sid in dict.fromkeys((m.species_id, *m.members))
+        if labels.get(sid, m.state_label) != m.state_label
+    ]
 
-    def source(self, minimum: MinimumRecord, species: SpeciesRecord,
-               optimized: Geometry) -> list[Artifact]:
-        xyz = self.rt.load_xyz(optimized)
-        start, drives = trials.generate(minimum.minimum_id, xyz.symbols, xyz.coords,
-                                        charge=species.charge, multiplicity=species.multiplicity,
-                                        max_trials=self.config.max_trials_per_source)
-        mol = Molecule(XYZ(list(xyz.symbols), start), species.charge, species.multiplicity)
-        out: list[Artifact] = []
-        for trial in drives:
-            for mechanism in ("nt2", "afir"):
-                attempt = trial.model_copy(update={"mechanism": mechanism})
-                result = self.engine.explore(mol, attempt, self.method, self.config.settings)
-                artifacts, found = self.record(minimum, attempt, result, species)
-                out += artifacts
-                if found:
-                    break
-        return out
 
-    def record(self, minimum: MinimumRecord, trial: ReactionTrial,
-               result: DiscoveryResult | Failure,
-               source: SpeciesRecord) -> tuple[list[Artifact], bool]:
-        """(artifacts, whether a product was found, kept or out of window)."""
+def _units(minimum: MinimumRecord, species: SpeciesRecord, xyz: XYZ,
+           max_trials: int) -> list[_Unit]:
+    start, drives = trials.generate(minimum.minimum_id, xyz.symbols, xyz.coords,
+                                    charge=species.charge, multiplicity=species.multiplicity,
+                                    max_trials=max_trials)
+    mol = Molecule(XYZ(list(xyz.symbols), start), species.charge, species.multiplicity)
+    return [_Unit(minimum, mol, trial) for trial in drives]
+
+
+class _Recorder:
+    """Discovery artifacts; a kept product is identified against ``known`` (in call order)."""
+
+    def __init__(self, rt: StageRuntime, known: dict[str, list[_Basin]]) -> None:
+        self.rt, self.known = rt, known
+
+    def record(self, unit: _Unit, trial: ReactionTrial,
+               result: DiscoveryResult | Failure) -> list[Artifact]:
         discovery_id = f"disc_{trial.trial_id}_{trial.mechanism}"
-        base = DiscoveryRecord(discovery_id=discovery_id, source_minimum=minimum.minimum_id,
+        base = DiscoveryRecord(discovery_id=discovery_id, source_minimum=unit.minimum.minimum_id,
                                mechanism=trial.mechanism, trial=trial, outcome="failed")
-        parents = (minimum.minimum_id,)
+        parents = (unit.minimum.minimum_id,)
         if isinstance(result, Failure):
             payload = base.model_copy(update={"reason": f"{result.kind}:{result.reason}"})
             return [Artifact(artifact_id=discovery_id, type=ArtifactType.DISCOVERY,
                              parents=parents, status="failed", payload=payload,
-                             failure=result)], False
-        reason, window = result.reason, self.config.window
-        validated = result.ts is not None and result.irc_connected_to_source
-        if result.outcome == "product":
-            reason = "no_product_structure" if result.product is None else trials.product_verdict(
-                trial.mechanism, ts_validated=validated, barrier_kj=result.barrier_kj_mol,
-                reaction_kj=result.reaction_kj_mol, barrier_max_kj=window.barrier_kj,
-                reaction_max_kj=window.reaction_kj)
-        kept = result.outcome == "product" and reason is None
-        product = self.product(discovery_id, result.product, source) if kept else None
+                             failure=result)]
+        reason, product, new = result.reason, None, None
+        if result.outcome == "product" and result.product is None:
+            reason = "no_product_structure"
+        elif result.outcome == "product" and result.product is not None:
+            reason = gates.discovery_verdict(
+                trial.mechanism, ts_validated=result.ts is not None and result.irc_connected_to_source,
+                dE_act_kcal=result.dE_act_kcal, dE_rxn_kcal=result.dE_rxn_kcal,
+                policy=self.rt.policy)
+            if reason is None:
+                product, new = self.identify(discovery_id, result.product, unit)
         record = base.model_copy(update={
-            "outcome": "product" if kept else "negative", "reason": reason,
-            "product_species": product.species_id if product else None, "ts": result.ts,
-            "ts_imag_cm1": result.ts_imag_cm1, "barrier_kj_mol": result.barrier_kj_mol,
-            "reaction_kj_mol": result.reaction_kj_mol,
+            "outcome": "negative" if product is None else "product", "reason": reason,
+            "product_species": product, "ts": result.ts, "ts_imag_cm1": result.ts_imag_cm1,
+            "dE_act_kcal": result.dE_act_kcal, "dE_rxn_kcal": result.dE_rxn_kcal,
             "electronic_temperature_K": result.electronic_temperature_K})
         out = [Artifact(artifact_id=discovery_id, type=ArtifactType.DISCOVERY, parents=parents,
                         payload=record)]
-        if product is not None:
-            out.append(Artifact(artifact_id=f"species_{product.species_id}",
-                                type=ArtifactType.SPECIES, parents=(discovery_id,),
-                                payload=product))
-        return out, kept or reason == "out_of_window"
+        if new is not None:
+            out.append(Artifact(artifact_id=f"species_{new.species_id}",
+                                type=ArtifactType.SPECIES, parents=(discovery_id,), payload=new))
+        return out
 
-    def product(self, discovery_id: str, geometry: Geometry | None,
-                source: SpeciesRecord) -> SpeciesRecord | None:
-        if geometry is None:
-            return None
-        xyz = self.rt.load_xyz(geometry)
-        return SpeciesRecord(
-            species_id=f"spc_{discovery_id}",
-            composition_id=composition_key(xyz.symbols, source.charge, source.multiplicity),
-            charge=source.charge, multiplicity=source.multiplicity, geometry=geometry,
-            source="discovery", state_label=topology.state_label(xyz.symbols, xyz.coords))
+    def identify(self, discovery_id: str, geometry: Geometry,
+                 unit: _Unit) -> tuple[str, SpeciesRecord | None]:
+        """(product species id, the new species or None when a known basin holds it)."""
+        xyz, source, mol = self.rt.load_xyz(geometry), unit.minimum, unit.start
+        product = _Basin(f"spc_{discovery_id}", topology.state_label(xyz.symbols, xyz.coords), xyz)
+        known = self.known[source.composition_id]
+        found = _basin_of(product, known, degenerate=product.state_label == source.state_label)
+        if found is not None:
+            return found, None
+        known.append(product)
+        return product.species_id, SpeciesRecord(
+            species_id=product.species_id, composition_id=source.composition_id,
+            charge=mol.charge, multiplicity=mol.multiplicity, geometry=geometry,
+            source="discovery", state_label=product.state_label)
 
 
 class ExploreStage:
@@ -142,11 +173,29 @@ class ExploreStage:
         species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)}
         screen = [m for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord)
                   if m.tier == "screen"]
+        final = {m.minimum_id: rt.load_xyz(inputs.evidence(m.opt_calc).final) for m in screen}
+        known: dict[str, list[_Basin]] = defaultdict(list)
+        for m in screen:
+            known[m.composition_id].append(_Basin(m.species_id, m.state_label, final[m.minimum_id]))
+        units = [unit for m in _sources(screen, cfg.sources_per_state)
+                 for unit in _units(m, species[m.species_id], final[m.minimum_id],
+                                    cfg.max_trials_per_source)]
+        engine = cast(DiscoveryEngine, rt.engine(Capability.DISCOVERY, cfg.engine))
+        method = rt.method(cfg.method)
+
+        def attempts(unit: _Unit) -> list[Attempt]:
+            result = engine.explore(unit.start, unit.trial, method, cfg.settings)
+            done: list[Attempt] = [(unit.trial, result)]
+            if isinstance(result, DiscoveryResult) and result.reason == NO_NT2_MAXIMUM:
+                afir = unit.trial.model_copy(update={"mechanism": "afir"})
+                done.append((afir, engine.explore(unit.start, afir, method, cfg.settings)))
+            return done
+
         out = [Artifact(artifact_id=d.discovery_id, type=ArtifactType.DISCOVERY,
                         parents=(d.source_minimum,), payload=d)
-               for d in trials.relaxation_discoveries(species.values(), screen)]
-        explorer = _Explorer(cfg, rt)
-        for minimum in _sources(screen, cfg.sources_per_state):
-            out += explorer.source(minimum, species[minimum.species_id],
-                                   inputs.evidence(minimum.opt_calc).final)
+               for d in _relaxations(species.values(), screen)]
+        recorder = _Recorder(rt, known)
+        for unit, done in zip(units, rt.thread_map(attempts, units), strict=True):
+            for trial, result in done:
+                out += recorder.record(unit, trial, result)
         return out

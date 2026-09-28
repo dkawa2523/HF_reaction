@@ -212,6 +212,50 @@ U8-P3 のプローブで既定の pipeline は PBE0-D3BJ/def2-SVPD のままな�
 
 - S11 の再開は 3 回目の saddle で、`max_saddle_attempts` 2(再開も同じ予算)の実際の case では FIND_PATH に進む。停滞と再開の動作はレビューの予測どおり。
 
+**S-C の SC-B のプローブ(U2-P2・U2-P6・U1-P4、`/home/user/hfauto_r6/SC/scb/{runs,logs}`、集計は `probe_sum.py`)**
+
+structures → conformers → screen(GFN2)。組成はすべて全原子を `--notopo` に渡す。A は `--noopt`、B は初期最適化あり + `--noreftopo`。CREST の列は rc / 配座数 / 秒。
+
+| 組成 | A | B | screen の状態ラベル(A と B で同じ) |
+|---|---|---|---|
+| TMA·(HF)₂ | 0 / 3 / 11.3 | 0 / 3 / 10.8 | C3H10FN+FH(最低 E の差 2e-5 kcal/mol) |
+| F⁻·(HF)₂ | 0 / 1 / 1.4 | 0 / 1 / 2.8(継続した実行に 'Change in topology detected' が出て、パーサは停止として再実行した) | F+FH+FH |
+| Cl⁻·CH3Cl | 0 / 3 / 3.9 | 0 / 3 / 3.8 | CH3Cl+Cl |
+| SO2·NMe3 | 0 / 1 / 11.9 | 0 / 2 / 10.0 | C3H9N+O2S(付加体は CREGEN を通る) |
+| NH3·HF⁺(m=2)、OH·H2O(m=2)、Na⁺·H2O、CH3·O2(S5、m=2) | rc −11(trial MTD の segfault。`-T 1`・quick なしでも同じ) | rc 1(初期最適化の失敗) | placement の seed を screen が緩和: F+H4N 0.00 / FH+H3N 5.86、H2O+HO、H2NaO、CH3O2 |
+
+- U2-P2: A を残す(B も開殻と Na⁺·H2O で失敗し、F⁻·(HF)₂ で停止の誤検出を起こす)。採ったのは全原子の `--notopo` だけで、CREST が失敗した組成は seed を出す。
+- U2-P6(円錐 vs 剛体、A): TMA·(HF)₂ と F⁻·(HF)₂ は同じラベルで ΔE 4e-5 / 2e-5 kcal/mol(剛体は TMA·(HF)₂ で 1 配座 8.9 s、円錐は 3 配座 11.3 s)。CREST が失敗する NH3·HF⁺ と OH·H2O では剛体 seed の xTB 最適化 6 本がすべて失敗し、錯体の状態が消える。円錐を残す。
+- U1-P4 のラベル差分(hfauto_v2〜v5・w7 の 204 参照、83 構造): 変わったのは 9 構造で、すべて GFN2 の CREST 配座の H 結合 amine·HF 錯体(v2 nh3_hf3 c02〜c05 の N···H 1.445〜1.448 Å、v2/v3/w7 tma_hf2 c01/c02 の 1.426〜1.464 Å。閾値 1.42 Å)が 1 断片から分かれた(C3H10FN+FH → C3H9N+FH+FH)。tma_hf2 c00(1.413 Å)、DFT・screen・入力の構造(TMA·(HF)₂ の端点 N–H 1.27 / 1.32 Å を含む)は変わらない。閾値の ±0.05 Å に 20 対。K⁺ の構造はこれらの run にない。S7 の N···I 2.767 Å と N···Cl 2.487 Å、SO2·NMe3 の N···S 2.167 Å(閾値 2.160 Å)は 2 断片になる。Na⁺·H2O は 1 断片のまま(旧規則の Na···H の結合が消えハッシュだけ変わる)。
+
+**S-C の SC-A の確認(U4-P4・P6・P7・P9・P11、U9-P6、`/home/user/hfauto_r6/SC/sca`)**
+
+- S6: CH4···OH の接触構造(O···H 2.30 Å)から引き抜きの T1 を実 ReaDuct で実行した。worker の source 再最適化(GFN2)で構造がすでに CH3···H2O(C···H 1.57 Å、O–H 1.02 Å)に落ちるので、NT2 は `ts_not_converged`(Bofill: No more negative eigenvalues)、AFIR(γ 125・300、restricted_open_shell、SCC 収束)は `same_as_source`。原因は GFN2 で引き抜きが障壁なしであることで、反復上限・変位・開殻の AFIR ではない。引き抜きは screen の緩和の発見(`collapsed_to:CH3+H2O`)として残る。
+- U4-P4: M4 の amine_pilot2 の `irc_end_not_minimum` 7 件を同じ job.json で再実行すると 7 件すべて終わった(生成物 5、`irc_not_connected_to_source` 2、各 7〜17 s、変位を使ったのは 1 件)。障壁は 102〜175 kcal/mol で窓の外。
+- U4-P11(M4 の manifest で数え直し): attempt 数は amine_pilot2 29 → 20(AFIR 12 → 3)、S1 16 → 13、S6 13 → 10、S7 5 → 5。失う生成物の basin はない(S1 の AFIR 生成物 2 件は NT2 と同じ恒等 SN2)。
+- U4-P7: S1 の恒等 SN2 の生成物 6 件は species 1 つになり、source の basin(c00・c01)には合流しない。
+
+**S-C の統合後の実測(作業ツリー、`/home/user/hfauto_r6/SC/runs/<run>`、すべて新しい run dir。S 系は `discover --to explore`)**
+
+| 系 | 結果 | 所要時間 |
+|---|---|---|
+| smoke | `-m real tests/smoke` 14 件合格 | 1:14 |
+| R1 `hcn` | `elementary_step`、δG_eff 42.1783(S-B と同じ) | 1:20 |
+| R2 `hono` | `elementary_step`、δG_eff 11.8158(同じ) | 3:06 |
+| R3 `nh3_inversion` | `degenerate_rearrangement`、δG_eff 3.8395(同じ) | 1:15 |
+| R4 `water_same_basin` | `same_basin`(同じ) | 0:12 |
+| S1 `sn2_cl` | 13 attempt(AFIR 3)。恒等 SN2 の生成物 4 件(2 つの錯体から NT2 の T1 と T4 切断)が species 1 つ(M4 は 16 attempt、生成物 6 件がそれぞれ species) | 0:14 |
+| S6 `oh_ch4` | 引き抜きの生成物はない(上の SC-A の確認のとおり GFN2 で障壁なし、緩和の発見 2 件)。出発点の CH3···H2O から 11 attempt(M4 は 13)で、CH3OH + H(ΔE‡ 31.6 / 37.8、ΔE_rxn 10.9 / 6.2 kcal/mol)が新しい窓(ΔE‡ ≤ 50、ΔE_rxn ≤ 40)に入って 2 生成物として残る(遊離 H の位置が違い RMSD で別の basin)。rc 1 は CREST の開殻の失敗と placement seed の xTB 失敗(既知) | 0:06 |
+| S7 `nh3_icl` | 錯体 5 構造はすべて 2 断片の 1 状態(ClI+H3N)、polar_h の drive はない。出発点(最低 2 つ、N···I 2.77 Å の c00 と c01)の drive は N–I 形成・I–Cl 切断の T1 だけで、NT2 は `no_nt2_maximum`、AFIR は `same_as_source`。M4 の生成物 3 件のうち 2 件(AFIR の ClH3IN)はハロゲン結合の錯体そのもので、新しい結合規則では生成物でない。NT2 の NH2I + HCl(124.4 kJ/mol)は緩い c02 から得たもので、M4 では c00 が別の状態(1 断片)だったので c02 が出発点に入ったが、c00 が同じ状態に入った今は最低 2 つに入らない | 0:13 |
+| S8 `so2_nme3` | 付加体(N···S 2.17 Å)は CREGEN を通り screen 極小として残るが、ラベルは 2 断片(C3H9N+O2S)。N–S 形成の T3・T1 は `no_nt2_maximum` → AFIR `same_as_source`。23 attempt で生成物 0 | 1:04 |
+| S10 `amine_pilot2`(`discover`) | explore 23 attempt(AFIR 2)、37 s(M4: 36 attempt・AFIR 15・120 s)。`irc_end_not_minimum` 7 → 0。NH3·HF の二重 H 交換は 2 attempt(リレーと T1)が同じ species 1 つに入り、`degenerate_rearrangement`、ΔG‡ 32.29(M4 と同じ)。DFT ジョブ 18(M4 も 18)、dft 1,134 s(M4 1,168)。CREST は同時に 1 本(ReaDuct は最大 4 本) | 21:36(M4 23:35) |
+| S19 `tma_hf2`(`discover`、cores 4) | explore 15 attempt(すべて NT2。S-A は 25 で AFIR 10)、32 s。生成物 0、`same_basin` は同じ。dft の DFT ジョブ 9 + 再利用 1(S-A も同じ)、1,778 s(S-A 1,787)。CREST 2 本は同時に 1 本、ReaDuct は最大 4 本 | 0:53(`--to explore`)+ 29:39(残り) |
+| 同上の直列(run の複製から ReaDuct のジョブを消し、cores 1 の site で `--from explore`) | explore 124 s(並列はその 1/3.9)。explore・screen・conformers の artifact は run dir を除いて並列と一致し、ReaDuct の JobStore キー 15 個も一致(直列のキー 32 個はすべて並列の run にある) | 2:06 |
+
+- 並列の確認に使った同時実行数は、各ジョブの attempt ディレクトリの最初のファイル(`input.xyz` を除く)から `result.json` までの区間で数えた。job.json はコアの予約の前に書かれるので、その時刻で数えると CREST が 2 本重なって見える。
+- 独立に走らせた 2 本の run(並列・直列)は CREST の MTD の揺らぎで配座数が違い(7 / 5 artifact)、artifact の比較には使えない。上の直列は同じ run の複製で比べた。
+- 判定: R1〜R4 は S-B と同じ値(結合規則と explore の変更は known_endpoints の順位に影響しない)。AFIR は `no_nt2_maximum` の後だけになり、attempt は S10 で 36 → 23(半分には届かない。減ったのは AFIR 15 → 2)、tma_hf2 で 25 → 15。`irc_end_not_minimum` は S10 で 7 → 0。生成物の同定で S1 は species 6 → 1、S10 は 2 attempt → species 1 で、同定で失った basin はない。S7 の NH2I + HCl は、状態が 1 つにまとまって出発点(状態ごとに最低 2 つ)から外れたために失った(表の S7)。S6 の引き抜きの生成物は得られない(GFN2 で障壁なし。新しい機構は入れない)。
+
 ---
 
 以下は v3・v4・v5(第2〜第4ラウンド改良後の再検証、2026-09-26)の記録。第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11、第4ラウンドの小さな改良(コード `13a4340`)後の退行確認 v5 は §12 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。

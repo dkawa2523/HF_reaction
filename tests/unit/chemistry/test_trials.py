@@ -102,20 +102,10 @@ def test_equivalent_drives_are_one_trial_and_distinct_sites_stay():
 
 
 def test_linear_hcn_is_bent_and_gets_the_12_shift():
-    start, ts = trials.generate("m", *HCN)
-    assert _drives(HCN) == [("transfer", {(0, 2)}, {(0, 1)})] and all(t.perturbed for t in ts)
+    start, _ = trials.generate("m", *HCN)
+    assert _drives(HCN) == [("transfer", {(0, 2)}, {(0, 1)})]
     assert external_basis(HCN[0], start).shape[1] == 6
     v1, v2 = start[0] - start[1], start[2] - start[1]
     bend = 180 - np.degrees(np.arccos(v1 @ v2 / np.linalg.norm(v1) / np.linalg.norm(v2)))
     assert 5 < bend < 15 and np.abs(start - HCN[1]).max() < 0.3
     assert np.array_equal(start, trials.generate("m", *HCN)[0])  # seeded
-
-
-def test_product_verdict_window_and_ts_requirement():
-    def verdict(mechanism, barrier, reaction, ts=True):
-        return trials.product_verdict(mechanism, ts_validated=ts, barrier_kj=barrier,
-                                      reaction_kj=reaction)
-
-    assert verdict("nt2", 10, 5, ts=False) == "ts_not_validated"
-    assert verdict("nt2", 151, 5) == verdict("afir", None, 101) == "out_of_window"
-    assert verdict("afir", None, None) == "out_of_window" and verdict("afir", None, 99) is None

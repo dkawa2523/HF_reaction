@@ -20,7 +20,11 @@ from hfauto.chemistry.gates import (
     qrc_drop,
     spin_ok,
 )
-from hfauto.chemistry.geometry import most_changed_dihedral
+from hfauto.chemistry.geometry import (
+    declared_coordinate,
+    declared_coordinate_gradient,
+    most_changed_dihedral,
+)
 from hfauto.chemistry.identity import mapped_equivalent, periodic_nearest
 from hfauto.chemistry.interpolation import align_mapped, align_sequential, idpp
 from hfauto.chemistry.modes import amplitude, displace, overlap
@@ -32,7 +36,6 @@ from hfauto.core.method import Deadline
 from hfauto.core.records import (
     BarrierVerdict,
     ConnectionClaim,
-    CoordinateTerm,
     MinimumRecord,
     ReactionRecord,
     SaddleClaim,
@@ -143,8 +146,8 @@ class Ctx:
             return np.asarray(seed.tangent)
         a, b = (align_mapped(x, end) for end in self.ends)
         centre, bonded = _reaction_centre(self.symbols, a, b)
-        if not centre and (terms := self.case.coordinate or _dihedral(bonded, a, b)):
-            return topology.declared_coordinate_gradient(terms, x)
+        if not centre and (terms := self.case.coordinate or most_changed_dihedral(bonded, a, b)):
+            return declared_coordinate_gradient(terms, x)
         t = np.reshape(b - a if seed is None or seed.tangent is None else seed.tangent, (-1, 3))
         rows, v = sorted(centre) or list(range(len(t))), np.zeros_like(t)
         v[rows] = t[rows]
@@ -160,12 +163,6 @@ def _reaction_centre(symbols: list[str], a: np.ndarray, b: np.ndarray
     formed, broken = topology.bond_changes(symbols, a, b)
     changed, bonded = {i for pair in formed | broken for i in pair}, topology.bonds(symbols, a)
     return changed | {k for pair in bonded if changed & set(pair) for k in pair}, bonded
-
-
-def _dihedral(bonded: frozenset[tuple[int, int]], a: np.ndarray, b: np.ndarray
-              ) -> tuple[CoordinateTerm, ...]:
-    chain = most_changed_dihedral(bonded, a, b)
-    return () if chain is None else (CoordinateTerm(kind="dihedral", atoms=chain),)
 
 
 def _unavailable(reason: str) -> BarrierVerdict:
@@ -383,8 +380,8 @@ def _assign(ctx: Ctx, side: Evidence, x: np.ndarray, name: str) -> str | None:
         return ctx.record(basin).minimum_id
     terms = ctx.case.coordinate
     if ctx.case.torsional and terms and all(t.kind == "dihedral" for t in terms):
-        values = [topology.declared_coordinate(terms, end) for end in ctx.raw]
-        return ctx.case.minima[periodic_nearest(topology.declared_coordinate(terms, x), values)]
+        values = [declared_coordinate(terms, end) for end in ctx.raw]
+        return ctx.case.minima[periodic_nearest(declared_coordinate(terms, x), values)]
     record = _register(ctx, x, name, "connection")
     return None if record is None else record.minimum_id
 

@@ -41,6 +41,7 @@ class Policy:
 
 
 _DEFAULT = Policy()
+LOW_LEVEL_BARRIER_MAX_KCAL = 50.0  # explore's xTB barrier cap; the DFT stages judge the rest
 _PES_FIELDS = (
     "program", "version", "method", "basis", "dispersion", "solvation",
     "charge", "multiplicity", "electronic_temperature_K",
@@ -255,6 +256,26 @@ def thermo_consistent(
     if not abs(gv_energy_hartree - freq.energy_hartree) < policy.thermo_energy_tol_hartree:
         reasons.append("energy_mismatch")
     return _gate(reasons)
+
+
+def discovery_verdict(
+    mechanism: str,
+    *,
+    ts_validated: bool,
+    dE_act_kcal: float | None,
+    dE_rxn_kcal: float | None,
+    policy: Policy = _DEFAULT,
+) -> str | None:
+    """None when a low-level product is kept, else the negative reason (CH-28). An NT2 product
+    needs its validated TS and IRC; the reaction window is the DFT one (a narrower low-level sieve
+    only adds false negatives) and an unevaluated reaction energy lies outside it."""
+    if mechanism == "nt2" and not ts_validated:
+        return "ts_not_validated"
+    if dE_rxn_kcal is None or dE_rxn_kcal > policy.reaction_window_kcal:
+        return "out_of_window"
+    if dE_act_kcal is not None and dE_act_kcal > LOW_LEVEL_BARRIER_MAX_KCAL:
+        return "out_of_window"
+    return None
 
 
 def rankable(reaction: ReactionRecord, thermo: ReactionThermo | None) -> Gate:

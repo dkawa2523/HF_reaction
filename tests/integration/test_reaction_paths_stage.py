@@ -156,7 +156,7 @@ def test_walltime_low_level_ts_shortcut_and_negative_discoveries_do_not_veto(
     trial = ReactionTrial(trial_id="t", source_minimum=source, kind="transfer", mechanism="afir",
                           associations=((1, 2),), dissociations=((0, 1),))
     negative = DiscoveryRecord(discovery_id="d2", source_minimum=source, mechanism="afir",
-                               outcome="negative", reason="monotonic_uphill", trial=trial)
+                               outcome="negative", reason="no_nt2_maximum", trial=trial)
     for record in (found, negative):  # X1: a matching negative discovery changes nothing
         view.artifacts.append(Artifact(artifact_id=record.discovery_id, type=T.DISCOVERY,
                                        payload=record))

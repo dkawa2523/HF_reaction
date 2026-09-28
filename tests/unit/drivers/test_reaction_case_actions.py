@@ -8,10 +8,10 @@ import fakes
 import numpy as np
 import pytest
 
+from hfauto.chemistry.geometry import declared_coordinate_gradient
 from hfauto.chemistry.identity import mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.modes import overlap
-from hfauto.chemistry.topology import declared_coordinate_gradient
 from hfauto.chemistry.xyz import XYZ, composition_key, read_xyz
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL

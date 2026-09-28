@@ -3,14 +3,14 @@
 One JobRunner task per search on the site's execution threads (``-T``, ``OMP_NUM_THREADS``);
 ``--nci`` searches add ``--noopt``. The attempt directory receives ``input.xyz``; the parser
 reads ``crest_conformers.xyz`` (energies from the comment lines, a missing one stays None,
-BUG-08), sums the CREGEN topology-based removals, and turns a stop on
-'Change in topology detected' into ``topology_stops`` (the last ``crestopt.log`` frame).
+BUG-08) and turns a stop on 'Change in topology detected' into ``topology_stops`` (the last
+``crestopt.log`` frame).
 The observed version (banner of every run, the same text as ``crest --version``) must match
 the site pin. There is no RDKit fallback.
 
 CREST runs in the attempt directory (under ``<run>/jobs``) without ``--scratch``: CREST 3.0.2
 copies its working directory, captured stdout included, to the scratch directory and back,
-which overwrites the log holding the CREGEN counts and the topology-stop message.
+which overwrites the log holding the topology-stop message.
 """
 
 from __future__ import annotations
@@ -37,7 +37,6 @@ CONFORMERS = "crest_conformers.xyz"
 OPT_LOG = "crestopt.log"
 TOPOLOGY_STOP = "Change in topology detected"
 _VERSION = re.compile(r"Version\s+(\d[\w.+-]*)")
-_REMOVALS = re.compile(r"CREGEN> number of topology-based structure removals:\s*(\d+)")
 _FLOAT = re.compile(r"[-+]?\d+\.\d*(?:[Ee][-+]?\d+)?")
 
 
@@ -65,11 +64,6 @@ def observed_version(stdout: str) -> str | None:
     return match.group(1) if match else None
 
 
-def topology_removed(stdout: str) -> int:
-    """Sum over every CREGEN call of the topology-based structure removals."""
-    return sum(int(n) for n in _REMOVALS.findall(stdout))
-
-
 def _energy(comment: str) -> float | None:
     match = _FLOAT.search(comment)
     return float(match.group(0)) if match else None
@@ -84,15 +78,14 @@ def _geometry(xyz: XYZ, path: Path, file_ref: Callable[[Path], FileRef]) -> Geom
 def parse_outputs(workdir: Path, stdout: str, symbols: Sequence[str],
                   file_ref: Callable[[Path], FileRef]) -> ConformerEnsemble | Failure:
     """Ensemble of a finished CREST directory (return code already checked)."""
-    removed, version = topology_removed(stdout), observed_version(stdout) or "unknown"
+    version = observed_version(stdout) or "unknown"
     if TOPOLOGY_STOP in stdout:
         if not (workdir / OPT_LOG).is_file():
             reason = f"topology stop without {OPT_LOG}"
             return Failure(kind=FailureKind.INCOMPLETE_OUTPUT, reason=reason)
         last = read_xyz_trajectory(workdir / OPT_LOG)[-1]
         stop = _geometry(last, workdir / "topology_stop.xyz", file_ref)
-        return ConformerEnsemble(members=(), topology_removed=removed, topology_stops=(stop,),
-                                 version=version, job_key="")
+        return ConformerEnsemble(members=(), topology_stops=(stop,), version=version, job_key="")
     if not (workdir / CONFORMERS).is_file():
         return Failure(kind=FailureKind.INCOMPLETE_OUTPUT, reason=f"{CONFORMERS} missing")
     frames = read_xyz_trajectory(workdir / CONFORMERS)
@@ -100,8 +93,7 @@ def parse_outputs(workdir: Path, stdout: str, symbols: Sequence[str],
         return Failure(kind=FailureKind.METHOD_MISMATCH, reason="atom_order_changed")
     members = tuple((_geometry(f, workdir / f"conformer_{k:03d}.xyz", file_ref), _energy(f.comment))
                     for k, f in enumerate(frames))
-    return ConformerEnsemble(members=members, topology_removed=removed, topology_stops=(),
-                             version=version, job_key="")
+    return ConformerEnsemble(members=members, topology_stops=(), version=version, job_key="")
 
 
 class _Adapter:
@@ -166,7 +158,7 @@ class CRESTEngine:
         task = Task(
             engine=self.name, version_pin=self.site.version, kind="conformers",
             key_payload={"molecule": mol.fingerprint(), "method": method.signature(),
-                         "settings": settings.model_dump(mode="json"), "noopt": settings.nci},
+                         "settings": settings.model_dump(mode="json")},
             execution=self.site.execution,
             inputs={"molecule": mol, "method": method, "settings": settings},
         )
