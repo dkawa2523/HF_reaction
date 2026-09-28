@@ -171,7 +171,7 @@ python-version = "3.12"
 python-interpreter-path = ".venv-win-qa/Scripts/python.exe"
 # Linux-only production libraries, imported inside functions only (GoodVibes in
 # chemistry.thermo.species_thermo, the others in worker functions).
-ignore-missing-imports = ["goodvibes", "goodvibes.*", "pysisyphus", "pysisyphus.*", "scine_readuct", "scine_utilities", "scine_xtb_wrapper"]
+ignore-missing-imports = ["goodvibes", "goodvibes.*", "pymsym", "pymsym.*", "pysisyphus", "pysisyphus.*", "scine_readuct", "scine_utilities", "scine_xtb_wrapper"]
 
 # ---------------------------------------------------------------------------
 # Complexity metrics (radon >= 5.1 reads [tool.radon]).  Example:

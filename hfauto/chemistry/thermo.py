@@ -35,6 +35,30 @@ GOODVIBES_VERSION = "4.3.0"  # species_thermo is validated against it (tests/gol
 _K_PER_GHZ = 0.0479924307  # h / k_B in K per GHz (CODATA 2018)
 _L_ATM_PER_MOL_K = 0.082057366080960  # gas constant in L atm / (mol K), CODATA 2018
 _ATM_PER_BAR = 1.0 / 1.01325
+# libmsym's relative equivalence threshold. Its default 5e-4 split the C3v I-...CH3I complex into
+# Cs when an optimisation left the I- 0.03 deg off the axis (sigma 3 -> 1, dG 0.65 kcal/mol run to
+# run); 2e-3 gives the same point group as the default for every other validation structure.
+_SYMMETRY_EQUIVALENCE = 2.0e-3
+
+
+def symmetry_number(symbols: Sequence[str], coords: Sequence[Sequence[float]]) -> int:
+    """External rotational symmetry number of the point group libmsym finds (pymsym, the
+    detector GoodVibes uses) with ``_SYMMETRY_EQUIVALENCE``; 1 for an atom or when libmsym finds
+    no consistent group (pymsym returns C1 then as well)."""
+    import pymsym
+    from pymsym.high_level import SYMMNO_BY_POINT_GROUP
+
+    if len(symbols) == 1:
+        return 1
+    elements = [pymsym.Element(name=s, coordinates=[float(v) for v in c])
+                for s, c in zip(symbols, coords, strict=True)]
+    try:
+        with pymsym.Context(elements=elements) as ctx:
+            ctx.set_thresholds(equivalence=_SYMMETRY_EQUIVALENCE)
+            group = ctx.find_symmetry()
+    except Exception:  # libmsym raises when no group fits
+        return 1
+    return SYMMNO_BY_POINT_GROUP[{"D0h": "Dinfh", "C0v": "Cinfv"}.get(group, group)]
 
 
 def thermo_frequencies(freqs_cm1: Sequence[float], *, saddle: bool) -> tuple[float, ...]:
@@ -56,7 +80,7 @@ def species_thermo(xyz: XYZ, frequencies_cm1: Sequence[float], *, saddle: bool,
                    multiplicity: int, settings: ThermoSettings, T: float) -> Thermal:
     """GoodVibes (``compute_thermo``) in this process for an ideal gas at 1 atm: QH=False (H is
     RRHO), the vibrational entropy of ``settings.qs`` with ``settings.cutoff_cm1``, vib_scale
-    on the modes and the ZPE, sigma from pymsym (symm=True) and S_el = R ln(2S+1).
+    on the modes and the ZPE, sigma from ``symmetry_number`` and S_el = R ln(2S+1).
 
     The modes are ``thermo_frequencies``; the mass and the rotational temperatures come from
     the geometry, and a vanishing moment of inertia marks a linear molecule. calc_bbe reads
@@ -76,10 +100,11 @@ def species_thermo(xyz: XYZ, frequencies_cm1: Sequence[float], *, saddle: bool,
         linear_mol=len(constants) == 2, molecular_mass=sum(mass(s) for s in symbols),
         rotemp=[b * _K_PER_GHZ for b in constants] or [0.0],
         zero_point_corr=0.0 if len(symbols) == 1 else 1.0,
+        symmno=symmetry_number(symbols, xyz.coords.tolist()),
     )
     r = compute_thermo(qcdata=qcdata, QS=settings.qs, s_freq_cutoff=settings.cutoff_cm1,
                        temperature=T, freq_scale_factor=settings.vib_scale,
-                       zpe_scale_factor=settings.vib_scale, symm=True)
+                       zpe_scale_factor=settings.vib_scale, symm=False)
     return Thermal(G=r.qh_gibbs_free_energy, H=r.enthalpy, zpe=r.zpe)
 
 

@@ -82,6 +82,23 @@ def test_argon_standard_entropy():
     assert ar.zpe == 0.0 and ar.H == pytest.approx(2.5 * RT, rel=1e-6)
 
 
+def test_symmetry_number_tolerates_an_optimised_c3v_complex():
+    """I-...CH3I as NWChem left it in a validation run (I- 0.03 deg off the C3 axis): libmsym's
+    default threshold gives Cs (sigma 1); the complex is C3v (sigma 3), as in the other run."""
+    symbols = ["C", "H", "H", "H", "I", "I"]
+    coords = [[-0.00040698, -1.12e-06, 0.04484225], [1.04164864, -8.4e-07, 0.37030592],
+              [-0.5205438, 0.90190957, 0.37320459], [-0.52054263, -0.90191372, 0.37320135],
+              [0.00429119, 3.12e-06, 3.5046527], [-0.00444641, 3e-06, -2.1462068]]
+    import pymsym
+
+    assert pymsym.get_symmetry_number([6, 1, 1, 1, 53, 53], coords) == 1  # the default threshold
+    assert th.symmetry_number(symbols, coords) == 3
+    assert th.symmetry_number(["O", "O"], [[0, 0, 0], [0, 0, 1.2]]) == 2  # D_inf_h
+    assert th.symmetry_number(["Ar"], [[0, 0, 0]]) == 1
+    assert th.symmetry_number(["O", "O", "H", "H"], [[0, 0.7, 0], [0, -0.7, 0], [0.9, 1, 0.3],
+                                                     [-0.9, -1, 0.3]]) == 2  # C2 (H2O2)
+
+
 def test_cutoff_and_truhlar_variants_match_goodvibes_parsing_the_output(golden):
     """G23 (TMA-(HF)2 saddle, real modes from 84.6 cm-1): each variant minus the main settings,
     in process and from GoodVibes reading the output itself (S_rot and S_trans cancel)."""
