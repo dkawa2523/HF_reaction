@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from hfauto.core.evidence import Level
-from hfauto.core.method import Deadline, EngineSite, MethodSpec, level_mismatches
+from hfauto.core.method import Deadline, EngineSite, ExecutionSpec, MethodSpec, level_mismatches
 from hfauto.core.system import load_system
 
 DFT = MethodSpec(id="pbe0", kind="dft", functional="PBE0", basis="def2-SVPD", dispersion="d3bj",
@@ -32,7 +32,6 @@ def test_dft_level_mismatches():
     assert level_mismatches(DFT, observed(scf_tol=1e-7 * (1 + 1e-12)), version_pin="7.2.3") == []
     assert level_mismatches(DFT, observed(scf_tol=1e-6), version_pin="7.2.3")
     assert level_mismatches(DFT, observed(dispersion=None), version_pin="7.2.3")
-    assert level_mismatches(DFT, observed(solvation="cosmo:78.4"), version_pin="7.2.3")
 
 
 def test_xtb_and_wft_level_mismatches():
@@ -43,10 +42,23 @@ def test_xtb_and_wft_level_mismatches():
                             version_pin="6.7.1") == []
     hot = level.model_copy(update={"electronic_temperature_K": 1000.0})
     assert level_mismatches(xtb, hot, version_pin="6.7.1")
-    mp2 = MethodSpec(id="mp2", kind="wft", wft_method="mp2", basis="def2-TZVP")
-    wft = observed(method="mp2", basis="def2-tzvp", dispersion=None)
-    assert level_mismatches(mp2, wft, version_pin="7.2.3") == []
-    assert level_mismatches(mp2, wft.model_copy(update={"method": "ccsd(t)"}), version_pin="7.2.3")
+    ccsd_t = MethodSpec(id="ccsd-t", kind="wft", wft_method="ccsd(t)", basis="def2-TZVP")
+    wft = observed(method="ccsd(t)", basis="def2-tzvp", dispersion=None)
+    assert level_mismatches(ccsd_t, wft, version_pin="7.2.3") == []
+    assert level_mismatches(ccsd_t, wft.model_copy(update={"basis": "def2-svp"}),
+                            version_pin="7.2.3")
+
+
+def test_gas_phase_methods_only():
+    """U0-P4: no solvation, D4 or MP2 in a MethodSpec, no chemistry in the site's execution."""
+    for extra in ({"solvation": "cosmo:78.4"}, {"dispersion": "d4"}):
+        with pytest.raises(ValidationError):
+            MethodSpec.model_validate({**DFT.model_dump(), **extra})
+    with pytest.raises(ValidationError):
+        MethodSpec(id="mp2", kind="wft", wft_method="mp2", basis="def2-svp")  # type: ignore[arg-type]
+    for knob in ("maxiter", "coordinates"):
+        with pytest.raises(ValidationError):
+            ExecutionSpec.model_validate({knob: 1})
 
 
 def test_method_signature_site_pin_and_deadline():

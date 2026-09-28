@@ -1,5 +1,6 @@
-"""Checks before a run (design §7.4): executables, version pins, worker modules, method
-support and the scratch location. Problems are returned as messages, never raised.
+"""Checks before a run (design §7.4): executables, version pins (GoodVibes too, which the
+thermo stage runs in this interpreter), worker modules, method support and the scratch
+location. Problems are returned as messages, never raised.
 """
 
 from __future__ import annotations
@@ -9,9 +10,11 @@ import sys
 import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from hfauto.backends.protocols import Capability, Requirements
+from hfauto.chemistry.thermo import GOODVIBES_VERSION
 from hfauto.core.method import EngineSite
 from hfauto.execution.process import Command, resolve_executable, run_command
 from hfauto.pipeline.config import PipelineConfig, ResolvedConfig, SiteConfig, method_ids
@@ -92,10 +95,7 @@ def _version_problems(tmp: Path, name: str, req: Requirements, site: EngineSite)
     if not req.version_command:
         return []
     head, *rest = req.version_command
-    explicit = site.executables.get(head)
-    if explicit is None and head == "python":  # a worker engine's own interpreter
-        explicit = site.python or sys.executable
-    executable = resolve_executable(head, explicit)
+    executable = resolve_executable(head, site.executables.get(head))
     if executable is None:
         return [f"{name}: version command {head!r} not found"]
     _, output = _run(tmp, (executable, *rest))
@@ -142,6 +142,19 @@ def check_site(
     return problems
 
 
+def goodvibes_problems(pipeline: PipelineConfig) -> list[str]:
+    """A thermo stage needs GoodVibes at GOODVIBES_VERSION in this interpreter."""
+    if all(entry.stage != "thermo" for entry in pipeline.stages):
+        return []
+    try:
+        found = version("goodvibes")
+    except PackageNotFoundError:
+        found = "not installed"
+    if found == GOODVIBES_VERSION:
+        return []
+    return [f"goodvibes: {found} in {sys.executable}; the thermo stage needs {GOODVIBES_VERSION}"]
+
+
 Use = tuple[Capability, str, str | None]  # registered (capability, engine, method)
 
 
@@ -178,7 +191,7 @@ def preflight(resolved: ResolvedConfig, *, dry_run: bool = False) -> list[str]:
     """Every problem found for the engines the pipeline uses; empty means ready to run.
 
     ``dry_run`` skips everything that runs an executable (executables, version pins and
-    the worker python's modules).
+    the worker python's modules) and the GoodVibes version.
     """
     from hfauto.backends.engines import requirements_for
 
@@ -194,4 +207,5 @@ def preflight(resolved: ResolvedConfig, *, dry_run: bool = False) -> list[str]:
     for capability, name, _ in uses:
         selection.setdefault(capability, []).append(name)
     problems += check_site(resolved.site, requirements_for(selection), dry_run=dry_run)
+    problems += [] if dry_run else goodvibes_problems(resolved.pipeline)
     return problems + _support_problems(resolved, dict.fromkeys(uses))

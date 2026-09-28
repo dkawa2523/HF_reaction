@@ -4,14 +4,13 @@ import numpy as np
 import pytest
 
 from hfauto.backends.protocols import Capability
-from hfauto.backends.xtb import XTBEngine
 from hfauto.chemistry.identity import mapped_rmsd
 from hfauto.chemistry.interpolation import idpp
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
 from hfauto.core.evidence import FileRef
 from hfauto.core.hashing import sha256_file
-from hfauto.core.method import ExecutionSpec, MethodSpec
+from hfauto.core.method import MethodSpec
 
 pytestmark = pytest.mark.real
 GFN2 = MethodSpec(id="gfn2", kind="xtb", gfn=2)
@@ -21,7 +20,7 @@ def mol(symbols, *rows):
     return Molecule(XYZ(list(symbols), np.array(rows, dtype=float)), 0, 1)
 
 
-def test_xtb_water_opt_hess_units_and_cycle_limit(real_engine, tmp_path):
+def test_xtb_water_opt_hess_units(real_engine, tmp_path):
     xtb, run = real_engine(Capability.QM, "xtb"), tmp_path / "run"
     opt = xtb.optimize(mol("OHH", [0, 0, 0], [1.05, 0, 0], [-0.3, 0.95, 0.05]), GFN2)
     freq = xtb.frequencies(Molecule(read_xyz(run / opt.final.file.path), 0, 1), GFN2)
@@ -29,10 +28,6 @@ def test_xtb_water_opt_hess_units_and_cycle_limit(real_engine, tmp_path):
     rows = [r.split() for r in text.splitlines()]
     own = sorted(float(r[2]) for r in rows if len(r) == 5 and r[0].isdigit())  # xtb's own
     assert freq.n_external == 6 and np.allclose(freq.frequencies_cm1, own, rtol=2e-3)  # Eh/bohr²
-    capped = XTBEngine(jobs=xtb.jobs, site=xtb.site.model_copy(
-        update={"execution": ExecutionSpec(maxiter=2)}))  # --cycles 2
-    far = mol("OHH", [0, 0, 0], [1.4, 0, 0], [1.0, 1.3, 0.4])
-    assert capped.optimize(far, GFN2).kind == "geometry_maxiter"
 
 
 def test_pysis_neb_hcn_to_hnc_keeps_its_ends_and_its_ts_has_one_imaginary_mode(real_engine,

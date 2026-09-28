@@ -1,17 +1,17 @@
-"""thermo stage (design §4.1 #7, §8.2 thermo): GoodVibes, consistency gate, composite G,
-sensitivity band, association thermochemistry and the ranking quantity dG_eff.
+"""thermo stage (design §4.1 #7, §8.2 thermo): GoodVibes in this process
+(chemistry.thermo.species_thermo), composite G, sensitivity band, association
+thermochemistry and the ranking quantity dG_eff.
 
-Subjects: every dft minimum (monomers included) and SaddleClaim freq calc; one engine call
-each covers the main settings and the qs x cutoff variants at the configured temperatures.
-Modes follow chemistry.thermo.thermo_frequencies (a TS drops its reaction coordinate). A
-failed call or gate gives G = None (thermo_unavailable), never retried. Species values are
-1 atm; reactions get one record per standard state. With energy_method, G = E_SP + (G_GV -
-E_GV) from the sp whose parents name the subject (the later one in the view wins); a subject
-without it is energy_layer_missing. The energy layer passes spin_ok like the freq. A chiral
-subject (MinimumRecord.chiral, or a chiral TS geometry) gets -RT ln 2 in G: its mirror image
-is the same basin or saddle, counted once with m = 2 (in ensembles too). The blockers of a
-ReactionThermo are the only source of thermo_unavailable, mixed_level_of_theory and
-spin_contaminated.
+Subjects: every dft minimum (monomers included) and SaddleClaim freq calc, at the main
+settings and the qs x cutoff variants and at every configured temperature. Modes follow
+chemistry.thermo.thermo_frequencies (a TS drops its reaction coordinate). Species values are
+1 atm; reactions get one record per standard state. G is the energy layer plus the thermal
+terms of the freq: with energy_method the sp whose parents name the subject (the later one
+in the view wins; without it G = None, energy_layer_missing), else the freq itself. The
+energy layer passes spin_ok like the freq. A chiral subject (MinimumRecord.chiral, or a
+chiral TS geometry) gets -RT ln 2 in G: its mirror image is the same basin or saddle, counted
+once with m = 2 (in ensembles too). The blockers of a ReactionThermo are the only source of
+thermo_unavailable, mixed_level_of_theory and spin_contaminated.
 
 A state is a composition and a topology.state_label. dG_eff (thermo.effective_barrier) refers
 to the lowest G of the reactant's and the product's state on the same freq and energy LOT
@@ -25,13 +25,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import ClassVar, cast
 
-from hfauto.backends.protocols import Capability, ThermoEngine
 from hfauto.chemistry import thermo as th
-from hfauto.chemistry.gates import Gate, Policy, same_pes, spin_ok, thermo_consistent
+from hfauto.chemistry.gates import Policy, same_pes, spin_ok
 from hfauto.chemistry.identity import is_chiral
 from hfauto.chemistry.xyz import XYZ, hill_formula
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
-from hfauto.core.evidence import Evidence, Failure, Geometry, Level
+from hfauto.core.evidence import Evidence, Geometry, Level
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec, ThermoSettings, level_mismatches
 from hfauto.core.records import (
@@ -52,7 +51,6 @@ Table = dict[str, SpeciesThermo]  # subject -> thermo at one temperature and one
 
 
 class ThermoConfig(StageConfig):
-    engine: str  # thermo engine name; no default
     settings: ThermoSettings = ThermoSettings()
     energy_method: str | None = None  # sp layer of the composite G
     temperatures_K: tuple[float, ...] = (298.15,)
@@ -64,6 +62,7 @@ class _Subject:
     id: str  # minimum_id or SaddleClaim.freq_calc
     freq_calc: str
     freq: Evidence
+    xyz: XYZ  # the freq geometry
     energy_calc: str | None  # the sp at energy_method whose parents name this subject
     energy: Evidence  # that sp, else the freq itself
     state: State | None  # None for a TS
@@ -91,56 +90,40 @@ def _subjects(inputs: Manifest, method: MethodSpec | None, load: Callable[[Geome
     }
 
     def make(sid: str, calc: str, state: State | None, notes: tuple[str, ...],
-             chiral: bool) -> _Subject:
+             chiral: bool | None) -> _Subject:  # chiral None: judged from the geometry (a TS)
         freq = inputs.evidence(calc)
+        xyz = load(freq.final)
         sp_calc, sp = layer.get(sid, (None, freq))
-        return _Subject(sid, calc, freq, sp_calc, sp, state, notes,
+        return _Subject(sid, calc, freq, xyz, sp_calc, sp, state, notes,
                         (hill_formula(freq.final.symbols), freq.level.charge),
                         (freq.level.full_key(), sp.level.full_key()),
-                        layer_missing=method is not None and sp_calc is None, chiral=chiral)
+                        layer_missing=method is not None and sp_calc is None,
+                        chiral=is_chiral(xyz.symbols, xyz.coords) if chiral is None else chiral)
 
     out = {m.minimum_id: make(m.minimum_id, m.freq_calc, (m.composition_id, m.state_label),
                               m.notes, m.chiral)
            for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord) if m.tier == "dft"}
     for r in inputs.records(ArtifactType.REACTION, ReactionRecord):
         if r.saddle is not None:
-            ts = load(inputs.evidence(r.saddle.freq_calc).final)
-            out[r.saddle.freq_calc] = make(r.saddle.freq_calc, r.saddle.freq_calc, None,
-                                           r.saddle.notes, is_chiral(ts.symbols, ts.coords))
+            calc = r.saddle.freq_calc
+            out[calc] = make(calc, calc, None, r.saddle.notes, None)
     return out
 
 
-def _species(sub: _Subject, engine: ThermoEngine, variants: Sequence[ThermoSettings],
-             temperatures: Sequence[float], policy: Policy) -> dict[float, list[SpeciesThermo]]:
-    """Per temperature, the thermo of every variant (index 0 = main settings)."""
-    shas, saddle = [th.settings_sha(s) for s in variants], sub.state is None  # TS
-    out = [] if sub.layer_missing else engine.thermo(
-        sub.freq, variants, temperatures_K=temperatures, saddle=saddle)
-    found = {} if isinstance(out, Failure) else {(r.settings_sha, r.T_K): r for r in out}
-    missing = (str(out.kind),) if isinstance(out, Failure) else (
-        "energy_layer_missing" if sub.layer_missing else "no_thermo_result",)
-    modes = th.thermo_frequencies(sub.freq.frequencies_cm1 or (), saddle=saddle)
-    rows: dict[float, list[SpeciesThermo]] = {}
-    for T in temperatures:
-        mirror = th.chiral_G(T) if sub.chiral else 0.0
-        results = [found.get((sha, T)) for sha in shas]
-        r0 = results[0]
-        gate = Gate(False, missing) if r0 is None else thermo_consistent(
-            sub.freq, frequencies_cm1=modes, gv_zpe_hartree=r0.zpe_hartree,
-            gv_energy_hartree=r0.E_hartree, gv_n_real=r0.n_real, scale=variants[0].vib_scale,
-            policy=policy)
-        base = SpeciesThermo(
-            subject=sub.id, freq_calc=sub.freq_calc, energy_calc=sub.energy_calc, T_K=T,
-            G_hartree=None, H_hartree=None, zpe_hartree=None, settings_sha=shas[0],
-            notes=(*sub.notes, "thermo_unavailable", *gate.reasons))
-        rows[T] = [base if not gate or r is None else base.model_copy(update={
-            "G_hartree": th.composite(sub.energy.energy_hartree, r.G_hartree, r.E_hartree)
-            + mirror,
-            "H_hartree": th.composite(sub.energy.energy_hartree, r.H_hartree, r.E_hartree),
-            "zpe_hartree": r.zpe_hartree,
-            "notes": tuple(dict.fromkeys((*sub.notes, *r.notes))),
-        }) for r in results]
-    return rows
+def _species(sub: _Subject, settings: ThermoSettings, T: float) -> SpeciesThermo:
+    """G = energy layer + thermal terms of the freq (- RT ln 2 if chiral)."""
+    row = SpeciesThermo(
+        subject=sub.id, freq_calc=sub.freq_calc, energy_calc=sub.energy_calc, T_K=T,
+        G_hartree=None, H_hartree=None, zpe_hartree=None, settings_sha=th.settings_sha(settings),
+        notes=sub.notes)
+    if sub.layer_missing:
+        return row.model_copy(update={
+            "notes": (*sub.notes, "thermo_unavailable", "energy_layer_missing")})
+    c = th.species_thermo(sub.xyz, sub.freq.frequencies_cm1 or (), saddle=sub.state is None,
+                          multiplicity=sub.freq.level.multiplicity, settings=settings, T=T)
+    E, mirror = sub.energy.energy_hartree, th.chiral_G(T) if sub.chiral else 0.0
+    return row.model_copy(update={
+        "G_hartree": E + c.G + mirror, "H_hartree": E + c.H, "zpe_hartree": c.zpe})
 
 
 def _same_level(subs: Sequence[_Subject], *, state: bool = True) -> bool:
@@ -269,18 +252,15 @@ class ThermoStage:
 
     def run(self, inputs: Manifest, config: StageConfig, rt: StageRuntime) -> list[Artifact]:
         cfg = cast(ThermoConfig, config)
-        engine = cast(ThermoEngine, rt.engine(Capability.THERMO, cfg.engine))
         method = None if cfg.energy_method is None else rt.method(cfg.energy_method)
         subjects = _subjects(inputs, method, rt.load_xyz)
-        temperatures, variants = cfg.temperatures_K, _variants(cfg.settings)
-        rows = rt.thread_map(lambda s: _species(s, engine, variants, temperatures, rt.policy),
-                             list(subjects.values()))
+        variants = _variants(cfg.settings)  # index 0 = main settings
         monomers = th.monomer_states(inputs.records(ArtifactType.SPECIES, SpeciesRecord),
                                      rt.system.compositions)
         out: list[Artifact] = []
-        for T in temperatures:
-            tables = [{s.id: r[T][i] for s, r in zip(subjects.values(), rows, strict=True)}
-                      for i in range(len(variants))]
+        for T in cfg.temperatures_K:
+            tables = [{sid: _species(sub, s, T) for sid, sub in subjects.items()}
+                      for s in variants]
             out += [Artifact(
                 artifact_id=f"species_thermo_{st.subject}_{T:g}K",
                 type=ArtifactType.SPECIES_THERMO, payload=st,

@@ -1,6 +1,6 @@
 """Typed lazy engine registry (design §6.2). Only hfauto.pipeline may import it.
 
-The table is final: eight entries, no aliases and no test keys. Tests swap an entry with
+The table is final: seven entries, no aliases and no test keys. Tests swap an entry with
 ``override``; an unknown (capability, name) is a KeyError everywhere.
 """
 
@@ -21,7 +21,6 @@ from hfauto.backends.protocols import (
     QMEngine,
     Requirements,
     SaddleRefiner,
-    ThermoEngine,
 )
 from hfauto.core.method import EngineSite
 
@@ -36,7 +35,6 @@ _TABLE: dict[Capability, dict[str, str]] = {
     Capability.SADDLE: {"nwchem_saddle": "hfauto.backends.nwchem.engine:NWChemSaddle"},
     Capability.CONFORMERS: {"crest": "hfauto.backends.crest:CRESTEngine"},
     Capability.DISCOVERY: {"readuct": "hfauto.backends.readuct.engine:ReaDuctEngine"},
-    Capability.THERMO: {"goodvibes": "hfauto.backends.goodvibes.engine:GoodVibesEngine"},
 }
 
 _PROTOCOLS: dict[Capability, type] = {  # runtime_checkable Protocols
@@ -45,7 +43,6 @@ _PROTOCOLS: dict[Capability, type] = {  # runtime_checkable Protocols
     Capability.SADDLE: SaddleRefiner,
     Capability.CONFORMERS: ConformerEngine,
     Capability.DISCOVERY: DiscoveryEngine,
-    Capability.THERMO: ThermoEngine,
 }
 
 _OVERRIDES: dict[tuple[Capability, str], Callable[..., Engine]] = {}

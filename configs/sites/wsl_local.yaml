@@ -30,6 +30,3 @@ engines:
   readuct:
     version: "6.1.0"
     python: /home/user/.venvs/hfauto-prod/bin/python
-  goodvibes:
-    version: "4.3.0"
-    python: /home/user/.venvs/hfauto-prod/bin/python

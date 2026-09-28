@@ -1,9 +1,10 @@
 """NWChem input decks (design §6.3, §8.2): pure functions from typed requests to text.
 
 Every deck writes the top-level ``charge``, the geometry in the input frame
-(``units angstrom nocenter noautosym``, plus ``noautoz`` for Cartesian coordinates), a
-spherical basis with the def2-ECP of every element beyond Kr, at most SCF_MAXITER SCF cycles
-and, for DFT, xc / mult (``odft`` when open shell) / grid / energy convergence / dispersion.
+(``units angstrom nocenter noautosym``, plus ``noautoz`` for Cartesian coordinates after an
+autoz failure), a spherical basis with the def2-ECP of every element beyond Kr, at most
+SCF_MAXITER SCF cycles and, for DFT, xc / mult (``odft`` when open shell) / grid / energy
+convergence / dispersion. Gas phase only.
 Optimizations and saddles never compute a Hessian: frequencies are a job of their own, and an
 initial Hessian is read from ``<name>.hess`` (``inhess 2``).
 """
@@ -37,23 +38,12 @@ class Setup:
     name: str = "job"  # file prefix: <name>.movecs, <name>.hess, <name>.drv.hess
     scratch_dir: str | None = None  # EngineSite.scratch_dir; permanent_dir is the cwd
     memory_mb: int = 1200  # per rank
-    cartesian: bool = False  # ExecutionSpec.coordinates == "cartesian" (noautoz)
-    maxiter: int | None = None  # ExecutionSpec.maxiter overrides the driver / string default
+    cartesian: bool = False  # noautoz: the continuation of an autoz failure
     restart_vectors: bool = False  # start from <name>.movecs of the previous attempt
     scf_rescue: bool = False  # quadratic SCF (cgmin) after SCF_NOT_CONVERGED
 
 
 _DEFAULT = Setup()
-
-
-def cosmo_dielectric(method: MethodSpec) -> float | None:
-    """The dielectric constant of ``solvation: cosmo:<eps>``; other solvation is unsupported."""
-    if method.solvation is None:
-        return None
-    model, _, value = method.solvation.partition(":")
-    if model.lower() != "cosmo":
-        raise ValueError(f"NWChem supports only cosmo:<eps> solvation, not {method.solvation!r}")
-    return float(value)
 
 
 def _deck(setup: Setup, *blocks: Sequence[str]) -> str:
@@ -88,23 +78,19 @@ def ecp(symbols: Sequence[str], basis: str) -> list[str]:
 
 def _system(mol: Molecule, method: MethodSpec, setup: Setup, *, end: Molecule | None = None
             ) -> list[str]:
-    """Geometry (and the string's end geometry), charge, basis, ECP and COSMO."""
+    """Geometry (and the string's end geometry), charge, basis and ECP."""
     if not method.basis:
         raise ValueError(f"method {method.id!r} names no basis set")
     lines = _geometry(mol.xyz, cartesian=setup.cartesian)
     if end is not None:
         lines += _geometry(end.xyz, cartesian=setup.cartesian, label="endgeom")
     lines += [f"charge {mol.charge}", "basis spherical", f"  * library {method.basis}", "end"]
-    lines += ecp(mol.xyz.symbols, method.basis)
-    eps = cosmo_dielectric(method)
-    return lines + ([] if eps is None else ["cosmo", f"  dielec {eps:g}", "end"])
+    return lines + ecp(mol.xyz.symbols, method.basis)
 
 
 def _dft(mol: Molecule, method: MethodSpec, setup: Setup) -> list[str]:
     if method.kind != "dft" or not method.functional:
         raise ValueError(f"method {method.id!r} is not a DFT method")
-    if method.dispersion is not None and method.dispersion not in _VDW:
-        raise ValueError(f"NWChem has no {method.dispersion} dispersion")
     lines = ["dft", f"  xc {method.functional.lower()}", f"  mult {mol.multiplicity}"]
     if mol.multiplicity > 1:
         lines.append("  odft")
@@ -121,8 +107,8 @@ def _dft(mol: Molecule, method: MethodSpec, setup: Setup) -> list[str]:
     return [*lines, "end"]
 
 
-def _driver(setup: Setup, maxiter: int, options: Sequence[str]) -> list[str]:
-    return ["driver", f"  maxiter {setup.maxiter or maxiter}", *options, "  xyz final", "end"]
+def _driver(maxiter: int, options: Sequence[str]) -> list[str]:
+    return ["driver", f"  maxiter {maxiter}", *options, "  xyz final", "end"]
 
 
 def render_energy(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:
@@ -140,7 +126,7 @@ def render_optimize(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, 
     """
     options = ["  trust 0.3", "  inhess 2"] if init_hessian else ["  trust 0.1"]
     return _deck(setup, _system(mol, method, setup), _dft(mol, method, setup),
-                 _driver(setup, OPT_MAXITER, options), ["task dft optimize"])
+                 _driver(OPT_MAXITER, options), ["task dft optimize"])
 
 
 def render_frequencies(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:
@@ -156,13 +142,13 @@ def render_saddle(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, *,
     options = ["  trust 0.1", "  sadstp 0.1", *(["  inhess 2"] if init_hessian else []),
                "  moddir 1"]
     return _deck(setup, _system(mol, method, setup), _dft(mol, method, setup),
-                 _driver(setup, SADDLE_MAXITER, options), ["task dft saddle"])
+                 _driver(SADDLE_MAXITER, options), ["task dft saddle"])
 
 
 def render_string(start: Molecule, end: Molecule, method: MethodSpec, setup: Setup = _DEFAULT,
                   *, nbeads: int, initial_path: bool = False) -> str:
     """Zero-temperature string with frozen ends; ``initial_path`` reads INITIAL_PATH."""
-    string = ["string", f"  nbeads {nbeads}", f"  maxiter {setup.maxiter or STRING_MAXITER}",
+    string = ["string", f"  nbeads {nbeads}", f"  maxiter {STRING_MAXITER}",
               "  stepsize 0.05", "  interpol 3", "  tol 1e-5", "  freeze1 .true.",
               "  freezeN .true.", "  impose"]
     string += [f"  xyz_path {INITIAL_PATH}"] if initial_path else []
@@ -171,9 +157,9 @@ def render_string(start: Molecule, end: Molecule, method: MethodSpec, setup: Set
 
 
 def render_wft(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:
-    """MP2 or CCSD(T) single point with frozen atomic cores. Closed shells use the RHF
-    ``ccsd`` / ``mp2`` modules; open shells a high-spin ROHF reference (``nopen`` = m - 1)
-    and the TCE, with ``2eorb 2emet 13`` (without them CH3O./def2-TZVPD exceeds 1200 MB/rank).
+    """CCSD(T) single point with frozen atomic cores. Closed shells use the RHF ``ccsd``
+    module; open shells a high-spin ROHF reference (``nopen`` = m - 1) and the TCE, with
+    ``2eorb 2emet 13`` (without them CH3O./def2-TZVPD exceeds 1200 MB/rank).
 
     ``freeze atomic`` freezes no orbital of an ECP atom (I keeps 4s4p4d correlated, G27).
     The ccsd module may take 50 iterations (default 20).
@@ -185,15 +171,10 @@ def render_wft(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> st
            f"  maxiter {SCF_MAXITER}",
            *([f"  vectors input {setup.name}.movecs"] if setup.restart_vectors else []), "end"]
     if open_shell:
-        body = ["tce", "  2eorb", "  2emet 13", f"  {method.wft_method}", "  freeze atomic",
-                "end"]
-        task = "task tce energy"
+        body, task = ["tce", "  2eorb", "  2emet 13", "  ccsd(t)", "  freeze atomic", "end"], "tce"
     else:
-        module = "mp2" if method.wft_method == "mp2" else "ccsd"
-        body = [module, "  freeze atomic", *(["  maxiter 50"] if module == "ccsd" else []),
-                "end"]
-        task = f"task {method.wft_method} energy"
-    return _deck(setup, _system(mol, method, setup), scf, body, [task])
+        body, task = ["ccsd", "  freeze atomic", "  maxiter 50", "end"], "ccsd(t)"
+    return _deck(setup, _system(mol, method, setup), scf, body, [f"task {task} energy"])
 
 
 def hess_text(hessian: np.ndarray) -> str:

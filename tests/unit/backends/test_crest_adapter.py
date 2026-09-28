@@ -19,11 +19,10 @@ ION = Molecule(XYZ(["N", "H", "H", "H", "H", "F"], np.arange(18.0).reshape(6, 3)
 
 
 def test_command_maps_every_setting():
-    water = GFN2.model_copy(update={"solvation": "alpb:water"})
-    argv = command(ION, water, CS(nci=True, ewin_kcal=4.0, notopo_atoms=(0, 4, 5)), threads=2,
+    argv = command(ION, GFN2, CS(nci=True, ewin_kcal=4.0, notopo_atoms=(0, 4, 5)), threads=2,
                    executable="/opt/crest")  # a composition: --noopt
     assert " ".join(argv) == ("/opt/crest input.xyz --gfn2 --nci --quick -T 2 --ewin 4 --chrg -1"
-                              " --uhf 1 --notopo 1,5,6 --noopt --alpb water")
+                              " --uhf 1 --notopo 1,5,6 --noopt")
     plain = command(ION, GFN2, CS(quick=False), threads=1)  # a monomer
     assert " ".join(plain) == "crest input.xyz --gfn2 -T 1 --ewin 6 --chrg -1 --uhf 1"
 

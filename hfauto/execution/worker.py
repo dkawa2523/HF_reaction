@@ -4,7 +4,7 @@ Invoked as ``python -m hfauto.execution.worker <module:function> <job.json>``.
 
 The working directory becomes the directory of ``job.json`` (the attempt directory),
 ``function(job, workdir)`` is called, and the returned dict is written to ``result.json``
-there. SCINE, pysisyphus and GoodVibes are imported only inside such functions, so only
+there. SCINE and pysisyphus are imported only inside such functions, so only
 this child process ever loads them. Standard library only.
 """
 

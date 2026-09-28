@@ -16,20 +16,20 @@ _SCF_TOL_REL = 1e-9
 
 
 class MethodSpec(BaseModel):
-    """Requested level of theory (configs/methods/*.yaml); part of the JobStore key."""
+    """Requested level of theory (configs/methods/*.yaml), gas phase only; part of the JobStore
+    key."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     id: str
     kind: Literal["dft", "xtb", "wft"]
     functional: str | None = None  # dft
-    wft_method: Literal["mp2", "ccsd(t)"] | None = None  # wft (single points only)
+    wft_method: Literal["ccsd(t)"] | None = None  # wft (single points only)
     basis: str | None = None  # dft / wft
-    dispersion: Literal["d3zero", "d3bj", "d4"] | None = None
+    dispersion: Literal["d3zero", "d3bj"] | None = None
     gfn: Literal[1, 2] | None = None  # xtb
     electronic_temperature_K: float | None = None  # xtb (None means 300 K)
     grid: Literal["coarse", "medium", "fine", "xfine"] | None = None
     scf_energy_tol: float | None = None
-    solvation: str | None = None  # "cosmo:<eps>" | "alpb:<solvent>"
 
     def signature(self) -> dict[str, object]:
         """Every field except id (cache key)."""
@@ -64,13 +64,11 @@ def _dft_mismatches(req: MethodSpec, obs: Level) -> list[str]:
     out += _diff("dispersion", req.dispersion, obs.dispersion)
     if req.grid is not None:
         out += _diff("grid", req.grid, obs.grid)
-    out += _scf_tol_diff(req.scf_energy_tol, obs.scf_tol)
-    return out + _diff_ci("solvation", req.solvation, obs.solvation)
+    return out + _scf_tol_diff(req.scf_energy_tol, obs.scf_tol)
 
 
 def _xtb_mismatches(req: MethodSpec, obs: Level) -> list[str]:
     out = _diff_ci("method", f"gfn{req.gfn}", obs.method)
-    out += _diff_ci("solvation", req.solvation, obs.solvation)
     return out + _diff(
         "electronic_temperature_K",
         _electronic_temperature(req.electronic_temperature_K),
@@ -100,16 +98,14 @@ def level_mismatches(requested: MethodSpec, observed: Level, *, version_pin: str
 
 
 class ExecutionSpec(BaseModel):
-    """Site execution settings; not part of the JobStore key."""
+    """Site execution settings, which do not change a result; not part of the JobStore key."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     ranks: int = 1
     threads: int = 1
     memory_mb_per_rank: int = 1200
     timeout_s: float = 14_400
-    maxiter: int | None = None
     env: dict[str, str] = {}
-    coordinates: Literal["auto", "cartesian"] = "auto"
 
 
 class EngineSite(BaseModel):
@@ -130,7 +126,6 @@ class ThermoSettings(BaseModel):
     qs: Literal["grimme", "truhlar"] = "grimme"
     cutoff_cm1: float = 100.0
     vib_scale: float = 1.0  # one factor for the frequencies and the ZPE
-    symmetry: bool = True
     sensitivity: bool = True  # qs x cutoff{50, 100, 150} band
 
 

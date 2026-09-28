@@ -1,19 +1,18 @@
-"""sp -> thermo with FakeQM / FakeThermo: energy layer (parents, label, spin), band,
-association, mixed LOT, m = 2, dG_eff (state reference, submerged barrier, barrierless)."""
+"""sp -> thermo with FakeQM and fake_species_thermo: energy layer (parents, label, spin),
+band, association, mixed LOT, m = 2, dG_eff (state reference, submerged barrier,
+barrierless)."""
 
 import math
 from pathlib import Path
 
 import numpy as np
 import pytest
-from fakes import PES, FakeQM, FakeThermo, double_well, write_geometry
+from fakes import PES, FakeQM, double_well, fake_species_thermo, write_geometry
 
-from hfauto.backends.protocols import Capability, ThermoResult
-from hfauto.chemistry.gates import zpe_hartree
-from hfauto.chemistry.thermo import settings_sha, thermo_frequencies
+from hfauto.backends.protocols import Capability
+from hfauto.chemistry import thermo
 from hfauto.core import records as R
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
-from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
 from hfauto.core.system import CompositionInput, SpeciesInput, SystemConfig
@@ -26,12 +25,9 @@ DFT, BIG = (MethodSpec(id=b, kind="dft", functional="xfake", basis=b) for b in (
 NEUTRAL = {"complex": (0, 1), "nh": (0, 1), "o": (0, 1)}  # (charge, multiplicity)
 
 
-def _gv(freq, settings, temperatures, saddle):  # consistent: G = E + ZPE - 1e-6 x cutoff x n_real
-    nu = thermo_frequencies(freq.frequencies_cm1, saddle=saddle)
-    e, zpe, n = freq.energy_hartree, zpe_hartree(nu), sum(f > 0 for f in nu)
-    return [ThermoResult(settings_sha=settings_sha(s), T_K=t, E_hartree=e, H_hartree=e, S_rot=1,
-                         G_hartree=e + zpe - 1e-6 * s.cutoff_cm1 * n, zpe_hartree=zpe, n_real=n,
-                         notes=(), job_key="k") for s in settings for t in temperatures]
+@pytest.fixture(autouse=True)
+def _closed_form_thermo(monkeypatch):
+    monkeypatch.setattr(thermo, "species_thermo", fake_species_thermo)
 
 
 def _state(ev, charge, multiplicity):
@@ -39,7 +35,7 @@ def _state(ev, charge, multiplicity):
     return ev.model_copy(update={"level": level})
 
 
-def _setup(fake_runtime, tmp_run, script, states=NEUTRAL):
+def _setup(fake_runtime, tmp_run, states=NEUTRAL):
     """The double well as composition c = NH + O (p2: the product at another grid; o2: a second
     minimum of the O state), rx1 = reactant -> product and rx2 = reactant -> p2."""
     well = double_well()
@@ -75,20 +71,23 @@ def _setup(fake_runtime, tmp_run, script, states=NEUTRAL):
     system = SystemConfig(system_id="s", species=[SpeciesInput(id=t, xyz=Path(f"{t}.xyz"))
                                                   for t in ("nh", "o")],  # never read
                           compositions=[CompositionInput(id="c", components={"nh": 1, "o": 1})])
-    rt = fake_runtime(system, {(Capability.QM, "nwchem"): qm, (
-        Capability.THERMO, "goodvibes"): FakeThermo(script)}, methods={"svp": DFT, "tzvp": BIG})
+    rt = fake_runtime(system, {(Capability.QM, "nwchem"): qm}, methods={"svp": DFT, "tzvp": BIG})
     return Manifest(run_id="r", stage_id="v", created_at="t", artifacts=arts), rt, ev
 
 
 def _thermo(view, rt, method=None):  # <subject|rxn>_<T>... -> payload
-    config = ThermoConfig(engine="goodvibes", energy_method=method, standard_states=("1atm", "1M"))
+    config = ThermoConfig(energy_method=method, standard_states=("1atm", "1M"))
     out = ThermoStage().run(view, config, rt)
     return {a.artifact_id.split("_thermo_")[1]: a.payload for a in out}
 
 
+def _sp(inputs, rt):
+    return SinglePointStage().run(inputs, SinglePointConfig(engine="nwchem", methods=["tzvp"]), rt)
+
+
 def test_sp_then_thermo(fake_runtime, tmp_run):
-    inputs, rt, ev = _setup(fake_runtime, tmp_run, _gv)
-    sp = SinglePointStage().run(inputs, SinglePointConfig(engine="nwchem", methods=["tzvp"]), rt)
+    inputs, rt, ev = _setup(fake_runtime, tmp_run)
+    sp = _sp(inputs, rt)
     assert any({"m_product", "m_p2"} <= set(a.parents) for a in sp)  # one geometry, one sp
     view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, *sp]})
 
@@ -125,23 +124,19 @@ def test_sp_then_thermo(fake_runtime, tmp_run):
 
 
 def test_association_across_charge_and_spin_fails_closed(fake_runtime, tmp_run):  # S14
-    failing: set[str] = set()
-
-    def gv(freq, *args):
-        failed = Failure(kind=FailureKind.NONZERO_EXIT, reason="scripted")
-        return failed if freq.job_key in failing else _gv(freq, *args)
-
     anion = {"complex": (-1, 3), "nh": (-1, 1), "o": (0, 3)}  # F-.HF-like, with a triplet
-    inputs, rt, _ = _setup(fake_runtime, tmp_run, gv, anion)
+    inputs, rt, _ = _setup(fake_runtime, tmp_run, anion)
     rx = _thermo(inputs, rt)["rx1_298.15K_1atm"]
     assert rx.blockers == () and rx.dG_assoc_kcal < 0 and rx.dG_act_vs_separated_kcal is not None
-    failing.add("o2")  # one of the two O minima has no G: no ensemble from the other alone
-    out = _thermo(inputs, rt)
+    sp = [a.model_copy(update={"parents": tuple(p for p in a.parents if p != "m_o2")})
+          for a in _sp(inputs, rt)]  # m_o2 (the O geometry again) loses its energy layer
+    view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, *sp]})
+    out = _thermo(view, rt, "tzvp")
     assert out["m_o2_298.15K"].G_hartree is None and out["m_o_298.15K"].G_hartree is not None
-    assert out["rx1_298.15K_1atm"].dG_assoc_kcal is None
-    isomer = _relabel(inputs, {"m_o2": {"state_label": "o_isomer"}})  # another O state
+    assert out["rx1_298.15K_1atm"].dG_assoc_kcal is None  # no ensemble from m_o alone
+    isomer = _relabel(view, {"m_o2": {"state_label": "o_isomer"}})  # another O state
     rt_ln2 = R_KCAL_MOL_K * 298.15 * math.log(2)  # O alone: its ensemble loses the o2 twin
-    assert _thermo(isomer, rt)["rx1_298.15K_1atm"].dG_assoc_kcal == pytest.approx(
+    assert _thermo(isomer, rt, "tzvp")["rx1_298.15K_1atm"].dG_assoc_kcal == pytest.approx(
         rx.dG_assoc_kcal - rt_ln2)
 
 
@@ -152,7 +147,7 @@ def _relabel(view, updates):
 
 
 def test_dg_eff_takes_the_lowest_conformer_of_the_reactant_state(fake_runtime, tmp_run):
-    inputs, rt, ev = _setup(fake_runtime, tmp_run, _gv)
+    inputs, rt, ev = _setup(fake_runtime, tmp_run)
     low = ev["reactant"].model_copy(update={
         "job_key": "low", "energy_hartree": ev["reactant"].energy_hartree - 1 / HARTREE_TO_KCAL_MOL})
     conformer = R.MinimumRecord(
@@ -168,7 +163,7 @@ def test_dg_eff_takes_the_lowest_conformer_of_the_reactant_state(fake_runtime, t
 
 
 def test_a_submerged_barrier_and_a_barrierless_step_rank_by_max_dg_rxn_0(fake_runtime, tmp_run):
-    inputs, rt, ev = _setup(fake_runtime, tmp_run, _gv)
+    inputs, rt, ev = _setup(fake_runtime, tmp_run)
     rx1 = inputs.get("rx1").payload
     down = rx1.model_copy(update={"reaction_id": "down", "minima": ("m_product", "m_reactant")})
     flat = [r.model_copy(update={"reaction_id": f"bl_{r.reaction_id}", "saddle": None,
@@ -195,7 +190,7 @@ def test_a_submerged_barrier_and_a_barrierless_step_rank_by_max_dg_rxn_0(fake_ru
 
 
 def test_chiral_minimum_and_ts_gain_minus_rt_ln2(fake_runtime, tmp_run):
-    inputs, rt, ev = _setup(fake_runtime, tmp_run, _gv)
+    inputs, rt, ev = _setup(fake_runtime, tmp_run)
     plain = _thermo(inputs, rt)
     chfclbr = [[0.0, 0.0, 0.0], [0.63, 0.63, 0.63], [-0.8, -0.8, 0.8], [-1.0, 1.0, -1.0],
                [1.1, -1.1, -1.1]]

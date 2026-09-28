@@ -1,8 +1,8 @@
 """xTB as a QMEngine (design §6.3): single points, optimizations and Hessians.
 
 Runs ``xtb input.xyz`` with ``--sp`` / ``--opt vtight`` / ``--hess`` plus ``--gfn``,
-``--chrg``, ``--uhf`` (multiplicity - 1), ``--alpb <solvent>`` and ``--etemp`` when the
-method asks for them. An optimization counts as converged only with return code 0, no
+``--chrg``, ``--uhf`` (multiplicity - 1) and ``--etemp`` when the method asks for it (gas
+phase only). An optimization counts as converged only with return code 0, no
 ``FAILED TO CONVERGE`` in the output and no ``NOT_CONVERGED`` file (BUG-07, CH-20); a
 continuation restarts from ``xtbopt.xyz``. The ``hessian`` file (Eh/bohr², input frame)
 becomes the canonical ``.npy`` and the frequencies come from ``chemistry.vibrations``.
@@ -42,7 +42,6 @@ _HAMILTONIAN = re.compile(r"Hamiltonian\s+(GFN\d)-xTB", re.IGNORECASE)
 _ETEMP = re.compile(r"electronic temp\.\s+(\d+(?:\.\d*)?)\s+K")
 _CHARGE = re.compile(r"net charge\s+(-?\d+)")
 _UNPAIRED = re.compile(r"unpaired electrons\s+(\d+)")
-_SOLVATION = re.compile(r"Solvation model:\s+(\S+)\s*\n\s*Solvent\s+(\S+)")
 _SCF_FAILED = re.compile(r"SCF not converged|Self consistent charge iterator did not converge")
 
 
@@ -68,11 +67,9 @@ def observed_level(text: str) -> Level | None:
     if any(match is None for match in found):
         return None
     version, hamiltonian, etemp, charge, unpaired = (m.group(1) for m in found if m)
-    solvation = _SOLVATION.search(text)
     return Level(
         program="xtb", version=version, method=hamiltonian, charge=int(charge),
         multiplicity=int(unpaired) + 1, electronic_temperature_K=float(etemp),
-        solvation=f"{solvation.group(1)}:{solvation.group(2)}" if solvation else None,
     )
 
 
@@ -106,12 +103,8 @@ class _Adapter:
         exe = resolve_executable("xtb", explicit) or explicit or "xtb"
         argv = [exe, INPUT_NAME, *_RUN_FLAGS[task.kind], "--gfn", str(method.gfn),
                 "--chrg", str(mol.charge), "--uhf", str(mol.multiplicity - 1)]
-        if method.solvation:
-            argv += ["--alpb", method.solvation.split(":", 1)[1]]
         if method.electronic_temperature_K is not None:
             argv += ["--etemp", str(method.electronic_temperature_K)]
-        if task.kind == "optimize" and task.execution.maxiter is not None:
-            argv += ["--cycles", str(task.execution.maxiter)]
         threads = task.execution.threads
         env = {"OMP_NUM_THREADS": f"{threads},1", "OMP_STACKSIZE": "4G", **task.execution.env}
         return Command(argv=tuple(argv), cwd=workdir, env=env)
@@ -214,8 +207,7 @@ class XTBEngine:
         return Requirements(executables=("xtb",), version_command=("xtb", "--version"))
 
     def supports(self, method: MethodSpec) -> bool:
-        solvation_ok = method.solvation is None or method.solvation.startswith("alpb:")
-        return method.kind == "xtb" and method.gfn is not None and solvation_ok
+        return method.kind == "xtb" and method.gfn is not None
 
     def task(self, kind: str, mol: Molecule, method: MethodSpec) -> Task:
         return Task(

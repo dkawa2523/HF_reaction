@@ -37,6 +37,13 @@ class CollapsingSaddle(fakes.FakeSaddle):  # every saddle search falls into the 
                               self.pes.points["intermediate"], trajectory_energies_hartree=(0.0,))
 
 
+class SlowQM(fakes.FakeQM):  # an optimization uses up the rest of its hypothesis' walltime
+    def optimize(self, mol, method, *, init_hessian=None, deadline=None):
+        if deadline is not None:
+            deadline.end = 0.0
+        return super().optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
+
+
 def dft_view(root, pes, points=ENDS):
     """The view after structures and minima(dft): species, calculations and minima."""
     qm, load = fakes.FakeQM(root, pes), fakes.xyz_loader(root)
@@ -57,9 +64,10 @@ def dft_view(root, pes, points=ENDS):
     return Manifest(run_id="run", stage_id="dft", created_at="now", artifacts=artifacts), source
 
 
-def run_stage(fake_runtime, root, pes, view, *, screen=True, saddle=None, system=SYSTEM,
-              **policy):
+def run_stage(fake_runtime, root, pes, view, *, screen=True, saddle=None, qm=None,
+              system=SYSTEM, **policy):
     engines = {key: cls(root, pes) for key, cls in FAKES.items()}
+    engines[Cap.QM, "nwchem"] = qm or engines[Cap.QM, "nwchem"]
     engines[Cap.SADDLE, "nwchem_saddle"] = saddle or fakes.FakeSaddle(root, pes)
     rt = fake_runtime(system, engines, methods={"pbe0": DFT, "gfn2": XTB})
     config = ReactionPathsConfig(method="pbe0", policy=policy, engines={
@@ -85,10 +93,10 @@ def test_a_case_that_raises_is_unresolved_and_the_next_case_runs(
         tmp_run, fake_runtime, monkeypatch) -> None:
     real = reaction_paths.drive_case
 
-    def drive_case(case, rt, policy):
+    def drive_case(case, rt, rules, deadline):
         if case.reaction_id == "rx":
             raise KeyError("Te")
-        return real(case, rt, policy)
+        return real(case, rt, rules, deadline)
 
     monkeypatch.setattr(reaction_paths, "drive_case", drive_case)
     pes, again = fakes.double_well(), ReactionInput(id="rx2", reactant="reactant", product="product")
@@ -129,6 +137,18 @@ def test_triple_well_splits_into_two_elementary_children(tmp_run, fake_runtime, 
     assert [c.outcome for c in children] == [O.ELEMENTARY_STEP] * 2
     new_minima = {a.artifact_id for a in arts if a.type == T.MINIMUM}  # the intermediate
     assert children[0].minima[1] == children[1].minima[0] in new_minima
+
+
+def test_split_children_run_on_the_rest_of_their_hypothesis_walltime(tmp_run,
+                                                                    fake_runtime) -> None:
+    """U9-P5: the well found at the parent's deadline still splits the case (evidence before the
+    walltime row); its children inherit the expired deadline instead of 6 h each."""
+    pes = fakes.triple_well()
+    view, _ = dft_view(tmp_run, pes)
+    reactions = run_stage(fake_runtime, tmp_run, pes, view, qm=SlowQM(tmp_run, pes))[0]
+    assert reactions["rx"].outcome is O.MULTI_STEP
+    children = [reactions[f"rx_split{i}"] for i in (1, 2)]
+    assert [(c.outcome, c.reasons) for c in children] == [(O.UNRESOLVED, ("walltime",))] * 2
 
 
 def test_collapsed_saddle_is_validated_as_an_intermediate(tmp_run, fake_runtime) -> None:

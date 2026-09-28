@@ -2,6 +2,7 @@
 
 ``run_command`` streams stdout / stderr into files in the working directory, stops the
 whole process tree on timeout, and writes ``command_result.json`` next to the output.
+``stop_all`` kills every running command's group (the CLI's SIGTERM / SIGHUP handler).
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ STDOUT_NAME = "stdout.txt"
 STDERR_NAME = "stderr.txt"
 RESULT_NAME = "command_result.json"
 _TERMINATION_GRACE_S = 2.0
+_GROUPS: set[int] = set()  # process groups of the running commands (the leader's pid)
+_stopping = False
 
 
 @dataclass(frozen=True)
@@ -59,7 +62,8 @@ def run_command(cmd: Command, *, timeout_s: float) -> CommandResult:
     """Run ``cmd`` in ``cmd.cwd`` (created if missing) and write ``command_result.json``.
 
     After ``timeout_s`` the whole process tree is killed and ``timed_out`` is set. A missing
-    executable raises FileNotFoundError (PermissionError when it is not executable).
+    executable raises FileNotFoundError (PermissionError when it is not executable); after
+    ``stop_all`` the call raises SystemExit.
     """
     cwd = Path(cmd.cwd)
     cwd.mkdir(parents=True, exist_ok=True)
@@ -81,7 +85,15 @@ def run_command(cmd: Command, *, timeout_s: float) -> CommandResult:
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
             start_new_session=sys.platform != "win32",
         )
-        timed_out = _supervise(process, timeout_s)
+        _GROUPS.add(process.pid)
+        try:
+            if _stopping:  # stop_all ran before the group was registered
+                _kill_tree(process)
+            timed_out = _supervise(process, timeout_s)
+        finally:
+            _GROUPS.discard(process.pid)
+    if _stopping:  # a killed job is no result: no thread may record it
+        raise SystemExit("stopped by a signal")
     result = CommandResult(
         returncode=None if timed_out else process.returncode,
         timed_out=timed_out,
@@ -91,6 +103,18 @@ def run_command(cmd: Command, *, timeout_s: float) -> CommandResult:
     )
     _write_sidecar(cmd, result)
     return result
+
+
+def stop_all() -> None:
+    """Kill the process group of every running command (POSIX); later commands die at once.
+
+    Worker threads of ``thread_map`` then see their command end and raise SystemExit."""
+    global _stopping
+    _stopping = True
+    if sys.platform != "win32":
+        for group in list(_GROUPS):
+            with contextlib.suppress(OSError):
+                os.killpg(group, signal.SIGKILL)
 
 
 def _stdin(path: Path | None) -> contextlib.AbstractContextManager[IO[bytes] | int]:

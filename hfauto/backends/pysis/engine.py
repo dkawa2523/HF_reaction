@@ -47,8 +47,6 @@ def neb_input(mol: Molecule, method: MethodSpec, *, threads: int) -> dict[str, A
                             "mult": mol.multiplicity, "pal": threads}
     if method.electronic_temperature_K is not None:
         calc["etemp"] = method.electronic_temperature_K
-    if method.solvation:
-        calc["alpb"] = method.solvation.split(":", 1)[1]
     return {"geom": {"type": "cart", "fn": INITIAL_NAME}, "calc": calc,
             "cos": {"type": "neb", "climb": True},
             "opt": {"type": "lbfgs", "max_cycles": NEB_MAX_CYCLES},
@@ -115,8 +113,7 @@ class NEBAdapter:
             return _fail(FailureKind.INCOMPLETE_OUTPUT, "neb_images")
         etemp = method.electronic_temperature_K
         level = Level(program="xtb", version=data["xtb_version"], method=f"gfn{method.gfn}",
-                      solvation=method.solvation, charge=start.charge,
-                      multiplicity=start.multiplicity,
+                      charge=start.charge, multiplicity=start.multiplicity,
                       electronic_temperature_K=_XTB_DEFAULT_ETEMP_K if etemp is None else etemp)
         problems = level_mismatches(method, level, version_pin=task.version_pin)
         if problems:
@@ -148,8 +145,7 @@ class PysisNEB:
                             version_command=("xtb", "--version"))
 
     def supports(self, method: MethodSpec) -> bool:
-        solvation_ok = method.solvation is None or method.solvation.startswith("alpb:")
-        return method.kind == "xtb" and method.gfn is not None and solvation_ok
+        return method.kind == "xtb" and method.gfn is not None
 
     def task(self, start: Molecule, end: Molecule, method: MethodSpec, *, images: int,
              initial_path: FileRef) -> Task:

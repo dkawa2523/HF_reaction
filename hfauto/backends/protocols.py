@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict
 
 from hfauto.chemistry.xyz import Molecule
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry, PathProfile
-from hfauto.core.method import Deadline, EngineSite, MethodSpec, ThermoSettings
+from hfauto.core.method import Deadline, EngineSite, MethodSpec
 from hfauto.core.records import ReactionTrial
 
 if TYPE_CHECKING:
@@ -31,7 +31,6 @@ class Capability(StrEnum):
     SADDLE = "saddle"
     CONFORMERS = "conformers"
     DISCOVERY = "discovery"
-    THERMO = "thermo"
 
 
 @dataclass(frozen=True)
@@ -84,21 +83,6 @@ class DiscoveryResult(BaseModel):
     dE_rxn_kcal: float | None
     irc_connected_to_source: bool
     electronic_temperature_K: float
-    job_key: str
-
-
-class ThermoResult(BaseModel):
-    model_config = _FROZEN
-    kind: Literal["thermo_result"] = "thermo_result"
-    settings_sha: str
-    T_K: float
-    G_hartree: float
-    H_hartree: float
-    E_hartree: float
-    zpe_hartree: float
-    n_real: int
-    S_rot: float
-    notes: tuple[str, ...]
     job_key: str
 
 
@@ -191,18 +175,3 @@ class DiscoveryEngine(Engine, Protocol):
         *,
         deadline: Deadline | None = None,
     ) -> DiscoveryResult | Failure: ...
-
-
-@runtime_checkable
-class ThermoEngine(Engine, Protocol):
-    def thermo(
-        self,
-        freq: Evidence,
-        settings: Sequence[ThermoSettings],
-        *,
-        temperatures_K: Sequence[float],
-        saddle: bool = False,
-        deadline: Deadline | None = None,
-    ) -> list[ThermoResult] | Failure:
-        """One result per (settings, temperature); modes as chemistry.thermo_frequencies."""
-        ...

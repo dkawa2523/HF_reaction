@@ -45,11 +45,10 @@ def test_one_cartesian_ci_neb_with_fixed_ends_then_tsopt():
     assert run["opt"] == {"type": "lbfgs", "max_cycles": NEB_MAX_CYCLES}
     assert run["tsopt"] == {"type": "rsprfo"}
     assert run["calc"] == {"type": "xtb", "gfn": 2, "charge": 0, "mult": 1, "pal": 4}
-    method = MethodSpec(id="s", kind="xtb", gfn=2, solvation="alpb:water",
-                        electronic_temperature_K=500.0)
+    method = MethodSpec(id="s", kind="xtb", gfn=2, electronic_temperature_K=500.0)
     pair = neb_input(HF_PAIR, method, threads=1)
     assert pair["geom"]["type"] == "cart" and "geom" not in pair["tsopt"]
-    assert [pair["calc"][k] for k in ("charge", "mult", "alpb", "etemp")] == [-1, 2, "water", 500]
+    assert [pair["calc"][k] for k in ("charge", "mult", "etemp")] == [-1, 2, 500]
 
 
 def engine(tmp_run):  # any existing executable stands in for the site's xtb

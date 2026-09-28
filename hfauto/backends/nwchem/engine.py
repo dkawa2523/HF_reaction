@@ -1,5 +1,5 @@
-"""NWChem engines (design §6.3): QM (energy / optimize / frequencies, plus MP2 and CCSD(T)
-energies), the ZTS string (PATH) and the saddle refiner (SADDLE).
+"""NWChem engines (design §6.3): QM (energy / optimize / frequencies, plus CCSD(T) energies),
+the ZTS string (PATH) and the saddle refiner (SADDLE); gas phase only.
 
 Each engine is also the JobRunner Adapter of its own jobs (render -> run -> parse). An
 Evidence or PathProfile is returned only when the job terminated normally, the observed
@@ -50,6 +50,8 @@ _DRIVER_JOBS = frozenset({"optimize", "saddle"})
 # Hessian stalls it): it returns its last frame for a restart with a fresh Hessian.
 _CONTINUED = {"optimize": frozenset({FailureKind.TIMEOUT, FailureKind.GEOMETRY_MAXITER}),
               "saddle": frozenset({FailureKind.TIMEOUT})}
+# double hybrids: a DFT task of NWChem silently leaves out their PT2 part
+_DOUBLE_HYBRIDS = ("b2plyp", "b2gpplyp", "dsd-", "pwpb95")
 
 
 def _invalid(reason: str) -> Failure:
@@ -61,9 +63,8 @@ def _incomplete(reason: str) -> Failure:
 
 
 def _dft_supported(method: MethodSpec) -> bool:
-    solvation = method.solvation is None or method.solvation.lower().startswith("cosmo:")
-    return (method.kind == "dft" and bool(method.functional and method.basis)
-            and method.dispersion != "d4" and solvation)
+    xc = (method.functional or "").lower()
+    return method.kind == "dft" and bool(xc and method.basis) and not xc.startswith(_DOUBLE_HYBRIDS)
 
 
 def _wft_supported(method: MethodSpec) -> bool:
@@ -185,8 +186,7 @@ class _NWChem:
         quadratic solver (cgmin); timeout of a driver job or maxiter of an opt -> its latest
         frame with the old vectors and driver Hessian (design §7.1)."""
         if failure.kind is FailureKind.INPUT_INVALID and failure.reason == "autoz":
-            execution = task.execution.model_copy(update={"coordinates": "cartesian"})
-            return replace(task, execution=execution)
+            return replace(task, inputs={**task.inputs, "cartesian": True})
         rescue = failure.kind is FailureKind.SCF_NOT_CONVERGED
         if not rescue and failure.kind not in _CONTINUED.get(task.kind, ()):
             return None
@@ -215,7 +215,7 @@ class _NWChem:
         restart = task.inputs.get("restart", ())
         return nw_in.Setup(
             name=NAME, scratch_dir=scratch, memory_mb=task.execution.memory_mb_per_rank,
-            cartesian=task.execution.coordinates == "cartesian", maxiter=task.execution.maxiter,
+            cartesian=bool(task.inputs.get("cartesian")),
             restart_vectors=any(Path(p).suffix == ".movecs" for p in restart),
             scf_rescue=bool(task.inputs.get("scf_rescue")),
         )
@@ -309,8 +309,8 @@ class _NWChem:
 
 
 class NWChemEngine(_NWChem):
-    """QM: DFT energy / optimize / frequencies; MP2 and CCSD(T) energies (ROHF-CCSD(T) for
-    open shells)."""
+    """QM: DFT energy / optimize / frequencies; CCSD(T) energies (ROHF-CCSD(T) for open
+    shells)."""
 
     name: ClassVar[str] = "nwchem"
 

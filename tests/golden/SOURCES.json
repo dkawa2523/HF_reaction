@@ -36,7 +36,7 @@
     "method": "copy"
    }
   ],
-  "expect": "TS の zpe 0.0375115 は 0.985 × 0.018747 と一致しない → `thermo_consistent` は不合格。24.11 は再現しない",
+  "expect": "TS の zpe 0.0375115 は G01 の 2 つの freq ブロックの ZPE の和(0.985 倍)。species_thermo は渡した振動数だけを使うので 24.11 は再現しない",
   "refs": [
    "CH-38"
   ]
@@ -126,7 +126,7 @@
     "method": "copy"
    }
   ],
-  "expect": "ΔG_rxn 12.742、ΔG‡ 42.281 kcal/mol",
+  "expect": "同じプロセスの species_thermo が H・ZPE で 1e-10 Eh、G(CSV は QH=True なので H − T·S_qh と比べる)で 3e-8 Eh 以内(CLI は NWChem の 7 桁の回転定数を読んだ)",
   "refs": [
    "CH-39"
   ]

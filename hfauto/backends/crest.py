@@ -42,8 +42,8 @@ _FLOAT = re.compile(r"[-+]?\d+\.\d*(?:[Ee][-+]?\d+)?")
 
 def command(mol: Molecule, method: MethodSpec, settings: ConformerSettings, *, threads: int,
             executable: str = "crest") -> tuple[str, ...]:
-    """``--gfnN [--nci] [--quick] -T n --ewin e --chrg q --uhf m-1 [--notopo atoms] [--noopt]
-    [--alpb solvent]``; atoms are 1-based on the CLI."""
+    """``--gfnN [--nci] [--quick] -T n --ewin e --chrg q --uhf m-1 [--notopo atoms]
+    [--noopt]``; atoms are 1-based on the CLI."""
     argv = [executable, INPUT, f"--gfn{method.gfn}"]
     argv += ["--nci"] if settings.nci else []
     argv += ["--quick"] if settings.quick else []
@@ -54,8 +54,6 @@ def command(mol: Molecule, method: MethodSpec, settings: ConformerSettings, *, t
     # CREST 3.0.2's initial topology check after the pre-optimization ignores --notopo
     # (setuptest.f90), so acid-base and anion complexes stopped there; --noopt skips it.
     argv += ["--noopt"] if settings.nci else []
-    if method.solvation:
-        argv += ["--alpb", method.solvation.split(":", 1)[1]]
     return tuple(argv)
 
 
@@ -131,7 +129,7 @@ class _Adapter:
 
 
 class CRESTEngine:
-    """ConformerEngine on the ``crest`` executable (GFN-xTB methods, ALPB solvation only)."""
+    """ConformerEngine on the ``crest`` executable (GFN-xTB methods at 300 K, gas phase)."""
 
     name: ClassVar[str] = "crest"
 
@@ -147,9 +145,8 @@ class CRESTEngine:
         return Requirements(executables=("crest",), version_command=("crest", "--version"))
 
     def supports(self, method: MethodSpec) -> bool:
-        solvation_ok = method.solvation is None or method.solvation.startswith("alpb:")
         etemp_ok = method.electronic_temperature_K in (None, 300.0)
-        return method.kind == "xtb" and method.gfn is not None and solvation_ok and etemp_ok
+        return method.kind == "xtb" and method.gfn is not None and etemp_ok
 
     def search(self, mol: Molecule, method: MethodSpec, settings: ConformerSettings, *,
                deadline: Deadline | None = None) -> ConformerEnsemble | Failure:

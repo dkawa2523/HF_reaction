@@ -1,15 +1,18 @@
 # hfauto
 
-気相の分子と非共有結合錯体(クラスター)について、反応の発見から熱化学までを自動で実行するワークフロー。外部プログラム(NWChem、xTB、CREST、SCINE ReaDuct、pysisyphus、GoodVibes)の結果は型付きの証拠(`Evidence`)として受け取り、合否は `hfauto/chemistry/gates.py` のゲート関数だけが決める。結果は stage ごとの manifest に残り、同じ run ディレクトリで再実行すると、済んだジョブは再利用される。
+気相の分子と非共有結合錯体(クラスター)について、反応の発見から熱化学までを自動で実行するワークフロー。外部プログラム(NWChem、xTB、CREST、SCINE ReaDuct、pysisyphus)の結果は型付きの証拠(`Evidence`)として受け取り、合否は `hfauto/chemistry/gates.py` のゲート関数だけが決める。熱化学は GoodVibes を同じプロセスで呼ぶ。結果は stage ごとの manifest に残り、同じ run ディレクトリで再実行すると、済んだジョブは再利用される。
 
 ## 目的と範囲
 
-- 対象: 気相の分子と非共有結合錯体。電荷を持つ系と開殻系(多重度 > 1。<S²> を観測する)も扱う。溶媒は PES の指定(NWChem の COSMO、xTB の ALPB)として扱うだけである。
+- 対象: 気相の分子と非共有結合錯体(気相専用で、溶媒和は扱わない)。電荷を持つ系と開殻系(多重度 > 1。<S²> を観測する)も扱う。
 - 求めるもの: 候補生成物、同一 PES 上で検証した極小、1 次の鞍点(別ジョブの振動数で検証)と QRC による接続の確認、qRRHO の熱化学(会合量を含む)、証拠の階層と不確かさの幅に基づく順位。
 - 対応元素: Z=1〜57、72〜86(計算できる範囲で、遷移金属は未検証)。Z>36 は def2 系の基底だけで扱い、def2-ECP を自動で書く。単原子の化学種も通常の経路を通る(explore の出発点にはならない)。
 - 状態: 組成と結合グラフ(r < Σr_cov + 0.4 Å)の状態ラベルで区別する。イオン–双極子錯体は 1 断片になりうる。
 - スピン状態: 化学種と組成の多重度は利用者が宣言する。未宣言なら SMILES は不対電子数 + 1(原子は高スピン仮定)、xyz は 1、組成はスピン結合で値が 1 つに決まるときだけその値。d ブロック元素を含む化学種は宣言が必須。
-- 範囲外: wet-etch の反応器・表面モデル、開殻一重項(ビラジカル、ラジカル対。BS-UKS は使わず、ラジカル再結合の生成物は単量体として宣言する)と MECP・スピン交差、速度論、公開 DB による同定。
+- 電子分配関数: g = 2S+1 だけで、開殻原子と ²Π ラジカル(OH•、NO など)の軌道縮重とスピン軌道補正は含めない(原子のスピン軌道安定化 Cl 0.84、Br 3.5、I 7.3 kcal/mol がそのまま誤差に入る)。
+- 電荷系: 停留点レベル(PBE0)の自己相互作用誤差で電荷の広がった TS・錯体は低く出やすく、D3 は電荷に依らない。電荷系の障壁と ΔG_assoc は method_panel のエネルギー層で確かめる。
+- 系のサイズ: 4 コア・def2-SVPD で約 35 原子まで。freq が N·nbf^2.8 に比例し(15 原子で約 11 分、40 原子で約 6 h)、途中継続がないので timeout(4 h)で全損する。大きな系は HPC で ranks を増やす。
+- 範囲外: 溶液相、wet-etch の反応器・表面モデル、開殻一重項(ビラジカル、ラジカル対。BS-UKS は使わず、ラジカル再結合の生成物は単量体として宣言する)と MECP・スピン交差、速度論とトンネル補正、公開 DB による同定。
 - fail-closed: ダミーエンジンや内部フォールバックの熱化学はない。外部ジョブの失敗は `FailureKind` 付きの failed artifact として残る。
 
 ## 処理の流れ
@@ -28,7 +31,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 | `explore` | 元素に依らない結合変化のテンプレート(移動 / リレー / 形成 / 切断)で反応 trial を作り、ReaDuct の NT2(極大がなければ AFIR)で生成物を探す(陰性結果も記録する) |
 | `reaction-paths` | 反応仮説ごとに、障壁の事前判定 → saddle → TS の振動数検証 → QRC → 分類 |
 | `sp` | 順位に使う点だけの一点計算(エネルギー層と手法パネル。CCSD(T) は小さい分子で opt-in、開殻は ROHF-CCSD(T)) |
-| `thermo` | GoodVibes 4.3.0 の API による qRRHO、キラリティ(m = 2)、整合ゲート、会合量、順位の量 δG_eff と感度の幅 |
+| `thermo` | GoodVibes 4.3.0 を同じプロセスで呼ぶ qRRHO、キラリティ(m = 2)、LOT の照合、会合量、順位の量 δG_eff と感度の幅 |
 | `report` | δG_eff による順位付け(ranking.csv)、探索の被覆率、手法パネルの表と HTML |
 
 パイプラインは 3 本である。
@@ -41,14 +44,14 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 
 ## 設定(4 分割)
 
-4 つの層は中身が重ならないので、マージも優先順位もない。手法を変えるときは別の method ファイルを使う。停留点の手法は minima(dft)と reaction-paths の 2 か所に書き、食い違えば読み込み時に拒否される。宣言反応の端点は xyz で与える(SMILES では原子の対応と配座を決められない)。system と pipeline の YAML は未知のキーを実行前に拒否する。温度と標準状態は thermo stage の `temperatures_K`・`standard_states`(既定 298.15 K・1 atm)だけで指定し、report は ReportConfig の指定がなければ thermo の最初の (T, 標準状態) で並べる。thermo の settings のスケール因子は `vib_scale` の 1 つだけである。
+4 つの層は中身が重ならないので、マージも優先順位もない。化学の結果を変える設定は method・system・pipeline に置き(ジョブの鍵か stage の設定 sha に入る)、site には実行設定(パス、ranks、メモリ、timeout)だけを置く。利用者が変えられる閾値(knob)は 8 つで、pipeline の `gates:` の 5 つ(noise_cm1、saddle_cm1、resolution_kcal、reaction_window_kcal、spin_tol)と reaction-paths の `policy:` の 3 つ(walltime_h、max_saddle_attempts、max_split_depth)である。手法を変えるときは別の method ファイルを使う。停留点の手法は minima(dft)と reaction-paths の 2 か所に書き、食い違えば読み込み時に拒否される。宣言反応の端点は xyz で与える(SMILES では原子の対応と配座を決められない)。system と pipeline の YAML は未知のキーを実行前に拒否する。温度と標準状態は thermo stage の `temperatures_K`・`standard_states`(既定 298.15 K・1 atm)だけで指定し、report は ReportConfig の指定がなければ thermo の最初の (T, 標準状態) で並べる。thermo の settings のスケール因子は `vib_scale` の 1 つだけである。
 
 | 層 | 置き場所 | 中身 |
 |---|---|---|
 | site | `configs/sites/` | 実行ファイルの絶対パス、scratch、コア数とメモリ、エンジンごとの版数の pin と実行設定 |
 | method | `configs/methods/` | 汎関数・基底・分散補正・grid・SCF 閾値(xTB は GFN と電子温度) |
 | system | `configs/systems/`(xyz は `configs/systems/xyz/`) | 化学種、組成、宣言反応。hcn、hono、nh3_inversion、formaldehyde、tma_hf2、amine_hf_panel、water_same_basin と、レビュー §6 の検証セット(sn2_cl ほか 17 系。対応は docs/validation.md の r6) |
-| pipeline | `configs/pipelines/` | stage の並びと設定、ゲート閾値の上書き(`gates:`) |
+| pipeline | `configs/pipelines/` | stage の並びと設定、knob の上書き(`gates:`、reaction-paths の `policy:`) |
 
 ## インストール
 
@@ -67,7 +70,7 @@ hfauto doctor --site configs/sites/wsl_local.yaml
 | コマンド | 役割 |
 |---|---|
 | `hfauto doctor [--site SITE]` | site の全エンジンを検査する(問題があれば終了コード 1) |
-| `hfauto run PIPELINE --system SYSTEM --site SITE [--run-dir DIR] [--from ID] [--to ID] [--dry-run] [--retry-failed KINDS]` | パイプラインを実行する。同じ run ディレクトリでは続きから再開する。stage の失敗か failed の artifact があれば終了コード 1 |
+| `hfauto run PIPELINE --system SYSTEM --site SITE [--run-dir DIR] [--from ID] [--to ID] [--dry-run] [--retry-failed KINDS]` | パイプラインを実行する。同じ run ディレクトリでは続きから再開する。stage の失敗か failed の artifact があれば終了コード 1。SIGTERM・SIGHUP を受けると外部プログラムを止めて 128 + signum で終わる |
 | `hfauto status RUN_DIR` | stage の状態、FailureKind 別の失敗数、ジョブの再利用率を表示する |
 | `hfauto report RUN_DIR` | run 全体の HTML レポートを書く |
 | `hfauto case RUN_DIR REACTION_ID` | 反応ケースの判断ログを表示する |

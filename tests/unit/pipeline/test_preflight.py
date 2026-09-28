@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import platform
 import sys
+from importlib.metadata import PackageNotFoundError
+
+import pytest
 
 from hfauto.backends.protocols import Capability, Requirements
 from hfauto.core.method import EngineSite
 from hfauto.core.system import SystemConfig
+from hfauto.pipeline import preflight as pf
 from hfauto.pipeline.config import PipelineConfig, ResolvedConfig, SiteConfig
 from hfauto.pipeline.preflight import check_site, engine_uses, preflight
 
@@ -40,7 +44,22 @@ def test_executables_version_pins_and_worker_modules(tmp_path):
 def test_engine_uses_pair_engines_with_methods():
     paths = {"id": "paths", "stage": "reaction-paths", "method": "pbe0",
              "engines": {"qm": "nwchem"}, "screen": {"method": "gfn2", "path": "pysis_neb"}}
-    thermo = {"id": "thermo", "stage": "thermo", "engine": "goodvibes"}
-    uses = engine_uses(PipelineConfig(pipeline_id="p", stages=[paths, thermo]))
-    assert {(u.capability, u.name, u.method) for u in uses} == {(None, "goodvibes", None),
+    crest = {"id": "conformers", "stage": "conformers", "engine": "crest"}
+    uses = engine_uses(PipelineConfig(pipeline_id="p", stages=[paths, crest]))
+    assert {(u.capability, u.name, u.method) for u in uses} == {(None, "crest", None),
         (Capability.QM, "nwchem", "pbe0"), (Capability.PATH, "pysis_neb", "gfn2")}
+
+
+@pytest.mark.parametrize(("found", "problem"), [("4.3.0", False), ("4.2.1", True), (None, True)])
+def test_a_thermo_stage_needs_goodvibes_4_3_0_in_this_interpreter(monkeypatch, found, problem):
+    def version(name):
+        if found is None:
+            raise PackageNotFoundError(name)
+        return found
+
+    monkeypatch.setattr(pf, "version", version)
+    thermo = PipelineConfig(pipeline_id="p", stages=[{"id": "thermo", "stage": "thermo"}])
+    run = ResolvedConfig(pipeline=thermo, methods={}, system=SystemConfig(system_id="s", species=[]),
+                         site=site("/home/u/scratch"), code_version="t")
+    assert bool(preflight(run)) is problem and preflight(run, dry_run=True) == []
+    assert pf.goodvibes_problems(thermo.model_copy(update={"stages": []})) == []

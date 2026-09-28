@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 _FROZEN = ConfigDict(frozen=True, extra="forbid")
 
-_LEVEL_STRINGS = ("program", "version", "method", "basis", "dispersion", "solvation", "grid")
+_LEVEL_STRINGS = ("program", "version", "method", "basis", "dispersion", "grid")
 
 
 def _short_sha(data: dict[str, Any]) -> str:
@@ -38,7 +38,6 @@ class Level(BaseModel):
     method: str
     basis: str | None = None  # cartesian basis sets carry a "/cart" suffix
     dispersion: str | None = None
-    solvation: str | None = None
     charge: int
     multiplicity: int
     grid: str | None = None

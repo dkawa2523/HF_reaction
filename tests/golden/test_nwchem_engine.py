@@ -1,6 +1,7 @@
 """NWChem engines through JobRunner with a stub executable that replays recorded outputs:
 G07 (HCN TS: level lines, vibrational block and .hess), G01 (two blocks), G13 (string) and
-G29 (OH. ROHF-CCSD(T)). A driver deck with ``maxiter 7`` stops at maxiter."""
+G29 (OH. ROHF-CCSD(T)). A driver job with STUB_MAXITER in its environment stops at
+maxiter."""
 
 import shutil
 import sys
@@ -13,10 +14,10 @@ from hfauto.backends.nwchem.output import geometry_block, read_hess
 from hfauto.chemistry.vibrations import shape_hessian
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
 from hfauto.chemistry.xyz_trajectory import write_xyz_trajectory
-from hfauto.core.evidence import Evidence, FailureKind, FileRef, PathProfile
+from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, PathProfile
 from hfauto.core.hashing import sha256_file
 from hfauto.core.method import EngineSite, MethodSpec
-from hfauto.execution.jobs import JobRunner
+from hfauto.execution.jobs import JobRunner, Task
 from hfauto.execution.jobstore import JobStore
 
 pytestmark = pytest.mark.golden
@@ -24,7 +25,7 @@ FINE = MethodSpec(id="fine", kind="dft", functional="pbe0", basis="def2-svpd",
                   dispersion="d3zero", grid="fine", scf_energy_tol=1e-7)  # G07's level
 XFINE = FINE.model_copy(update={"grid": "xfine", "scf_energy_tol": 1e-8})  # G01 / G13
 STUB = r'''
-import re, shutil, sys
+import os, re, shutil, sys
 from pathlib import Path
 here, deck = Path(__file__).parent, Path(sys.argv[-1]).read_text()
 atoms = re.search(r"^geometry[^\n]*\n(.*?)^end", deck, re.M | re.S).group(1).splitlines()
@@ -54,7 +55,7 @@ if task in ("dft optimize", "dft saddle"):
         Path(f"final-{n:03d}.xyz").write_text(frame(rows))
     Path("job.movecs").write_text("v"), Path("job.drv.hess").write_text("h")
     print("@    0    -93.16699428\n@    1    -93.16699428\n")
-    if "  maxiter 7\n" in deck:
+    if os.environ.get("STUB_MAXITER"):
         sys.exit(print(" Failed to converge in maximum number of steps"))
     if not restarted:
         sys.exit(124)
@@ -110,6 +111,25 @@ def test_frequencies_cache_and_input_checks(nwchem, golden):
     assert triplet.kind is FailureKind.METHOD_MISMATCH and "multiplicity" in triplet.reason
     grid = engine.frequencies(mol, XFINE)
     assert grid.kind is FailureKind.METHOD_MISMATCH and "grid" in grid.reason
+
+
+def test_double_hybrids_are_rejected_and_autoz_falls_back_to_cartesians(nwchem, golden, tmp_path):
+    """U0-P4: without dftmp2 NWChem drops the PT2 part silently. U9-P2: Cartesian coordinates
+    are the autoz failure's continuation, not a site setting."""
+    jobs, site = nwchem
+    engine, mol = NWChemEngine(jobs=jobs, site=site), _hcn_ts(golden)
+    for xc in ("B2PLYP", "b2gpplyp", "dsd-pbep86", "PWPB95"):
+        failure = engine.energy(mol, FINE.model_copy(update={"functional": xc}))
+        assert (failure.kind, failure.reason) == (FailureKind.INPUT_INVALID,
+                                                  "unsupported_method:fine")
+    assert jobs.stats().misses == 0  # no job was run
+    task = Task(engine="nwchem", version_pin="7.2.3", kind="saddle", key_payload={},
+                execution=site.execution, inputs={"mol": mol, "start": mol, "method": FINE})
+    retry = engine.continuation(task, tmp_path, Failure(kind=FailureKind.INPUT_INVALID,
+                                                        reason="autoz"))
+    assert retry is not None and retry.execution == task.execution
+    engine.prepare(retry, tmp_path)
+    assert "noautosym noautoz" in (tmp_path / "job.nw").read_text()
 
 
 def test_open_shell_ccsd_t_is_a_rohf_tce_job_and_all_electron_iodine_is_rejected(nwchem,
@@ -177,7 +197,8 @@ def test_a_saddle_at_maxiter_fails_with_its_last_frame_and_takes_a_hessian_nearb
     jobs, site = nwchem
     mol = _hcn_ts(golden)
     freq = NWChemEngine(jobs=jobs, site=site).frequencies(mol, FINE)
-    capped = site.model_copy(update={"execution": site.execution.model_copy(update={"maxiter": 7})})
+    capped = site.model_copy(update={"execution": site.execution.model_copy(
+        update={"env": {"STUB_MAXITER": "1"}})})
     near, far = (Molecule(XYZ(mol.xyz.symbols, mol.xyz.coords + [d, 0, 0]), 0, 1)
                  for d in (0.3, 0.6))
     failure = NWChemSaddle(jobs=jobs, site=capped).refine(near, FINE, hessian=freq,

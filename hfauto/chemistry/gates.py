@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from hfauto.chemistry.profile import classify
-from hfauto.core.constants import CM1_TO_HARTREE, HARTREE_TO_KCAL_MOL
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Level
 from hfauto.core.records import BarrierVerdict, CaseOutcome, ReactionRecord, ReactionThermo
 
@@ -27,23 +27,21 @@ class Gate:
 
 @dataclass(frozen=True)
 class Policy:
-    """The only thresholds a pipeline YAML may override (``gates:``)."""
+    """The chemical thresholds a pipeline YAML may override (``gates:``); nothing else."""
 
     noise_cm1: float = 10.0
     saddle_cm1: float = 50.0
-    scf_noise_factor: float = 20.0
-    qrc_min_drop_hartree: float = 1.0e-5
     resolution_kcal: float = 1.0  # hills and wells of a DFT path count from this depth
     reaction_window_kcal: float = 40.0
-    thermo_zpe_tol_hartree: float = 1.0e-5
-    thermo_energy_tol_hartree: float = 1.0e-6
-    spin_contamination_tol: float = 0.1
+    spin_tol: float = 0.1  # |<S2> - S(S+1)|
 
 
 _DEFAULT = Policy()
 LOW_LEVEL_BARRIER_MAX_KCAL = 50.0  # explore's xTB barrier cap; the DFT stages judge the rest
+SCF_NOISE_FACTOR = 20.0  # x scf_tol: the SCF noise of an energy difference at one geometry
+QRC_MIN_DROP_HARTREE = 1.0e-5  # the floor of that noise (H2Te freq vs opt: 3.1e-6 Eh)
 _PES_FIELDS = (
-    "program", "version", "method", "basis", "dispersion", "solvation",
+    "program", "version", "method", "basis", "dispersion",
     "charge", "multiplicity", "electronic_temperature_K",
 )
 _STATE_FIELDS = ("charge", "multiplicity")
@@ -61,16 +59,11 @@ def _gate(reasons: Sequence[str], notes: Sequence[str] = ()) -> Gate:
     return Gate(ok=not reasons, reasons=tuple(reasons), notes=tuple(notes))
 
 
-def qrc_drop(level: Level, policy: Policy = _DEFAULT) -> float:
-    """The SCF noise floor max(qrc_min_drop, scf_noise_factor x scf_tol); a missing scf_tol
-    counts as 0. A QRC side must end this far below the TS, and a freq job may differ this much
-    from its parent at one geometry."""
-    return max(policy.qrc_min_drop_hartree, policy.scf_noise_factor * (level.scf_tol or 0.0))
-
-
-def zpe_hartree(freqs_cm1: Sequence[float], *, scale: float = 1.0) -> float:
-    """0.5 x scale x sum(nu) over nu > 0."""
-    return 0.5 * scale * sum(nu for nu in freqs_cm1 if nu > 0.0) * CM1_TO_HARTREE
+def qrc_drop(level: Level) -> float:
+    """The SCF noise floor max(QRC_MIN_DROP_HARTREE, SCF_NOISE_FACTOR x scf_tol); a missing
+    scf_tol counts as 0. A QRC side must end this far below the TS, and a freq job may differ
+    this much from its parent at one geometry."""
+    return max(QRC_MIN_DROP_HARTREE, SCF_NOISE_FACTOR * (level.scf_tol or 0.0))
 
 
 def imaginary_tier(
@@ -101,7 +94,7 @@ def spin_ok(ev: Evidence, policy: Policy = _DEFAULT) -> Gate:
     if ev.s2 is None:
         return Gate(True)
     spin = (ev.level.multiplicity - 1) / 2
-    if abs(ev.s2 - spin * (spin + 1)) <= policy.spin_contamination_tol:
+    if abs(ev.s2 - spin * (spin + 1)) <= policy.spin_tol:
         return Gate(True)
     return Gate(False, ("spin_contaminated",))
 
@@ -115,13 +108,13 @@ def _mode_count_reasons(freq: Evidence) -> list[str]:
     return []
 
 
-def _link_reasons(freq: Evidence, parent: Evidence, policy: Policy) -> list[str]:
+def _link_reasons(freq: Evidence, parent: Evidence) -> list[str]:
     """The freq job sits on the parent's final geometry, on the same PES incl. numerics, in the
     same SCF solution: an energy within qrc_drop of the parent's (a UKS freq may find another
     solution; NWChem's freq tightens the grid and screening, H2Te 3.1e-6 Eh apart)."""
     if freq.start.fingerprint != parent.final.fingerprint:
         reasons = ["geometry_mismatch"]
-    elif abs(freq.energy_hartree - parent.energy_hartree) > qrc_drop(parent.level, policy):
+    elif abs(freq.energy_hartree - parent.energy_hartree) > qrc_drop(parent.level):
         reasons = ["state_mismatch"]
     else:
         reasons = []
@@ -131,7 +124,7 @@ def _link_reasons(freq: Evidence, parent: Evidence, policy: Policy) -> list[str]
 def is_minimum(freq: Evidence, *, opt: Evidence, policy: Policy = _DEFAULT) -> Gate:
     reasons = [f"not_{want}_task:{ev.task}" for ev, want in ((freq, "freq"), (opt, "opt"))
                if ev.task != want]
-    reasons += _link_reasons(freq, opt, policy) + _mode_count_reasons(freq)
+    reasons += _link_reasons(freq, opt) + _mode_count_reasons(freq)
     tier = imaginary_tier(freq.frequencies_cm1 or (), policy)
     notes: tuple[str, ...] = ()
     if tier == "saddle":
@@ -144,7 +137,7 @@ def is_minimum(freq: Evidence, *, opt: Evidence, policy: Policy = _DEFAULT) -> G
 def is_first_order_saddle(freq: Evidence, *, saddle: Evidence, policy: Policy = _DEFAULT) -> Gate:
     """One negative eigenvalue of any size: the lowest mode below -noise_cm1, the second not
     below -saddle_cm1 (higher_order); a second between the two is the note soft_secondary_mode."""
-    reasons = _link_reasons(freq, saddle, policy) + _mode_count_reasons(freq)
+    reasons = _link_reasons(freq, saddle) + _mode_count_reasons(freq)
     lowest, second = (*sorted(freq.frequencies_cm1 or ()), 0.0, 0.0)[:2]  # missing: 0
     if lowest >= -policy.noise_cm1:
         reasons.append("no_imaginary_mode")
@@ -219,12 +212,11 @@ def connection(
     degenerate: bool,
     sides_distinct: bool = True,
     bond_sets: tuple[Bonds, ...] | None = None,
-    policy: Policy = _DEFAULT,
 ) -> tuple[Gate, ConnectionLabel]:
     """Both QRC sides end below the TS in assigned basins. ``bond_sets`` are the labelled bond
     graphs (R, P, side0, side1): a degenerate case whose ends differ in bonds needs exactly those
     two graphs on its sides (a methyl rotation TS leaves the transferred proton in place)."""
-    drop = qrc_drop(ts_freq.level, policy)
+    drop = qrc_drop(ts_freq.level)
     reasons = [r for i, side in enumerate(sides) for r in _side_reasons(i, side, ts_freq, drop)]
     label, why = _assignment(
         assigned, expected, degenerate=degenerate, sides_distinct=sides_distinct,
@@ -235,27 +227,6 @@ def connection(
     if reasons:
         return _gate(reasons), "failed"
     return Gate(True), label
-
-
-def thermo_consistent(
-    freq: Evidence,
-    *,
-    frequencies_cm1: Sequence[float],
-    gv_zpe_hartree: float,
-    gv_energy_hartree: float,
-    gv_n_real: int,
-    scale: float,
-    policy: Policy = _DEFAULT,
-) -> Gate:
-    """GoodVibes' output against the frequencies it was given (chemistry.thermo_frequencies)."""
-    n_real = sum(1 for nu in frequencies_cm1 if nu > 0.0)
-    reasons = [] if gv_n_real == n_real else [f"n_real:{gv_n_real}!={n_real}"]
-    reference = zpe_hartree(frequencies_cm1, scale=scale)
-    if not abs(gv_zpe_hartree - reference) < policy.thermo_zpe_tol_hartree:
-        reasons.append("zpe_mismatch")
-    if not abs(gv_energy_hartree - freq.energy_hartree) < policy.thermo_energy_tol_hartree:
-        reasons.append("energy_mismatch")
-    return _gate(reasons)
 
 
 def discovery_verdict(

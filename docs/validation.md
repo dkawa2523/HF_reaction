@@ -256,6 +256,27 @@ structures → conformers → screen(GFN2)。組成はすべて全原子を `--n
 - 独立に走らせた 2 本の run(並列・直列)は CREST の MTD の揺らぎで配座数が違い(7 / 5 artifact)、artifact の比較には使えない。上の直列は同じ run の複製で比べた。
 - 判定: R1〜R4 は S-B と同じ値(結合規則と explore の変更は known_endpoints の順位に影響しない)。AFIR は `no_nt2_maximum` の後だけになり、attempt は S10 で 36 → 23(半分には届かない。減ったのは AFIR 15 → 2)、tma_hf2 で 25 → 15。`irc_end_not_minimum` は S10 で 7 → 0。生成物の同定で S1 は species 6 → 1、S10 は 2 attempt → species 1 で、同定で失った basin はない。S7 の NH2I + HCl は、状態が 1 つにまとまって出発点(状態ごとに最低 2 つ)から外れたために失った(表の S7)。S6 の引き抜きの生成物は得られない(GFN2 で障壁なし。新しい機構は入れない)。
 
+**S-D の確認(U7-P5・U9-P7、実行はすべてリポジトリの外)**
+
+- U7-P5: GoodVibes 4.3.0 を同一プロセスで呼ぶ species_thermo で、既存 run 7 本(SC の HCN・HONO・NH3・水、SB の CH3O・TMA·(HF)₂、M5 の SN2 パネル)の SpeciesThermo 22 件を再計算し、G・H・ZPE が worker 経路の値と 1.1e-13 Eh 以内で一致(順位は不変)。G06 CSV とは H・ZPE が 1e-10 Eh 以内、G は 1.3〜2.0e-8 Eh(CLI が NWChem の 7 桁の回転定数を読んだ差)。1 回 1〜2 ms(17 原子)。Windows の .venv-win-qa には pymsym がビルドできず GoodVibes を入れられないので、golden は WSL で走る。
+- U9-P7(`/home/user/hfauto_r6/SD/sdc_signal`): `mpirun -np 2 nwchem`(ベンゼン PBE0/def2-SVPD freq)を run_command で走らせる harness に `timeout 20`。signal handler ありで rc 124、残るプロセス 0。なしでは prterun と 2 rank が残る(U9-I8 の再現)。
+
+**S-D の統合後の実測(作業ツリー、`/home/user/hfauto_r6/SD/runs/<run>`、すべて新しい run dir。MethodSpec と Level から solvation が消えたのでジョブの鍵はすべて変わった)**
+
+| 系 | 結果 | 所要時間 |
+|---|---|---|
+| smoke | `-m real tests/smoke` 13 件合格(MP2 の smoke は閉殻 CCSD(T) に置換) | 1:07 |
+| R1 `hcn` | `elementary_step`、δG_eff 42.1783(同じ) | 1:17 |
+| R2 `hono` | `elementary_step`、δG_eff 11.8158(同じ) | 3:02 |
+| R3 `nh3_inversion` | `degenerate_rearrangement`、δG_eff 3.8395(同じ) | 1:15 |
+| R4 `water_same_basin` | `same_basin`(同じ) | 0:11 |
+| S15 `hono_hno2` | `elementary_step`、δG_eff 52.0163(直接の TS。分割は起きず、子の予算は fake の stage テストで確認) | 2:43 |
+| acac(`timeout 60`) | rc 124。終了後 `pgrep -f nwchem`・`pgrep -f prterun` は空、run_state の dft は `failed` | 1:01 |
+| b2plyp | NWChemEngine.energy が `input_invalid`(`unsupported_method:b2plyp_def2-svpd`)、ジョブ 0 本 | — |
+
+- 判定: R1〜R4 の outcome と表示桁の値は S-C と同じ。全桁では δG_eff が 2e-7〜1.4e-6 kcal/mol 違う。同じデッキ(scratch_dir だけ違う)の HCN の最初の opt でも E が 7.7e-10 Eh 違うので、NWChem の実行ごとの揺らぎ(ジョブの鍵が変わって再計算した)で、thermo の変更によるものではない(保存済みの Evidence からの再計算は 1.1e-13 Eh で一致)。種ごとの差は G で 3e-9 Eh 以下。
+- 外部の timeout の後に NWChem が残らないので、runcase.sh の pgrep / pkill の回避策は要らない。
+
 ---
 
 以下は v3・v4・v5(第2〜第4ラウンド改良後の再検証、2026-09-26)の記録。第3ラウンドの改良(M9・C38・S26、コード `00680e0`)後の v4 の再検証は §11、第4ラウンドの小さな改良(コード `13a4340`)後の退行確認 v5 は §12 にまとめた。§1〜§10 は v3 の記録で、v4 で数値が変わった箇所には §11 への参照を付けた。

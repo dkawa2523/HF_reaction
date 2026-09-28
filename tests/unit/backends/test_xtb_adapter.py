@@ -13,18 +13,17 @@ WATER = XYZ(["O", "H", "H"], np.array([[0.0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 
 GFN1 = MethodSpec(id="gfn1", kind="xtb", gfn=1)
 
 
-def engine(tmp_run, **execution) -> XTBEngine:
-    site = EngineSite(version="6.7.1", execution=ExecutionSpec(threads=2, **execution))
+def engine(tmp_run) -> XTBEngine:
+    site = EngineSite(version="6.7.1", execution=ExecutionSpec(threads=2))
     return XTBEngine(jobs=JobRunner(JobStore(tmp_run / "jobs"), cores=2), site=site)
 
 
-def test_command_carries_charge_uhf_solvent_etemp_and_cycles(tmp_run):
-    xtb = engine(tmp_run, maxiter=2)
-    method = MethodSpec(id="g", kind="xtb", gfn=2, solvation="alpb:water",
-                        electronic_temperature_K=1000.0)
+def test_command_carries_charge_uhf_and_etemp(tmp_run):
+    xtb = engine(tmp_run)
+    method = MethodSpec(id="g", kind="xtb", gfn=2, electronic_temperature_K=1000.0)
     cmd = xtb.adapter.prepare(xtb.task("optimize", Molecule(WATER, -1, 2), method), tmp_run / "a")
     assert cmd.argv[1:] == ("input.xyz", "--opt", "vtight", "--gfn", "2", "--chrg", "-1", "--uhf",
-                            "1", "--alpb", "water", "--etemp", "1000.0", "--cycles", "2")
+                            "1", "--etemp", "1000.0")
     assert cmd.env["OMP_NUM_THREADS"] == "2,1" and cmd.env["OMP_STACKSIZE"] == "4G"
     hess = xtb.adapter.prepare(xtb.task("frequencies", Molecule(WATER, 0, 1), GFN1), tmp_run / "b")
     assert hess.argv[2:] == ("--hess", "--gfn", "1", "--chrg", "0", "--uhf", "0")

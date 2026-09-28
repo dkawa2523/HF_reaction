@@ -14,7 +14,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 _NW_LINE = re.compile(
     r"Northwest Computational Chemistry Package|nwchem branch|Grid used for XC"
-    r"|Convergence on energy requested|\((spherical|cartesian)\)|DFT-D3|COSMO|<S2>"
+    r"|Convergence on energy requested|\((spherical|cartesian)\)|DFT-D3|<S2>"
     r"|Total DFT energy|Charge +:|Spin multiplicity:|^ string:|^@"
 )
 _NW_STOP = re.compile("Optimization converged|Failed to converge")  # kept with 6 lines around

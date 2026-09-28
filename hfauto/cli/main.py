@@ -6,6 +6,8 @@ working directory.
 
 from __future__ import annotations
 
+import signal
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import NoReturn
@@ -19,6 +21,7 @@ from hfauto.chemistry.xyz import read_xyz
 from hfauto.core.evidence import FailureKind
 from hfauto.core.ids import path_token
 from hfauto.core.system import SystemConfig
+from hfauto.execution import process
 from hfauto.pipeline import config, preflight, runner
 from hfauto.pipeline.layout import RunLayout
 from hfauto.reporting import html
@@ -80,6 +83,20 @@ def _failed_stages(layout: RunLayout) -> list[str]:
             if s.status == "failed" or (s.status == "done" and s.n_failed > 0)]
 
 
+def _stop(signum: int, _frame: object) -> None:
+    process.stop_all()
+    sys.exit(128 + signum)  # unwinds through execute_stage, which records the stage failed
+
+
+def stop_on_signals() -> None:
+    """SIGTERM and SIGHUP kill every running external program, then exit 128 + signum (POSIX).
+
+    SIGKILL cannot be caught: a scheduler must send SIGTERM first (docs/environment.md)."""
+    if sys.platform != "win32":
+        for signum in (signal.SIGTERM, signal.SIGHUP):
+            signal.signal(signum, _stop)
+
+
 def _print_problems(problems: list[str]) -> None:
     for problem in problems:
         console.print(f"[red]problem[/red] {escape(problem)}")
@@ -122,7 +139,8 @@ def run(
 ) -> None:
     """Run a pipeline for a system on a site (resumes a run directory).
 
-    Exit code 1 when a stage failed or a saved artifact carries a failure."""
+    Exit code 1 when a stage failed or a saved artifact carries a failure; SIGTERM / SIGHUP
+    stop the external programs and exit 128 + signum."""
     kinds = _failure_kinds(retry_failed)
     paths = [config_path(k, v) for k, v in (("pipelines", pipeline), ("systems", system),
                                             ("sites", site))]
@@ -144,6 +162,7 @@ def run(
         console.print(f"dry run of {pipeline_id} in {escape(str(target))}", soft_wrap=True)
         console.print(table)
         return
+    stop_on_signals()
     runner.run_pipeline(resolved, target, start=start, stop=stop, retry_failed=kinds)
     failed = _failed_stages(RunLayout(target))
     if failed:

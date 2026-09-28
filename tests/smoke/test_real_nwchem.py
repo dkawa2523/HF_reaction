@@ -90,10 +90,12 @@ def test_iodine_def2_ecp_and_a_chloride_atom(real_engine, tmp_path):
     assert (freq.frequencies_cm1, freq.n_external) == ((), 3) and is_minimum(freq, opt=opt)
 
 
-def test_mp2_single_point_and_the_wb97x_d3_level(real_engine):
+def test_closed_shell_ccsd_t_and_the_wb97x_d3_level(real_engine):
     qm = real_engine(Capability.QM, "nwchem")
-    mp2 = qm.energy(HCN, MethodSpec(id="mp2", kind="wft", wft_method="mp2", basis="def2-svp"))
-    assert isinstance(mp2, Evidence) and mp2.level.method == "mp2", mp2
+    ccsd_t = MethodSpec(id="ccsd-t", kind="wft", wft_method="ccsd(t)", basis="def2-svp")
+    ev = qm.energy(HCN, ccsd_t)  # the RHF ccsd module
+    assert isinstance(ev, Evidence), ev
+    assert (ev.level.method, ev.level.multiplicity, ev.s2) == ("ccsd(t)", 1, None)
     wb97 = MethodSpec(id="wb97x-d3", kind="dft", functional="wb97x-d3", basis="def2-svp",
                       grid="fine")
     ev = qm.energy(WATER, wb97)

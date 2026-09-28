@@ -8,7 +8,7 @@ from hfauto.chemistry import gates as g
 from hfauto.chemistry.topology import bonds
 from hfauto.chemistry.xyz import read_xyz
 from hfauto.core import records as r
-from hfauto.core.constants import CM1_TO_HARTREE, HARTREE_TO_KCAL_MOL
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, FileRef, Geometry, Level, Task
 from hfauto.core.records import CaseOutcome
 
@@ -98,6 +98,7 @@ def test_same_pes_and_spin():
     assert g.same_pes(LEVEL, xfine, state=False).reasons == ("pes_mismatch:grid",)
     assert g.spin_ok(ev(level=doublet, s2=0.7523))
     assert g.spin_ok(ev(level=doublet, s2=0.90)).reasons == ("spin_contaminated",)
+    assert g.spin_ok(ev(level=doublet, s2=0.90), g.Policy(spin_tol=0.2))
     assert g.spin_ok(ev())
 
 
@@ -161,27 +162,6 @@ def test_a_degenerate_proton_transfer_moves_the_proton():
     assert connect(bond_sets=rotation, **kw) == (g.Gate(False, ("bond_change_missing",)), "failed")
     assert connect(bond_sets=(r_bonds,) * 4, **kw)[1] == "degenerate"  # inversion: no bond change
     assert connect(bond_sets=rotation, assigned=("A", "B"))[1] == "elementary"  # not degenerate
-
-
-def test_thermo_consistent():  # against the list GoodVibes got (chemistry.thermo_frequencies)
-    real = (600.0, 800.0, 1300.0, 1700.0)
-    sent = (*real, 2 * 0.018747 / CM1_TO_HARTREE - sum(real))  # TS without -680.11: ZPE 0.018747
-    freq = ev(freqs=(-680.11, *sent))
-    kw = {"frequencies_cm1": sent, "gv_energy_hartree": E_TS, "gv_n_real": 5, "scale": 0.985}
-    assert g.thermo_consistent(freq, gv_zpe_hartree=0.0375115, **kw).reasons == ("zpe_mismatch",)
-    assert g.thermo_consistent(freq, gv_zpe_hartree=0.985 * 0.018747, **kw)
-    assert g.thermo_consistent(freq, gv_zpe_hartree=0.985 * 0.018747, **kw | {"gv_n_real": 6}
-                               ).reasons == ("n_real:6!=5",)
-    soft = modes(-30.0)
-    flipped = (30.0, *soft[1:])  # a soft minimum's mode enters as |nu|
-    gv_zpe = 0.5 * sum(flipped) * CM1_TO_HARTREE
-    assert g.zpe_hartree(flipped) == pytest.approx(gv_zpe, abs=1e-15)
-    assert g.zpe_hartree(soft) < gv_zpe  # negative modes never count
-    kw = {"gv_zpe_hartree": gv_zpe, "gv_energy_hartree": E_TS, "gv_n_real": 6, "scale": 1.0}
-    assert g.thermo_consistent(ev(freqs=soft), frequencies_cm1=flipped, **kw)
-    assert not g.thermo_consistent(ev(freqs=soft), frequencies_cm1=soft, **kw)
-    assert not g.thermo_consistent(ev(freqs=soft), frequencies_cm1=flipped,
-                                   **kw | {"gv_energy_hartree": E_TS + 1e-5})
 
 
 def reaction(**kw) -> r.ReactionRecord:

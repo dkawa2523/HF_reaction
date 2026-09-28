@@ -1,4 +1,4 @@
-"""decide(): the 16 rows of design §7.3 (ports tests/test_reaction_classification.py cases)."""
+"""decide(): the 17 rows of design §7.3 (ports tests/test_reaction_classification.py cases)."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ SEED = st.Seed(geometry=GEO, source="screen_ts", tangent=None)
 HIGHER = st.Seed(geometry=GEO, source="higher_order_retry", tangent=None)
 CLAIM = r.SaddleClaim(saddle_calc="s", freq_calc="f", imag_cm1=-1131.0, energy_hartree=-93.0)
 SOFT = CLAIM.model_copy(update={"imag_cm1": -30.0})  # |nu| < saddle_cm1 = 50
-POLICY = st.CasePolicy()
+RULES = st.CaseRules()
 
 
 def minimum(mid: str, basin: str, kcal: float = 0.0, *,
@@ -41,93 +41,100 @@ BLOCKED = Decision(A.BLOCKED, "endpoints_not_on_one_pes", C.BLOCKED)
 NO_PATH = Decision(A.FIND_PATH, "no_dft_path")
 NEXT_CHUNK = Decision(A.FIND_PATH, "next_chunk")
 EXHAUSTED = Decision(A.COMPLETE, "attempts_exhausted", C.UNRESOLVED)
+ELEMENTARY = Decision(A.COMPLETE, "connection:elementary", C.ELEMENTARY_STEP)
+DISTINCT = Decision(A.COMPLETE, "intermediate_distinct", C.MULTI_STEP)
+WALLTIME = Decision(A.COMPLETE, "walltime", C.UNRESOLVED)
+COLLAPSED = Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")
 
 
-ROW_CASES = [  # (row, id, case, state, policy, expected decision)
-    (1, "missing", CASE, replace(BASE, minima=(MA, None)), POLICY, BLOCKED),
+ROW_CASES = [  # (row, id, case, state, rules, expected decision)
+    (1, "missing", CASE, replace(BASE, minima=(MA, None)), RULES, BLOCKED),
     (1, "screen_tier", CASE, replace(BASE, minima=(MA, minimum("mb", "B", tier="screen"))),
-     POLICY, BLOCKED),
+     RULES, BLOCKED),
     (1, "two_levels", CASE, replace(S, minima=(MA, minimum("mb", "B", level="L2")),
-                                    path_runs=2), POLICY, BLOCKED),
-    (2, "same_basin", CASE, replace(BASE, minima=(MA, minimum("mb", "A")), claim=CLAIM), POLICY,
+                                    path_runs=2), RULES, BLOCKED),
+    (2, "same_basin", CASE, replace(BASE, minima=(MA, minimum("mb", "A")), claim=CLAIM), RULES,
      Decision(A.COMPLETE, "same_basin", C.SAME_BASIN)),
-    (3, "uphill", CASE, replace(BASE, minima=(MA, minimum("mb", "B", 41.0))), POLICY,
+    (3, "uphill", CASE, replace(BASE, minima=(MA, minimum("mb", "B", 41.0))), RULES,
      Decision(A.COMPLETE, "out_of_window", C.OUT_OF_WINDOW)),
-    (4, "walltime", CASE, replace(S, expired=True, claim=CLAIM), POLICY,
-     Decision(A.COMPLETE, "walltime", C.UNRESOLVED)),
-    (5, "elementary", CASE, replace(S, claim=CLAIM, connection="elementary"), POLICY,
-     Decision(A.COMPLETE, "connection:elementary", C.ELEMENTARY_STEP)),
-    (5, "degenerate", DEGENERATE, replace(S, minima=(MA, MA), claim=CLAIM,
-                                          connection="degenerate"), POLICY,
+    (4, "elementary", CASE, replace(S, claim=CLAIM, connection="elementary"), RULES, ELEMENTARY),
+    (4, "at_the_deadline", CASE, replace(S, expired=True, claim=CLAIM, connection="elementary"),
+     RULES, ELEMENTARY),  # U9-P5: evidence in hand completes the case
+    (4, "degenerate", DEGENERATE, replace(S, minima=(MA, MA), claim=CLAIM,
+                                          connection="degenerate"), RULES,
      Decision(A.COMPLETE, "connection:degenerate", C.DEGENERATE)),
-    (5, "reassigned", CASE, replace(S, claim=CLAIM, connection="reassigned"), POLICY,
+    (4, "reassigned", CASE, replace(S, claim=CLAIM, connection="reassigned"), RULES,
      Decision(A.COMPLETE, "connection:reassigned", C.REASSIGNED)),
-    (5, "same_basin_retry", CASE, replace(S, claim=CLAIM, connection="same_basin",
-                                          connection_attempts=1), POLICY,
-     Decision(A.CONNECT, "connection_retry")),
-    (5, "failed", CASE, replace(S, claim=CLAIM, connection="failed", connection_attempts=1),
-     POLICY, Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)),
-    (6, "claim", CASE, replace(S, claim=CLAIM, last_saddle="converged", ts_check="ok"), POLICY,
-     Decision(A.CONNECT, "ts_validated")),
-    (7, "converged", CASE, replace(S, last_saddle="converged", saddle_attempts=1), POLICY,
-     Decision(A.VALIDATE_TS, "saddle_converged")),
-    (8, "collapsed", CASE, replace(S, last_saddle="converged", ts_check="collapsed",
-                                   seeds=(SEED,)), POLICY,
-     Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")),
-    (8, "after_an_endpoint_well", CASE, replace(S, last_saddle="converged", ts_check="collapsed",
-                                                intermediate="same_as_endpoint"), POLICY,
-     Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")),
-    (8, "soft_ts_qrc_failed", CASE, replace(S, claim=SOFT, last_saddle="converged", ts_check="ok",
-                                            connection="failed", connection_attempts=1), POLICY,
-     Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")),
-    (9, "distinct", CASE, replace(S, intermediate="distinct"), POLICY,
-     Decision(A.COMPLETE, "intermediate_distinct", C.MULTI_STEP)),
-    (10, "screen", CASE, BASE, POLICY, Decision(A.SCREEN, "screen")),
-    (10, "degenerate_goes_on", DEGENERATE, replace(BASE, minima=(MA, MA)), POLICY,
-     Decision(A.SCREEN, "screen")),
-    (11, "screen", CASE, replace(S, screen=BV(verdict="barrierless", source="screen"),
-                                 seeds=(SEED,)), POLICY,
+    (5, "distinct", CASE, replace(S, intermediate="distinct"), RULES, DISTINCT),
+    (5, "at_the_deadline", CASE, replace(S, expired=True, intermediate="distinct"), RULES,
+     DISTINCT),
+    (6, "screen", CASE, replace(S, screen=BV(verdict="barrierless", source="screen"),
+                                seeds=(SEED,)), RULES,
      Decision(A.COMPLETE, "screen:barrierless", C.BARRIERLESS)),
-    (11, "string", CASE, replace(S, screen=BV(verdict="barrierless", source="string"),
-                                 path_runs=1), POLICY,
+    (6, "string_at_the_deadline", CASE, replace(S, screen=BV(verdict="barrierless",
+                                                             source="string"),
+                                                path_runs=1, expired=True), RULES,
      Decision(A.COMPLETE, "string:barrierless", C.BARRIERLESS)),
-    (12, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
-                                       seeds=(SEED,)), POLICY,
+    (7, "walltime", CASE, replace(S, expired=True, claim=CLAIM), RULES, WALLTIME),
+    (7, "no_retry", CASE, replace(S, expired=True, claim=CLAIM, connection="same_basin",
+                                  connection_attempts=1), RULES, WALLTIME),
+    (8, "same_basin_retry", CASE, replace(S, claim=CLAIM, connection="same_basin",
+                                          connection_attempts=1), RULES,
+     Decision(A.CONNECT, "connection_retry")),
+    (8, "failed", CASE, replace(S, claim=CLAIM, connection="failed", connection_attempts=1),
+     RULES, Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)),
+    (9, "claim", CASE, replace(S, claim=CLAIM, last_saddle="converged", ts_check="ok"), RULES,
+     Decision(A.CONNECT, "ts_validated")),
+    (10, "converged", CASE, replace(S, last_saddle="converged", saddle_attempts=1), RULES,
+     Decision(A.VALIDATE_TS, "saddle_converged")),
+    (11, "collapsed", CASE, replace(S, last_saddle="converged", ts_check="collapsed",
+                                    seeds=(SEED,)), RULES, COLLAPSED),
+    (11, "after_an_endpoint_well", CASE, replace(S, last_saddle="converged", ts_check="collapsed",
+                                                 intermediate="same_as_endpoint"), RULES,
+     COLLAPSED),
+    (11, "soft_ts_qrc_failed", CASE, replace(S, claim=SOFT, last_saddle="converged",
+                                             ts_check="ok", connection="failed",
+                                             connection_attempts=1), RULES, COLLAPSED),
+    (12, "screen", CASE, BASE, RULES, Decision(A.SCREEN, "screen")),
+    (12, "degenerate_goes_on", DEGENERATE, replace(BASE, minima=(MA, MA)), RULES,
+     Decision(A.SCREEN, "screen")),
+    (13, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
+                                       seeds=(SEED,)), RULES,
      Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")),
-    (13, "seed", CASE, replace(S, seeds=(SEED,)), POLICY,
+    (14, "seed", CASE, replace(S, seeds=(SEED,)), RULES,
      Decision(A.REFINE_SADDLE, "seed:screen_ts")),
-    (13, "higher_order_retry", CASE, replace(S, seeds=(HIGHER,), last_saddle="failed",
-                                             saddle_attempts=1), POLICY,
+    (14, "higher_order_retry", CASE, replace(S, seeds=(HIGHER,), last_saddle="failed",
+                                             saddle_attempts=1), RULES,
      Decision(A.REFINE_SADDLE, "seed:higher_order_retry")),
-    (14, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), POLICY, NO_PATH),
-    (14, "screen_off", CASE, BASE, replace(POLICY, screen=False), NO_PATH),
-    (14, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
-     POLICY, NO_PATH),
-    (15, "seeds_failed", CASE, replace(S, screen=BV(verdict="single", source="string"),
+    (15, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), RULES, NO_PATH),
+    (15, "screen_off", CASE, BASE, replace(RULES, screen=False), NO_PATH),
+    (15, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
+     RULES, NO_PATH),
+    (16, "seeds_failed", CASE, replace(S, screen=BV(verdict="single", source="string"),
                                        path_runs=1, saddle_attempts=1, last_saddle="failed"),
-     POLICY, NEXT_CHUNK),
-    (15, "after_an_endpoint_well", CASE, replace(S, screen=BV(verdict="intermediate",
+     RULES, NEXT_CHUNK),
+    (16, "after_an_endpoint_well", CASE, replace(S, screen=BV(verdict="intermediate",
                                                               source="string"),
                                                  intermediate="same_as_endpoint", path_runs=2,
-                                                 saddle_attempts=2), POLICY, NEXT_CHUNK),
-    (16, "exhausted", CASE, replace(S, path_runs=1, seeds=(SEED,), saddle_attempts=2,
-                                    last_saddle="failed"), POLICY, EXHAUSTED),
-    (16, "chunks_used", CASE, replace(S, screen=BV(verdict="single", source="string"),
-                                      path_runs=3, saddle_attempts=1), POLICY, EXHAUSTED),
-    (16, "string_failed", CASE, replace(S, path_runs=1, saddle_attempts=1), POLICY, EXHAUSTED),
+                                                 saddle_attempts=2), RULES, NEXT_CHUNK),
+    (17, "exhausted", CASE, replace(S, path_runs=1, seeds=(SEED,), saddle_attempts=2,
+                                    last_saddle="failed"), RULES, EXHAUSTED),
+    (17, "chunks_used", CASE, replace(S, screen=BV(verdict="single", source="string"),
+                                      path_runs=3, saddle_attempts=1), RULES, EXHAUSTED),
+    (17, "string_failed", CASE, replace(S, path_runs=1, saddle_attempts=1), RULES, EXHAUSTED),
 ]
 
 
-def test_table_has_16_rows_and_every_row_is_covered():
-    assert len(st.ROWS) == 16
-    assert {row for row, *_ in ROW_CASES} == set(range(1, 17))
+def test_table_has_17_rows_and_every_row_is_covered():
+    assert len(st.ROWS) == 17
+    assert {row for row, *_ in ROW_CASES} == set(range(1, 18))
 
 
-@pytest.mark.parametrize(("row", "case", "state", "policy", "expected"),
+@pytest.mark.parametrize(("row", "case", "state", "rules", "expected"),
                          [c[:1] + c[2:] for c in ROW_CASES],
                          ids=[f"row{c[0]}-{c[1]}" for c in ROW_CASES])
-def test_row(row, case, state, policy, expected):
-    assert decide(case, state, policy) == expected
+def test_row(row, case, state, rules, expected):
+    assert decide(case, state, rules) == expected
 
 
 def test_a_well_is_validated_before_any_seed_then_the_seeds_go_on():
@@ -135,9 +142,9 @@ def test_a_well_is_validated_before_any_seed_then_the_seeds_go_on():
     well = BV(verdict="intermediate", source="string")
     state = record_profile(replace(S, seeds=(SEED,)), well, replace(SEED, source="path_hei"))
     assert state.seeds == (SEED,) and state.path_runs == 1 and state.screen == well
-    assert decide(CASE, state, POLICY).action is A.VALIDATE_INTERMEDIATE
+    assert decide(CASE, state, RULES).action is A.VALIDATE_INTERMEDIATE
     after = replace(state, intermediate="same_as_endpoint")
-    assert decide(CASE, after, POLICY) == Decision(A.REFINE_SADDLE, "seed:screen_ts")
+    assert decide(CASE, after, RULES) == Decision(A.REFINE_SADDLE, "seed:screen_ts")
 
 
 def test_a_peak_seeds_only_a_single_step_profile():
@@ -153,29 +160,27 @@ def test_a_new_profile_reopens_the_checks_of_an_earlier_saddle():
                   intermediate="same_as_endpoint")
     state = record_profile(old, BV(verdict="intermediate", source="string"))
     assert (state.last_saddle, state.ts_check, state.intermediate) == (None, None, None)
-    assert decide(CASE, state, POLICY) == Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")
+    assert decide(CASE, state, RULES) == Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")
     assert record_profile(BASE, BV(verdict="single", source="screen")).path_runs == 0
 
 
 def test_seeds_share_one_attempt_budget():
     """U6-P3 / U6-P6: a higher-order push or a stalled search's restart is an ordinary seed."""
     first = replace(S, seeds=(HIGHER,), last_saddle="failed", saddle_attempts=1, path_runs=1)
-    assert decide(CASE, first, POLICY) == Decision(A.REFINE_SADDLE, "seed:higher_order_retry")
-    assert decide(CASE, replace(first, saddle_attempts=2), POLICY) == EXHAUSTED
+    assert decide(CASE, first, RULES) == Decision(A.REFINE_SADDLE, "seed:higher_order_retry")
+    assert decide(CASE, replace(first, saddle_attempts=2), RULES) == EXHAUSTED
 
 
 def test_a_soft_ts_whose_qrc_failed_is_validated_as_a_collapsed_saddle():
     """U6-P5: a TS with |nu| < saddle_cm1 is a TS, but once its QRC fails for good (the one
-    same-basin retry included) it joins row 8, whose action withdraws the claim."""
+    same-basin retry included) it joins row 11, whose action withdraws the claim."""
     failed = replace(S, claim=SOFT, last_saddle="converged", ts_check="ok", connection="same_basin",
                      connection_attempts=1)
-    collapsed = Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")
-    assert decide(CASE, failed, POLICY) == Decision(A.CONNECT, "connection_retry")
+    assert decide(CASE, failed, RULES) == Decision(A.CONNECT, "connection_retry")
     failed = replace(failed, connection_attempts=2)
-    assert decide(CASE, failed, POLICY) == collapsed
+    assert decide(CASE, failed, RULES) == COLLAPSED
     validated = replace(failed, claim=None, connection=None, ts_check=None, last_saddle=None)
-    assert decide(CASE, replace(validated, intermediate="distinct"), POLICY) == Decision(
-        A.COMPLETE, "intermediate_distinct", C.MULTI_STEP)
-    assert decide(CASE, replace(validated, intermediate="same_as_endpoint"), POLICY) == NO_PATH
+    assert decide(CASE, replace(validated, intermediate="distinct"), RULES) == DISTINCT
+    assert decide(CASE, replace(validated, intermediate="same_as_endpoint"), RULES) == NO_PATH
     unresolved = Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)
-    assert decide(CASE, replace(failed, claim=CLAIM), POLICY) == unresolved  # a hard TS
+    assert decide(CASE, replace(failed, claim=CLAIM), RULES) == unresolved  # a hard TS

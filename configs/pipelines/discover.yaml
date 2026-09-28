@@ -12,5 +12,5 @@ stages:
   - {id: paths, stage: reaction-paths, method: pbe0-d3bj_def2-svpd,
      engines: {qm: nwchem, saddle: nwchem_saddle, path: nwchem_string},
      screen: {method: gfn2, qm: xtb, path: pysis_neb}}
-  - {id: thermo, stage: thermo, engine: goodvibes}
+  - {id: thermo, stage: thermo}
   - {id: report, stage: report}

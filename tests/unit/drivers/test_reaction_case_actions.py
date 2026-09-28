@@ -11,7 +11,7 @@ import pytest
 from hfauto.chemistry.geometry import declared_coordinate_gradient
 from hfauto.chemistry.identity import mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
-from hfauto.chemistry.modes import overlap
+from hfauto.chemistry.modes import BOUNDS_A, overlap
 from hfauto.chemistry.xyz import XYZ, composition_key, read_xyz
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
@@ -25,11 +25,12 @@ from hfauto.core.records import (
     SpeciesRecord,
 )
 from hfauto.drivers.minimum import Registry, relax_to_minimum
-from hfauto.drivers.reaction_case.actions import HANDLERS, Profile
+from hfauto.drivers.reaction_case import actions
+from hfauto.drivers.reaction_case.actions import HANDLERS, SCREEN_IMAGES, STRING_BEADS, Profile
 from hfauto.drivers.reaction_case.driver import CaseRuntime, open_case
 from hfauto.drivers.reaction_case.state import (
     Action,
-    CasePolicy,
+    CaseRules,
     CaseState,
     Decision,
     Seed,
@@ -106,11 +107,11 @@ def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None, neb=()
         screen_qm=fakes.FakeQM(root, screen_pes or pes),
         screen_path=fakes.FakePath(root, pes, neb, tsopt=True),
         method=DFT, screen_method=XTB, registry=registry, load_xyz=load, case_dir=root / "cases",
-        file_ref=lambda p: fakes._ref(root, p), deadline=Deadline.after,
+        file_ref=lambda p: fakes._ref(root, p),
         resolve=lambda ref: root / ref.path, minima=minima, species=species)
     case = ReactionRecord(reaction_id="rx", reactants=(), products=(), minima=tuple(minima),
                           endpoints=("reactant", "product"), source="declared")
-    ctx = open_case(case, rt, CasePolicy(screen=False), Deadline.after(600), root, lambda _: None)
+    ctx = open_case(case, rt, CaseRules(screen=False), Deadline.after(600), root, lambda _: None)
     return ctx, CaseState(minima=tuple(record for record, _ in minima.values()))
 
 
@@ -124,8 +125,8 @@ def test_one_barrierless_string_closes_the_case(tmp_path) -> None:
     assert (state.screen.verdict, state.screen.source, state.path_runs) == (
         "barrierless", "string", 1)
     assert ctx.rt.path.calls == ["find_path:pes"] and not state.seeds
-    assert len(ctx.work.path.frames) == ctx.policy.string_beads
-    assert decide(ctx.case, state, ctx.policy).reason == "string:barrierless"
+    assert len(ctx.work.path.frames) == STRING_BEADS
+    assert decide(ctx.case, state, ctx.rules).reason == "string:barrierless"
 
 
 def test_one_chunk_per_call_and_the_next_one_continues_the_last_path(tmp_path) -> None:
@@ -138,12 +139,12 @@ def test_one_chunk_per_call_and_the_next_one_continues_the_last_path(tmp_path) -
     assert ctx.rt.path.calls == ["find_path:single"] and state.seeds[0].source == "path_hei"
     for runs in (2, 3):
         state = act(ctx, state, Action.REFINE_SADDLE)  # its peak fails
-        assert decide(ctx.case, state, ctx.policy) == Decision(Action.FIND_PATH, "next_chunk")
+        assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "next_chunk")
         state = act(ctx, state, Action.FIND_PATH, "next_chunk")
         assert state.path_runs == runs and len(ctx.rt.path.calls) == runs
     seam = ctx.frames(ctx.rt.path.initial[1])  # the 1st chunk's path, true minima at its ends
     assert all(np.allclose(x, y, atol=1e-4) for x, y in zip(seam, first, strict=True))
-    assert decide(ctx.case, state, ctx.policy).reason == "attempts_exhausted"
+    assert decide(ctx.case, state, ctx.rules).reason == "attempts_exhausted"
 
 
 def test_a_string_gets_the_dft_minima_back_and_its_images_aligned(tmp_path) -> None:
@@ -169,7 +170,7 @@ def test_first_string_chunk_starts_from_an_idpp_without_rigid_jumps(tmp_path, sy
     assert rms == pytest.approx([mapped_rmsd(x, y) for x, y in pairwise(frames)], abs=1e-6)
 
 
-def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path) -> None:
+def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path, monkeypatch) -> None:
     ctx, state = case_ctx(tmp_path, fakes.double_well())
     state = act(ctx, state, Action.FIND_PATH)
     seeds, n_freq, logged = state.seeds, ctx.rt.qm.calls.count("frequencies"), []
@@ -193,7 +194,7 @@ def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path) -> None:
     assert ctx.rt.qm.calls[-2:] == ["optimize+init_hessian"] * 2  # both sides: the TS Hessian
     state = act(ctx, replace(state, connection=None), Action.CONNECT)  # 2nd amplitude: × 2
     assert ctx.work.connection.amplitude_A == pytest.approx(2 * claim.amplitude_A)
-    ctx.policy = replace(ctx.policy, qrc_bounds_A=(0.03, 0.05))  # the first one is capped
+    monkeypatch.setattr(actions, "BOUNDS_A", (0.03, 0.05))  # the first one is capped
     state, amplitudes = replace(state, connection_attempts=0), []
     for _ in range(2):  # C19: × 2, then clipped, so the 2nd amplitude equals the 1st
         state = act(ctx, replace(state, connection=None), Action.CONNECT)
@@ -215,8 +216,8 @@ def test_a_higher_order_saddle_is_pushed_once_and_refined_from_its_ts_hessian(tm
     assert seed.hessian.task == "freq" and seed.tangent == seed.hessian.imaginary_modes[0]
     push = (ctx.coords(seed.geometry) - x).ravel()  # H along y: the second mode
     assert np.flatnonzero(np.abs(push) > 1e-9).tolist() == [4]
-    assert ctx.policy.qrc_bounds_A[0] < abs(push[4]) < ctx.policy.qrc_bounds_A[1]
-    decision = decide(ctx.case, state, ctx.policy)
+    assert BOUNDS_A[0] < abs(push[4]) < BOUNDS_A[1]
+    decision = decide(ctx.case, state, ctx.rules)
     assert decision == Decision(Action.REFINE_SADDLE, "seed:higher_order_retry")
     logged, jobs = [], (ctx.rt.qm.calls.count("frequencies"), len(ctx.rt.screen_qm.calls))
     ctx.log = logged.append
@@ -237,24 +238,24 @@ def test_a_stalled_saddle_restarts_once_from_its_last_frame(tmp_path) -> None:
     assert (restart.source, state.saddle_attempts, state.last_saddle) == (
         "saddle_restart", 1, "failed")
     assert np.allclose(ctx.coords(restart.geometry), ctx.rt.qm.pes.points["ts"] + 0.01)
-    decision = decide(ctx.case, state, ctx.policy)
+    decision = decide(ctx.case, state, ctx.rules)
     assert decision == Decision(Action.REFINE_SADDLE, "seed:saddle_restart")
     xtb = ctx.rt.screen_qm.calls.count("frequencies")
     state = act(ctx, state, Action.REFINE_SADDLE)  # an xTB Hessian at the last frame
     assert ctx.rt.screen_qm.calls.count("frequencies") == xtb + 1
     assert not state.seeds and state.saddle_attempts == 2  # restarted once only
-    assert decide(ctx.case, state, ctx.policy) == Decision(Action.FIND_PATH, "no_dft_path")
+    assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "no_dft_path")
     root = tmp_path / "b"
     ctx, state = case_ctx(root, fakes.double_well(), saddle=FailingSaddle(root, None))
     ts = fakes.write_geometry(root, "ts.xyz", ("N", "H", "O"), ctx.rt.qm.pes.points["ts"])
     state = act(ctx, replace(state, seeds=(Seed(ts, "discovery_ts", None),)),
                 Action.REFINE_SADDLE)
     assert not state.seeds
-    assert decide(ctx.case, state, ctx.policy) == Decision(Action.FIND_PATH, "no_dft_path")
+    assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "no_dft_path")
 
 
 def test_a_collapsed_saddle_or_a_failed_soft_ts_is_validated_once(tmp_path) -> None:
-    """U6-P6: VALIDATE_INTERMEDIATE consumes its trigger, so row 8 fires only for a new saddle
+    """U6-P6: VALIDATE_INTERMEDIATE consumes its trigger, so row 11 fires only for a new saddle
     (also after an earlier well was an endpoint)."""
     ctx, state = case_ctx(tmp_path, fakes.double_well())
     state = replace(act(ctx, state, Action.FIND_PATH), seeds=(), saddle_attempts=1)
@@ -265,11 +266,11 @@ def test_a_collapsed_saddle_or_a_failed_soft_ts_is_validated_once(tmp_path) -> N
                     {"ts_check": "ok", "claim": soft, "connection": "failed",
                      "connection_attempts": 2}):
         s = replace(state, last_saddle="converged", intermediate="same_as_endpoint", **trigger)
-        assert decide(ctx.case, s, ctx.policy) == collapsed
+        assert decide(ctx.case, s, ctx.rules) == collapsed
         s = act(ctx, s, Action.VALIDATE_INTERMEDIATE, "saddle_collapsed")
         assert (s.intermediate, s.ts_check, s.last_saddle, s.claim, s.connection) == (
             "same_as_endpoint", None, None, None, None)
-        assert decide(ctx.case, s, ctx.policy) == Decision(Action.FIND_PATH, "next_chunk")
+        assert decide(ctx.case, s, ctx.rules) == Decision(Action.FIND_PATH, "next_chunk")
 
 
 def test_reaction_direction_is_a_low_level_mode_the_reaction_centre_or_a_torsion(tmp_path):
@@ -321,7 +322,7 @@ def test_screen_takes_dft_energies_inside_the_neb_between_the_dft_minima(tmp_pat
     ctx.log = logged.append
     state = act(ctx, state, Action.SCREEN)
     assert ctx.rt.screen_path.calls == [f"find_path:{(*neb, 'pes')[0]}"]
-    assert ctx.rt.qm.calls.count("energy") == energy + ctx.policy.screen_images - 2
+    assert ctx.rt.qm.calls.count("energy") == energy + SCREEN_IMAGES - 2
     assert ctx.rt.qm.calls.count("frequencies") == freq
     assert state.screen.verdict == "single" and [s.source for s in state.seeds] == [seed]
     frames = ctx.work.path.frames
@@ -333,19 +334,19 @@ def test_screen_closes_a_barrierless_case_between_the_dft_minima(tmp_path) -> No
     ctx, state = case_ctx(tmp_path, fakes.flat_uphill())
     state = act(ctx, state, Action.SCREEN)
     assert state.screen.verdict == "barrierless" and state.screen.max_node_spacing_A > 0
-    assert decide(ctx.case, state, ctx.policy).reason == "screen:barrierless"
+    assert decide(ctx.case, state, ctx.rules).reason == "screen:barrierless"
 
 
 def test_screen_finds_the_intermediate_of_a_two_step_path(tmp_path) -> None:
     ctx, state = case_ctx(tmp_path, fakes.triple_well())
     state = act(ctx, state, Action.SCREEN)
     assert state.screen.verdict == "intermediate" and not state.seeds
-    decision = decide(ctx.case, state, ctx.policy)
+    decision = decide(ctx.case, state, ctx.rules)
     assert decision == Decision(Action.VALIDATE_INTERMEDIATE, "path_intermediate")
     state = HANDLERS[decision.action](ctx, state, decision)
     record, _ = ctx.work.intermediate
     assert state.intermediate == "distinct" and record.minimum_id not in ctx.case.minima
-    assert decide(ctx.case, state, ctx.policy).reason == "intermediate_distinct"
+    assert decide(ctx.case, state, ctx.rules).reason == "intermediate_distinct"
 
 
 @pytest.mark.parametrize("kcal,verdict,seeds", [
@@ -365,4 +366,4 @@ def test_a_well_that_is_an_endpoint_leaves_its_peak_once(tmp_path, kcal, verdict
         x = ctx.coords(state.seeds[0].geometry)
         assert np.allclose(x, frames[5] + 0.25 * (frames[6] - frames[5]), atol=1e-4)
         state = act(ctx, state, Action.REFINE_SADDLE)  # U6-P6: its failure adds no seed again
-        assert decide(ctx.case, state, ctx.policy) == Decision(Action.FIND_PATH, "next_chunk")
+        assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "next_chunk")

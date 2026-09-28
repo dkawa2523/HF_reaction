@@ -1,19 +1,21 @@
-"""Thermochemistry arithmetic (design §8.2 thermo): the frequencies GoodVibes gets, composite
-G, the optical isomer term, standard states, ensembles, association, reaction deltas and the
+"""Thermochemistry (design §8.2 thermo): GoodVibes in this process, the frequencies it gets,
+the optical isomer term, standard states, ensembles, association, reaction deltas and the
 ranking quantity dG_eff.
 
-Pure functions. Energies are in Hartree unless a name ends in ``_kcal``; free energies of
-single species are gas-phase 1 atm values (GoodVibes' default reference) and are moved to
-other standard states only through ``standard_state_shift``.
+Energies are in Hartree unless a name ends in ``_kcal``; free energies of single species are
+gas-phase 1 atm values (GoodVibes' default reference) and are moved to other standard states
+only through ``standard_state_shift``.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Literal
+from typing import Literal, NamedTuple
 
-from hfauto.chemistry.xyz import hill_formula
+from hfauto.chemistry.elements import atomic_number, mass
+from hfauto.chemistry.vibrations import rotational_constants_ghz
+from hfauto.chemistry.xyz import XYZ, hill_formula
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
 from hfauto.core.hashing import fingerprint_dict
 from hfauto.core.method import ThermoSettings
@@ -24,6 +26,8 @@ StandardState = Literal["1atm", "1bar", "1M"]
 State = tuple[str, str]  # (composition_id, state_label)
 Monomers = dict[tuple[str, int], list[tuple[State, int]]]  # complex (Hill, charge) -> parts
 
+GOODVIBES_VERSION = "4.3.0"  # species_thermo is validated against it (tests/golden, G06)
+_K_PER_GHZ = 0.0479924307  # h / k_B in K per GHz (CODATA 2018)
 _L_ATM_PER_MOL_K = 0.082057366080960  # gas constant in L atm / (mol K), CODATA 2018
 _ATM_PER_BAR = 1.0 / 1.01325
 _TS_OUTCOMES = frozenset(
@@ -36,6 +40,45 @@ def thermo_frequencies(freqs_cm1: Sequence[float], *, saddle: bool) -> tuple[flo
     drops its lowest mode (the reaction coordinate) and keeps the others as |nu|."""
     modes = sorted(freqs_cm1)[1:] if saddle else freqs_cm1
     return tuple(sorted(abs(nu) for nu in modes))
+
+
+class Thermal(NamedTuple):
+    """Thermal terms of one species above its electronic energy (Hartree)."""
+
+    G: float  # H - T S, S with the quasi-RRHO vibrational entropy of the settings
+    H: float
+    zpe: float
+
+
+def species_thermo(xyz: XYZ, frequencies_cm1: Sequence[float], *, saddle: bool,
+                   multiplicity: int, settings: ThermoSettings, T: float) -> Thermal:
+    """GoodVibes (``compute_thermo``) in this process for an ideal gas at 1 atm: QH=False (H is
+    RRHO), the vibrational entropy of ``settings.qs`` with ``settings.cutoff_cm1``, vib_scale
+    on the modes and the ZPE, sigma from pymsym (symm=True) and S_el = R ln(2S+1).
+
+    The modes are ``thermo_frequencies``; the mass and the rotational temperatures come from
+    the geometry, and a vanishing moment of inertia marks a linear molecule. calc_bbe reads
+    ``zero_point_corr`` only as a gate (None: nothing computed) and as the monatomic test
+    (== 0.0), and computes nothing from an empty rotemp, so an atom gets 0.0 and a dummy [0.0].
+    ``file`` stays "" (no such path), so calc_bbe never parses a file.
+    """
+    from goodvibes.api import compute_thermo
+    from goodvibes.io import QCData
+
+    symbols = list(xyz.symbols)
+    constants = [b for b in rotational_constants_ghz(symbols, xyz.coords) if b > 0.0]
+    qcdata = QCData(
+        scf_energy=0.0, multiplicity=multiplicity, atom_types=symbols,
+        atom_nums=[atomic_number(s) for s in symbols], cartesians=xyz.coords.tolist(),
+        frequency_wn=list(thermo_frequencies(frequencies_cm1, saddle=saddle)),
+        linear_mol=len(constants) == 2, molecular_mass=sum(mass(s) for s in symbols),
+        rotemp=[b * _K_PER_GHZ for b in constants] or [0.0],
+        zero_point_corr=0.0 if len(symbols) == 1 else 1.0,
+    )
+    r = compute_thermo(qcdata=qcdata, QS=settings.qs, s_freq_cutoff=settings.cutoff_cm1,
+                       temperature=T, freq_scale_factor=settings.vib_scale,
+                       zpe_scale_factor=settings.vib_scale, symm=True)
+    return Thermal(G=r.qh_gibbs_free_energy, H=r.enthalpy, zpe=r.zpe)
 
 
 def monomer_states(species: Iterable[SpeciesRecord],
@@ -54,13 +97,8 @@ def monomer_states(species: Iterable[SpeciesRecord],
 
 
 def settings_sha(settings: ThermoSettings) -> str:
-    """ThermoResult.settings_sha / SpeciesThermo.settings_sha of settings as passed."""
+    """SpeciesThermo.settings_sha of settings as passed."""
     return fingerprint_dict(settings.model_dump(mode="json"))
-
-
-def composite(E_sp: float, G_gv: float, E_gv: float) -> float:
-    """G = E_SP + (G_GV - E_GV): the thermal correction moved onto the energy layer."""
-    return E_sp + (G_gv - E_gv)
 
 
 def standard_state_shift(dn: float, T: float, to: StandardState) -> float:

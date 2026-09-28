@@ -39,7 +39,7 @@ class ReaDuctEngine:
             python_modules=("scine_readuct", "scine_utilities", "scine_xtb_wrapper"))
 
     def supports(self, method: MethodSpec) -> bool:
-        return method.kind == "xtb" and method.gfn is not None and method.solvation is None
+        return method.kind == "xtb" and method.gfn is not None
 
     def explore(self, source: Molecule, trial: ReactionTrial, method: MethodSpec,
                 settings: DiscoverySettings, *,

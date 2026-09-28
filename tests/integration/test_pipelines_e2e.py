@@ -11,13 +11,13 @@ from scipy.spatial.distance import pdist
 from typer.testing import CliRunner
 
 from hfauto.backends.protocols import Capability as Cap
-from hfauto.backends.protocols import ConformerEnsemble, DiscoveryResult, ThermoResult
-from hfauto.chemistry.gates import zpe_hartree
-from hfauto.chemistry.thermo import settings_sha, thermo_frequencies
+from hfauto.backends.protocols import ConformerEnsemble, DiscoveryResult
+from hfauto.chemistry import thermo
 from hfauto.cli.main import app
 from hfauto.core import records as R
 from hfauto.core.evidence import Evidence
 from hfauto.core.manifest import load_manifest
+from hfauto.pipeline import preflight
 from hfauto.pipeline.config import load
 from hfauto.pipeline.layout import RunLayout
 from hfauto.pipeline.runner import run_pipeline
@@ -52,22 +52,15 @@ def pipeline(tmp_path, tmp_run, override_engine, monkeypatch):
             ts=geo["ts"] if ok else None, ts_imag_cm1=-1e3, dE_act_kcal=7.2,
             dE_rxn_kcal=2.4, irc_connected_to_source=ok, electronic_temperature_K=300.0)
 
-    def goodvibes(freq, settings, temperatures, saddle):  # consistent: G = E + scaled ZPE
-        e, nu = freq.energy_hartree, thermo_frequencies(freq.frequencies_cm1, saddle=saddle)
-        z = zpe_hartree(nu, scale=settings[0].vib_scale)
-        return [ThermoResult(settings_sha=settings_sha(s), T_K=t, E_hartree=e, H_hartree=e,
-                             G_hartree=e + z, zpe_hartree=z, S_rot=1.0, notes=(), job_key="gv",
-                             n_real=sum(f > 0 for f in nu))
-                for s in settings for t in temperatures]
-
     qm, path, saddle = (c(tmp_run, pes) for c in (fakes.FakeQM, fakes.FakePath, fakes.FakeSaddle))
     fake = {(Cap.QM, "nwchem"): qm, (Cap.QM, "xtb"): qm, (Cap.SADDLE, "nwchem_saddle"): saddle,
             (Cap.PATH, "nwchem_string"): path, (Cap.PATH, "pysis_neb"): path,
             (Cap.CONFORMERS, "crest"): fakes.FakeConformers(search),
-            (Cap.DISCOVERY, "readuct"): fakes.FakeDiscovery(explore),
-            (Cap.THERMO, "goodvibes"): fakes.FakeThermo(goodvibes)}
+            (Cap.DISCOVERY, "readuct"): fakes.FakeDiscovery(explore)}
     for (capability, name), engine in fake.items():
         override_engine(capability, name, engine)
+    monkeypatch.setattr(thermo, "species_thermo", fakes.fake_species_thermo)
+    monkeypatch.setattr(preflight, "goodvibes_problems", lambda pipeline: [])
     ends = [{"id": n, "xyz": f"run/in/{n}.xyz", "role": "endpoint"}
             for n in ("reactant", "product")]
     cfg = {"system": {"system_id": "dw", "species": [*ends, {"id": "hf", "xyz": "run/in/hf.xyz"}],

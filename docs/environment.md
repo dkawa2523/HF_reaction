@@ -13,8 +13,8 @@
 | CREST | 3.0.x(3.0.2) | 公式バイナリを `/home/user/.local/opt/crest-3.0.2` に置く | `crest --version`(doctor) |
 | pysisyphus | 1.0(1.0.0) | production extra(`pysisyphus>=1.0,<2`)。xTB ネイティブ計算器の CI-NEB だけに使う。site のエンジン名は `pysis_neb`(S-B で growing string から CI-NEB に替えて改名。古い site・pipeline ファイルはエンジンのキーを書き換える) | worker の import(doctor)。site の pin は xTB の版数 |
 | SCINE ReaDuct | 6.1.0(scine-xtb-wrapper 3.0.2) | production extra | worker の import(doctor) |
-| GoodVibes | 4.3.0 | production extra。API(`goodvibes.api.compute_thermo`)を worker で呼ぶ | `goodvibes.__version__`(doctor) |
-| pymsym | 0.3.5 | production extra。GoodVibes の対称数に使う | worker の import(doctor) |
+| GoodVibes | 4.3.0 | production extra。thermo stage が同じプロセスで呼ぶ(ジョブにしない)。S-D で worker と site の `goodvibes` 項目、pipeline の thermo の `engine: goodvibes` を削除したので、古い site・pipeline ファイルからはこの項目を消す | preflight が `importlib.metadata.version('goodvibes')` を pin(4.3.0)と照合 |
+| pymsym | 0.3.5 | production extra。GoodVibes の対称数に使う | GoodVibes と同じプロセスで import される |
 
 production extra(`pyproject.toml`)は Linux / CPython 3.12 のときだけ入る。ほかに rdkit、numba、llvmlite と、scine_utilities が宣言せずに使う setuptools を含む。本体の依存は pydantic、typer、PyYAML、rich、numpy、scipy だけである。
 
@@ -42,7 +42,9 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 | run ディレクトリ | `--run-dir` で ext4 上に置く(例: `/home/user/hfauto_v2/<run>`)。省略するとリポジトリ内の `runs/<system_id>_<pipeline_id>` になり、過去の run と混ざる |
 | スレッド | NWChem は `OMP_NUM_THREADS=1`(MPI rank で並列化)、xTB・CREST・ReaDuct は `OMP_NUM_THREADS=<n>,1` と `OMP_STACKSIZE=4G`。アダプタが設定する。CREST のスレッド数(`-T` と OMP)は site の `engines.crest.execution.threads` だけから決まる(省くと既定の 1 で `-T 1`) |
 | メモリ | 1 rank あたり 1,000〜1,500 MB、ranks × memory の合計を MemTotal の 0.8 倍以下にする。`configs/sites/wsl_local.yaml` の NWChem は 4 rank × 1,200 MB、timeout 14,400 s |
-| コア数 | `JobRunner` のセマフォで、実行中のジョブの ranks × threads の合計を `cores` 以下に保つ。極小(xTB と DFT)と反応ケースは直列、CREST と GoodVibes だけが並列 |
+| コア数 | `JobRunner` のセマフォで、実行中のジョブの ranks × threads の合計を `cores` 以下に保つ。極小(xTB と DFT)と反応ケースは直列、CREST と explore の単位だけが並列 |
+| 系のサイズ | 4 コア・def2-SVPD では、解析 freq(N·nbf^2.8 に比例。15 原子で約 11 分、40 原子で約 6 h)が約 35 原子でジョブの timeout(4 h)に達する。freq には途中継続がなく timeout で全損するので、大きな系は ranks を増やす |
+| シグナル | `hfauto run` は SIGTERM・SIGHUP を受けると、実行中の外部プログラム(NWChem の MPI ランクを含むプロセスグループ)を止めて終了コード 128 + signum で終わる。実行中の stage は failed になり、止めたジョブは再開時に取り直す。孤児を片づける pgrep・pkill は要らない。SIGKILL は捕まえられないので、`timeout` は既定の SIGTERM のまま使い(`-s KILL` にしない)、スケジューラの SIGTERM から SIGKILL までの猶予(Slurm の KillWait)は数秒以上にする |
 | SiteLock | `hfauto run` は実行中ずっと `<scratch_root>/.hfauto_site.lock`(ここでは /home/user/hfauto_scratch の下)を保持する。別の run は保持者(pid、run ディレクトリ、時刻)を示して直ちに失敗する。pid が死んでいるロックは奪う |
 
 `.wslconfig` を 16 vCPU / 48 GB に広げた場合の site の値(cores 16、NWChem 16 rank × 2,000 MB など)は `configs/sites/wsl_local.yaml` のコメントにある。
@@ -51,7 +53,7 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 
 ### Windows の QA 用 venv
 
-`.venv-win-qa`(Python 3.12)には dev と chem(rdkit)の extra だけを入れ、production extra は入らない(Linux 専用)。既定の `pytest` は `-m 'not real'` で、unit、golden(実出力の抜粋)、integration(fake エンジンで stage をつなぐ)だけが動く。pysisyphus、SCINE、GoodVibes と外部プログラムを要するのは `tests/smoke/` だけである。rdkit がない環境では SMILES のテストが `importorskip` で飛ばされる。
+`.venv-win-qa`(Python 3.12)には dev と chem(rdkit)の extra だけを入れ、production extra は入らない(Linux 専用)。既定の `pytest` は `-m 'not real'` で、unit、golden(実出力の抜粋)、integration(fake エンジンで stage をつなぐ)だけが動く。pysisyphus、SCINE と外部プログラムを要するのは `tests/smoke/` だけで、GoodVibes の golden テスト(同じプロセスで呼ぶ)は GoodVibes のない環境では飛ばされる。rdkit がない環境では SMILES のテストが `importorskip` で飛ばされる。
 
 ```bash
 .venv-win-qa/Scripts/python.exe -m pytest -q -p no:cacheprovider

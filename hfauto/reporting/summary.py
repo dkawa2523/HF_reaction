@@ -116,7 +116,7 @@ def coverage(
 
 def _label(level: Level) -> str:
     parts = (level.program, level.version, level.method, level.basis, level.dispersion)
-    text = " ".join(p for p in (*parts, level.solvation, level.grid) if p)
+    text = " ".join(p for p in (*parts, level.grid) if p)
     return text if level.scf_tol is None else f"{text} scf={level.scf_tol:g}"
 
 

@@ -18,10 +18,12 @@ from scipy.spatial.distance import pdist
 
 from hfauto.backends import protocols as bp
 from hfauto.chemistry.profile import hei
+from hfauto.chemistry.thermo import Thermal, thermo_frequencies
 from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian, to_canonical_npy
 from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz, write_xyz
 from hfauto.chemistry.xyz_trajectory import read_xyz_trajectory, write_xyz_trajectory
 from hfauto.core.constants import BOHR_TO_ANGSTROM as BOHR
+from hfauto.core.constants import CM1_TO_HARTREE
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry, Level, PathProfile
 from hfauto.core.evidence import FailureKind as Kind
 from hfauto.core.hashing import sha256_file
@@ -121,7 +123,7 @@ def xyz_loader(root: Path) -> Callable[[Geometry], XYZ]:
 
 
 def fake_level(method: MethodSpec, mol: Molecule) -> Level:
-    same = method.model_dump(include={"basis", "dispersion", "solvation", "grid",
+    same = method.model_dump(include={"basis", "dispersion", "grid",
                                       "electronic_temperature_K"})
     return Level(program="fake", version="0", charge=mol.charge, multiplicity=mol.multiplicity,
                  method=method.functional or method.wft_method or f"gfn{method.gfn}",
@@ -335,7 +337,10 @@ class FakeDiscovery(_Scripted):
         return self._next(source, trial, method, settings)
 
 
-class FakeThermo(_Scripted):
-    def thermo(self, freq, settings, *, temperatures_K, saddle=False, deadline=None
-               ) -> list[bp.ThermoResult] | Failure:
-        return self._next(freq, settings, temperatures_K, saddle)
+def fake_species_thermo(xyz, frequencies_cm1, *, saddle, multiplicity, settings, T
+                        ) -> Thermal:
+    """chemistry.thermo.species_thermo without GoodVibes (monkeypatch it in): H = ZPE and
+    G = ZPE - 1e-6 Eh x cutoff x n_modes, so the cutoff variants spread the band."""
+    modes = thermo_frequencies(frequencies_cm1, saddle=saddle)
+    zpe = 0.5 * settings.vib_scale * sum(modes) * CM1_TO_HARTREE
+    return Thermal(G=zpe - 1e-6 * settings.cutoff_cm1 * len(modes), H=zpe, zpe=zpe)

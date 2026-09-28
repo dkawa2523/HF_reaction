@@ -19,7 +19,6 @@ def test_standard_states_ensembles_and_association():
         (-10.0, 5.0))
     assert th.association(bound, None, [-1.5], [2], 298.15, "1M")[0] == pytest.approx(
         -10.0 - 1.894, abs=1e-3)  # dn = 1 - 2
-    assert th.composite(-2.0, -0.95, -1.0) == pytest.approx(-1.95)
 
 
 @pytest.mark.parametrize(("G_ts", "G_P", "expected"), [

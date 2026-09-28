@@ -28,7 +28,7 @@ from hfauto.core.records import (
 )
 from hfauto.drivers.minimum import Registry
 from hfauto.drivers.reaction_case import actions
-from hfauto.drivers.reaction_case.state import CasePolicy, CaseState, decide
+from hfauto.drivers.reaction_case.state import CaseRules, CaseState, decide
 
 if TYPE_CHECKING:
     from hfauto.backends.protocols import PathEngine, QMEngine, SaddleRefiner
@@ -50,7 +50,6 @@ class CaseRuntime:
     load_xyz: Callable[[Geometry], XYZ]
     file_ref: Callable[[Path], FileRef]
     case_dir: Path  # cases/; each case writes below case_dir/<reaction_id>
-    deadline: Callable[[float], Deadline]
     resolve: Callable[[FileRef], Path]
     minima: dict[str, tuple[MinimumRecord, Geometry]]
     species: dict[str, SpeciesRecord]
@@ -73,13 +72,13 @@ def _endpoint(rt: CaseRuntime, minimum_id: str, species_id: str) -> np.ndarray:
     return basin_coords(xyz.symbols, xyz.coords, own.coords)
 
 
-def open_case(case: ReactionRecord, rt: CaseRuntime, policy: CasePolicy, deadline: Deadline,
+def open_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline: Deadline,
               folder: Path, log: Callable[[dict[str, object]], None]) -> actions.Ctx:
     raw = (_endpoint(rt, case.minima[0], case.endpoints[0]),
            _endpoint(rt, case.minima[1], case.endpoints[1]))
     first = rt.species[case.endpoints[0]]
     return actions.Ctx(
-        case=case, rt=rt, policy=policy, deadline=deadline, folder=folder,
+        case=case, rt=rt, rules=rules, deadline=deadline, folder=folder,
         symbols=list(first.geometry.symbols), charge=first.charge,
         multiplicity=first.multiplicity, raw=raw, ends=(raw[0], align_mapped(raw[0], raw[1])),
         energies=(rt.minima[case.minima[0]][0].energy_hartree,
@@ -100,9 +99,10 @@ def _artifacts(record: ReactionRecord, work: actions.Work) -> tuple[Artifact, ..
     return tuple(out)
 
 
-def drive_case(case: ReactionRecord, rt: CaseRuntime, policy: CasePolicy) -> CaseResult:
-    """Loop decide → action; a re-run replays finished jobs from the JobStore."""
-    deadline = rt.deadline(policy.walltime_s)
+def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline: Deadline
+               ) -> CaseResult:
+    """Loop decide → action until ``deadline`` (the hypothesis', shared by its split children);
+    a re-run replays finished jobs from the JobStore."""
     folder = rt.case_dir / path_token(case.reaction_id)
     folder.mkdir(parents=True, exist_ok=True)
     log_path = folder / "log.jsonl"
@@ -117,12 +117,12 @@ def drive_case(case: ReactionRecord, rt: CaseRuntime, policy: CasePolicy) -> Cas
     ctx: actions.Ctx | None = None
     while True:
         state = replace(state, expired=deadline.expired())
-        decision = decide(case, state, policy)
+        decision = decide(case, state, rules)
         log({"action": decision.action.value, "reason": decision.reason,
              "outcome": decision.outcome.value if decision.outcome else None})
         if decision.outcome is not None:
             break
-        ctx = ctx or open_case(case, rt, policy, deadline, folder, log)
+        ctx = ctx or open_case(case, rt, rules, deadline, folder, log)
         state = actions.HANDLERS[decision.action](ctx, state, decision)
     work = ctx.work if ctx is not None else actions.Work()
     record = finalize(case, decision, barrier=state.screen, claim=state.claim,

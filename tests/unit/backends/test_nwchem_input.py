@@ -12,7 +12,7 @@ WATER = Molecule(XYZ(["O", "H", "H"], np.array([[0, 0, 0.1173], [0, 0.7572, -0.4
                                                 [0, -0.7572, -0.4692]])), 0, 1)
 PBE0 = MethodSpec(id="pbe0", kind="dft", functional="PBE0", basis="def2-SVPD",
                   dispersion="d3bj", grid="fine", scf_energy_tol=1e-7)
-MP2 = MethodSpec(id="mp2", kind="wft", wft_method="mp2", basis="def2-svp")
+CCSD_T = MethodSpec(id="ccsd-t", kind="wft", wft_method="ccsd(t)", basis="def2-svp")
 
 
 def test_opt_and_saddle_never_compute_hessians():
@@ -47,7 +47,7 @@ def test_string_keywords():
     assert "xyz_path" not in nw.render_string(WATER, WATER, PBE0, nbeads=9)
 
 
-def test_charge_multiplicity_dispersion_solvation_and_frame():
+def test_charge_multiplicity_dispersion_and_frame():
     closed = nw.render_energy(WATER, PBE0)
     for key in ("charge 0", "mult 1", "disp vdw 4", "basis spherical", "* library def2-SVPD",
                 "xc pbe0", "grid fine", "convergence energy 1.0e-07", "iterations 100",
@@ -57,26 +57,24 @@ def test_charge_multiplicity_dispersion_solvation_and_frame():
     assert "cgmin" not in closed
     default_tol = nw.render_frequencies(WATER, PBE0.model_copy(update={"scf_energy_tol": None}))
     assert "convergence energy 1.0e-07" in default_tol  # opt and freq share numerics
-    other = PBE0.model_copy(update={"dispersion": "d3zero", "solvation": "cosmo:78.4"})
+    other = PBE0.model_copy(update={"dispersion": "d3zero"})
     setup = nw.Setup(cartesian=True, scratch_dir="/scr/job", restart_vectors=True,
                      scf_rescue=True)
     cation = nw.render_energy(Molecule(WATER.xyz, 1, 2), other, setup)
-    for key in ("charge 1", "mult 2", "odft", "disp vdw 3", "dielec 78.4", "noautoz",
+    for key in ("charge 1", "mult 2", "odft", "disp vdw 3", "noautoz",
                 "scratch_dir /scr/job", "vectors input job.movecs\n  cgmin\nend"):
         assert key in cation
     for deck in (nw.render_optimize(WATER, PBE0), nw.render_saddle(WATER, PBE0),
                  nw.render_frequencies(WATER, PBE0),
                  nw.render_string(WATER, WATER, PBE0, nbeads=5)):
         assert "\n  iterations 100\n" in deck
-    for deck in (closed, cation, nw.render_wft(WATER, MP2), nw.render_saddle(WATER, PBE0)):
+    for deck in (closed, cation, nw.render_wft(WATER, CCSD_T), nw.render_saddle(WATER, PBE0)):
         assert "units angstrom nocenter noautosym" in deck
-    with pytest.raises(ValueError):
-        nw.render_energy(WATER, PBE0.model_copy(update={"dispersion": "d4"}))
 
 
 def test_def2_writes_one_ecp_line_per_element_beyond_kr():
     ch3i = Molecule(XYZ(["C", "I", "H", "H", "H"], np.zeros((5, 3))), 0, 1)
-    ccsd_t = MP2.model_copy(update={"wft_method": "ccsd(t)", "basis": "def2-tzvpd"})
+    ccsd_t = CCSD_T.model_copy(update={"basis": "def2-tzvpd"})
     for deck in (nw.render_energy(ch3i, PBE0), nw.render_wft(ch3i, ccsd_t),
                  nw.render_string(ch3i, ch3i, PBE0, nbeads=5)):
         assert "end\necp\n  I library def2-ecp\nend" in deck and "* library def2-ecp" not in deck
@@ -87,13 +85,10 @@ def test_def2_writes_one_ecp_line_per_element_beyond_kr():
         nw.render_wft(ch3i, ccsd_t.model_copy(update={"basis": "cc-pVDZ"}))
 
 
-def test_wft_single_points_and_hess_round_trip(tmp_path):
-    mp2 = nw.render_wft(WATER, MP2)
-    assert "task mp2 energy" in mp2 and "freeze atomic" in mp2 and "dft" not in mp2
-    assert "scf\n  maxiter 100\nend" in mp2
-    ccsd_t = MP2.model_copy(update={"wft_method": "ccsd(t)"})
-    ccsd = nw.render_wft(WATER, ccsd_t, nw.Setup(restart_vectors=True))
-    assert "task ccsd(t) energy" in ccsd and "ccsd\n  freeze atomic\n  maxiter 50\nend" in ccsd
+def test_ccsd_t_single_point_and_hess_round_trip(tmp_path):
+    assert "scf\n  maxiter 100\nend" in nw.render_wft(WATER, CCSD_T)
+    ccsd = nw.render_wft(WATER, CCSD_T, nw.Setup(restart_vectors=True))
+    assert "task ccsd(t) energy" in ccsd and "dft" not in ccsd and "ccsd\n  freeze atomic\n  maxiter 50\nend" in ccsd
     assert "scf\n  maxiter 100\n  vectors input job.movecs\nend" in ccsd
     assert "nopen" not in ccsd and "rohf" not in ccsd and "tce" not in ccsd
     h = np.arange(81.0).reshape(9, 9) * 1e-3
@@ -104,7 +99,7 @@ def test_wft_single_points_and_hess_round_trip(tmp_path):
 @pytest.mark.parametrize(("multiplicity", "nopen"), [(2, 1), (3, 2)])
 def test_open_shell_ccsd_t_is_rohf_through_the_tce(multiplicity, nopen):
     radical = Molecule(WATER.xyz, 1, multiplicity)
-    deck = nw.render_wft(radical, MP2.model_copy(update={"wft_method": "ccsd(t)"}))
+    deck = nw.render_wft(radical, CCSD_T)
     assert f"scf\n  rohf\n  nopen {nopen}\n  maxiter 100\nend" in deck
     assert "tce\n  2eorb\n  2emet 13\n  ccsd(t)\n  freeze atomic\nend" in deck
     assert deck.rstrip().endswith("task tce energy") and "\nccsd\n" not in deck

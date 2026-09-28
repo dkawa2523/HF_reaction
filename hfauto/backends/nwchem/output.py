@@ -1,9 +1,8 @@
 """NWChem output parsing (design §5.1, §6.3): pure functions over the output text and the
 files a job leaves in its permanent directory.
 
-The Level is observed, never assumed: version, xc functional or wave-function method,
-basis (``/cart`` when cartesian), DFT-D3 variant, COSMO dielectric, grid, SCF energy
-tolerance, charge and multiplicity. Frequencies are never taken from the text for
+The Level is observed, never assumed: version, xc functional or CCSD(T), basis (``/cart``
+when cartesian), DFT-D3 variant, grid, SCF energy tolerance, charge and multiplicity. Frequencies are never taken from the text for
 decisions; the ``.hess`` file is converted to the canonical ``.npy`` instead.
 """
 
@@ -35,10 +34,8 @@ _BASIS = re.compile(
 _AUTOZ = re.compile(r"AUTOZ failed|regeneration of autoz failed")
 _SCF = re.compile(r"Calculation failed to converge|SCF not converged")
 _GEOMETRY_MAXITER = re.compile("Failed to converge in maximum number of steps")
-_WFT_ENERGY = {  # the ccsd module (RHF) or the TCE (ROHF)
-    "ccsd(t)": r"(?:Total CCSD\(T\) energy:|CCSD\(T\) total energy / hartree\s+=)\s+(\S+)",
-    "mp2": r"Total MP2 energy:?\s+(\S+)",
-}
+# the ccsd module (RHF) or the TCE (ROHF)
+_CCSD_T = r"(?:Total CCSD\(T\) energy:|CCSD\(T\) total energy / hartree\s+=)\s+(\S+)"
 
 
 def _number(token: str) -> float:
@@ -53,11 +50,6 @@ def _last(pattern: str, text: str) -> str | None:
 
 def version(text: str) -> str | None:
     return _last(r"Northwest Computational Chemistry Package \(NWChem\)\s+(\S+)", text)
-
-
-def wft_method(text: str) -> str | None:
-    """"ccsd(t)" or "mp2" when the job reported a correlated wave-function energy."""
-    return next((m for m, p in _WFT_ENERGY.items() if re.search(p, text, re.MULTILINE)), None)
 
 
 def basis(text: str) -> str | None:
@@ -85,39 +77,36 @@ def _dft_level(text: str, observed_version: str) -> Level | None:
     if xc is None or charge is None or multiplicity is None:
         return None
     tol = _last(r"Convergence on energy requested:\s+(\S+)", text)
-    eps = _last(r"^\s*dielec:\s+(\S+)", text)
     return Level(
         program="nwchem", version=observed_version, method=xc.lower(), basis=basis(text),
-        dispersion=_dispersion(text, xc.lower()),
-        solvation=None if eps is None else f"cosmo:{_number(eps):g}",
-        charge=int(charge), multiplicity=int(multiplicity),
+        dispersion=_dispersion(text, xc.lower()), charge=int(charge), multiplicity=int(multiplicity),
         grid=_last(r"Grid used for XC integration:\s+(\S+)", text),
         scf_tol=None if tol is None else _number(tol),
     )
 
 
-def _wft_level(text: str, observed_version: str, method: str) -> Level | None:
+def _ccsd_t_level(text: str, observed_version: str) -> Level | None:
     charge = _last(r"^\s*charge\s+=\s+(\S+)", text)
     open_shells = _last(r"^\s*open shells\s+=\s+(\d+)", text)
     if charge is None or open_shells is None:
         return None
-    return Level(program="nwchem", version=observed_version, method=method, basis=basis(text),
+    return Level(program="nwchem", version=observed_version, method="ccsd(t)", basis=basis(text),
                  charge=round(_number(charge)), multiplicity=int(open_shells) + 1)
 
 
 def observe_level(text: str) -> Level | None:
     """The Level the output reports, or None when a required field is missing."""
-    observed_version, wft = version(text), wft_method(text)
+    observed_version = version(text)
     if observed_version is None:
         return None
-    if wft is None:
+    if _last(_CCSD_T, text) is None:
         return _dft_level(text, observed_version)
-    return _wft_level(text, observed_version, wft)
+    return _ccsd_t_level(text, observed_version)
 
 
 def total_energy(text: str) -> float | None:
-    """Final electronic energy: CCSD(T) / MP2 total, else the last DFT total energy."""
-    value = _last(_WFT_ENERGY.get(wft_method(text) or "", r"Total DFT energy =\s+(\S+)"), text)
+    """Final electronic energy: the CCSD(T) total, else the last DFT total energy."""
+    value = _last(_CCSD_T, text) or _last(r"Total DFT energy =\s+(\S+)", text)
     return None if value is None else _number(value)
 
 

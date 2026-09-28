@@ -27,7 +27,7 @@ from hfauto.chemistry.geometry import (
 )
 from hfauto.chemistry.identity import mapped_equivalent, periodic_nearest
 from hfauto.chemistry.interpolation import align_mapped, align_sequential, idpp
-from hfauto.chemistry.modes import amplitude, displace, overlap
+from hfauto.chemistry.modes import BOUNDS_A, TARGET_HARTREE, amplitude, displace, overlap
 from hfauto.chemistry.xyz import XYZ, Molecule, composition_key, geometry_fingerprint
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
@@ -43,12 +43,15 @@ from hfauto.core.records import (
 )
 from hfauto.drivers.minimum import calc_id, relax_to_minimum
 from hfauto.drivers.reaction_case import state as case_state
-from hfauto.drivers.reaction_case.state import Action, CasePolicy, CaseState, Decision, Seed
+from hfauto.drivers.reaction_case.state import Action, CaseRules, CaseState, Decision, Seed
 
 if TYPE_CHECKING:
     from hfauto.drivers.reaction_case.driver import CaseRuntime
 
 _MIN_OVERLAP = 0.3  # an xTB Hessian is used when a negative mode lies along the direction
+SCREEN_IMAGES = 11  # SCREEN's NEB images including both ends
+STRING_BEADS = 9  # DFT string beads including both ends
+QRC_RETRY_FACTOR = 2.0  # the second QRC amplitude, capped at BOUNDS_A[1]
 _MODE_SEEDS = frozenset({"screen_ts", "discovery_ts", "higher_order_retry"})  # tangent: TS mode
 
 
@@ -78,7 +81,7 @@ class Work:
 class Ctx:
     case: ReactionRecord
     rt: CaseRuntime
-    policy: CasePolicy
+    rules: CaseRules
     deadline: Deadline
     folder: Path  # cases/<reaction_id>
     symbols: list[str]
@@ -92,7 +95,7 @@ class Ctx:
 
     @property
     def resolution(self) -> float:
-        return self.policy.gates.resolution_kcal / HARTREE_TO_KCAL_MOL
+        return self.rules.gates.resolution_kcal / HARTREE_TO_KCAL_MOL
 
     def mol(self, coords: np.ndarray) -> Molecule:
         xyz = XYZ(list(self.symbols), np.asarray(coords, dtype=float).reshape(-1, 3))
@@ -135,7 +138,7 @@ class Ctx:
         energies), kept as the latest profile; its maximum bounds the saddle from above."""
         energies = (self.energies[0], *inner, self.energies[1])
         self.work.path = Profile(frames, energies)
-        return barrier_verdict(energies, source=source, policy=self.policy.gates,
+        return barrier_verdict(energies, source=source, policy=self.rules.gates,
                                max_node_spacing_A=profile.max_node_spacing(frames))
 
     def direction(self, x: np.ndarray, seed: Seed | None = None) -> np.ndarray:
@@ -196,7 +199,7 @@ def _xtb_modes(ctx: Ctx, coords: np.ndarray, below_cm1: float
 
 def _xtb_ts_mode(ctx: Ctx, coords: np.ndarray) -> tuple[float, ...] | None:
     """A low-level TS's imaginary mode: its xTB freq has exactly one mode below -saddle_cm1."""
-    _, modes = _xtb_modes(ctx, coords, ctx.policy.gates.saddle_cm1)
+    _, modes = _xtb_modes(ctx, coords, ctx.rules.gates.saddle_cm1)
     return tuple(modes[0]) if len(modes) == 1 else None
 
 
@@ -211,7 +214,7 @@ def _shortcut(ctx: Ctx, geometry: Geometry) -> tuple[BarrierVerdict, Seed | None
     if e_ts is None:
         return None
     verdict = barrier_verdict((ctx.energies[0], e_ts, ctx.energies[1]), source="screen",
-                              policy=ctx.policy.gates)
+                              policy=ctx.rules.gates)
     return verdict, Seed(geometry, "discovery_ts", mode)
 
 
@@ -233,7 +236,7 @@ def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
     """Steps 2-3: the NEB from the IDPP between the DFT minima, DFT SPs on its interior; a single
     peak seeds at the NEB's TS when its xTB freq confirms it, else at the DFT peak."""
     try:
-        frames, ts = _neb(ctx, idpp(ctx.symbols, *ctx.ends, ctx.policy.screen_images))
+        frames, ts = _neb(ctx, idpp(ctx.symbols, *ctx.ends, SCREEN_IMAGES))
     except ValueError as exc:
         return _unavailable(f"idpp:{exc}"), None
     inner = [ctx.sp(f) for f in frames[1:-1]]
@@ -265,7 +268,7 @@ def _seed_hessian(ctx: Ctx, seed: Seed, x: np.ndarray, direction: np.ndarray
     if seed.hessian is not None:
         ctx.note("saddle_hessian:ts_freq")
         return seed.hessian
-    xtb, modes = _xtb_modes(ctx, x, ctx.policy.gates.noise_cm1)
+    xtb, modes = _xtb_modes(ctx, x, ctx.rules.gates.noise_cm1)
     score = max((overlap(m, direction) for m in modes), default=0.0)
     use_xtb = xtb is not None and score >= _MIN_OVERLAP
     ctx.note(f"saddle_hessian:{'xtb' if use_xtb else 'dft'}:overlap:{score:.2f}")
@@ -299,11 +302,10 @@ def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
 
 
 def _amplitude(ctx: Ctx, freq: Evidence, index: int) -> float:
-    """modes.amplitude of imaginary mode ``index`` for max(3 x QRC drop, qrc_target_hartree)."""
-    p = ctx.policy
-    target = max(3.0 * qrc_drop(freq.level, p.gates), p.qrc_target_hartree)
+    """modes.amplitude of imaginary mode ``index`` for max(3 x QRC drop, TARGET_HARTREE)."""
+    target = max(3.0 * qrc_drop(freq.level), TARGET_HARTREE)
     return amplitude((freq.frequencies_cm1 or ())[index], np.asarray(freq.imaginary_modes[index]),
-                     ctx.symbols, target_hartree=target, bounds_A=p.qrc_bounds_A)
+                     ctx.symbols, target_hartree=target)
 
 
 def _pushed(ctx: Ctx, freq: Evidence, x: np.ndarray, name: str) -> Seed:
@@ -319,7 +321,7 @@ def _pushed(ctx: Ctx, freq: Evidence, x: np.ndarray, name: str) -> Seed:
 
 def validate_ts(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """Separate DFT freq on the saddle → is_first_order_saddle and spin_ok."""
-    rt, saddle, gates = ctx.rt, ctx.work.saddle, ctx.policy.gates
+    rt, saddle, gates = ctx.rt, ctx.work.saddle, ctx.rules.gates
     if saddle is None:
         return replace(state, last_saddle="failed")
     x = ctx.coords(saddle.final)
@@ -349,7 +351,7 @@ def _register(ctx: Ctx, coords: np.ndarray, name: str,
     """relax_to_minimum → Registry: the known basin, a new one, or None (no minimum)."""
     rt = ctx.rt
     out = relax_to_minimum(ctx.mol(coords), rt.method, rt.qm, known=rt.registry,
-                           deadline=ctx.deadline, gates=ctx.policy.gates)
+                           deadline=ctx.deadline, gates=ctx.rules.gates)
     if out.status == "known" and out.known_basin is not None:
         return ctx.record(out.known_basin)
     if out.status not in ("minimum", "soft_minimum") or out.opt is None or out.freq is None:
@@ -388,12 +390,12 @@ def _assign(ctx: Ctx, side: Evidence, x: np.ndarray, name: str) -> str | None:
 
 def connect(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """QRC: displace ± along the TS mode by an energy target, optimize, assign, gate."""
-    rt, p, freq = ctx.rt, ctx.policy, ctx.work.ts_freq
+    rt, freq = ctx.rt, ctx.work.ts_freq
     attempt = state.connection_attempts + 1
     state = replace(state, connection_attempts=attempt)
     if freq is None or not freq.imaginary_modes:
         return replace(state, connection="failed")
-    step = min(_amplitude(ctx, freq, 0) * p.qrc_retry_factor ** (attempt - 1), p.qrc_bounds_A[1])
+    step = min(_amplitude(ctx, freq, 0) * QRC_RETRY_FACTOR ** (attempt - 1), BOUNDS_A[1])
     mode = np.asarray(freq.imaginary_modes[0])
     plus, minus = (rt.qm.optimize(ctx.mol(y), rt.method, init_hessian=freq, deadline=ctx.deadline)
                    for y in displace(ctx.coords(freq.final), mode, step))  # the TS Hessian
@@ -407,7 +409,7 @@ def connect(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     bonds = tuple(topology.bonds(ctx.symbols, x) for x in (*ctx.ends, finals[1], finals[0]))
     gate, label = connection(freq, (plus, minus), (first, second), frozenset(ctx.case.minima),
                              degenerate=ctx.case.degenerate, sides_distinct=distinct,
-                             bond_sets=bonds, policy=p.gates)
+                             bond_sets=bonds)
     if label == "failed" or first is None or second is None:
         ctx.note(f"qrc{attempt}:{','.join(gate.reasons)}")
         retry = "sides_same_basin" in gate.reasons  # the only failure worth a wider displacement
@@ -471,12 +473,12 @@ def find_path(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """One DFT string chunk, classified at once (unconverged too: its maximum bounds the saddle
     and its peak is a seed); a single peak seeds the saddle search. The path gets the DFT
     minima back at its ends, which NWChem's freezeN moves."""
-    rt, p, run_name = ctx.rt, ctx.policy, f"string{state.path_runs}"
-    initial = _initial_path(ctx, p.string_beads, f"{run_name}_initial")
+    rt, run_name = ctx.rt, f"string{state.path_runs}"
+    initial = _initial_path(ctx, STRING_BEADS, f"{run_name}_initial")
     if initial is None:
         return replace(state, path_runs=state.path_runs + 1)
     run = rt.path.find_path(ctx.mol(ctx.ends[0]), ctx.mol(ctx.ends[1]), rt.method,
-                            images=p.string_beads, initial_path=initial, deadline=ctx.deadline)
+                            images=STRING_BEADS, initial_path=initial, deadline=ctx.deadline)
     if isinstance(run, Failure):
         ctx.note(f"{run_name}:{run.kind.value}")
         return replace(state, path_runs=state.path_runs + 1)

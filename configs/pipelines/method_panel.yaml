@@ -10,5 +10,5 @@ pipeline_id: method_panel
 stages:
   - {id: panel_sp, stage: sp, engine: nwchem,
      methods: [pbe0-d3bj_def2-tzvpd, wb97x-d3_def2-tzvpd]}
-  - {id: panel_thermo, stage: thermo, engine: goodvibes, energy_method: wb97x-d3_def2-tzvpd}
+  - {id: panel_thermo, stage: thermo, energy_method: wb97x-d3_def2-tzvpd}
   - {id: panel_report, stage: report}
