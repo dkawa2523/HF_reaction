@@ -31,8 +31,9 @@ from hfauto.core.records import (
 )
 from hfauto.drivers.minimum import Registry, relax_to_minimum
 from hfauto.drivers.reaction_case import actions
-from hfauto.drivers.reaction_case.actions import HANDLERS, SCREEN_IMAGES, STRING_BEADS, Profile
-from hfauto.drivers.reaction_case.driver import CaseRuntime, open_case
+from hfauto.drivers.reaction_case.actions import Profile
+from hfauto.drivers.reaction_case.driver import HANDLERS, CaseRuntime, open_case
+from hfauto.drivers.reaction_case.paths import SCREEN_IMAGES, STRING_BEADS
 from hfauto.drivers.reaction_case.state import (
     Action,
     CaseRules,

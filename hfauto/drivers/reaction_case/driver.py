@@ -27,8 +27,8 @@ from hfauto.core.records import (
     SpeciesRecord,
 )
 from hfauto.drivers.minimum import Registry
-from hfauto.drivers.reaction_case import actions
-from hfauto.drivers.reaction_case.state import CaseRules, CaseState, decide
+from hfauto.drivers.reaction_case import actions, paths
+from hfauto.drivers.reaction_case.state import Action, CaseRules, CaseState, Decision, decide
 
 if TYPE_CHECKING:
     from hfauto.backends.protocols import PathEngine, QMEngine, SaddleRefiner
@@ -99,6 +99,17 @@ def _artifacts(record: ReactionRecord, work: actions.Work) -> tuple[Artifact, ..
     return tuple(out)
 
 
+Handler = Callable[[actions.Ctx, CaseState, Decision], CaseState]
+HANDLERS: dict[Action, Handler] = {
+    Action.SCREEN: paths.screen,
+    Action.REFINE_SADDLE: actions.refine_saddle,
+    Action.VALIDATE_TS: actions.validate_ts,
+    Action.FIND_PATH: paths.find_path,
+    Action.CONNECT: actions.connect,
+    Action.VALIDATE_INTERMEDIATE: actions.validate_intermediate,
+}
+
+
 def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline: Deadline
                ) -> CaseResult:
     """Loop decide → action until ``deadline`` (the hypothesis', shared by its split children);
@@ -123,7 +134,7 @@ def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline
         if decision.outcome is not None:
             break
         ctx = ctx or open_case(case, rt, rules, deadline, folder, log)
-        state = actions.HANDLERS[decision.action](ctx, state, decision)
+        state = HANDLERS[decision.action](ctx, state, decision)
     work = ctx.work if ctx is not None else actions.Work()
     record = finalize(case, decision, barrier=state.screen, claim=state.claim,
                       connection=work.connection)
