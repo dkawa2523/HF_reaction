@@ -1,24 +1,22 @@
 """explore stage (design §4.1 #4, §8.2): reaction trials on screen minima with a discovery engine.
 
 Sources are the ``sources_per_state`` lowest screen minima of each composition × state label,
-started from their screen-optimized structures. Each (source, trial) unit runs NT2, and AFIR on
-the same drive only when NT2 found no maximum; the units run through ``thread_map`` and every
-attempt is recorded in input order: product, negative or failed. A kept product joins a known
+started from their screen-optimized structures. Each (source, trial) unit runs NT2; the units run
+through ``thread_map`` and every attempt is recorded in input order: product, negative or failed. A kept product joins a known
 basin (a screen minimum or an earlier product of its composition: state label and permutation-
 invariant RMSD; ReaDuct's and the screen's xTB energies are not compared) or becomes a species;
 a degenerate one (the source's label) also needs the same atom-indexed bonds, so it never joins
-its source. Seeds that relaxed into another state become ``relaxation`` discoveries.
+its source. A seed state the screen lost becomes one ``relaxation`` product (``_relaxations``).
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import ClassVar, cast
 
 from hfauto.backends.protocols import (
-    NO_NT2_MAXIMUM,
     Capability,
     DiscoveryEngine,
     DiscoveryResult,
@@ -37,8 +35,6 @@ from hfauto.core.records import (
     SpeciesRecord,
 )
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
-
-Attempt = tuple[ReactionTrial, DiscoveryResult | Failure]
 
 
 class ExploreConfig(StageConfig):
@@ -84,17 +80,24 @@ def _sources(minima: list[MinimumRecord], per_state: int) -> list[MinimumRecord]
     return [m for group in groups.values() for m in group[:per_state]]
 
 
-def _relaxations(species: Iterable[SpeciesRecord],
-                 minima: Iterable[MinimumRecord]) -> list[DiscoveryRecord]:
-    """A seed whose state label differs from its basin's collapsed without a barrier."""
-    labels = {s.species_id: s.state_label for s in species}
-    return [
-        DiscoveryRecord(discovery_id=f"relax_{m.minimum_id}_{sid}", source_minimum=m.minimum_id,
-                        mechanism="relaxation", outcome="negative",
-                        reason=f"collapsed_to:{m.state_label}")
-        for m in minima for sid in dict.fromkeys((m.species_id, *m.members))
-        if labels.get(sid, m.state_label) != m.state_label
-    ]
+def _relaxations(species: Mapping[str, SpeciesRecord],
+                 minima: Sequence[MinimumRecord]) -> list[DiscoveryRecord]:
+    """One ``relaxation`` product per seed state the screen lost (no screen minimum of the
+    composition keeps its label): the seed of lowest low-level energy (then species id),
+    unrelaxed, from the basin it collapsed into, for the DFT tier to ask once. It has no
+    low-level stationary step, so discovery_verdict does not apply."""
+    kept = {(m.composition_id, m.state_label) for m in minima}
+    seeds = [(species[sid], m) for m in minima
+             for sid in dict.fromkeys((m.species_id, *m.members)) if sid in species]
+    lost: dict[tuple[str, str], tuple[SpeciesRecord, MinimumRecord]] = {}
+    for seed, m in sorted(seeds, key=lambda p: (p[0].energy_hartree is None,
+                                                p[0].energy_hartree or 0.0, p[0].species_id)):
+        if (m.composition_id, seed.state_label) not in kept:
+            lost.setdefault((m.composition_id, seed.state_label), (seed, m))
+    return [DiscoveryRecord(discovery_id=f"relax_{seed.species_id}", source_minimum=m.minimum_id,
+                            mechanism="relaxation", outcome="product",
+                            product_species=seed.species_id)
+            for seed, m in lost.values()]
 
 
 def _units(minimum: MinimumRecord, species: SpeciesRecord, xyz: XYZ,
@@ -112,11 +115,10 @@ class _Recorder:
     def __init__(self, rt: StageRuntime, known: dict[str, list[_Basin]]) -> None:
         self.rt, self.known = rt, known
 
-    def record(self, unit: _Unit, trial: ReactionTrial,
-               result: DiscoveryResult | Failure) -> list[Artifact]:
-        discovery_id = f"disc_{trial.trial_id}_{trial.mechanism}"
+    def record(self, unit: _Unit, result: DiscoveryResult | Failure) -> list[Artifact]:
+        discovery_id = f"disc_{unit.trial.trial_id}_nt2"
         base = DiscoveryRecord(discovery_id=discovery_id, source_minimum=unit.minimum.minimum_id,
-                               mechanism=trial.mechanism, trial=trial, outcome="failed")
+                               mechanism="nt2", trial=unit.trial, outcome="failed")
         parents = (unit.minimum.minimum_id,)
         if isinstance(result, Failure):
             payload = base.model_copy(update={"reason": f"{result.kind}:{result.reason}"})
@@ -128,7 +130,7 @@ class _Recorder:
             reason = "no_product_structure"
         elif result.outcome == "product" and result.product is not None:
             reason = gates.discovery_verdict(
-                trial.mechanism, ts_validated=result.ts is not None and result.irc_connected_to_source,
+                ts_validated=result.ts is not None and result.irc_connected_to_source,
                 dE_act_kcal=result.dE_act_kcal, dE_rxn_kcal=result.dE_rxn_kcal,
                 policy=self.rt.policy)
             if reason is None:
@@ -184,19 +186,13 @@ class ExploreStage:
         engine = cast(DiscoveryEngine, rt.engine(Capability.DISCOVERY, cfg.engine))
         method = rt.method(cfg.method)
 
-        def attempts(unit: _Unit) -> list[Attempt]:
-            result = engine.explore(unit.start, unit.trial, method, cfg.settings)
-            done: list[Attempt] = [(unit.trial, result)]
-            if isinstance(result, DiscoveryResult) and result.reason == NO_NT2_MAXIMUM:
-                afir = unit.trial.model_copy(update={"mechanism": "afir"})
-                done.append((afir, engine.explore(unit.start, afir, method, cfg.settings)))
-            return done
+        def attempt(unit: _Unit) -> DiscoveryResult | Failure:
+            return engine.explore(unit.start, unit.trial, method, cfg.settings)
 
         out = [Artifact(artifact_id=d.discovery_id, type=ArtifactType.DISCOVERY,
                         parents=(d.source_minimum,), payload=d)
-               for d in _relaxations(species.values(), screen)]
+               for d in _relaxations(species, screen)]
         recorder = _Recorder(rt, known)
-        for unit, done in zip(units, rt.thread_map(attempts, units), strict=True):
-            for trial, result in done:
-                out += recorder.record(unit, trial, result)
+        for unit, result in zip(units, rt.thread_map(attempt, units), strict=True):
+            out += recorder.record(unit, result)
         return out

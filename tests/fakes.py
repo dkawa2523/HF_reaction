@@ -247,7 +247,7 @@ class FakeQM(_Surface):  # calls: "energy", "optimize" / "optimize+init_hessian"
             return Failure(kind=Kind.GEOMETRY_MAXITER, reason="maxiter", job_key=key)
         return self._evidence("opt", mol, method, key, start, x)
 
-    def frequencies(self, mol, method, *, deadline=None) -> Evidence | Failure:
+    def frequencies(self, mol, method, *, scf_guess=None, deadline=None) -> Evidence | Failure:
         self.calls.append("frequencies")
         key = self._key("freq", mol.fingerprint(), method.signature())
         start, h = self._start(mol, key), self.pes.hessian(mol.xyz.coords)

@@ -26,6 +26,11 @@ WATER = (["O", "H", "H"], np.array([[0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]]))
 GFN2 = MethodSpec(id="gfn2", kind="xtb", gfn=2)
 
 
+def _product_end(symbols, source, ends):
+    found = worker.irc_product(symbols, source, ends, source)
+    return found if isinstance(found, str) else found[0]
+
+
 def test_worker_helpers():
     symbols, x = WATER
     swapped = x[[0, 2, 1]] + 0.01
@@ -34,10 +39,10 @@ def test_worker_helpers():
     assert worker.matches_source(symbols, x, swapped)  # same bonds atom by atom
     assert worker.matches_source(symbols, x, opened)  # a conformer is the source
     assert not worker.matches_source(symbols, x, moved)
-    assert worker.irc_product(symbols, x, [swapped, moved]) == (1, None)
-    assert worker.irc_product(symbols, x, [moved, opened]) == (0, None)
-    assert worker.irc_product(symbols, x, [moved, moved]) == (None, "irc_not_connected_to_source")
-    assert worker.irc_product(symbols, x, [x, swapped]) == (None, "same_as_source")
+    assert _product_end(symbols, x, [swapped, moved]) == 1
+    assert _product_end(symbols, x, [moved, opened]) == 0
+    assert _product_end(symbols, x, [moved, moved]) == "irc_not_connected_to_source"
+    assert _product_end(symbols, x, [x, swapped]) == "same_as_source"
     # after an SCC retry at 1000 K the window energies are the base-temperature ones
     found = worker.Found("product", structures={"source": 0, "ts": 0, "product": 0},
                          energies={"source": -5.0, "ts": -4.9, "product": -4.95})
@@ -60,7 +65,34 @@ def test_a_degenerate_rearrangement_is_a_product():
     assert state_label(symbols, exchanged) == state_label(symbols, x)
     assert bond_changes(symbols, x, exchanged) == ({(0, 4), (3, 5)}, {(0, 3), (4, 5)})
     assert not worker.matches_source(symbols, x, exchanged)
-    assert worker.irc_product(symbols, x, [x + 0.01, exchanged]) == (1, None)
+    assert _product_end(symbols, x, [x + 0.01, exchanged]) == 1
+
+
+def test_an_irc_end_that_is_the_source_relabelled_connects_it():
+    """R5a (S19, S6): no IRC end has the source's bonds atom by atom, but one is the source with
+    two H relabelled, turned and shifted; the other end and the TS come back in the source's atom
+    order and frame. A same-state end beyond one basin (0.05 Å) or ends in two other states stay
+    unconnected."""
+    symbols, x = NH3_HF_SYMBOLS, NH3_HF.copy()
+    x[1, 2] += 0.03  # no mirror plane: one relabelling matches
+    product = x.copy()
+    product[4] = [0.31, -0.98, 0.0]  # the HF proton on N: NH4+ ... F-
+    cut = x.copy()
+    cut[3] = [0.55, 2.6, 0.0]  # an N-H cut
+    c, s = np.cos(0.7), np.sin(0.7)
+    turn = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+    def irc(y):  # the IRC's labelling (H3 <-> H4) and frame
+        return y[[0, 1, 2, 4, 3, 5]] @ turn.T + [1.0, -2.0, 0.5]
+
+    ts = (x + product) / 2
+    assert not worker.matches_source(symbols, x, irc(x))
+    index, got, got_ts = worker.irc_product(symbols, x, [irc(product), irc(x)], irc(ts))
+    assert index == 0 and np.allclose(got, product) and np.allclose(got_ts, ts)
+    assert worker.irc_product(symbols, x, [irc(x * 1.08), irc(product)], ts) == (
+        "irc_not_connected_to_source")
+    assert worker.irc_product(symbols, x, [irc(product), irc(cut)], ts) == (
+        "irc_not_connected_to_source")
 
 
 SADDLE = np.array([[0.0, 0.0, 0.0], [0.74, 0.0, 0.0]])
@@ -114,7 +146,7 @@ def test_explore_writes_the_worker_job_in_the_attempt_directory(tmp_run):
     site = EngineSite(version="6.1.0", python=str(tmp_run / "missing-python"))
     engine = engines.create(Capability.DISCOVERY, "readuct", jobs=jobs, site=site)
     assert isinstance(engine, DiscoveryEngine) and engine.supports(GFN2)
-    trial = ReactionTrial(trial_id="t", source_minimum="m", kind="transfer", mechanism="nt2",
+    trial = ReactionTrial(trial_id="t", source_minimum="m", kind="transfer",
                           associations=((0, 2),), dissociations=((0, 1),))
     mol = Molecule(XYZ(["H", "C", "N"], np.eye(3)), 0, 1)
     assert engine.explore(mol, trial, GFN2, DiscoverySettings()).kind == "executable_missing"

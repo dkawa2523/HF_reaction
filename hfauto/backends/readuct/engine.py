@@ -45,7 +45,7 @@ class ReaDuctEngine:
                 settings: DiscoverySettings, *,
                 deadline: Deadline | None = None) -> DiscoveryResult | Failure:
         drive = trial.model_dump(mode="json",
-                                 include={"mechanism", "associations", "dissociations"})
+                                 include={"associations", "dissociations"})
         task = Task(
             engine=self.name, version_pin=self.site.version, kind="discovery",
             key_payload={"method": method.signature(), "source": source.fingerprint(),

@@ -10,6 +10,9 @@ joins that start's basin when that start relaxed straight into a minimum. A sadd
 displacements reach two distinct minima gives two ``mode_follow`` species at the driver's side
 minima, registered by identity with no new job, and a ``mode_follow`` discovery; the saddle's
 own species joins the side basin nearer its input structure (note ``endpoint_was_saddle``).
+A relaxation product's seed (R6) is asked at DFT once, last, from its unrelaxed geometry as its
+own species (``hypotheses.seed_species_id``; the seed may carry its collapse basin's job); one that
+lands in another state than its own is noted ``collapsed_at_dft_from_seed``.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ from typing import ClassVar, Literal, cast
 from pydantic import BaseModel, ConfigDict
 
 from hfauto.backends.protocols import Capability, QMEngine
+from hfauto.chemistry.hypotheses import seed_species_id
 from hfauto.chemistry.identity import IMAGE_A, carry, permutation_invariant_rmsd
 from hfauto.chemistry.selection import Candidate, crowded, rerank, select_for_refinement
 from hfauto.chemistry.thermo import monomer_states
@@ -108,6 +112,7 @@ class _Run:
     calcs: dict[str, Evidence] = field(default_factory=dict)
     minima: dict[str, MinimumRecord] = field(default_factory=dict)  # latest record per basin
     species: list[SpeciesRecord] = field(default_factory=list)  # mode_follow sides
+    seeds: list[SpeciesRecord] = field(default_factory=list)  # relaxation seeds (R6)
     extra: list[Artifact] = field(default_factory=list)  # discoveries and failed minima
     records: dict[str, MinimumRecord | None] = field(default_factory=dict)  # per species id
     history: dict[str, list[str]] = field(default_factory=dict)  # diagnostics.json
@@ -123,7 +128,7 @@ class _Run:
         species to the nearer side and a mode_follow discovery."""
         mol = self.molecule(job.species, job.start)
         done = job, driver.relax_to_minimum(
-            mol, self.method, self.qm, known=self.registry, init_hessian=self.init_hessian(mol),
+            mol, self.method, self.qm, known=self.registry, init_hessian=self.init_hessian(job, mol),
             max_mode_follow=self.cfg.mode_follow, gates=self.rt.policy, load_xyz=self.rt.load_xyz)
         self.register(done)
         sides = self.sides(done)
@@ -134,9 +139,11 @@ class _Run:
                 self.extra.append(_artifact(found.discovery_id, found))
         return done
 
-    def init_hessian(self, mol: Molecule) -> Evidence | None:
-        spec = self.cfg.init_hessian
-        if spec is None or len(fragments(mol.xyz.symbols, mol.xyz.coords)) < 2:
+    def init_hessian(self, job: _Job, mol: Molecule) -> Evidence | None:
+        """A low-level freq at the start of 2+ fragments; none at a relaxation seed, which is no
+        low-level stationary point (a negative xTB eigenvalue at each seed of S5, S6 and S19)."""
+        spec, single = self.cfg.init_hessian, len(fragments(mol.xyz.symbols, mol.xyz.coords)) < 2
+        if spec is None or single or job.species in self.seeds:
             return None
         low = cast(QMEngine, self.rt.engine(Capability.QM, spec.engine))
         freq = low.frequencies(mol, self.rt.method(spec.method))
@@ -215,6 +222,13 @@ class _Run:
         self.minima[record.basin_id] = self.records[sid] = record
         self.history[sid].append(f"joined:{record.basin_id}")
 
+    def note_collapses(self) -> None:
+        """R6: a seed whose DFT minimum lies in another state than its own collapsed again."""
+        for seed in self.seeds:
+            record = self.records.get(seed.species_id)
+            if record is not None and record.state_label != seed.state_label:
+                self.history[seed.species_id].append("collapsed_at_dft_from_seed")
+
     def discovery(self, done: _Relaxed, sides: list[_Side]) -> DiscoveryRecord | None:
         """source_minimum = side 1's minimum, product_species = side 2, ts = the saddle; at the
         DFT tier ts_calc is its opt: a verified DFT saddle, validated directly by the case."""
@@ -244,9 +258,18 @@ def _known(inputs: Manifest, cfg: MinimaConfig, rt: StageRuntime, qm: QMEngine,
     return driver.Registry(pairs, rt.load_xyz)
 
 
-def _pool(inputs: Manifest, species: dict[str, SpeciesRecord]
+def _seeds(inputs: Manifest, species: dict[str, SpeciesRecord]) -> list[SpeciesRecord]:
+    """R6: the seed of each relaxation product, unrelaxed, as its own species
+    (hypotheses.seed_species_id): the seed itself may carry its collapse basin's job."""
+    return [species[d.product_species].model_copy(update={"species_id": seed_species_id(d)})
+            for d in inputs.records(T.DISCOVERY, DiscoveryRecord)
+            if d.mechanism == "relaxation" and d.product_species in species]
+
+
+def _pool(inputs: Manifest, species: dict[str, SpeciesRecord], seeds: list[SpeciesRecord]
           ) -> dict[str, tuple[Candidate, _Job]]:
-    """Screen minima (from their optimized structure) plus discovery products and sources."""
+    """Screen minima (from their optimized structure) plus discovery products and sources;
+    products that skipped screen and the relaxation seeds start from their own geometry."""
     found = [d for d in inputs.records(T.DISCOVERY, DiscoveryRecord) if d.outcome == "product"]
     always = {d.source_minimum for d in found}
     always |= {d.product_species for d in found if d.product_species is not None}
@@ -260,10 +283,9 @@ def _pool(inputs: Manifest, species: dict[str, SpeciesRecord]
         pool[m.species_id] = (candidate, _Job(species[m.species_id],
                                               inputs.evidence(m.opt_calc).final))
     held = {s for m in screen for s in (m.species_id, *m.members)}
-    for sid in sorted((always & species.keys()) - held):  # products that skipped screen
-        s = species[sid]
-        pool[sid] = (Candidate(sid, s.composition_id, s.state_label, s.energy_hartree,
-                               always=True), _Job(s, s.geometry))
+    for s in [*(species[sid] for sid in sorted((always & species.keys()) - held)), *seeds]:
+        pool[s.species_id] = (Candidate(s.species_id, s.composition_id, s.state_label,
+                                        s.energy_hartree, always=True), _Job(s, s.geometry))
     return pool
 
 
@@ -283,11 +305,13 @@ def _reacting(candidates: Iterable[Candidate], species: dict[str, SpeciesRecord]
 
 def _jobs(inputs: Manifest, cfg: MinimaConfig, run: _Run) -> list[_Job]:
     """Every species (screen, all), or the window selection of the reacting compositions (the
-    others are noted not_reacting); single points rerank only the crowded groups."""
+    others are noted not_reacting) and the relaxation seeds (run.seeds, always kept); single
+    points rerank only the crowded groups."""
     species = {s.species_id: s for s in inputs.records(T.SPECIES, SpeciesRecord)}
     if cfg.level == "screen" or cfg.select.include == "all":
         return [_Job(s, s.geometry) for s in species.values()]
-    pool, sel = _pool(inputs, species), cfg.select
+    run.seeds = _seeds(inputs, species)
+    pool, sel = _pool(inputs, species, run.seeds), cfg.select
     candidates = [candidate for candidate, _ in pool.values()]
     reacting = _reacting(candidates, species, run.rt.system)
     for composition in sorted({c.composition_id for c in candidates} - reacting):
@@ -311,13 +335,16 @@ class MinimaStage:
         method = rt.method(cfg.method)
         qm = cast(QMEngine, rt.engine(Capability.QM, cfg.engine))
         run = _Run(rt, cfg, qm, method, _known(inputs, cfg, rt, qm, method))
-        jobs = sorted(_jobs(inputs, cfg, run), key=lambda j: j.species.species_id)
+        jobs = sorted(_jobs(inputs, cfg, run),  # relaxation seeds last: basins keep their species
+                      key=lambda j: (j.species in run.seeds, j.species.species_id))
         for first, *images in _image_groups(jobs, rt.load_xyz):
             done = run.process(first)
             for image in images:
                 if not run.join_image(image, done):
                     run.process(image)
+        run.note_collapses()
         (rt.stage_dir / "diagnostics.json").write_text(json.dumps(run.history, indent=1))
         return [*(_artifact(k, ev) for k, ev in run.calcs.items()),
-                *(_artifact(species_artifact_id(s.species_id), s) for s in run.species),
+                *(_artifact(species_artifact_id(s.species_id), s)
+                  for s in (*run.seeds, *run.species)),
                 *(_artifact(m.minimum_id, m) for m in run.minima.values()), *run.extra]

@@ -75,14 +75,13 @@ def _geometry(xyz: XYZ, path: Path, file_ref: Callable[[Path], FileRef]) -> Geom
 def parse_outputs(workdir: Path, stdout: str, symbols: Sequence[str],
                   file_ref: Callable[[Path], FileRef]) -> ConformerEnsemble | Failure:
     """Ensemble of a finished CREST directory (return code already checked)."""
-    version = observed_version(stdout) or "unknown"
     if TOPOLOGY_STOP in stdout:
         if not (workdir / OPT_LOG).is_file():
             reason = f"topology stop without {OPT_LOG}"
             return Failure(kind=FailureKind.INCOMPLETE_OUTPUT, reason=reason)
         last = read_xyz_trajectory(workdir / OPT_LOG)[-1]
         stop = _geometry(last, workdir / "topology_stop.xyz", file_ref)
-        return ConformerEnsemble(members=(), topology_stops=(stop,), version=version, job_key="")
+        return ConformerEnsemble(members=(), topology_stops=(stop,))
     if not (workdir / CONFORMERS).is_file():
         return Failure(kind=FailureKind.INCOMPLETE_OUTPUT, reason=f"{CONFORMERS} missing")
     frames = read_xyz_trajectory(workdir / CONFORMERS)
@@ -90,7 +89,7 @@ def parse_outputs(workdir: Path, stdout: str, symbols: Sequence[str],
         return Failure(kind=FailureKind.METHOD_MISMATCH, reason="atom_order_changed")
     members = tuple((_geometry(f, workdir / f"conformer_{k:03d}.xyz", file_ref), _energy(f.comment))
                     for k, f in enumerate(frames))
-    return ConformerEnsemble(members=members, topology_stops=(), version=version, job_key="")
+    return ConformerEnsemble(members=members, topology_stops=())
 
 
 class _Adapter:

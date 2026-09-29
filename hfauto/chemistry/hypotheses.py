@@ -8,7 +8,9 @@ only when declared (Curtin-Hammett), so one basin gives a degenerate rearrangeme
 bonded partners (S10). Bonds and degeneracy are judged on the basins' optimized structures in the
 endpoints' atom order and handedness (``identity.basin_coords``), never on input coordinates.
 A mode-follow saddle of the DFT tier is a verified saddle (``ts_calc``); any other discovery TS
-is a low-level TS. Negative discoveries never veto a hypothesis (review X1).
+is a low-level TS. Negative discoveries never veto a hypothesis (review X1). A relaxation product
+(a seed state lost at screen, R6) runs from the DFT basin of the seed's own job, while it keeps
+the seed's state, to the DFT basin of its collapse basin; it offers no TS.
 """
 
 from __future__ import annotations
@@ -40,6 +42,12 @@ from hfauto.core.system import ReactionInput
 LoadXYZ = Callable[[Geometry], XYZ]
 Source = Literal["declared", "discovery", "mode_follow"]
 Ends = tuple[SpeciesRecord, SpeciesRecord]
+
+
+def seed_species_id(relaxation: DiscoveryRecord) -> str:
+    """The species a relaxation seed is refined as at DFT (R6), named as explore names a
+    discovery's new structure: the seed itself may represent its collapse basin."""
+    return f"spc_{relaxation.discovery_id}"
 
 
 def pick_endpoints(
@@ -108,9 +116,9 @@ class _Candidate:
     """A discovery product as a pair of basins, with the TS the discovery offers."""
 
     source: Source
-    start: MinimumRecord | None  # the DFT basin of the discovery's source minimum
+    start: MinimumRecord | None  # the DFT basin of the discovery's source (a relaxation's seed)
     end: MinimumRecord | None  # the basin of its product
-    ends: tuple[str, str] | None  # the discovery's source and product species
+    ends: tuple[str, str] | None  # the discovery's source and product species (one basin)
     low_level_ts: Geometry | None
     ts_calc: str | None  # a verified DFT saddle: a mode-follow saddle of the DFT tier
 
@@ -151,9 +159,22 @@ def _declared(pool: _Pool, reaction: ReactionInput) -> ReactionRecord:
                    coordinate=coordinate, torsional=reaction.torsional)
 
 
+def _relaxation(pool: _Pool, d: DiscoveryRecord) -> _Candidate:
+    """Seed -> collapse (R6): the DFT basin of the seed's own job, only while it keeps the
+    seed's state (a seed that collapsed at DFT too gives none), and its collapse basin's."""
+    seed, basin = pool.species.get(seed_species_id(d)), pool.basin_of.get(seed_species_id(d))
+    kept = seed is not None and basin is not None and basin.state_label == seed.state_label
+    return _Candidate(source="discovery", start=basin if kept else None,
+                      end=pool.dft_basin(d.source_minimum), ends=None, low_level_ts=None,
+                      ts_calc=None)
+
+
 def _candidates(pool: _Pool, discoveries: Iterable[DiscoveryRecord]) -> Iterator[_Candidate]:
     products = [d for d in discoveries if d.outcome == "product" and d.product_species]
     for d in sorted(products, key=lambda d: (d.mechanism == "mode_follow", d.ts is None)):
+        if d.mechanism == "relaxation":
+            yield _relaxation(pool, d)
+            continue
         start = pool.minima.get(d.source_minimum)
         yield _Candidate(
             source="mode_follow" if d.mechanism == "mode_follow" else "discovery",

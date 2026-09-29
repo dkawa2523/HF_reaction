@@ -52,8 +52,6 @@ class ConformerEnsemble(BaseModel):
     kind: Literal["conformers"] = "conformers"
     members: tuple[tuple[Geometry, float | None], ...]  # a missing energy stays None
     topology_stops: tuple[Geometry, ...]
-    version: str
-    job_key: str
 
 
 class DiscoverySettings(BaseModel):
@@ -61,13 +59,8 @@ class DiscoverySettings(BaseModel):
     max_scf_iterations: int = 300
     electronic_temperature_K: float = 300.0
     scc_retry_temperature_K: float = 1000.0
-    afir_gamma_kj_mol: float = 125.0
-    afir_gamma_retry_kj_mol: float = 300.0
     imag_cutoff_cm1: float = 50.0
     timeout_s: float = 600.0
-
-
-NO_NT2_MAXIMUM = "no_nt2_maximum"  # the negative reason after which AFIR drives the same pair
 
 
 class DiscoveryResult(BaseModel):
@@ -119,7 +112,13 @@ class QMEngine(Engine, Protocol):
     ) -> Evidence | Failure: ...
 
     def frequencies(
-        self, mol: Molecule, method: MethodSpec, *, deadline: Deadline | None = None
+        self,
+        mol: Molecule,
+        method: MethodSpec,
+        *,
+        # the opt or saddle at mol whose converged SCF starts this one (same electronic state)
+        scf_guess: Evidence | None = None,
+        deadline: Deadline | None = None,
     ) -> Evidence | Failure: ...
 
 

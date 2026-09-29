@@ -43,8 +43,8 @@ class KeyedQM(fakes.FakeQM):  # the calculation id of every result, as a JobStor
         super().__init__(root, pes)
         self.jobs = Counter()
 
-    def frequencies(self, mol, method, *, deadline=None):
-        ev = super().frequencies(mol, method, deadline=deadline)
+    def frequencies(self, mol, method, **kw):
+        ev = super().frequencies(mol, method, **kw)
         self.jobs[calc_id(ev)] += 1
         return ev
 
@@ -214,9 +214,9 @@ def test_walltime_low_level_ts_shortcut_and_negative_discoveries_do_not_veto(
     ts = fakes.write_geometry(tmp_run, "ts.xyz", pes.symbols, pes.points["ts"])
     found = DiscoveryRecord(discovery_id="d1", source_minimum=source, mechanism="nt2",
                             outcome="product", product_species="product", ts=ts)
-    trial = ReactionTrial(trial_id="t", source_minimum=source, kind="transfer", mechanism="afir",
+    trial = ReactionTrial(trial_id="t", source_minimum=source, kind="transfer",
                           associations=((1, 2),), dissociations=((0, 1),))
-    negative = DiscoveryRecord(discovery_id="d2", source_minimum=source, mechanism="afir",
+    negative = DiscoveryRecord(discovery_id="d2", source_minimum=source, mechanism="nt2",
                                outcome="negative", reason="no_nt2_maximum", trial=trial)
     for record in (found, negative):  # X1: a matching negative discovery changes nothing
         view.artifacts.append(Artifact(artifact_id=record.discovery_id, type=T.DISCOVERY,

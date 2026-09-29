@@ -1,6 +1,6 @@
-"""explore stage with FakeDiscovery (§8.2): AFIR only after NT2 found no maximum, the kcal/mol
-window, failed attempts, one species per product basin (degenerate products kept apart from the
-source), relaxation discovery (legacy relaxation K case), two lowest sources per state, the
+"""explore stage with FakeDiscovery (§8.2): one NT2 attempt per unit, the kcal/mol window,
+failed attempts, one species per product basin (degenerate products kept apart from the
+source), one relaxation product per lost seed state (R6), two lowest sources per state, the
 screen-optimized start structure and the source's charge and multiplicity (HCN⁺•: dissociations
 are trials), and parallel units recorded as serial ones."""
 
@@ -9,7 +9,7 @@ import dataclasses
 import numpy as np
 from fakes import NH3_HF, NH3_HF_EXCHANGED, NH3_HF_SYMBOLS, FakeDiscovery, write_geometry
 
-from hfauto.backends.protocols import NO_NT2_MAXIMUM, Capability, DiscoveryResult
+from hfauto.backends.protocols import Capability, DiscoveryResult
 from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.trials import perturb_linear
 from hfauto.chemistry.xyz import XYZ
@@ -18,7 +18,7 @@ from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
 from hfauto.core.records import ArtifactType, MinimumRecord, SpeciesRecord
 from hfauto.core.system import SpeciesInput, SystemConfig
-from hfauto.stages.explore import ExploreConfig, ExploreStage, _Basin, _basin_of
+from hfauto.stages.explore import ExploreConfig, ExploreStage, _Basin, _basin_of, _relaxations
 
 SYMBOLS, SPECIES, MINIMUM = ["H", "C", "N"], ArtifactType.SPECIES, ArtifactType.MINIMUM
 HCN = np.array([[0, 0, -1.066], [0, 0, 0], [0, 0, 1.156]])
@@ -61,16 +61,15 @@ def _inputs(root):
 
 def _explore(fake_runtime, tmp_run):
     """(run(rt) -> artifacts, the runtime, the fake): both sources reach one HNC basin by the
-    1,2-H shift; C–N cuts test the window edges, C–H cuts the AFIR gating."""
+    1,2-H shift; C–N cuts test the window edges, C–H cuts a failure and a kept barrier."""
     hnc = write_geometry(tmp_run, "fake/hnc.xyz", SYMBOLS, HNC)
 
     def script(source, trial, method, settings):
-        if trial.mechanism == "afir":
-            return Failure(kind=FailureKind.NONZERO_EXIT, reason="scripted")
         m0 = trial.source_minimum == "m0"
+        if m0 and (trial.kind, trial.dissociations) == ("dissociation", CH):
+            return Failure(kind=FailureKind.NONZERO_EXIT, reason="scripted")
         act, reason = {("transfer", CH): (30.0, None), ("dissociation", CN): (
-            50.0 if m0 else 50.01, None), ("dissociation", CH): (
-            None if m0 else 20.0, NO_NT2_MAXIMUM if m0 else "same_as_source")}[
+            50.0 if m0 else 50.01, None), ("dissociation", CH): (20.0, "same_as_source")}[
             (trial.kind, trial.dissociations)]
         found = reason is None
         return DiscoveryResult(
@@ -102,12 +101,12 @@ def test_explore_records_every_attempt(fake_runtime, tmp_run):
         assert (shift.outcome, shift.product_species) == ("product", species.species_id)
     assert got[("m0", "dissociation", CN, "nt2")] == ("product", None)  # 50 and 40 kcal/mol
     assert got[("m1", "dissociation", CN, "nt2")] == ("negative", "out_of_window")  # 50.01
-    assert got[("m0", "dissociation", CH, "nt2")] == ("negative", NO_NT2_MAXIMUM)
-    assert found[("m0", "dissociation", CH, "afir")].failure.kind == FailureKind.NONZERO_EXIT
-    negative = found[("m1", "dissociation", CH, "nt2")].payload  # a TS: no AFIR, barrier kept
+    assert found[("m0", "dissociation", CH, "nt2")].failure.kind == FailureKind.NONZERO_EXIT
+    negative = found[("m1", "dissociation", CH, "nt2")].payload  # a TS: the barrier is kept
     assert (negative.reason, negative.dE_act_kcal) == ("same_as_source", 20.0)
-    assert [c[1].source_minimum for c in fake.calls if c[1].mechanism == "afir"] == ["m0"]
-    assert got[("m0", None, None, "relaxation")] == ("negative", f"collapsed_to:{LABEL}")
+    assert len(fake.calls) == len(found) - 1  # one NT2 call per unit; the relaxation has none
+    relaxed = found[("m0", None, None, "relaxation")].payload  # the lost HNC seed, unrelaxed
+    assert (relaxed.outcome, relaxed.product_species, relaxed.ts) == ("product", "seed", None)
     assert {c[1].source_minimum for c in fake.calls} == {"m0", "m1"}  # m2: third lowest; m3: Ar
     for source, trial, *_ in fake.calls:  # from the opt final (bent: linear), not species.geometry
         i = int(trial.source_minimum[1:])
@@ -124,6 +123,25 @@ def test_parallel_units_are_recorded_as_serial_ones(fake_runtime, tmp_run):
         a.model_dump() for a in serial]
     assert sorted(repr((m.fingerprint(), t)) for m, t, *_ in calls) == sorted(
         repr((m.fingerprint(), t)) for m, t, *_ in fake.calls)
+
+
+def test_one_relaxation_product_per_lost_seed_state(tmp_run):
+    """R6: seeds of state Y collapsed into two basins give one product, the seed of lowest
+    low-level energy from its own basin; state Z has a screen minimum (not lost), X never left."""
+    geo = write_geometry(tmp_run, "in/hcn.xyz", SYMBOLS, HCN)
+    species = {sid: SpeciesRecord(species_id=sid, composition_id=CATION, charge=1, multiplicity=2,
+                                  geometry=geo, source="conformer", state_label=label,
+                                  energy_hartree=energy)
+               for sid, label, energy in (("a", "X", None), ("b", "Y", None), ("c", "Y", -2.0),
+                                          ("d", "Y", -1.0), ("e", "Z", None), ("f", "Z", None))}
+    minima = [MinimumRecord(minimum_id=mid, basin_id=mid, species_id=members[0], tier="screen",
+                            composition_id=CATION, level_key="k", opt_calc="o", freq_calc="f",
+                            energy_hartree=0.0, state_label=label, members=members)
+              for mid, label, members in (("m0", "X", ("a", "b", "d", "e")), ("m1", "X", ("c",)),
+                                          ("m2", "Z", ("f",)))]
+    [record] = _relaxations(species, minima)
+    assert (record.source_minimum, record.product_species) == ("m1", "c")
+    assert (record.mechanism, record.outcome) == ("relaxation", "product")
 
 
 def test_a_degenerate_product_never_joins_its_source_basin():

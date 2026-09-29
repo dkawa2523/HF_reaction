@@ -213,7 +213,7 @@ class XTBEngine:
                  ) -> Evidence | Failure:
         return self.jobs.run(self.task("optimize", mol, method), self.adapter, deadline=deadline)
 
-    def frequencies(self, mol: Molecule, method: MethodSpec, *, deadline: Deadline | None = None
-                    ) -> Evidence | Failure:
+    def frequencies(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None,
+                    deadline: Deadline | None = None) -> Evidence | Failure:
         task = self.task("frequencies", mol, method)
         return self.jobs.run(task, self.adapter, deadline=deadline)

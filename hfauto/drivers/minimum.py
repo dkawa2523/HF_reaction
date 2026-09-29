@@ -86,7 +86,8 @@ class _Ctx:
 
     def frequencies(self, opt: Evidence) -> _Point | Failure:
         xyz = self.load(opt.final)
-        freq = self.qm.frequencies(self.molecule(xyz), self.method, deadline=self.deadline)
+        freq = self.qm.frequencies(self.molecule(xyz), self.method, scf_guess=opt,
+                                   deadline=self.deadline)
         if isinstance(freq, Failure):
             return freq
         gate = is_minimum(freq, opt=opt, policy=self.gates)

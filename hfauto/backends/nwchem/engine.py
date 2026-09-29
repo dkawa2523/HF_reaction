@@ -347,8 +347,16 @@ class NWChemEngine(_NWChem):
         return self._qm("optimize", mol, method, deadline, payload={"hessian": sha, **model},
                         hessian=hessian, **model)
 
-    def frequencies(self, mol: Molecule, method: MethodSpec, *,
+    def frequencies(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None,
                     deadline: Deadline | None = None) -> Evidence | Failure:
+        """``scf_guess`` (the opt or saddle at mol) starts the SCF from its converged vectors, so
+        the freq stays on its electronic state: from scratch, the UKS OH···CH4 complex found the
+        other OH π component, 7.2e-5 Eh above its opt."""
+        if scf_guess is not None:
+            movecs = self._jobs.store.resolve(scf_guess.output).with_name(f"{NAME}.movecs")
+            if movecs.is_file():
+                return self._qm("frequencies", mol, method, deadline,
+                                payload={"scf_guess": scf_guess.job_key}, restart=[movecs])
         return self._qm("frequencies", mol, method, deadline)
 
 

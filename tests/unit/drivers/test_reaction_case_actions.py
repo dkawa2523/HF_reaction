@@ -61,8 +61,8 @@ ACAC = Path(__file__).resolve().parents[3] / "configs" / "systems" / "xyz" / "ac
 
 
 class HigherOrderQM(fakes.FakeQM):  # every freq job also reports a second imaginary mode
-    def frequencies(self, mol, method, *, deadline=None):
-        ev = super().frequencies(mol, method, deadline=deadline)
+    def frequencies(self, mol, method, **kw):
+        ev = super().frequencies(mol, method, **kw)
         nu = sorted(ev.frequencies_cm1)
         return ev.model_copy(update={"frequencies_cm1": (nu[0], -200.0, *nu[2:]),
                                      "imaginary_modes": (*ev.imaginary_modes, tuple(np.eye(9)[4]))})

@@ -1,5 +1,5 @@
 """Reaction hypotheses (design §8.2): priority, degeneracy on basin structures (declared and
-discovered), undeclared pairs only with a bond change (CH-07), TS lending, chem 13."""
+discovered), undeclared pairs only with a bond change (CH-07), TS lending, chem 13, R6."""
 
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ def test_declared_reaction_comes_first_and_borrows_the_discovery_ts():
     hcn = species("hcn", "HCN", [[0.0, 0, 0], [1.06, 0, 0], [2.22, 0, 0]])
     hnc = species("hnc", "HCN", [[3.22, 0, 0], [1.06, 0, 0], [2.22, 0, 0]])
     minima = [minimum("m_hcn", "hcn"), minimum("m_hnc", "hnc", -0.98)]
-    negative = r.DiscoveryRecord(discovery_id="d2", source_minimum="m_hcn", mechanism="afir",
+    negative = r.DiscoveryRecord(discovery_id="d2", source_minimum="m_hcn", mechanism="nt2",
                                  outcome="negative", reason="no_nt2_maximum")
     found = [product("d1", "m_hcn", "hnc", ts=hnc.geometry), negative]
     term = r.CoordinateTerm(kind="distance", atoms=(0, 2))
@@ -250,6 +250,30 @@ def test_an_undeclared_pair_needs_a_bond_change():
     records = select(basins(*(minimum(f"m_{n}", n) for n in names)),
                      [fhn, near, far, contact, loose], found, [], load)
     assert [(r.minima, r.torsional) for r in records] == [(("m_fhn", "m_far"), False)]
+
+
+def test_a_relaxation_seed_kept_at_dft_runs_to_its_collapse_basin():
+    """R6 (S6): the seed (H at F) collapsed at screen into H at N and represents that basin. Its
+    own DFT job (seed_species_id) kept the seed state: one hypothesis, seed -> collapse, with no
+    TS. When DFT collapsed it too, it joined the collapse basin: no hypothesis."""
+    seed = species("seed", "FHN", [[0.0, 0, 0], [0.93, 0, 0], [2.83, 0, 0]]).model_copy(
+        update={"state_label": "FH+N"})
+    own = seed.model_copy(update={"species_id": "spc_relax_seed"})
+    collapsed = species("collapsed", "FHN", [[0.0, 0, 0], [1.40, 0, 0], [2.28, 0, 0]]).geometry
+    lost = minimum("s_lost", "seed").model_copy(update={"tier": "screen", "state_label": "HN+F"})
+    basin = minimum("d_lost", "seed", -1.01).model_copy(update={"state_label": "HN+F"})
+    kept = minimum("d_seed", "spc_relax_seed").model_copy(update={"state_label": "FH+N"})
+    relax = r.DiscoveryRecord(discovery_id="relax_seed", source_minimum="s_lost",
+                              mechanism="relaxation", outcome="product", product_species="seed")
+    minima = [(lost, collapsed), (basin, collapsed), (kept, seed.geometry)]
+
+    [rec] = select(minima, [seed, own], [relax], [], load)
+    assert (rec.source, rec.minima, rec.endpoints) == ("discovery", ("d_seed", "d_lost"),
+                                                       ("spc_relax_seed", "seed"))
+    assert not rec.torsional and (rec.low_level_ts, rec.ts_calc) == (None, None)
+    assert select(minima, [seed, own], [relax], [], load, max_per_composition=0) == []
+    joined = basin.model_copy(update={"members": ("seed", "spc_relax_seed")})
+    assert select([(lost, collapsed), (joined, collapsed)], [seed, own], [relax], [], load) == []
 
 
 def test_pick_endpoints_avoids_a_permuted_representative():

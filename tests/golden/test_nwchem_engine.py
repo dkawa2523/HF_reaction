@@ -108,6 +108,21 @@ def test_frequencies_cache_and_input_checks(nwchem, golden):
     assert grid.kind is FailureKind.METHOD_MISMATCH and "grid" in grid.reason
 
 
+def test_a_freq_starts_from_the_converged_vectors_of_its_opt(nwchem, golden):
+    """The freq at an opt's final structure reads the opt's job.movecs under its own key: it
+    stays on the opt's electronic state (from scratch, the UKS OH···CH4 complex found the other
+    OH π component)."""
+    jobs, site = nwchem
+    engine = NWChemEngine(jobs=jobs, site=site)
+    opt = engine.optimize(_hcn_ts(golden), FINE)
+    final = Molecule(read_xyz(jobs.store.resolve(opt.final.file)), 0, 1)
+    guided, plain = engine.frequencies(final, FINE, scf_guess=opt), engine.frequencies(final, FINE)
+    assert isinstance(guided, Evidence) and guided.job_key != plain.job_key
+    decks = [(jobs.store.attempt_dir(ev.job_key, 0) / "job.nw").read_text()
+             for ev in (guided, plain)]
+    assert "vectors input job.movecs" in decks[0] and "vectors input" not in decks[1]
+
+
 def test_a_first_order_saddle_hessian_starts_a_minimization_as_its_positive_definite_model(
         nwchem, golden):
     """K1: the TS Hessian of G07 (one mode below -saddle_cm1) is written as its positive-definite

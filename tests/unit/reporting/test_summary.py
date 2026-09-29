@@ -67,16 +67,18 @@ def test_coverage_counts_mechanisms_negative_reasons_and_failure_kinds():
         return rec.DiscoveryRecord(discovery_id=f"d{i}", source_minimum="m", mechanism=mech,
                                    outcome=outcome, reason=reason)
 
-    found = [disc(1, "nt2", "product"), disc(2, "nt2", "negative", "collapsed_to:x_1"),
-             disc(3, "nt2", "negative", "collapsed_to:y_2"), disc(4, "afir", "failed"),
-             disc(5, "afir", "negative", "out_of_window")]
+    found = [disc(1, "nt2", "product"), disc(2, "nt2", "negative", "ts_imaginary_modes:2"),
+             disc(3, "nt2", "negative", "ts_imaginary_modes:3"),
+             disc(4, "mode_follow", "failed"),
+             disc(5, "mode_follow", "negative", "out_of_window")]
     failure = Failure(kind=FailureKind.TIMEOUT, reason="walltime")
     failed = [Artifact(artifact_id=f"f{i}", type=rec.ArtifactType.CALCULATION, status="failed",
                        failure=failure) for i in range(2)]
     assert {astuple(row) for row in coverage(found, failed)} == {
         ("attempts", "nt2", 3), ("products", "nt2", 1), ("negatives", "nt2", 2),
-        ("attempts", "afir", 2), ("failed", "afir", 1), ("negatives", "afir", 1),
-        ("negative_reason", "collapsed_to", 2), ("negative_reason", "out_of_window", 1),
+        ("attempts", "mode_follow", 2), ("failed", "mode_follow", 1),
+        ("negatives", "mode_follow", 1),
+        ("negative_reason", "ts_imaginary_modes", 2), ("negative_reason", "out_of_window", 1),
         ("failure_kind", "timeout", 2)}
 
 

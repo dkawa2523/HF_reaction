@@ -26,7 +26,7 @@ def test_g18_conformers_energies_and_a_missing_energy(tmp_path, golden):
     relative = [float(r.split()[1]) for r in golden.text("crest/G18/crest.energies").splitlines()]
     assert [(e - energies[0]) * HARTREE_TO_KCAL_MOL for e in energies] == pytest.approx(
         relative, abs=0.01) and energies[0] == pytest.approx(-24.40971451)
-    assert (ens.version, ens.topology_stops) == ("3.0.2", ())
+    assert ens.topology_stops == ()
     lines = (tmp_path / "crest_conformers.xyz").read_text(encoding="utf-8").split("\n")
     lines[20] = ""  # comment line of the second conformer (BUG-08: never 0 kcal/mol)
     (tmp_path / "crest_conformers.xyz").write_text("\n".join(lines), encoding="utf-8")

@@ -217,17 +217,16 @@ def connection(
 
 
 def discovery_verdict(
-    mechanism: str,
     *,
     ts_validated: bool,
     dE_act_kcal: float | None,
     dE_rxn_kcal: float | None,
     policy: Policy = _DEFAULT,
 ) -> str | None:
-    """None when a low-level product is kept, else the negative reason (CH-28). An NT2 product
-    needs its validated TS and IRC; the reaction window is the DFT one (a narrower low-level sieve
+    """None when a low-level NT2 product is kept, else the negative reason (CH-28). It needs its
+    validated TS and IRC; the reaction window is the DFT one (a narrower low-level sieve
     only adds false negatives) and an unevaluated reaction energy lies outside it."""
-    if mechanism == "nt2" and not ts_validated:
+    if not ts_validated:
         return "ts_not_validated"
     if dE_rxn_kcal is None or dE_rxn_kcal > policy.reaction_window_kcal:
         return "out_of_window"

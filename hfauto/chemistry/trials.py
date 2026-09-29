@@ -169,7 +169,7 @@ def generate(source_minimum: str, symbols: Sequence[str], coords: np.ndarray, *,
     trials = [
         ReactionTrial(
             trial_id="trial_" + sha256_text(f"{source_minimum}|{kind}|{form}|{cut}"),
-            source_minimum=source_minimum, kind=kind, mechanism="nt2", associations=form,
+            source_minimum=source_minimum, kind=kind, associations=form,
             dissociations=cut)
         for kind, form, cut in _drives(symbols, x, multiplicity > 1 or charge != 0)[:max_trials]
     ]

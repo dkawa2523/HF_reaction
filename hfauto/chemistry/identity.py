@@ -19,7 +19,7 @@ from scipy.optimize import linear_sum_assignment
 from hfauto.chemistry.geometry import kabsch
 
 IMAGE_A = 0.005  # an exact image: QRC ± starts at a symmetric TS <= 0.0009 A, others >= 0.025 A
-_RMSD_A = 0.05  # one basin: permutation-invariant RMSD (mirror image included) ...
+BASIN_A = 0.05  # one basin: permutation-invariant RMSD (mirror image included) ...
 _DE_HARTREE = 5.0e-5  # ... and |dE|, with the best match clearly ahead of the runner-up
 _RUNNER_UP_RATIO, _RUNNER_UP_GAP_A = 3.0, 0.1
 _MAX_REFINE = 5
@@ -136,7 +136,7 @@ def carry(symbols: Sequence[str], ref: np.ndarray, x: np.ndarray, other: np.ndar
     """(rmsd, carried): the basin RMSD of x matched onto ref (relabelling and mirror image
     included), and ``other``, a structure in the atom order and frame of x, carried by that
     relabelling, mirror, Kabsch rotation and centroid shift into the atom order and frame of ref.
-    The caller judges the RMSD (IMAGE_A for an exact image, _RMSD_A for one basin)."""
+    The caller judges the RMSD (IMAGE_A for an exact image, BASIN_A for one basin)."""
 
     rmsd, perm, mirrored = _basin_match(symbols, ref, x)
     sign = np.array([-1.0 if mirrored else 1.0, 1.0, 1.0])
@@ -150,14 +150,14 @@ def same_as_labelled(xa: np.ndarray, xb: np.ndarray, ea: float, eb: float) -> bo
     rotations) <= 0.05 A. The two structures of a degenerate rearrangement (the NH3 inversion,
     an enantiomerization) are one basin but two structures as labelled."""
 
-    return abs(ea - eb) <= _DE_HARTREE and mapped_rmsd(xa, xb) <= _RMSD_A
+    return abs(ea - eb) <= _DE_HARTREE and mapped_rmsd(xa, xb) <= BASIN_A
 
 
 def is_chiral(symbols: Sequence[str], x: np.ndarray) -> bool:
     """True when x and its mirror image are distinct under proper rotations and relabelling
     (optical isomer number m = 2)."""
 
-    return permutation_invariant_rmsd(symbols, x, _mirror(x))[0] > _RMSD_A
+    return permutation_invariant_rmsd(symbols, x, _mirror(x))[0] > BASIN_A
 
 
 def assign(
@@ -173,7 +173,7 @@ def assign(
 
     scored = sorted((_basin_match(symbols, coords, xyz)[0], key)
                     for key, (xyz, e) in candidates.items() if abs(energy - e) <= _DE_HARTREE)
-    if not scored or scored[0][0] > _RMSD_A:
+    if not scored or scored[0][0] > BASIN_A:
         return None
     if len(scored) > 1:
         best, runner = scored[0][0], scored[1][0]
@@ -200,7 +200,7 @@ def mapped_equivalent(symbols: Sequence[str], a: np.ndarray, b: np.ndarray) -> b
     (mirror image included): a degenerate rearrangement such as the NH3 inversion or the
     enantiomerization of a chiral minimum."""
 
-    return mapped_rmsd(a, b) > _RMSD_A and _basin_match(symbols, a, b)[0] <= _RMSD_A
+    return mapped_rmsd(a, b) > BASIN_A and _basin_match(symbols, a, b)[0] <= BASIN_A
 
 
 def periodic_nearest(value_deg: float, targets_deg: Sequence[float]) -> int:

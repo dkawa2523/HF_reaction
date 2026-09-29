@@ -21,7 +21,7 @@ GEOMS = {"nh3": ("N H H H", [[0, 0, .1], [.94, 0, -.25], [-.47, .81, -.25], [-.4
          "hono": ("H O N O", [[.95, .3, 0], [0, 0, 0], [-.5, 1.3, 0], [-1.7, 1.3, 0]]),
          "hcn": ("H C N", [[0, 0, -1.07], [0, 0, 0], [0, 0, 1.16]]),
          "cnh": ("C N H", [[0, 0, 0], [0, 0, 1.17], [0, 0, 2.16]])}
-ENSEMBLE = partial(ConformerEnsemble, members=(), topology_stops=(), version="0", job_key="")
+ENSEMBLE = partial(ConformerEnsemble, members=(), topology_stops=())
 GFN2 = {"gfn2": MethodSpec(id="gfn2", kind="xtb", gfn=2)}
 
 

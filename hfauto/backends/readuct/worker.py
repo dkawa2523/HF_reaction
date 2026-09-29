@@ -1,4 +1,4 @@
-"""One ReaDuct NT2 or AFIR attempt, run by ``hfauto.execution.worker`` in the attempt directory.
+"""One ReaDuct NT2 attempt, run by ``hfauto.execution.worker`` in the attempt directory.
 
 SCINE is imported only inside ``_Scine``. The decisions (imaginary-mode count on projected
 frequencies, match with the source, choice of the IRC end, result assembly) are pure helpers.
@@ -6,14 +6,14 @@ frequencies, match with the source, choice of the IRC end, result assembly) are 
 Flow (design §6.3): the source is relaxed first (reference energy and structure; linear
 sources arrive bent). NT2 → Bofill TS optimization with
 ``automatic_mode_selection = sorted(associations ∪ dissociations)`` → projected frequencies
-(exactly one ν < −cutoff) → IRC → both ends optimized to minima → one end must have the
-source's bond set, the other is the product. Bond sets are compared atom by atom in the source's
-atom order, so a relabelled image of the source (a degenerate rearrangement such as a double H
-exchange) is a product and a conformer or stereoisomer is not; the product keeps the source's
-atom order. AFIR (γ, then the retry γ once) → unbiased optimization to a minimum. The IRC and
-minimum optimizations take up to 500 iterations (C13). An SCC failure reruns the attempt once
-at the retry electronic temperature; the energies of the source, TS and product are then
-recomputed at the base temperature (chem 11).
+(exactly one ν < −cutoff) → IRC → both ends optimized to minima → one end must be the source,
+the other is the product. Bond sets are compared atom by atom in the source's atom order, so a
+relabelled image of the source (a degenerate rearrangement such as a double H exchange) is a
+product and a conformer or stereoisomer is not; the product keeps the source's atom order, also
+from an end that is the source relabelled (``irc_product``). The IRC and minimum optimizations
+take up to 500 iterations (C13). An SCC failure reruns the attempt once at the retry electronic
+temperature; the energies of the source, TS and product are then recomputed at the base
+temperature (chem 11).
 """
 
 from __future__ import annotations
@@ -27,9 +27,9 @@ from typing import Any
 
 import numpy as np
 
-from hfauto.backends.protocols import NO_NT2_MAXIMUM
+from hfauto.chemistry import identity
 from hfauto.chemistry.modes import amplitude, displace
-from hfauto.chemistry.topology import bonds
+from hfauto.chemistry.topology import bonds, state_label
 from hfauto.chemistry.vibrations import projected_frequencies
 from hfauto.chemistry.xyz import XYZ, write_xyz
 from hfauto.core.constants import BOHR_TO_ANGSTROM, HARTREE_TO_KCAL_MOL
@@ -59,24 +59,26 @@ def matches_source(symbols: Sequence[str], source: np.ndarray, end: np.ndarray) 
     return bonds(symbols, end) == bonds(symbols, source)
 
 
-def irc_product(symbols: Sequence[str], source: np.ndarray,
-                ends: Sequence[np.ndarray]) -> tuple[int | None, str | None]:
-    """(index of the product end, None) or (None, negative reason)."""
+def irc_product(symbols: Sequence[str], source: np.ndarray, ends: Sequence[np.ndarray],
+                ts: np.ndarray) -> tuple[int, np.ndarray, np.ndarray] | str:
+    """(index of the product end, product, TS) in the source's atom order, or the negative
+    reason. The source is the end with its bonds; when no end has them, the first end of its
+    state label within one basin (identity.carry, 0.05 Å, never widened) is the source
+    relabelled, and the ends and the TS are carried into the source's atom order and frame."""
+    if not any(matches_source(symbols, source, end) for end in ends):
+        label = state_label(symbols, source)
+        image = next((end for end in ends if state_label(symbols, end) == label
+                      and identity.carry(symbols, source, end, end)[0] <= identity.BASIN_A), None)
+        if image is not None:
+            ends = [identity.carry(symbols, source, image, x)[1] for x in ends]
+            ts = identity.carry(symbols, source, image, ts)[1]
     hits = [matches_source(symbols, source, end) for end in ends]
     if not any(hits):
-        return None, "irc_not_connected_to_source"
+        return "irc_not_connected_to_source"
     if all(hits):
-        return None, "same_as_source"
-    return hits.index(False), None
-
-
-def afir_pair(trial: Mapping[str, Any]) -> tuple[tuple[int, int], bool] | None:
-    """The biased pair: the first association (attractive), else the first dissociation."""
-    for key, attractive in (("associations", True), ("dissociations", False)):
-        if trial[key]:
-            i, j = trial[key][0]
-            return (int(i), int(j)), attractive
-    return None
+        return "same_as_source"
+    index = hits.index(False)
+    return index, ends[index], ts
 
 
 @dataclass(frozen=True)
@@ -196,7 +198,7 @@ def _nt2(run: _Scine, source: np.ndarray, trial: Mapping[str, Any]) -> Found:
     if not run.task("run_nt2_task", "start", ["guess"],
                     nt_associations=_flat(trial["associations"]),
                     nt_dissociations=_flat(trial["dissociations"])):
-        return Found("negative", NO_NT2_MAXIMUM)
+        return Found("negative", "no_nt2_maximum")
     if not run.task("run_tsopt_task", "guess", ["ts"], optimizer="bofill",
                     automatic_mode_selection=atoms):
         return Found("negative", "ts_not_converged")
@@ -208,36 +210,14 @@ def _nt2(run: _Scine, source: np.ndarray, trial: Mapping[str, Any]) -> Found:
     if not irc or not all(run.minimum(end, f"{end}_opt") for end in ("irc_f", "irc_b")):
         return Found("negative", "irc_end_not_minimum", ts, energy, ts_imag_cm1=imag)
     ends = [run.coords("irc_f_opt"), run.coords("irc_b_opt")]
-    index, reason = irc_product(run.symbols, source, ends)
-    if index is None:
-        return Found("negative", reason, ts, energy, ts_imag_cm1=imag,
-                     irc_connected=reason == "same_as_source")
-    return Found("product", None, {**ts, "product": ends[index]},
+    found = irc_product(run.symbols, source, ends, ts["ts"])
+    if isinstance(found, str):
+        return Found("negative", found, ts, energy, ts_imag_cm1=imag,
+                     irc_connected=found == "same_as_source")
+    index, product, carried = found
+    return Found("product", None, {"ts": carried, "product": product},
                  {**energy, "product": run.energy(("irc_f_opt", "irc_b_opt")[index])},
                  ts_imag_cm1=imag, irc_connected=True)
-
-
-def _afir(run: _Scine, source: np.ndarray, trial: Mapping[str, Any]) -> Found:
-    chosen = afir_pair(trial)
-    if chosen is None:
-        return Found("negative", "afir_without_pair")
-    (lhs, rhs), attractive = chosen
-    reason = "afir_not_converged"
-    settings = run.job["settings"]
-    for gamma in (settings["afir_gamma_kj_mol"], settings["afir_gamma_retry_kj_mol"]):
-        biased, relaxed = f"afir_{gamma:.0f}", f"afir_{gamma:.0f}_opt"
-        if not run.task("run_afir_task", "start", [biased], afir_lhs_list=[lhs],
-                        afir_rhs_list=[rhs], afir_attractive=attractive,
-                        afir_energy_allowance=float(gamma)):
-            reason = "afir_not_converged"
-        elif not run.minimum(biased, relaxed):
-            reason = "product_not_converged"
-        elif matches_source(run.symbols, source, run.coords(relaxed)):
-            reason = "same_as_source"
-        else:
-            return Found("product", None, {"product": run.coords(relaxed)},
-                         {"product": run.energy(relaxed)})
-    return Found("negative", reason)
 
 
 def _explore(job: Mapping[str, Any], workdir: Path, temperature_K: float) -> Found:
@@ -246,8 +226,7 @@ def _explore(job: Mapping[str, Any], workdir: Path, temperature_K: float) -> Fou
     if not run.task("run_opt_task", "start", ["source"]):
         return Found("negative", "source_not_converged")
     source = run.coords("source")
-    explore = _nt2 if job["trial"]["mechanism"] == "nt2" else _afir
-    found = explore(run, source, job["trial"])
+    found = _nt2(run, source, job["trial"])
     return replace(found, structures={"source": source, **found.structures},
                    energies={"source": run.energy("source"), **found.energies})
 

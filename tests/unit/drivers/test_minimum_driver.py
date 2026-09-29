@@ -31,8 +31,8 @@ def add(registry, outcome, sid):
 
 
 class SoftQM(fakes.FakeQM):
-    def frequencies(self, mol, method, *, deadline=None):  # a spurious −30 cm⁻¹ mode at minima
-        ev = super().frequencies(mol, method, deadline=deadline)
+    def frequencies(self, mol, method, **kw):  # a spurious −30 cm⁻¹ mode at minima
+        ev = super().frequencies(mol, method, **kw)
         if ev.imaginary_modes:
             return ev
         return ev.model_copy(update={"frequencies_cm1": (-30.0, *ev.frequencies_cm1[1:]),

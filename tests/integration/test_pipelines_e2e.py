@@ -42,8 +42,8 @@ def pipeline(tmp_path, tmp_run, monkeypatch):
 
     def search(mol, method, settings):  # the (HF)2 placement seed is the only conformer
         seed = fakes.write_geometry(tmp_run, "fake/crest.xyz", mol.xyz.symbols, mol.xyz.coords)
-        return ConformerEnsemble(members=((seed, pes.energy(mol.xyz.coords)),), version="0",
-                                 topology_stops=(), job_key="crest")
+        return ConformerEnsemble(members=((seed, pes.energy(mol.xyz.coords)),),
+                                 topology_stops=())
 
     def explore(source, trial, method, settings):  # N–H–O reaches the other well
         ok, x = source.xyz.coords.size == 9, source.xyz.coords
@@ -106,7 +106,8 @@ def test_discover_flows_from_discovery_to_report(pipeline):
     found = {d.product_species for d in view.records(T.DISCOVERY, R.DiscoveryRecord)} - {None}
     dft = [m for m in view.records(T.MINIMUM, R.MinimumRecord) if m.tier == "dft"]
     assert found and found <= {s for m in dft for s in m.members}  # refined at the DFT level
-    assert {m.composition_id for m in dft} == {"HNO_q0_m1"}  # (HF)2 has no reaction: not refined
+    # R6: the (HF)2 seed state the screen lost is asked at DFT once; HF is its monomer
+    assert {m.composition_id for m in dft} == {"HNO_q0_m1", "F2H2_q0_m1", "FH_q0_m1"}
     steps = {r.reaction_id for r in view.records(T.REACTION, R.ReactionRecord)
              if r.outcome is R.CaseOutcome.ELEMENTARY_STEP}
     (report,) = view.records(T.REPORT, R.ReportRecord)  # rankable: thermo and report ran

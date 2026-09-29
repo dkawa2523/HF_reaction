@@ -270,7 +270,7 @@ def validate_ts(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     if saddle is None:
         return replace(state, last_saddle="failed")
     x = ctx.coords(saddle.final)
-    freq = rt.qm.frequencies(ctx.mol(x), rt.method, deadline=ctx.deadline)
+    freq = rt.qm.frequencies(ctx.mol(x), rt.method, scf_guess=saddle, deadline=ctx.deadline)
     if isinstance(freq, Failure):
         ctx.note(f"ts_freq:{freq.kind.value}")
         return replace(state, last_saddle="failed")

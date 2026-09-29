@@ -66,7 +66,6 @@ class ReactionTrial(BaseModel):
     trial_id: str
     source_minimum: str
     kind: Literal["transfer", "relay", "formation", "dissociation"]  # chemistry.trials
-    mechanism: Literal["nt2", "afir"]
     associations: tuple[tuple[int, int], ...] = ()
     dissociations: tuple[tuple[int, int], ...] = ()
 
@@ -76,7 +75,7 @@ class DiscoveryRecord(BaseModel):
     kind: Literal["discovery"] = "discovery"
     discovery_id: str
     source_minimum: str
-    mechanism: Literal["nt2", "afir", "relaxation", "mode_follow"]
+    mechanism: Literal["nt2", "relaxation", "mode_follow"]
     trial: ReactionTrial | None = None
     outcome: Literal["product", "negative", "failed"]
     reason: str | None = None

@@ -1,4 +1,5 @@
-"""minima stage on fake surfaces (§4.1 #3, §7.2); K cases of test_minimum_mode_follow_stage."""
+"""minima stage on fake surfaces (§4.1 #3, §7.2); K cases of test_minimum_mode_follow_stage;
+R6 relaxation seeds."""
 
 import json
 
@@ -24,10 +25,17 @@ DFT = {"level": "dft", "engine": "nwchem", "method": "pbe0"}
 
 
 class SoftQM(fakes.FakeQM):
-    def frequencies(self, mol, method, *, deadline=None):  # a stuck −30 cm⁻¹ mode
-        ev = super().frequencies(mol, method, deadline=deadline)
+    def frequencies(self, mol, method, **kw):  # a stuck −30 cm⁻¹ mode
+        ev = super().frequencies(mol, method, **kw)
         return ev.model_copy(update={"frequencies_cm1": (-30.0, *ev.frequencies_cm1[1:]),
                                      "imaginary_modes": (tuple(np.eye(9)[3]),)})
+
+
+class CollapseQM(fakes.FakeQM):
+    def optimize(self, mol, method, *, init_hessian=None, deadline=None):
+        if np.allclose(mol.xyz.coords, self.pes.points["reactant"]):  # no barrier (GFN2 in S6)
+            mol = self.pes.molecule("product")
+        return super().optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
 
 
 class StuckQM(fakes.FakeQM):
@@ -49,8 +57,8 @@ def species(root, pes, sid, point):
     return species_at(root, sid, pes.symbols, pes.points[point])
 
 
-def stage(fake_runtime, tmp_run, pes, low=fakes.FakeQM, system=None):  # run(id, view, **cfg)
-    xtb, dft = low(tmp_run, pes), fakes.FakeQM(tmp_run, pes)  # -> view + output
+def stage(fake_runtime, tmp_run, pes, low=fakes.FakeQM, system=None, high=fakes.FakeQM):
+    xtb, dft = low(tmp_run, pes), high(tmp_run, pes)  # run(id, view, **cfg) -> view + output
     rt = fake_runtime(system or SystemConfig(system_id="t", species=[]),
                       {(Capability.QM, "xtb"): xtb, (Capability.QM, "nwchem"): dft}, METHODS)
 
@@ -226,3 +234,37 @@ def test_only_reacting_compositions_and_their_monomers_are_refined(fake_runtime,
     skipped = {k for k, v in diagnostics(tmp_run, "dft").items() if v == ["not_reacting"]}
     assert skipped == {"H2_q0_m1", "FH3_q0_m1"}
     assert "energy" not in dft.calls  # one candidate per group: no rerank single point
+
+
+def test_a_relaxation_seed_is_asked_at_dft_once_from_its_own_geometry(fake_runtime, tmp_run):
+    """R6 (S5, S6): the seed collapsed at screen and represents that basin, which DFT refines
+    from the screen structure; the seed is asked once more, from its own geometry with no xTB
+    start Hessian (no xTB stationary point), as its own species after the other jobs. A seed
+    that collapses at DFT too is noted."""
+    pes = fakes.double_well()  # the seed at the reactant (H at N); screen has no barrier to H-O
+    seed = species(tmp_run, pes, "seed", "reactant")
+    init = {"init_hessian": {"engine": "xtb", "method": "gfn2"}}  # both wells: two fragments
+    for high in (fakes.FakeQM, CollapseQM):
+        run, _, dft = stage(fake_runtime, tmp_run, pes, low=CollapseQM, high=high)
+        screen = run(f"screen_{high.__name__}", [seed], **SCREEN)
+        (lost,) = screen.records(T.MINIMUM, MinimumRecord)
+        assert lost.species_id == "seed" and lost.state_label != seed.payload.state_label
+        relax = DiscoveryRecord(discovery_id="relax_seed", source_minimum=lost.minimum_id,
+                                mechanism="relaxation", outcome="product", product_species="seed")
+        found = Artifact(artifact_id="relax_seed", type=T.DISCOVERY, payload=relax)
+        out = run(f"dft_{high.__name__}", [*screen.artifacts, found], **DFT, **init)
+        minima = {m.species_id: m for m in out.records(T.MINIMUM, MinimumRecord) if m.tier == "dft"}
+        history = diagnostics(tmp_run, f"dft_{high.__name__}")["spc_relax_seed"]
+        own = next(s for s in out.records(T.SPECIES, SpeciesRecord)
+                   if s.species_id == "spc_relax_seed")
+        assert own.geometry == seed.payload.geometry
+        if high is fakes.FakeQM:  # PBE0 keeps the seed state: two basins, two freq jobs
+            assert set(minima) == {"seed", "spc_relax_seed"} and "collapsed" not in str(history)
+            assert minima["spc_relax_seed"].state_label == seed.payload.state_label
+            start = out.evidence(minima["spc_relax_seed"].opt_calc).start
+            assert start.fingerprint == seed.payload.geometry.fingerprint
+            assert dft.calls == ["optimize+init_hessian", "frequencies", "optimize", "frequencies"]
+        else:  # the seed joins the collapse basin with no freq job
+            assert minima["seed"].members == ("seed", "spc_relax_seed")
+            assert history[-1] == "collapsed_at_dft_from_seed"
+            assert dft.calls == ["optimize+init_hessian", "frequencies", "optimize"]
