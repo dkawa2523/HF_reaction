@@ -23,9 +23,7 @@ def g13_final_beads(golden) -> list[float]:
 def test_g13_string_is_barrierless_at_the_resolution(golden):
     """U5-P1 / U5-P4: the chunk is classified as it stands (its gmax rose 9.1e-4 -> 9.2e-3):
     the beads fall 0.93 kcal/mol with a 0.01 kcal/mol ripple, no hill and no well."""
-    verdict = barrier_verdict(g13_final_beads(golden), source="string")
-    assert verdict.verdict == "barrierless"
-    assert verdict.max_rel_kcal == pytest.approx(0.0096, abs=1e-4)
+    assert barrier_verdict(g13_final_beads(golden), source="string").verdict == "barrierless"
 
 
 def test_g15_collided_path_versus_idpp(golden):

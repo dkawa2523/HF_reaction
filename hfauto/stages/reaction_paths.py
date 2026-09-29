@@ -2,17 +2,19 @@
 
 Engines have no defaults here; the pipeline YAML names them (``engines`` and ``screen``). A
 hypothesis has ``policy.walltime_h`` in all: its split children run right after it, on its
-deadline.
+deadline, and see its calculations (a TS it validated for a child).
 """
 
 from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from typing import ClassVar, cast
 
 from hfauto.backends.protocols import Capability, PathEngine, QMEngine, SaddleRefiner
 from hfauto.chemistry.hypotheses import select
+from hfauto.core.evidence import Evidence
 from hfauto.core.ids import path_token
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import Deadline
@@ -52,7 +54,7 @@ class ReactionPathsConfig(StageConfig):
 
 def _case_runtime(config: ReactionPathsConfig, rt: StageRuntime, inputs: Manifest,
                   species: dict[str, SpeciesRecord]) -> CaseRuntime:
-    """Engines, methods and the DFT minima registry of this stage."""
+    """Engines, methods, the DFT minima registry and the calculations of this stage."""
     dft = [m for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord) if m.tier == "dft"]
     minima = {m.minimum_id: (m, inputs.evidence(m.opt_calc).final) for m in dft}
     screen = config.screen
@@ -71,7 +73,12 @@ def _case_runtime(config: ReactionPathsConfig, rt: StageRuntime, inputs: Manifes
         resolve=rt.resolve,
         minima=minima,
         species=species,
+        calcs=_calcs(inputs.of(ArtifactType.CALCULATION)),
     )
+
+
+def _calcs(artifacts: Iterable[Artifact]) -> dict[str, Evidence]:
+    return {a.artifact_id: a.payload for a in artifacts if isinstance(a.payload, Evidence)}
 
 
 def _drive(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline: Deadline
@@ -130,6 +137,7 @@ class ReactionPathsStage:
             deadline = deadline or rt.deadline(3600.0 * budget.walltime_h)
             result = _drive(case, case_rt, rules, deadline)
             artifacts.update((a.artifact_id, a) for a in result.artifacts)
+            case_rt.calcs.update(_calcs(result.artifacts))
             if depth < budget.max_split_depth:
                 stack += [(child, depth + 1, deadline) for child in reversed(result.children)]
         return list(artifacts.values())

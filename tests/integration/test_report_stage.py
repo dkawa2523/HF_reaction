@@ -1,4 +1,5 @@
 import csv
+import re
 
 from fakes import FakeQM, double_well
 
@@ -80,3 +81,7 @@ def test_report_stage_writes_tables_from_a_fake_view(fake_runtime, tmp_run):
     assert ranked["dE_act_panel_min_kcal"] == panel[0]["dE_act_min_kcal"]
     [at_400] = ReportStage().run(view, ReportConfig(T_K=400.0), rt)
     assert at_400.payload.rows[0].dG_eff_kcal == 7.0
+    page = (tmp_run / at_400.payload.tables["report.html"].path).read_text(encoding="utf-8")
+    cells = re.findall(r"<td[^>]*>(.*?)</td>", page.split("</table>")[0])  # the summary row
+    assert (cells[3], cells[-1]) == ("7.00", "wb97x/def2-tzvpd")  # at the ranked (T, state)
+    assert "Energy diagram (400 K, 1atm)" in page

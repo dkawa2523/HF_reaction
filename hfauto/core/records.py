@@ -86,6 +86,7 @@ class DiscoveryRecord(BaseModel):
     dE_act_kcal: float | None = None  # low level, at the base electronic temperature
     dE_rxn_kcal: float | None = None
     electronic_temperature_K: float = 300.0
+    ts_calc: str | None = None  # mode_follow: the DFT saddle's opt calculation
 
 
 class StoichTerm(BaseModel):
@@ -107,8 +108,6 @@ class BarrierVerdict(BaseModel):
     model_config = _FROZEN
     verdict: Literal["barrierless", "single", "intermediate", "unavailable"]
     source: Literal["screen", "string"]
-    max_rel_kcal: float | None = None  # highest interior point above the higher end
-    max_node_spacing_A: float | None = None  # resolution of a barrierless claim
     reasons: tuple[str, ...] = ()
 
 
@@ -127,7 +126,6 @@ class ConnectionClaim(BaseModel):
     model_config = _FROZEN
     side_calcs: tuple[str, str]
     minima: tuple[str, str]
-    amplitude_A: float  # the displacement used
 
 
 class CaseOutcome(StrEnum):
@@ -163,6 +161,9 @@ class ReactionRecord(BaseModel):
     coordinate: tuple[CoordinateTerm, ...] = ()
     torsional: bool = False
     low_level_ts: Geometry | None = None
+    # a DFT stationary point at the case Level (a mode-follow saddle or a split parent's TS):
+    # validated first instead of searched again
+    ts_calc: str | None = None
     barrier: BarrierVerdict | None = None
     saddle: SaddleClaim | None = None
     connection: ConnectionClaim | None = None
@@ -213,7 +214,8 @@ class RankRow(BaseModel):
     rankable: bool
     rank: int | None
     blockers: tuple[str, ...]
-    # rank_rows always sets these; the defaults keep reports of older manifests valid
+    # rank_rows always sets these; the defaults keep reports of older manifests valid.
+    # html.render shows the ReactionThermo of the rows' (T_K, standard_state); T_K None: the first.
     dG_act_kcal: float | None = None
     band_kcal: tuple[float, float] | None = None
     T_K: float | None = None

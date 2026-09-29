@@ -1,12 +1,15 @@
 """CLI (design §7.4): five commands, a dry run on the shipped configs and status."""
 
+import signal
+import sys
 from pathlib import Path
 
 import pytest
 import typer
 from typer.testing import CliRunner
 
-from hfauto.cli.main import app
+from hfauto.cli.main import app, stop_on_signals
+from hfauto.execution import process
 from hfauto.execution.jobs import JobStats
 from hfauto.pipeline.layout import RunLayout, StageState
 
@@ -41,3 +44,15 @@ def test_status_sums_failures_by_kind_and_job_reuse(tmp_path):
     assert "job failures: nonzero_exit=1, timeout=3" in result.output
     assert "job reuse: 2/5 (40%)" in result.output
     assert cli.invoke(app, ["status", str(tmp_path / "missing")]).exit_code == 2
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
+def test_ctrl_c_stops_the_external_programs_and_exits_130(monkeypatch):
+    handlers, stopped = {}, []
+    monkeypatch.setattr(signal, "signal", lambda signum, handler: handlers.update({signum: handler}))
+    monkeypatch.setattr(process, "stop_all", lambda: stopped.append(True))
+    stop_on_signals()
+    assert handlers[signal.SIGINT] is handlers[signal.SIGTERM] is handlers[signal.SIGHUP]
+    with pytest.raises(SystemExit) as exit_:
+        handlers[signal.SIGINT](signal.SIGINT, None)
+    assert exit_.value.code == 130 and stopped == [True]

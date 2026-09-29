@@ -1,5 +1,5 @@
 """Reaction hypotheses (design §8.2): priority, degeneracy on basin structures (declared and
-discovered), no conformer pairs, CH-07, chem 13."""
+discovered), undeclared pairs only with a bond change (CH-07), TS lending, chem 13."""
 
 from __future__ import annotations
 
@@ -58,6 +58,14 @@ def methanol(turn_deg: float = 0.0) -> np.ndarray:
 def product(did: str, source: str, sid: str, ts: Geometry | None = None) -> r.DiscoveryRecord:
     return r.DiscoveryRecord(discovery_id=did, source_minimum=source, mechanism="nt2",
                              outcome="product", product_species=sid, ts=ts)
+
+
+def saddle(did: str, source: str, sid: str, ts_calc: str | None = "calc_saddle"
+           ) -> r.DiscoveryRecord:
+    """A mode-follow discovery: ts_calc is its verified saddle at the DFT tier, None at screen."""
+    return r.DiscoveryRecord(discovery_id=did, source_minimum=source, mechanism="mode_follow",
+                             outcome="product", product_species=sid, ts=GEOMETRY[sid],
+                             ts_calc=ts_calc)
 
 
 def h2o2(dihedral_deg: float) -> np.ndarray:
@@ -126,9 +134,10 @@ def test_a_declared_enantiomerization_is_degenerate_not_same_basin():
     assert rec.degenerate and rec.minima == ("m_chfclbr", "m_chfclbr")
 
 
-def test_a_discovery_within_one_basin_is_a_degenerate_hypothesis():
-    """U4-P5: the NH3·HF double H exchange found by explore ends in the source's basin with H3
-    and H4 swapped; it is evaluated as degenerate like a declared one."""
+def test_a_bond_exchanging_discovery_within_one_basin_is_a_degenerate_hypothesis():
+    """U4-P5 / S10: the NH3·HF double H exchange found by explore ends in the source's basin with
+    H3 and H4 swapped, which exchanges bonded partners; it is evaluated as degenerate like a
+    declared one. Found by mode-follow at the DFT tier it carries its verified saddle instead."""
     source = species("xch_src", NH3_HF_SYMBOLS, NH3_HF)
     swapped = species("xch_prod", NH3_HF_SYMBOLS, NH3_HF_EXCHANGED)
     screen = minimum("s_xch", "xch_src").model_copy(update={"tier": "screen"})
@@ -140,7 +149,43 @@ def test_a_discovery_within_one_basin_is_a_degenerate_hypothesis():
     assert (rec.source, rec.minima, rec.endpoints) == ("discovery", ("d_xch", "d_xch"),
                                                        ("xch_src", "xch_prod"))
     assert rec.degenerate and not rec.torsional
-    assert rec.low_level_ts == ts
+    assert (rec.low_level_ts, rec.ts_calc) == (ts, None)
+
+    [dft] = select(basins(basin), [source, swapped], [saddle("mf", "d_xch", "xch_prod")], [], load)
+    assert (dft.source, dft.low_level_ts, dft.ts_calc) == ("mode_follow", None, "calc_saddle")
+    [xtb] = select(basins(screen, basin), [source, swapped],
+                   [saddle("mf", "s_xch", "xch_prod", ts_calc=None)], [], load)
+    assert (xtb.low_level_ts, xtb.ts_calc) == (swapped.geometry, None)  # an xTB saddle
+
+
+def test_an_undeclared_torsion_or_enantiomerization_is_no_hypothesis():
+    """S4: the mode-follow saddle of CH2OH. (Cs) joins two twisted mirror images of one basin,
+    and a rotor turned by 120 degrees is a relabelling; no bond changes, so neither is a
+    hypothesis unless declared (declared ones: the rotor and enantiomerization tests above)."""
+    rot_a, rot_b = species("rot_a", "COHHHH", methanol()), species("rot_b", "COHHHH", methanol(120))
+    mirror_r = species("mirror_r", ["C", "H", "F", "Cl", "Br"], CHFCLBR)
+    mirror_s = species("mirror_s", ["C", "H", "F", "Cl", "Br"], CHFCLBR * [-1.0, 1.0, 1.0])
+    rotor = minimum("m_rot", "rot_a", members=("rot_b",))
+    chiral = minimum("m_mirror", "mirror_r", members=("mirror_s",))
+    found = [saddle("mf_rot", "m_rot", "rot_b"), saddle("mf_mirror", "m_mirror", "mirror_s")]
+    assert select(basins(rotor, chiral), [rot_a, rot_b, mirror_r, mirror_s], found, [], load) == []
+
+
+def test_a_declared_inversion_borrows_the_verified_saddle_of_its_basin():
+    """R3 with a planar seed: the D3h saddle's mode-follow sides fall into the NH3 basin. The
+    inversion changes no bond, so the discovery is no hypothesis itself, but the declared case
+    borrows its DFT saddle by basin, also after an explore TS was lent (the saddle is validated
+    first)."""
+    up, down = species("inv_up", "NHHH", NH3), species("inv_down", "NHHH", NH3 * [1, 1, -1])
+    basin = basins(minimum("m_inv", "inv_up", members=("inv_down",)))
+    inversion = ReactionInput(id="inv", reactant="inv_up", product="inv_down")
+    follow = saddle("mf_inv", "m_inv", "inv_down")
+    assert select(basin, [up, down], [follow], [], load) == []
+    [rec] = select(basin, [up, down], [follow], [inversion], load)
+    assert (rec.reaction_id, rec.ts_calc, rec.low_level_ts) == ("inv", "calc_saddle", None)
+    explored = product("nt2_inv", "m_inv", "inv_down", ts=up.geometry)
+    [rec] = select(basin, [up, down], [follow, explored], [inversion], load)
+    assert (rec.ts_calc, rec.low_level_ts) == ("calc_saddle", up.geometry)
 
 
 def test_a_discovery_mapped_onto_its_source_is_no_hypothesis():
@@ -189,16 +234,22 @@ def test_conformers_of_one_state_are_no_hypothesis_but_a_declared_torsion_is():
     assert rec.torsional and not rec.degenerate
 
 
-def test_a_0p05_angstrom_change_is_not_a_reaction():
-    """CH-07: the legacy connect-minima test accepted this pair; the expectation is inverted."""
+def test_an_undeclared_pair_needs_a_bond_change():
+    """CH-07 on bonds: the proton moved across F-H...N (F-H broken) is a hypothesis; the proton
+    0.05 A further out, or the H...N contact 0.3 A longer (0.2 A sufficed before), changes no
+    bond and is none."""
     fhn = species("fhn", "FHN", [[0.0, 0, 0], [1.04, 0, 0], [2.28, 0, 0]])
     near = species("near", "FHN", [[0.0, 0, 0], [1.09, 0, 0], [2.28, 0, 0]])
     far = species("far", "FHN", [[0.0, 0, 0], [1.40, 0, 0], [2.28, 0, 0]])
-    minima = [minimum("m_fhn", "fhn"), minimum("m_near", "near"), minimum("m_far", "far")]
-    found = [product("d_near", "m_fhn", "near"), product("d_far", "m_fhn", "far")]
+    contact = species("contact", "FHN", [[0.0, 0, 0], [0.93, 0, 0], [2.83, 0, 0]])
+    loose = species("loose", "FHN", [[0.0, 0, 0], [0.93, 0, 0], [3.13, 0, 0]])
+    names = ("fhn", "near", "far", "contact", "loose")
+    found = [product("d_near", "m_fhn", "near"), product("d_far", "m_fhn", "far"),
+             product("d_loose", "m_contact", "loose")]
 
-    records = select(basins(*minima), [fhn, near, far], found, [], load)
-    assert [r.minima for r in records] == [("m_fhn", "m_far")]
+    records = select(basins(*(minimum(f"m_{n}", n) for n in names)),
+                     [fhn, near, far, contact, loose], found, [], load)
+    assert [(r.minima, r.torsional) for r in records] == [(("m_fhn", "m_far"), False)]
 
 
 def test_pick_endpoints_avoids_a_permuted_representative():

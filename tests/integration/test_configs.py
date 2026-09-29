@@ -2,6 +2,7 @@
 
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+import numpy as np
 import pytest
 import yaml
 
@@ -50,6 +51,23 @@ def test_system_loads_and_its_xyz_fit_the_state_and_the_reaction_atom_order(path
                                    declared=m is not None)
     for reaction in system.reactions:
         assert xyz[reaction.reactant].symbols == xyz[reaction.product].symbols
+
+
+_C3 = np.array([[-0.5, -np.sqrt(0.75), 0.0], [np.sqrt(0.75), -0.5, 0.0], [0.0, 0.0, 1.0]])
+SADDLE_SEEDS = {  # a seed off its symmetry by more than noise would relax to a minimum instead
+    "nh3_planar_seed/d3h.xyz": (np.diag([1.0, 1.0, -1.0]), _C3),
+    "dme_c2v_seed/c2v_eclipsed.xyz": (np.diag([-1.0, 1.0, 1.0]), np.diag([1.0, 1.0, -1.0])),
+}
+
+
+@pytest.mark.parametrize("name", SADDLE_SEEDS)
+def test_saddle_seeds_keep_their_point_group_exactly(name):
+    xyz = read_xyz(CONFIGS / "systems" / "xyz" / name)
+    x, symbols = np.asarray(xyz.coords), np.asarray(xyz.symbols)
+    for op in SADDLE_SEEDS[name]:  # every image atom lands on a like atom
+        d = np.linalg.norm(x[:, None] - (x @ op.T)[None], axis=2)
+        d[symbols[:, None] != symbols[None]] = np.inf
+        assert d.min(axis=0).max() < 1e-6, name
 
 
 def test_no_forbidden_keys_and_absolute_paths_only_in_sites():

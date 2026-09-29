@@ -1,6 +1,6 @@
 """sp -> thermo with FakeQM and fake_species_thermo: energy layer (parents, label, spin),
-band, association, mixed LOT, m = 2, dG_eff (state reference, submerged barrier,
-barrierless)."""
+band, association, mixed LOT, m = 2, the state G (lowest spin-clean minimum) and dG_eff
+(submerged barrier, barrierless)."""
 
 import math
 from pathlib import Path
@@ -126,18 +126,19 @@ def test_sp_then_thermo(fake_runtime, tmp_run):
 def test_association_across_charge_and_spin_fails_closed(fake_runtime, tmp_run):  # S14
     anion = {"complex": (-1, 3), "nh": (-1, 1), "o": (0, 3)}  # F-.HF-like, with a triplet
     inputs, rt, _ = _setup(fake_runtime, tmp_run, anion)
-    rx = _thermo(inputs, rt)["rx1_298.15K_1atm"]
-    assert rx.blockers == () and rx.dG_assoc_kcal < 0 and rx.dG_act_vs_separated_kcal is not None
-    sp = [a.model_copy(update={"parents": tuple(p for p in a.parents if p != "m_o2")})
-          for a in _sp(inputs, rt)]  # m_o2 (the O geometry again) loses its energy layer
+    plain = _thermo(inputs, rt)
+    rx, G = plain["rx1_298.15K_1atm"], {k: plain[f"m_{k}_298.15K"].G_hartree for k in (
+        "reactant", "nh", "o", "o2")}
+    assert rx.blockers == () and rx.dG_act_vs_separated_kcal is not None
+    assert G["o"] == G["o2"]  # two minima of the O state count once, not as an ensemble
+    assert rx.dG_assoc_kcal == pytest.approx(
+        (G["reactant"] - G["nh"] - G["o"]) * HARTREE_TO_KCAL_MOL) and rx.dG_assoc_kcal < 0
+    sp = [a.model_copy(update={"parents": tuple(p for p in a.parents if p not in ("m_o", "m_o2"))})
+          for a in _sp(inputs, rt)]  # the O state loses its energy layer
     view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, *sp]})
     out = _thermo(view, rt, "tzvp")
-    assert out["m_o2_298.15K"].G_hartree is None and out["m_o_298.15K"].G_hartree is not None
-    assert out["rx1_298.15K_1atm"].dG_assoc_kcal is None  # no ensemble from m_o alone
-    isomer = _relabel(view, {"m_o2": {"state_label": "o_isomer"}})  # another O state
-    rt_ln2 = R_KCAL_MOL_K * 298.15 * math.log(2)  # O alone: its ensemble loses the o2 twin
-    assert _thermo(isomer, rt, "tzvp")["rx1_298.15K_1atm"].dG_assoc_kcal == pytest.approx(
-        rx.dG_assoc_kcal - rt_ln2)
+    assert out["m_nh_298.15K"].G_hartree is not None and out["m_o_298.15K"].G_hartree is None
+    assert out["rx1_298.15K_1atm"].dG_assoc_kcal is None  # no O minimum on the complex's LOT
 
 
 def _relabel(view, updates):
@@ -146,20 +147,32 @@ def _relabel(view, updates):
     return view.model_copy(update={"artifacts": arts})
 
 
-def test_dg_eff_takes_the_lowest_conformer_of_the_reactant_state(fake_runtime, tmp_run):
+def test_state_g_is_the_lowest_spin_clean_minimum_of_the_state(fake_runtime, tmp_run):
+    """dG_eff refers to the reactant state and dG_assoc to the O state (Curtin-Hammett); a
+    spin-contaminated minimum is no candidate."""
     inputs, rt, ev = _setup(fake_runtime, tmp_run)
-    low = ev["reactant"].model_copy(update={
-        "job_key": "low", "energy_hartree": ev["reactant"].energy_hartree - 1 / HARTREE_TO_KCAL_MOL})
-    conformer = R.MinimumRecord(
-        minimum_id="m_low", basin_id="low", composition_id="HNO", species_id="low", tier="dft",
-        level_key="x", opt_calc="o", freq_calc=calc_id(low), energy_hartree=0.0,
-        state_label="reactant")
-    view = inputs.model_copy(update={"artifacts": [
-        *inputs.artifacts, Artifact(artifact_id=calc_id(low), type=T.CALCULATION, payload=low),
-        Artifact(artifact_id="m_low", type=T.MINIMUM, payload=conformer)]})
-    before, after = _thermo(inputs, rt)["rx1_298.15K_1atm"], _thermo(view, rt)["rx1_298.15K_1atm"]
-    assert after.dG_act_kcal == pytest.approx(before.dG_act_kcal)  # seen from its own conformer
-    assert after.dG_eff_kcal == pytest.approx(before.dG_eff_kcal + 1.0)  # Curtin-Hammett
+
+    def with_lower_minima(notes):  # one more reactant and O minimum, 1 kcal/mol lower each
+        arts = []
+        for tag, composition in (("reactant", "HNO"), ("o", "o")):
+            e = ev[tag].energy_hartree - 1 / HARTREE_TO_KCAL_MOL
+            low = ev[tag].model_copy(update={"job_key": f"low_{tag}", "energy_hartree": e})
+            arts += [Artifact(artifact_id=calc_id(low), type=T.CALCULATION, payload=low),
+                     Artifact(artifact_id=f"m_low_{tag}", type=T.MINIMUM, payload=R.MinimumRecord(
+                         minimum_id=f"m_low_{tag}", basin_id=f"low_{tag}", notes=notes,
+                         composition_id=composition, species_id=tag, tier="dft", level_key="x",
+                         opt_calc="o", freq_calc=calc_id(low), energy_hartree=0.0,
+                         state_label=tag))]
+        view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, *arts]})
+        return _thermo(view, rt)["rx1_298.15K_1atm"]
+
+    before, clean = _thermo(inputs, rt)["rx1_298.15K_1atm"], with_lower_minima(())
+    assert clean.dG_act_kcal == pytest.approx(before.dG_act_kcal)  # seen from its own conformer
+    assert clean.dG_eff_kcal == pytest.approx(before.dG_eff_kcal + 1.0)
+    assert clean.dG_assoc_kcal == pytest.approx(before.dG_assoc_kcal + 1.0)
+    hot = with_lower_minima(("spin_contaminated",))
+    assert (hot.dG_eff_kcal, hot.dG_assoc_kcal, hot.blockers) == (
+        pytest.approx(before.dG_eff_kcal), pytest.approx(before.dG_assoc_kcal), ())
 
 
 def test_a_submerged_barrier_and_a_barrierless_step_rank_by_max_dg_rxn_0(fake_runtime, tmp_run):

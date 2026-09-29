@@ -90,8 +90,14 @@ def test_saddle_structure_gives_a_mode_follow_discovery(fake_runtime, tmp_run):
     assert set(sides) == {"t_mf1", "t_mf2"} and found.mechanism == "mode_follow"
     assert found.source_minimum == sides["t_mf1"].minimum_id and found.product_species == "t_mf2"
     assert found.ts is not None and found.ts_imag_cm1 < -50
+    assert found.ts_calc is None  # an xTB saddle is a low-level TS
     assert {s.source for s in out.records(T.SPECIES, SpeciesRecord)} == {"input", "mode_follow"}
     assert all(a.status == "success" for a in out.artifacts)  # no failed minimum for "t"
+
+    dft = run("dft", [species(tmp_run, pes, "t", "ts")], **DFT, select={"include": "all"})
+    (verified,) = dft.records(T.DISCOVERY, DiscoveryRecord)
+    saddle = dft.evidence(verified.ts_calc or "")  # the DFT saddle's opt, validated directly
+    assert (saddle.task, saddle.level.method, saddle.final) == ("opt", "pbe0", verified.ts)
 
 
 def test_an_endpoint_on_a_saddle_joins_the_side_nearer_its_input(fake_runtime, tmp_run):

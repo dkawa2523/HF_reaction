@@ -1,4 +1,4 @@
-"""Path profiles: class, peak interpolation, node spacing and tangents (§5.5).
+"""Path profiles: class, peak interpolation and tangents (§5.5).
 
 A path is classified as it stands, converged or not: its maximum between two minima bounds the
 saddle from above, and its peak is only a seed (CH-08).
@@ -78,14 +78,6 @@ def hei(
     neighbour = k + 1 if offset >= 0 else k - 1
     coords = frames[k] + abs(offset) * (frames[neighbour] - frames[k])
     return k + offset, float(energy), coords
-
-
-def max_node_spacing(coords_list: Sequence[np.ndarray]) -> float:
-    """Largest Cartesian distance (Å, all atoms) between neighbouring images."""
-
-    frames = _frames(coords_list)
-    steps = (frames[1:] - frames[:-1]).reshape(len(frames) - 1, -1)
-    return float(np.linalg.norm(steps, axis=1).max())
 
 
 def tangent(coords_list: Sequence[np.ndarray], index: int) -> np.ndarray:

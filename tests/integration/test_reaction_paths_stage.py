@@ -1,6 +1,7 @@
 """reaction-paths stage on fake engines (§7.3, §8.2), including the CH-05 regression."""
 
 import json
+from collections import Counter
 from functools import partial
 from pathlib import Path
 
@@ -35,6 +36,22 @@ class CollapsingSaddle(fakes.FakeSaddle):  # every saddle search falls into the 
         key = self._key("collapse", seed.fingerprint())
         return self._evidence("saddle", seed, method, key, self._start(seed, key),
                               self.pes.points["intermediate"])
+
+
+class KeyedQM(fakes.FakeQM):  # the calculation id of every result, as a JobStore sees it
+    def __init__(self, root, pes):
+        super().__init__(root, pes)
+        self.jobs = Counter()
+
+    def frequencies(self, mol, method, *, deadline=None):
+        ev = super().frequencies(mol, method, deadline=deadline)
+        self.jobs[calc_id(ev)] += 1
+        return ev
+
+    def optimize(self, mol, method, *, init_hessian=None, deadline=None):
+        ev = super().optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
+        self.jobs[calc_id(ev)] += 1
+        return ev
 
 
 class SlowQM(fakes.FakeQM):  # an optimization uses up the rest of its hypothesis' walltime
@@ -162,6 +179,30 @@ def test_collapsed_saddle_is_validated_as_an_intermediate(tmp_run, fake_runtime)
                                 saddle=CollapsingSaddle(tmp_run, pes), max_split_depth=0)
     assert reactions["rx"].outcome is O.MULTI_STEP and "rx_split1" not in reactions
     assert '"saddle_collapsed"' in (tmp_run / "stage" / reactions["rx"].log).read_text()
+
+
+def test_a_ts_joining_an_endpoint_to_a_new_basin_splits_and_its_child_replays_it(
+        tmp_run, fake_runtime) -> None:
+    """GEN-05: the low-level TS ts1 of R -> P joins R to the intermediate, so the case has two
+    steps; the child R -> I validates the parent's TS first (the same freq and QRC jobs, JobStore
+    hits) instead of searching again, and I -> P is searched as usual."""
+    pes = fakes.triple_well()
+    view, source = dft_view(tmp_run, pes)
+    ts = fakes.write_geometry(tmp_run, "ts1.xyz", pes.symbols, pes.points["ts1"])
+    found = DiscoveryRecord(discovery_id="d1", source_minimum=source, mechanism="nt2",
+                            outcome="product", product_species="product", ts=ts)
+    view.artifacts.append(Artifact(artifact_id="d1", type=T.DISCOVERY, payload=found))
+    qm = KeyedQM(tmp_run, pes)
+    reactions = run_stage(fake_runtime, tmp_run, pes, view, qm=qm)[0]
+    parent, first, second = (reactions[r] for r in ("rx", "rx_split1", "rx_split2"))
+    assert (parent.outcome, parent.reasons, parent.saddle) == (
+        O.MULTI_STEP, ("intermediate_distinct",), None)
+    assert (first.ts_calc, second.ts_calc) == (first.saddle.saddle_calc, None)
+    assert [first.outcome, second.outcome] == [O.ELEMENTARY_STEP] * 2
+    log = [json.loads(line) for line in (tmp_run / "stage" / first.log).read_text().splitlines()]
+    assert [e["action"] for e in log if "action" in e] == ["validate_ts", "connect", "complete"]
+    replayed = (first.saddle.freq_calc, *first.connection.side_calcs)
+    assert [qm.jobs[c] for c in replayed] == [2, 2, 2]  # the parent's jobs, run again
 
 
 def test_walltime_low_level_ts_shortcut_and_negative_discoveries_do_not_veto(

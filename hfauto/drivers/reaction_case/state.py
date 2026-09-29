@@ -44,7 +44,9 @@ class Action(StrEnum):
 
 
 class ReactionPathsPolicy(BaseModel):
-    """The budget of one hypothesis (pipeline ``policy:``); its split children share it."""
+    """The budget (pipeline ``policy:``). max_saddle_attempts counts per case (a split child
+    starts from 0; a stalled search's restart is not counted); a hypothesis and its split
+    children share only the walltime_h deadline."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     walltime_h: float = 6.0
@@ -78,12 +80,14 @@ class CaseState:
     ``minima`` (not in the §7.3 listing) holds the registry records of ``case.minima``, None when
     an endpoint has none: rows 1-3 need their tier, level, basin and energy, which a
     ReactionRecord does not carry. ``screen`` is the verdict of the latest DFT profile (SCREEN
-    or string), which decides rows 6, 13 and 16 and goes into the record.
+    or string), which decides rows 6, 13 and 16 and goes into the record. ``neb_done``: the
+    low-level path of SCREEN ran (after a shortcut, row 12 runs it once its seed has failed).
     """
 
     minima: tuple[MinimumRecord | None, MinimumRecord | None] = (None, None)
     expired: bool = False
     screen: BarrierVerdict | None = None
+    neb_done: bool = False
     seeds: tuple[Seed, ...] = ()  # unused seeds, consumed from the front
     saddle_attempts: int = 0
     last_saddle: Literal["converged", "failed"] | None = None
@@ -92,7 +96,7 @@ class CaseState:
     connection: ConnectionLabel | Literal["same_basin"] | None = None  # the retried failure
     connection_attempts: int = 0
     path_runs: int = 0  # DFT strings run, failed ones included
-    intermediate: Literal["distinct", "same_as_endpoint"] | None = None
+    intermediate: Literal["distinct", "same_as_endpoint", "relax_failed"] | None = None
 
 
 @dataclass(frozen=True)
@@ -199,7 +203,9 @@ def _r11_collapsed(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision
 
 
 def _r12_screen(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
-    return Decision(Action.SCREEN, "screen") if p.screen and s.screen is None else None
+    # the cheap low-level path comes before any string, also once a shortcut's seed has failed
+    fire = p.screen and not s.neb_done and (s.screen is None or not s.seeds)
+    return Decision(Action.SCREEN, "screen") if fire else None
 
 
 def _r13_intermediate(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
@@ -208,21 +214,28 @@ def _r13_intermediate(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decis
     return None
 
 
+def _attempts_left(s: CaseState, p: CaseRules) -> bool:
+    return s.saddle_attempts < p.budget.max_saddle_attempts
+
+
 def _r14_seed(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
-    if s.seeds and s.saddle_attempts < p.budget.max_saddle_attempts:
+    # a stalled search's restart (never itself restarted) is not counted
+    if s.seeds and (s.seeds[0].source == "saddle_restart" or _attempts_left(s, p)):
         return Decision(Action.REFINE_SADDLE, f"seed:{s.seeds[0].source}")
     return None
 
 
+# A string runs only while its peak seed can still be refined.
 def _r15_no_path(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
-    return Decision(Action.FIND_PATH, "no_dft_path") if not s.path_runs else None
+    fire = not s.path_runs and _attempts_left(s, p)
+    return Decision(Action.FIND_PATH, "no_dft_path") if fire else None
 
 
 def _r16_next_chunk(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     # The seeds of the latest string failed: its next chunk starts where it stopped.
     v = s.screen
     if (v is not None and v.source == "string" and v.verdict in ("single", "intermediate")
-            and not s.seeds and s.path_runs < STRING_CHUNKS):
+            and not s.seeds and s.path_runs < STRING_CHUNKS and _attempts_left(s, p)):
         return Decision(Action.FIND_PATH, "next_chunk")
     return None
 

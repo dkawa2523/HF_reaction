@@ -1,5 +1,6 @@
 """chemistry.thermo: textbook values and the fixed rule for negative modes."""
 
+import importlib.metadata
 import math
 
 import pytest
@@ -11,9 +12,8 @@ from hfauto.core.constants import R_KCAL_MOL_K
 RT = R_KCAL_MOL_K * 298.15
 
 
-def test_standard_states_ensembles_and_association():
+def test_standard_states_and_association():
     assert th.standard_state_shift(1, 298.15, "1M") == pytest.approx(1.894, abs=1e-3)
-    assert th.ensemble_G([-10.0, -10.0], 298.15) == pytest.approx(-10.0 - RT * math.log(2) / H2K)
     bound, ts = -3.0 - 10 / H2K, -3.0 + 5 / H2K  # 10 kcal/mol below the separated monomers
     assert th.association(bound, ts, [-1.0, -2.0], [1, 1], 298.15, "1atm") == pytest.approx(
         (-10.0, 5.0))
@@ -51,3 +51,8 @@ def test_saddle_drops_the_lowest_mode_and_flips_the_others():  # incl. an unanno
 def test_positive_or_empty_modes_pass_unchanged():
     assert th.thermo_frequencies((900.0, 300.0), saddle=False) == (300.0, 900.0)
     assert th.thermo_frequencies((), saddle=False) == th.thermo_frequencies((), saddle=True) == ()
+
+
+def test_pymsym_is_the_pinned_version():  # R14: another libmsym build may find another sigma
+    pytest.importorskip("pymsym")
+    assert importlib.metadata.version("pymsym") == "0.3.5"

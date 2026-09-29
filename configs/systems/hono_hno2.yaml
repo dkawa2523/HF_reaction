@@ -1,4 +1,6 @@
-# S15 (review §6.1): trans-HONO -> HNO2 (H-NO2), two steps through cis-HONO (multi-step case).
+# S15 (review §6.1): trans-HONO -> HNO2 (H-NO2). At this Level the direct 1,3-H shift TS
+# (-2088i, dE_act 55.3) joins both ends: elementary, dG_eff 52.0 +- 0.2 (VAL). Regression only,
+# never multi_step coverage.
 system_id: hono_hno2
 species:
   - {id: trans_hono, xyz: xyz/hono/trans.xyz, role: endpoint}

@@ -15,7 +15,7 @@ from typing import Any, Protocol, TypeVar
 from pydantic import BaseModel, ConfigDict
 
 from hfauto.core.evidence import Failure, FailureKind
-from hfauto.core.method import Deadline, ExecutionSpec
+from hfauto.core.method import MIN_ATTEMPT_S, Deadline, ExecutionSpec
 from hfauto.execution.jobstore import JobStore
 from hfauto.execution.process import Command, CommandResult, run_command
 
@@ -31,7 +31,6 @@ LADDER: dict[FailureKind, int] = {
     FailureKind.INPUT_INVALID: 1,
     FailureKind.SCF_NOT_CONVERGED: 1,
 }
-MIN_ATTEMPT_S = 60.0  # below this remaining budget an attempt is not started
 
 
 @dataclass(frozen=True)
@@ -180,10 +179,9 @@ class JobRunner:
 def _attempt_timeout(execution: ExecutionSpec, deadline: Deadline | None) -> float | None:
     if deadline is None:
         return execution.timeout_s
-    remaining = deadline.remaining()
-    if remaining < MIN_ATTEMPT_S:
+    if deadline.expired():
         return None
-    return min(execution.timeout_s, remaining)
+    return min(execution.timeout_s, deadline.remaining())
 
 
 def _continue(

@@ -1,4 +1,6 @@
-# S17 (review §6.1): (HF)2 donor-acceptor interchange (barrier below the resolution: barrierless).
+# S17 (review §6.1): (HF)2 donor-acceptor interchange through the C2h TS (-227i). Its dE_act
+# 1.256 exceeds the 1.0 kcal/mol resolution: degenerate, dE_act 1.256 +- 0.05 (VAL). Regression
+# only, never barrierless coverage.
 system_id: hf_dimer_swap
 species:
   - {id: donor1, xyz: xyz/hf_dimer_swap/donor1.xyz, role: endpoint}

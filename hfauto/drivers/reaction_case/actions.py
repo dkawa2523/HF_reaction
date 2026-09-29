@@ -76,6 +76,7 @@ class Work:
     ts_freq: Evidence | None = None
     connection: ConnectionClaim | None = None
     intermediate: tuple[MinimumRecord, SpeciesRecord] | None = None
+    split_ts: tuple[int, str] | None = None  # (split child, saddle calc) it validates (GEN-05)
     calcs: dict[str, Evidence] = field(default_factory=dict)
     species: dict[str, SpeciesRecord] = field(default_factory=dict)
     minima: dict[str, MinimumRecord] = field(default_factory=dict)
@@ -136,12 +137,28 @@ class Ctx:
 
     def verdict(self, frames: list[np.ndarray], inner: Sequence[float],
                 source: Literal["screen", "string"]) -> BarrierVerdict:
-        """Class of the path ``frames`` between the DFT minima (``inner``: its interior DFT
-        energies), kept as the latest profile; its maximum bounds the saddle from above."""
-        energies = (self.energies[0], *inner, self.energies[1])
-        self.work.path = Profile(frames, energies)
-        return barrier_verdict(energies, source=source, policy=self.rules.gates,
-                               max_node_spacing_A=profile.max_node_spacing(frames))
+        """Class of the sequence-aligned path ``frames`` between the DFT minima (``inner``: its
+        interior DFT energies), kept as the latest profile; its maximum bounds the saddle from
+        above. A barrierless class is accepted only after densifying: DFT SPs at the midpoints
+        of the two segments beside the highest interior node, where a barrier the nodes step
+        over would rise (nodes lie ~0.2 A apart, so the midpoints stay near the path)."""
+        energies = [self.energies[0], *inner, self.energies[1]]
+        self.work.path = Profile(frames, tuple(energies))
+        verdict = barrier_verdict(energies, source=source, policy=self.rules.gates)
+        if verdict.verdict != "barrierless":
+            return verdict
+        k = 1 + int(np.argmax(inner))
+        mids = [0.5 * (frames[i] + frames[i + 1]) for i in (k - 1, k)]
+        low, high = (self.sp(x) for x in mids)
+        if low is None or high is None:
+            return BarrierVerdict(verdict="unavailable", source=source,
+                                  reasons=("midpoint_single_point",))
+        frames = [*frames[:k], mids[0], frames[k], mids[1], *frames[k + 1:]]
+        energies = [*energies[:k], low, energies[k], high, *energies[k + 1:]]
+        self.work.path = Profile(frames, tuple(energies))
+        verdict = barrier_verdict(energies, source=source, policy=self.rules.gates)
+        self.note(f"{source}_midpoints:{verdict.verdict}")
+        return verdict
 
     def direction(self, x: np.ndarray, seed: Seed | None = None) -> np.ndarray:
         """Reaction direction at a seed (design §6): a TS's own imaginary mode, else the path
@@ -205,9 +222,11 @@ def _seed_hessian(ctx: Ctx, seed: Seed, x: np.ndarray, direction: np.ndarray
 def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """The front seed's reaction direction and initial Hessian → saddle.refine with only that
     direction negative. A search stalled at maxiter restarts once from its last frame with a
-    fresh Hessian (a new front seed, same attempt budget)."""
+    fresh Hessian: a new front seed that is not counted (the attempts count per case, a split
+    child starts from 0; only the walltime deadline is shared)."""
     rt, seed = ctx.rt, state.seeds[0]
-    state = replace(state, seeds=state.seeds[1:], saddle_attempts=state.saddle_attempts + 1,
+    counted = int(seed.source != "saddle_restart")
+    state = replace(state, seeds=state.seeds[1:], saddle_attempts=state.saddle_attempts + counted,
                     last_saddle="failed", ts_check=None)
     x = ctx.coords(seed.geometry)
     direction = ctx.direction(x, seed)
@@ -341,9 +360,35 @@ def connect(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
         retry = "sides_same_basin" in gate.reasons  # the only failure worth a wider displacement
         return replace(state, connection="same_basin" if retry else "failed")
     sides = (calc_id(ctx.keep(plus)), calc_id(ctx.keep(minus)))
-    ctx.work.connection = ConnectionClaim(side_calcs=sides, minima=(first, second),
-                                          amplitude_A=step)
+    if (two := _two_steps(ctx, state, label, (first, second))) is not None:
+        return two
+    ctx.work.connection = ConnectionClaim(side_calcs=sides, minima=(first, second))
     return replace(state, connection=label)
+
+
+def _two_steps(ctx: Ctx, state: CaseState, label: str, assigned: tuple[str, str]
+               ) -> CaseState | None:
+    """GEN-05: a reassigned TS that joins exactly one endpoint's basin to another DFT basin
+    makes the case two steps (row 5); the split child between those two validates this TS (a
+    degenerate case: child 1). None for any other connection."""
+    ends = [ctx.rt.minima[m][0].basin_id for m in ctx.case.minima]
+    records = [ctx.rt.minima[m][0] for m in assigned]
+    inside = [ends.index(r.basin_id) for r in records if r.basin_id in ends]
+    if label != "reassigned" or len(inside) != 1 or state.claim is None:
+        return None
+    well = next(r for r in records if r.basin_id not in ends)
+    ctx.note(f"qrc{state.connection_attempts}:end{inside[0]}_to_new_basin:{well.minimum_id}")
+    ctx.work.intermediate = (well, ctx.rt.species[well.species_id])
+    ctx.work.split_ts = (inside[0] + 1, state.claim.saddle_calc)
+    return replace(state, connection=None, claim=None, intermediate="distinct")
+
+
+def _with_peak(ctx: Ctx, state: CaseState, name: str) -> CaseState:
+    """The latest profile's highest peak joins the seeds."""
+    v = state.screen
+    source = "screen_hei" if v is not None and v.source == "screen" else "path_hei"
+    seed = peak_seed(ctx, f"{name}_hei", source)
+    return replace(state, seeds=(*state.seeds, seed)) if seed else state
 
 
 def _past_the_well(ctx: Ctx, state: CaseState, path: Profile, name: str) -> CaseState:
@@ -353,14 +398,13 @@ def _past_the_well(ctx: Ctx, state: CaseState, path: Profile, name: str) -> Case
     if v is not None and max(e[1:-1]) - max(e[0], e[-1]) < ctx.resolution:
         return replace(state, screen=v.model_copy(update={"verdict": "barrierless",
                                                           "reasons": ("well_is_endpoint",)}))
-    source = "screen_hei" if v is not None and v.source == "screen" else "path_hei"
-    seed = peak_seed(ctx, f"{name}_hei", source)
-    return replace(state, seeds=(*state.seeds, seed)) if seed else state
+    return _with_peak(ctx, state, name)
 
 
 def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """relax_to_minimum → Registry on the collapsed saddle (or soft TS whose QRC failed: its
-    claim is withdrawn) or on the latest profile's lowest well; consumes its trigger."""
+    claim is withdrawn) or on the latest profile's lowest well; consumes its trigger. A failed
+    relaxation is no chemical result: a well's profile goes on from its highest peak."""
     path = ctx.work.path if decision.reason == "path_intermediate" else None
     state = replace(state, ts_check=None, last_saddle=None, claim=None, connection=None)
     if path is not None:
@@ -372,8 +416,12 @@ def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> Cas
         return replace(state, intermediate="same_as_endpoint")
     name = f"int{state.saddle_attempts}_{state.path_runs}"
     record = _register(ctx, x, name, "intermediate")
+    if record is None:
+        ctx.note("int:relax_failed")
+        state = replace(state, intermediate="relax_failed")
+        return state if path is None else _with_peak(ctx, state, name)
     ends = {ctx.rt.minima[m][0].basin_id for m in ctx.case.minima}
-    if record is not None and record.basin_id not in ends:
+    if record.basin_id not in ends:
         ctx.work.intermediate = (record, ctx.rt.species[record.species_id])
         return replace(state, intermediate="distinct")
     state = replace(state, intermediate="same_as_endpoint")

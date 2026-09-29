@@ -1,0 +1,11 @@
+# The R3 NH3 inversion (degenerate, 3.8395) plus an exactly D3h NH3 (N-H 1.00 A), a monomer
+# species settled but not an endpoint: planar NH3 is the inversion saddle (one imaginary mode,
+# -757.8 cm-1 in the W1 DFT probe) whose mode-follow joins the NH3 basin. Fake-pass checks: the
+# planar history shows follow1:ts_candidate; the R3 case starts with validate_ts from ts_calc.
+system_id: nh3_planar_seed
+species:
+  - {id: nh3_up, xyz: xyz/nh3_inversion/reactant.xyz, role: endpoint}
+  - {id: nh3_down, xyz: xyz/nh3_inversion/product.xyz, role: endpoint}
+  - {id: planar_nh3, xyz: xyz/nh3_planar_seed/d3h.xyz}
+reactions:
+  - {id: nh3_inversion, reactant: nh3_up, product: nh3_down}

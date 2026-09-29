@@ -15,7 +15,7 @@ from hfauto.chemistry.classification import finalize, split
 from hfauto.chemistry.identity import basin_coords
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.xyz import XYZ
-from hfauto.core.evidence import FileRef, Geometry
+from hfauto.core.evidence import Evidence, FileRef, Geometry
 from hfauto.core.ids import path_token, species_artifact_id
 from hfauto.core.manifest import Artifact
 from hfauto.core.method import Deadline, MethodSpec
@@ -37,7 +37,8 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class CaseRuntime:
     """``minima`` (DFT minimum id → record, optimized geometry) and ``species`` grow as cases
-    register basins; ``resolve`` opens a FileRef of the run (trajectories, Hessians)."""
+    register basins, ``calcs`` (calculation id → Evidence) as cases finish; ``resolve`` opens a
+    FileRef of the run (trajectories, Hessians)."""
 
     qm: QMEngine
     saddle: SaddleRefiner
@@ -53,6 +54,7 @@ class CaseRuntime:
     resolve: Callable[[FileRef], Path]
     minima: dict[str, tuple[MinimumRecord, Geometry]]
     species: dict[str, SpeciesRecord]
+    calcs: dict[str, Evidence]
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,7 @@ def _endpoint(rt: CaseRuntime, minimum_id: str, species_id: str) -> np.ndarray:
 
 def open_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline: Deadline,
               folder: Path, log: Callable[[dict[str, object]], None]) -> actions.Ctx:
+    """The case context; a given DFT stationary point (``ts_calc``) is its saddle."""
     raw = (_endpoint(rt, case.minima[0], case.endpoints[0]),
            _endpoint(rt, case.minima[1], case.endpoints[1]))
     first = rt.species[case.endpoints[0]]
@@ -83,7 +86,7 @@ def open_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline:
         multiplicity=first.multiplicity, raw=raw, ends=(raw[0], align_mapped(raw[0], raw[1])),
         energies=(rt.minima[case.minima[0]][0].energy_hartree,
                   rt.minima[case.minima[1]][0].energy_hartree),
-        log=log,
+        log=log, work=actions.Work(saddle=rt.calcs[case.ts_calc] if case.ts_calc else None),
     )
 
 
@@ -124,7 +127,10 @@ def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline
             stream.write(json.dumps(entry, sort_keys=True) + "\n")
 
     minima = tuple(rt.minima[m][0] if m in rt.minima else None for m in case.minima)
-    state = CaseState(minima=(minima[0], minima[1]))
+    state = CaseState(minima=(minima[0], minima[1]),
+                      last_saddle="converged" if case.ts_calc else None)
+    if case.ts_calc:  # validated first (row 10); a failed gate goes on to SCREEN
+        log({"note": f"ts_calc:{case.ts_calc}"})
     ctx: actions.Ctx | None = None
     while True:
         state = replace(state, expired=deadline.expired())
@@ -139,9 +145,16 @@ def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline
     record = finalize(case, decision, barrier=state.screen, claim=state.claim,
                       connection=work.connection)
     record = record.model_copy(update={"log": f"cases/{folder.name}/log.jsonl"})
-    children: tuple[ReactionRecord, ...] = ()
-    if record.outcome is CaseOutcome.MULTI_STEP and ctx is not None and work.intermediate:
-        well, well_species = work.intermediate
-        middle = _endpoint(rt, well.minimum_id, well_species.species_id)
-        children = split(record, well, well_species, (ctx.raw[0], middle, ctx.raw[1]))
-    return CaseResult(record, children, _artifacts(record, work))
+    return CaseResult(record, _children(record, rt, ctx), _artifacts(record, work))
+
+
+def _children(record: ReactionRecord, rt: CaseRuntime, ctx: actions.Ctx | None
+              ) -> tuple[ReactionRecord, ...]:
+    """The steps R→I and I→P of a multi-step case; the one whose ends a validated TS of this
+    case joins validates it again (a JobStore replay) instead of searching."""
+    if record.outcome is not CaseOutcome.MULTI_STEP or ctx is None or not ctx.work.intermediate:
+        return ()
+    well, well_species = ctx.work.intermediate
+    middle = _endpoint(rt, well.minimum_id, well_species.species_id)
+    return split(record, well, well_species, (ctx.raw[0], middle, ctx.raw[1]),
+                 ts=ctx.work.split_ts)

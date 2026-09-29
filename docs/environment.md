@@ -13,7 +13,7 @@
 | CREST | 3.0.2 | 公式バイナリを `/home/user/.local/opt/crest-3.0.2` に置く | `crest --version`(doctor) |
 | pysisyphus | 1.0 | production extra。xTB ネイティブ計算器の CI-NEB(`pysis_neb`)だけに使う | worker の import(doctor)。pin は xTB の版数 |
 | SCINE ReaDuct | 6.1.0(scine-xtb-wrapper 3.0.2) | production extra | worker の import(doctor) |
-| GoodVibes | 4.3.0(対称数に pymsym) | production extra。thermo stage が同じプロセスで呼ぶ | `hfauto run` の preflight が thermo を含む pipeline で照合する |
+| GoodVibes | 4.3.0(対称数に pymsym。0.3.5 に固定し、WSL の pytest が照合) | production extra。thermo stage が同じプロセスで呼ぶ | `hfauto run` の preflight が thermo を含む pipeline で照合する |
 
 production extra(`pyproject.toml`)は Linux・CPython 3.12 のときだけ入り、rdkit、numba、llvmlite と、scine_utilities が宣言せずに使う setuptools を含む。本体の依存は pydantic、typer、PyYAML、rich、numpy、scipy だけである。外部プログラムを conda でそろえる場合は `environment.production.yml` を使う。
 

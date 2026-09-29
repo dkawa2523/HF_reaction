@@ -1,6 +1,11 @@
+# H2CO -> trans-HCOH is about 52 kcal/mol uphill (Schreiner 2008), dE 53.75 at this Level (W1
+# DFT probe): out_of_window. The reverse 1,2-H shift is elementary with a barrier of about 30
+# kcal/mol: |imag freq| > 1500 cm-1, dE_act 25-33. Fake-pass check: trans-HCOH stays a minimum
+# (a collapse to H2CO gives same_basin, a miss).
 system_id: formaldehyde
 species:
   - {id: formaldehyde, xyz: xyz/formaldehyde/formaldehyde.xyz, role: endpoint}
   - {id: hydroxymethylene, xyz: xyz/formaldehyde/trans_hydroxymethylene.xyz, role: endpoint}
 reactions:
   - {id: formaldehyde_to_hydroxymethylene, reactant: formaldehyde, product: hydroxymethylene}
+  - {id: hydroxymethylene_to_formaldehyde, reactant: hydroxymethylene, product: formaldehyde}

@@ -15,7 +15,7 @@ CASE = r.ReactionRecord(reaction_id="rxn", reactants=(TERM,), products=(TERM,), 
                         endpoints=("sa", "sb"), source="declared", torsional=True,
                         reasons=("note",))
 SADDLE = r.SaddleClaim(saddle_calc="s", freq_calc="f", imag_cm1=-900.0, energy_hartree=-56.0)
-QRC = r.ConnectionClaim(side_calcs=("p", "m"), minima=("mb", "ma"), amplitude_A=0.1)
+QRC = r.ConnectionClaim(side_calcs=("p", "m"), minima=("mb", "ma"))
 
 
 def done(outcome: r.CaseOutcome, reason: str = "r") -> Decision:
@@ -23,7 +23,7 @@ def done(outcome: r.CaseOutcome, reason: str = "r") -> Decision:
 
 
 def test_finalize_attaches_outcome_reasons_and_claims():
-    barrier = r.BarrierVerdict(verdict="single", source="screen", max_rel_kcal=12.0)
+    barrier = r.BarrierVerdict(verdict="single", source="screen")
     rec = finalize(CASE, done(r.CaseOutcome.ELEMENTARY_STEP, "connection:elementary"),
                    barrier=barrier, claim=SADDLE, connection=QRC)
     assert rec.outcome is r.CaseOutcome.ELEMENTARY_STEP
@@ -82,9 +82,12 @@ def test_split_inherits_the_stoichiometry_and_judges_each_child_by_its_own_ends(
     assert (first.reaction_id, second.reaction_id) == ("rxn_split1", "rxn_split2")
     assert (first.torsional, second.torsional) == (True, False)
     for child in (first, second):
-        assert child.source == "split"
+        assert child.source == "split" and child.ts_calc is None
         assert child.reactants == parent.reactants and child.products == parent.products
         assert child.outcome is None and child.reasons == ()
+    for step in (1, 2):  # GEN-05: the child whose ends the parent's TS joins validates it
+        children = split(parent, well, well_species, (TRANS, CIS, HNO2), ts=(step, "calc_ts"))
+        assert [c.ts_calc for c in children] == ["calc_ts" if i == step else None for i in (1, 2)]
     other = well.model_copy(update={"composition_id": "HF_q0_m1"})
     with pytest.raises(ValueError, match="composition"):
         split(parent, other, well_species, (TRANS, CIS, HNO2))

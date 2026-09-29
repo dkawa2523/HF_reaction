@@ -10,13 +10,14 @@ terms of the freq: with energy_method the sp whose parents name the subject (the
 in the view wins; without it G = None, energy_layer_missing), else the freq itself. The
 energy layer passes spin_ok like the freq. A chiral subject (MinimumRecord.chiral, or a
 chiral TS geometry) gets -RT ln 2 in G: its mirror image is the same basin or saddle, counted
-once with m = 2 (in ensembles too). The blockers of a ReactionThermo are the only source of
-thermo_unavailable, mixed_level_of_theory and spin_contaminated.
+once with m = 2. The blockers of a ReactionThermo are the only source of thermo_unavailable,
+mixed_level_of_theory and spin_contaminated.
 
-A state is a composition and a topology.state_label. dG_eff (thermo.effective_barrier) refers
-to the lowest G of the reactant's and the product's state on the same freq and energy LOT
-(fast conformer equilibria make one reactant state); the TS drops out, with the note
-submerged_barrier, when its forward or reverse dE0 = dE + dZPE is <= 0.
+A state is a composition and a topology.state_label. Its G (_state_G) is the lowest G of its
+spin-clean minima on one freq and energy LOT (fast conformer equilibria make one state). dG_eff
+(thermo.effective_barrier) refers to the reactant's and the product's state, dG_assoc to the
+monomers' states on the complex's LOT; the TS drops out, with the note submerged_barrier, when
+its forward or reverse dE0 = dE + dZPE is <= 0.
 """
 
 from __future__ import annotations
@@ -69,7 +70,7 @@ class _Subject:
     state: State | None  # None for a TS
     notes: tuple[str, ...]  # of the MinimumRecord / SaddleClaim
     formula: tuple[str, int]  # (Hill formula, charge): finds a complex's monomers
-    lot: tuple[str, str]  # full keys of the freq and energy levels
+    contaminated: bool  # spin_contaminated in notes, or the energy layer fails spin_ok
     layer_missing: bool  # energy_method set but no such sp
     chiral: bool  # the mirror image is the same basin or saddle: -RT ln 2 in G
 
@@ -80,8 +81,8 @@ def _variants(settings: ThermoSettings) -> list[ThermoSettings]:
     return list({th.settings_sha(s): s for s in grid}.values())  # main first, no repeats
 
 
-def _subjects(inputs: Manifest, method: MethodSpec | None, load: Callable[[Geometry], XYZ]
-              ) -> dict[str, _Subject]:
+def _subjects(inputs: Manifest, method: MethodSpec | None, load: Callable[[Geometry], XYZ],
+              policy: Policy) -> dict[str, _Subject]:
     layer = {} if method is None else {  # subject -> the sp at method naming it
         parent: (a.artifact_id, a.payload)
         for a in inputs.of(ArtifactType.CALCULATION)
@@ -97,7 +98,7 @@ def _subjects(inputs: Manifest, method: MethodSpec | None, load: Callable[[Geome
         sp_calc, sp = layer.get(sid, (None, freq))
         return _Subject(sid, calc, freq, xyz, sp_calc, sp, state, notes,
                         (hill_formula(freq.final.symbols), freq.level.charge),
-                        (freq.level.full_key(), sp.level.full_key()),
+                        contaminated="spin_contaminated" in notes or not spin_ok(sp, policy),
                         layer_missing=method is not None and sp_calc is None,
                         chiral=is_chiral(xyz.symbols, xyz.coords) if chiral is None else chiral)
 
@@ -132,37 +133,39 @@ def _same_level(subs: Sequence[_Subject], *, state: bool = True) -> bool:
         same_pes(*[s.energy.level for s in subs], state=state))
 
 
+def _state_G(state: State | None, ref: _Subject, subjects: dict[str, _Subject], table: Table
+             ) -> float | None:
+    """The G of ``state``: the lowest G of its spin-clean minima on the freq and energy LOT of
+    ``ref`` (charge and multiplicity aside); None without one."""
+    G = [g for s in subjects.values()
+         if s.state == state and not s.contaminated and _same_level([ref, s], state=False)
+         and (g := table[s.id].G_hartree) is not None]
+    return min(G, default=None)
+
+
 def _association(names: tuple[str, ...], subjects: dict[str, _Subject], monomers: Monomers,
                  table: Table, T: float, state: StandardState, with_ts: bool
                  ) -> tuple[float | None, float | None]:
-    """dG_assoc and dG_act_vs_separated against the ensemble G of each monomer's state (same
-    LOT apart from charge and multiplicity; a monomer without G fails closed)."""
+    """dG_assoc and dG_act_vs_separated of the complex against the state G of each monomer on
+    its LOT; a monomer state without one fails closed."""
     complex_ = subjects.get(names[0])
     parts = monomers.get(complex_.formula) if complex_ is not None else None
     if complex_ is None or not parts:
         return None, None
-    energies, used = [], [complex_]
-    for part, _ in parts:
-        subs = [s for s in subjects.values() if s.state == part]
-        G = [table[s.id].G_hartree for s in subs]
-        if not G or None in G:
-            return None, None
-        energies.append(th.ensemble_G(cast(list[float], G), T))
-        used += subs
-    if not _same_level(used, state=False):
+    G = [_state_G(part, complex_, subjects, table) for part, _ in parts]
+    if None in G:
         return None, None
     G_ts = table[names[2]].G_hartree if with_ts else None
-    return th.association(table[names[0]].G_hartree, G_ts, energies, [n for _, n in parts],
-                          T, state)
+    return th.association(table[names[0]].G_hartree, G_ts, cast(list[float], G),
+                          [n for _, n in parts], T, state)
 
 
-def _blockers(names: tuple[str, ...], subs: Sequence[_Subject], table: Table, policy: Policy
+def _blockers(names: tuple[str, ...], subs: Sequence[_Subject], table: Table
               ) -> tuple[str, ...]:
     hits = {
         "thermo_unavailable": any(p not in table or table[p].G_hartree is None for p in names),
         "mixed_level_of_theory": not _same_level(subs),
-        "spin_contaminated": any("spin_contaminated" in s.notes or not spin_ok(s.energy, policy)
-                                 for s in subs),
+        "spin_contaminated": any(s.contaminated for s in subs),
     }
     return tuple(name for name, hit in hits.items() if hit)
 
@@ -185,16 +188,6 @@ def _kcal(subjects: dict[str, _Subject], a: str, b: str) -> float | None:
     return (sa.energy.energy_hartree - sb.energy.energy_hartree) * HARTREE_TO_KCAL_MOL
 
 
-def _state_G(sid: str, subjects: dict[str, _Subject], table: Table) -> float | None:
-    """Lowest G of the state of minimum ``sid`` on its freq and energy LOT (Curtin-Hammett);
-    None without its own G."""
-    own = subjects.get(sid)
-    if own is None or table[sid].G_hartree is None:
-        return None
-    return min(cast(float, table[s.id].G_hartree) for s in subjects.values()
-               if s.state == own.state and s.lot == own.lot and table[s.id].G_hartree is not None)
-
-
 def _submerged(names: tuple[str, ...], subjects: dict[str, _Subject], table: Table) -> bool:
     """Forward or reverse dE0 = dE + dZPE <= 0 on the energy layer: the saddle is no
     bottleneck and its TST barrier has no meaning."""
@@ -210,7 +203,8 @@ def _effective(rx: ReactionRecord, names: tuple[str, ...], subjects: dict[str, _
     with_ts = len(names) == 3 and not submerged
     if len(names) < 3 and rx.outcome is not CaseOutcome.BARRIERLESS:
         return None
-    G_R, G_P = (_state_G(name, subjects, table) for name in names[:2])
+    ends = (subjects.get(name) for name in names[:2])
+    G_R, G_P = (None if s is None else _state_G(s.state, s, subjects, table) for s in ends)
     G_ts = table[names[2]].G_hartree if with_ts else None
     if G_R is None or G_P is None or (with_ts and G_ts is None):
         return None
@@ -219,8 +213,7 @@ def _effective(rx: ReactionRecord, names: tuple[str, ...], subjects: dict[str, _
 
 
 def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject], monomers: Monomers, T: float,
-              state: StandardState, tables: Sequence[Table], policy: Policy
-              ) -> ReactionThermo:
+              state: StandardState, tables: Sequence[Table]) -> ReactionThermo:
     """tables: the thermo of every settings variant at T (index 0 = main settings)."""
     names, table = th.participants(rx), tables[0]
     subs = [subjects[p] for p in names if p in subjects]
@@ -241,7 +234,7 @@ def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject], monomers: Monom
         dG_assoc_kcal=assoc, dG_act_vs_separated_kcal=vs_separated,
         band_kcal=None if None in band else (min(cast(list[float], band)),
                                              max(cast(list[float], band))),
-        blockers=_blockers(names, subs, table, policy), dG_eff_kcal=band[0],
+        blockers=_blockers(names, subs, table), dG_eff_kcal=band[0],
         energy_level=_energy_level(subs), notes=("submerged_barrier",) if submerged else (),
     )
 
@@ -254,7 +247,7 @@ class ThermoStage:
     def run(self, inputs: Manifest, config: StageConfig, rt: StageRuntime) -> list[Artifact]:
         cfg = cast(ThermoConfig, config)
         method = None if cfg.energy_method is None else rt.method(cfg.energy_method)
-        subjects = _subjects(inputs, method, rt.load_xyz)
+        subjects = _subjects(inputs, method, rt.load_xyz, rt.policy)
         variants = _variants(cfg.settings)  # index 0 = main settings
         monomers = th.monomer_states(inputs.records(ArtifactType.SPECIES, SpeciesRecord),
                                      rt.system.compositions)
@@ -271,7 +264,7 @@ class ThermoStage:
             out += [Artifact(
                 artifact_id=f"reaction_thermo_{rx.reaction_id}_{T:g}K_{state}",
                 type=ArtifactType.REACTION_THERMO, parents=(rx.reaction_id,),
-                payload=_reaction(rx, subjects, monomers, T, state, tables, rt.policy),
+                payload=_reaction(rx, subjects, monomers, T, state, tables),
             ) for rx in inputs.records(ArtifactType.REACTION, ReactionRecord)
                 for state in cfg.standard_states]
         return out

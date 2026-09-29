@@ -7,7 +7,6 @@ import pytest
 
 from hfauto.chemistry import interpolation as itp
 from hfauto.chemistry.geometry import declared_coordinate
-from hfauto.chemistry.profile import max_node_spacing
 from hfauto.core.records import CoordinateTerm
 
 SYMBOLS = ["N", "H", "H", "H"]
@@ -17,6 +16,10 @@ CIS_HONO = np.array([[-0.32417822, -0.09440887, 0.0], [0.39510676, -0.75997798, 
                      [1.56130940, -0.07839078, 0.0], [1.42966204, 1.09297763, 0.0]])
 TRANS_HONO = np.array([[-0.19774781, -0.94387557, 0.0], [0.02491128, -0.00145366, 0.0],
                        [1.40706589, 0.00832925, 0.0], [1.82767063, 1.09719998, 0.0]])
+
+
+def max_node_spacing(frames):
+    return max(float(np.linalg.norm(b - a)) for a, b in pairwise(frames))
 
 
 def test_align_mapped_undoes_rigid_motion():

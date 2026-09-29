@@ -1,10 +1,10 @@
 """Static HTML report (design §4.1 #8, §7.4 ``report``): ``render(view, out_dir, load_xyz=)``.
 
 One self-contained page per view: a summary row per reaction (δG_eff, ΔE‡, ΔG‡, ν_imag,
-connection, outcome, blockers and the association quantities), an inline-SVG energy diagram
-per reaction and the TS imaginary mode animated by 3Dmol.js. The module does not know the run layout
-(eng P0-1): geometries are reached only through ``load_xyz``. Standard library, numpy and
-hfauto.core only; no plotting or templating package.
+connection, outcome, blockers, the association quantities and the energy level), an inline-SVG
+energy diagram per reaction and the TS imaginary mode animated by 3Dmol.js. The module does not
+know the run layout (eng P0-1): geometries are reached only through ``load_xyz``. Standard
+library, numpy and hfauto.core only; no plotting or templating package.
 """
 
 from __future__ import annotations
@@ -172,54 +172,59 @@ def _band(thermo: ReactionThermo) -> str:
     return _DASH if thermo.band_kcal is None else "{:.2f}–{:.2f}".format(*thermo.band_kcal)
 
 
-def _summary_cells(reaction: ReactionRecord, thermo: ReactionThermo | None,
+def _thermo_for(records: Sequence[ReactionThermo], T: float | None, state: str | None
+                ) -> ReactionThermo | None:
+    """The record at the ranking's (T, standard state), the one summary.rank_rows ranks by;
+    without a ranking condition (T None) the first: the thermo stage's first T and state."""
+    return next((t for t in records if T is None or (t.T_K, t.standard_state) == (T, state)), None)
+
+
+def _summary_cells(reaction: ReactionRecord, t: ReactionThermo | None,
                    row: RankRow | None) -> list[str]:
-    rid = escape(reaction.reaction_id)
-    blockers = row.blockers if row is not None else thermo.blockers if thermo else ()
+    rid, saddle = escape(reaction.reaction_id), reaction.saddle
+    blockers = row.blockers if row is not None else t.blockers if t else ()
     rank = row.rank if row is not None else None
-    saddle = reaction.saddle
+    dG_eff, dE_act, dG_act, assoc, vs_separated = map(_num, (None,) * 5 if t is None else (
+        t.dG_eff_kcal, t.dE_act_kcal, t.dG_act_kcal, t.dG_assoc_kcal, t.dG_act_vs_separated_kcal))
     return [
         f"<a href='#rxn-{rid}'>{rid}</a>",
         escape(reaction.outcome.value if reaction.outcome else _DASH),
-        _DASH if rank is None else str(rank),
-        _num(thermo.dG_eff_kcal if thermo else None),
-        _num(thermo.dE_act_kcal if thermo else None),
-        _num(thermo.dG_act_kcal if thermo else None),
+        _DASH if rank is None else str(rank), dG_eff, dE_act, dG_act,
         _imag(saddle.imag_cm1) if saddle is not None else _DASH,
-        _connection(reaction),
-        _num(thermo.dG_assoc_kcal if thermo else None),
-        _num(thermo.dG_act_vs_separated_kcal if thermo else None),
+        _connection(reaction), assoc, vs_separated,
         escape(", ".join(blockers)) or _DASH,
+        escape(t.energy_level or _DASH) if t else _DASH,
     ]
 
 
 _SUMMARY_HEADER = ("reaction", "outcome", "rank", "δG<sub>eff</sub>", "ΔE‡", "ΔG‡",
                    "ν<sub>imag</sub> (cm⁻¹)", "connection", "ΔG<sub>assoc</sub>",
-                   "ΔG‡ vs separated", "blockers")
+                   "ΔG‡ vs separated", "blockers", "energy level")
 _THERMO_HEADER = ("T (K)", "state", "ΔE‡", "ΔE<sub>rxn</sub>", "δG<sub>eff</sub>", "ΔG‡",
                   "ΔG<sub>rxn</sub>", "δG<sub>eff</sub> band", "ΔG<sub>assoc</sub>",
-                  "ΔG‡ vs separated", "blockers", "notes")
+                  "ΔG‡ vs separated", "blockers", "notes", "energy level")
 
 
 def _thermo_cells(t: ReactionThermo) -> list[str]:
     values = (t.dE_act_kcal, t.dE_rxn_kcal, t.dG_eff_kcal, t.dG_act_kcal, t.dG_rxn_kcal)
     return [f"{t.T_K:g}", t.standard_state, *map(_num, values), _band(t),
             _num(t.dG_assoc_kcal), _num(t.dG_act_vs_separated_kcal),
-            escape(", ".join(t.blockers)) or _DASH, escape(", ".join(t.notes)) or _DASH]
+            escape(", ".join(t.blockers)) or _DASH, escape(", ".join(t.notes)) or _DASH,
+            escape(t.energy_level or _DASH)]
 
 
 def _section(reaction: ReactionRecord, thermo: Sequence[ReactionThermo],
-             xyz: str | None) -> str:
+             shown: ReactionThermo | None, xyz: str | None) -> str:
+    """``thermo``: every record of the reaction, for the table; ``shown``: the diagram's."""
     rid = escape(reaction.reaction_id)
     meta = [f"outcome {escape(reaction.outcome.value if reaction.outcome else _DASH)}",
             f"source {escape(reaction.source)}", f"minima {escape(' → '.join(reaction.minima))}"]
     if reaction.reasons:
         meta.append(f"reasons {escape(', '.join(reaction.reasons))}")
     figures = []
-    if thermo:
-        first = thermo[0]
-        caption = f"{first.T_K:g} K, {first.standard_state}"
-        figures.append(f"<figure>{_energy_svg(_levels(first), caption)}"
+    if shown is not None:
+        caption = f"{shown.T_K:g} K, {shown.standard_state}"
+        figures.append(f"<figure>{_energy_svg(_levels(shown), caption)}"
                        f"<figcaption>Energy diagram ({escape(caption)})</figcaption></figure>")
     if xyz is not None and reaction.saddle is not None:
         figures.append(f"<figure><div class='mol' data-xyz='{escape(xyz)}'></div><figcaption>"
@@ -234,9 +239,8 @@ def _section(reaction: ReactionRecord, thermo: Sequence[ReactionThermo],
 def render(view: Manifest, out_dir: Path, *, load_xyz: Callable[[Geometry], XYZ]) -> Path:
     """Write ``out_dir/report.html`` for the reactions with an outcome and return its path.
 
-    Rows follow the last ReportRecord in the view (ranked first); the thermo shown first is
-    the first ReactionThermo of the reaction in view order (the thermo stage's first T and
-    state).
+    Rows follow the last ReportRecord in the view (ranked first), and so does the thermo shown
+    for a reaction: the ReactionThermo at the (T, standard state) of those rows (_thermo_for).
     """
     reactions = [r for r in view.records(ArtifactType.REACTION, ReactionRecord)
                  if r.outcome is not None]
@@ -245,26 +249,33 @@ def render(view: Manifest, out_dir: Path, *, load_xyz: Callable[[Geometry], XYZ]
         thermo[t.reaction_id].append(t)
     reports = view.records(ArtifactType.REPORT, ReportRecord)
     rows = {row.reaction_id: row for row in reports[-1].rows} if reports else {}
+    T, state = next(((r.T_K, r.standard_state) for r in rows.values()), (None, None))
     order = {rid: i for i, rid in enumerate(rows)}
     reactions.sort(key=lambda r: order.get(r.reaction_id, len(order)))
+    shown = {r.reaction_id: _thermo_for(thermo[r.reaction_id], T, state) for r in reactions}
     modes = {r.reaction_id: _mode_xyz(view, r, load_xyz) for r in reactions}
 
-    summary = [_summary_cells(r, (thermo[r.reaction_id] or [None])[0], rows.get(r.reaction_id))
-               for r in reactions]
+    summary = [_summary_cells(r, shown[r.reaction_id], rows.get(r.reaction_id)) for r in reactions]
     run = escape(view.run_id)
     intro = (f"<h1>hfauto report</h1><p class='meta'>run {run} · view of stage "
              f"{escape(view.stage_id)} · {len(reactions)} reaction(s) · energies in kcal/mol</p>")
     body = [intro, _table(_SUMMARY_HEADER, summary, {2, 3, 4, 5, 6, 8, 9}) if reactions
             else "<p>No reactions with an outcome in this view.</p>"]
-    body += [_section(r, thermo[r.reaction_id], modes[r.reaction_id]) for r in reactions]
-    with_mol = any(xyz is not None for xyz in modes.values())
+    body += [_section(r, thermo[r.reaction_id], shown[r.reaction_id], modes[r.reaction_id])
+             for r in reactions]
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "report.html"
+    path.write_text(_page(run, body, with_mol=any(x is not None for x in modes.values())),
+                    encoding="utf-8")
+    return path
+
+
+def _page(run: str, body: Sequence[str], *, with_mol: bool) -> str:
+    """The document around ``body``; 3Dmol.js only when a TS mode is shown."""
     script = f"<script src='{THREEDMOL_JS}'></script>" if with_mol else ""
     head = ("<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' "
             f"content='width=device-width,initial-scale=1'><title>hfauto report · {run}</title>"
             f"<style>{_CSS}</style>{script}</head>")
     tail = f"<script>{_VIEWER_JS}</script>" if with_mol else ""
-    out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    path = out / "report.html"
-    path.write_text(f"{head}<body>{''.join(body)}{tail}</body></html>\n", encoding="utf-8")
-    return path
+    return f"{head}<body>{''.join(body)}{tail}</body></html>\n"

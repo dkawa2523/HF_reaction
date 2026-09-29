@@ -68,6 +68,7 @@ def test_method_signature_site_pin_and_deadline():
         EngineSite()  # type: ignore[call-arg]
     assert EngineSite(version="7.2.3").execution.timeout_s == 14_400
     assert not Deadline.after(100.0).expired()
+    assert Deadline.after(30.0).expired()  # too little left for any attempt (MIN_ATTEMPT_S)
     assert 0.0 < Deadline.after(100.0).remaining() <= 100.0
     past = Deadline.after(-1.0)
     assert past.expired() and past.remaining() == 0.0

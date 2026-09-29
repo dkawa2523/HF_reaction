@@ -131,6 +131,28 @@ def test_double_hybrids_are_rejected_and_autoz_falls_back_to_cartesians(nwchem, 
     assert "noautosym noautoz" in (tmp_path / "job.nw").read_text()
 
 
+def test_scf_rescue_is_cgmin_for_closed_shell_dft_and_none_for_open_shell_dft(nwchem, tmp_path):
+    """R17: cgmin prints no <S2> (the P3c H3 bead), so an open-shell DFT rescue never gives an
+    Evidence; WFT restarts from its old vectors."""
+    jobs, site = nwchem
+    engine, scf = NWChemEngine(jobs=jobs, site=site), Failure(kind=FailureKind.SCF_NOT_CONVERGED,
+                                                               reason="scf")
+    h3 = XYZ(["H", "H", "H"], np.array([[0.0, 0.0, 0.0], [0.93, 0.0, 0.0], [1.86, 0.0, 0.0]]))
+    (tmp_path / "job.movecs").write_text("v")
+    ccsd_t = MethodSpec(id="ccsd-t", kind="wft", wft_method="ccsd(t)", basis="def2-tzvpd")
+
+    def retry(method: MethodSpec, charge: int, multiplicity: int) -> Task | None:
+        mol = Molecule(h3, charge, multiplicity)
+        task = Task(engine="nwchem", version_pin="7.2.3", kind="energy", key_payload={},
+                    execution=site.execution, inputs={"mol": mol, "start": mol, "method": method})
+        return engine.continuation(task, tmp_path, scf)
+
+    closed, wft = retry(FINE, 1, 1), retry(ccsd_t, 0, 2)  # H3+ and ROHF H3
+    assert closed is not None and closed.inputs["scf_rescue"]
+    assert wft is not None and wft.inputs["restart"] == [tmp_path / "job.movecs"]
+    assert retry(FINE, 0, 2) is None  # the doublet H3 radical of P3c
+
+
 def test_open_shell_ccsd_t_is_a_rohf_tce_job_and_all_electron_iodine_is_rejected(nwchem,
                                                                                  golden):
     jobs, site = nwchem

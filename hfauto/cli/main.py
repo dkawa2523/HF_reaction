@@ -89,11 +89,12 @@ def _stop(signum: int, _frame: object) -> None:
 
 
 def stop_on_signals() -> None:
-    """SIGTERM and SIGHUP kill every running external program, then exit 128 + signum (POSIX).
+    """SIGINT (Ctrl-C), SIGTERM and SIGHUP kill every running external program, then exit
+    128 + signum (POSIX; 130 for Ctrl-C).
 
     SIGKILL cannot be caught: a scheduler must send SIGTERM first (docs/environment.md)."""
     if sys.platform != "win32":
-        for signum in (signal.SIGTERM, signal.SIGHUP):
+        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             signal.signal(signum, _stop)
 
 
@@ -139,8 +140,8 @@ def run(
 ) -> None:
     """Run a pipeline for a system on a site (resumes a run directory).
 
-    Exit code 1 when a stage failed or a saved artifact carries a failure; SIGTERM / SIGHUP
-    stop the external programs and exit 128 + signum."""
+    Exit code 1 when a stage failed or a saved artifact carries a failure; SIGINT / SIGTERM /
+    SIGHUP stop the external programs and exit 128 + signum."""
     kinds = _failure_kinds(retry_failed)
     paths = [config_path(k, v) for k, v in (("pipelines", pipeline), ("systems", system),
                                             ("sites", site))]

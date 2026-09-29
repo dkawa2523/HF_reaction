@@ -93,6 +93,12 @@ def _max_shift_A(xyz: XYZ, mol: Molecule) -> float:
     return float(np.linalg.norm(delta.reshape(-1, 3), axis=1).max())
 
 
+def _scf_rescuable(task: Task) -> bool:
+    """Not open-shell DFT: cgmin prints no <S2>, and an open-shell DFT output without it is
+    never an Evidence (the P3c H3 bead, docs/validation.md)."""
+    return task.inputs["method"].kind != "dft" or task.inputs["mol"].multiplicity == 1
+
+
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
 
@@ -189,12 +195,13 @@ class _NWChem:
         return self._evidence(task, workdir, text, level)
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
-        """autoz -> Cartesian coordinates from the same start; SCF -> the old vectors with the
-        quadratic solver (cgmin); timeout of a driver job or maxiter of an opt -> its latest
-        frame with the old vectors and driver Hessian (design §7.1)."""
+        """autoz -> Cartesian coordinates from the same start; SCF -> the old vectors (DFT: with
+        the quadratic solver cgmin; none for open-shell DFT, _scf_rescuable); timeout of a
+        driver job or maxiter of an opt -> its latest frame with the old vectors and driver
+        Hessian (design §7.1)."""
         if failure.kind is FailureKind.INPUT_INVALID and failure.reason == "autoz":
             return replace(task, inputs={**task.inputs, "cartesian": True})
-        rescue = failure.kind is FailureKind.SCF_NOT_CONVERGED
+        rescue = failure.kind is FailureKind.SCF_NOT_CONVERGED and _scf_rescuable(task)
         if not rescue and failure.kind not in _CONTINUED.get(task.kind, ()):
             return None
         mol = task.inputs["mol"]
@@ -260,7 +267,7 @@ class _NWChem:
         if energy is None:
             return _incomplete("no_energy")
         if s2 is None and level.multiplicity > 1 and task.inputs["method"].kind == "dft":
-            return _incomplete("s2_not_reported")  # cgmin prints no <S2>: spin_ok needs it
+            return _incomplete("s2_not_reported")  # spin_ok would pass a missing <S2>
         start = self._geometry(write_xyz(start_mol.xyz, workdir / "start.xyz"))
         final, extra = start, dict[str, Any]()
         if task.kind in _DRIVER_JOBS:

@@ -1,16 +1,14 @@
 """Reaction hypotheses: pairs of minima that become reaction cases (design §8.2).
 
 Priority: declared reactions, discovery products (low-level TS first), mode-follow TS candidates.
-Declared reactions are always kept so that decide() classifies them (blocked, same basin, out of
-window); the others must join two DFT basins of one level inside the window and show a change
-(CH-07).  Two conformers of one state are no hypothesis: a fast pre-equilibrium does not enter
-the ranking (Curtin-Hammett), and a torsion is studied only when declared.  A discovery whose
-two ends fall into one DFT basin is kept when its ends map onto each other by a non-identity
-permutation: a degenerate rearrangement, evaluated like a declared one.  ``minima`` includes
-the screen minima that discoveries start from.
-Degeneracy and bond changes are judged on the basins' optimized structures in the endpoints'
-atom order and handedness (``identity.basin_coords``), never on input coordinates.
-Negative discoveries never veto a hypothesis (review X1); only the summary reports them.
+Declared reactions, torsions and inversions included, are always kept so that decide() classifies
+them. An undeclared pair joins two DFT minima of one level inside the window, or one basin, and
+changes bonds between its ends (CH-07): a conformer change, torsion or enantiomerization is studied
+only when declared (Curtin-Hammett), so one basin gives a degenerate rearrangement that exchanges
+bonded partners (S10). Bonds and degeneracy are judged on the basins' optimized structures in the
+endpoints' atom order and handedness (``identity.basin_coords``), never on input coordinates.
+A mode-follow saddle of the DFT tier is a verified saddle (``ts_calc``); any other discovery TS
+is a low-level TS. Negative discoveries never veto a hypothesis (review X1).
 """
 
 from __future__ import annotations
@@ -41,8 +39,7 @@ from hfauto.core.system import ReactionInput
 
 LoadXYZ = Callable[[Geometry], XYZ]
 Source = Literal["declared", "discovery", "mode_follow"]
-Ends = tuple[str, str] | None  # a discovery's source and product species
-Candidate = tuple[Source, MinimumRecord | None, MinimumRecord | None, Geometry | None, Ends]
+Ends = tuple[SpeciesRecord, SpeciesRecord]
 
 
 def pick_endpoints(
@@ -62,12 +59,6 @@ def pick_endpoints(
     return members_a[i].species_id, members_b[j].species_id
 
 
-def _max_distance_change(a: np.ndarray, b: np.ndarray) -> float:
-    da = np.linalg.norm(a[:, None] - a[None], axis=-1)
-    db = np.linalg.norm(b[:, None] - b[None], axis=-1)
-    return float(np.max(np.abs(da - db)))
-
-
 def _stoich(species: SpeciesRecord | None) -> tuple[StoichTerm, ...]:
     if species is None:
         return ()
@@ -83,7 +74,6 @@ class _Pool:
     basin_of: dict[str, MinimumRecord]  # species id -> minimum holding it (DFT first)
     load: LoadXYZ
     window_kcal: float
-    min_distance_A: float
 
     def coords(self, minimum: MinimumRecord, species: SpeciesRecord) -> np.ndarray:
         """The basin's optimized structure in the atom order and handedness of ``species``."""
@@ -113,10 +103,22 @@ class _Pool:
         return self.dft_basin(own.minimum_id) or own
 
 
-def _record(rid: str, source: Source, minima: tuple[MinimumRecord, MinimumRecord],
-            ends: tuple[SpeciesRecord, SpeciesRecord], coords: tuple[np.ndarray, np.ndarray], *,
-            coordinate: tuple[CoordinateTerm, ...] = (), torsional: bool | None = None,
-            low_level_ts: Geometry | None = None) -> ReactionRecord:
+@dataclass(frozen=True)
+class _Candidate:
+    """A discovery product as a pair of basins, with the TS the discovery offers."""
+
+    source: Source
+    start: MinimumRecord | None  # the DFT basin of the discovery's source minimum
+    end: MinimumRecord | None  # the basin of its product
+    ends: tuple[str, str] | None  # the discovery's source and product species
+    low_level_ts: Geometry | None
+    ts_calc: str | None  # a verified DFT saddle: a mode-follow saddle of the DFT tier
+
+
+def _record(rid: str, source: Source, minima: tuple[MinimumRecord, MinimumRecord], ends: Ends,
+            coords: tuple[np.ndarray, np.ndarray], *, coordinate: tuple[CoordinateTerm, ...] = (),
+            torsional: bool | None = None, low_level_ts: Geometry | None = None,
+            ts_calc: str | None = None) -> ReactionRecord:
     (ma, mb), (sa, sb), (xa, xb) = minima, ends, coords
     symbols = sa.geometry.symbols
     formed, broken = topology.bond_changes(symbols, xa, xb)
@@ -127,7 +129,7 @@ def _record(rid: str, source: Source, minima: tuple[MinimumRecord, MinimumRecord
         # (enantiomerization) stays a reaction (CH-35).
         degenerate=ma.basin_id == mb.basin_id and identity.mapped_equivalent(symbols, xa, xb),
         coordinate=coordinate, torsional=not (formed or broken) if torsional is None else torsional,
-        low_level_ts=low_level_ts,
+        low_level_ts=low_level_ts, ts_calc=ts_calc,
     )
 
 
@@ -149,51 +151,48 @@ def _declared(pool: _Pool, reaction: ReactionInput) -> ReactionRecord:
                    coordinate=coordinate, torsional=reaction.torsional)
 
 
-def _candidates(pool: _Pool, discoveries: Sequence[DiscoveryRecord]) -> Iterator[Candidate]:
+def _candidates(pool: _Pool, discoveries: Iterable[DiscoveryRecord]) -> Iterator[_Candidate]:
     products = [d for d in discoveries if d.outcome == "product" and d.product_species]
     for d in sorted(products, key=lambda d: (d.mechanism == "mode_follow", d.ts is None)):
-        source: Source = "mode_follow" if d.mechanism == "mode_follow" else "discovery"
-        product = pool.basin_of.get(d.product_species or "")
         start = pool.minima.get(d.source_minimum)
-        ends = (start.species_id, d.product_species or "") if start else None
-        yield source, pool.dft_basin(d.source_minimum), product, d.ts, ends
+        yield _Candidate(
+            source="mode_follow" if d.mechanism == "mode_follow" else "discovery",
+            start=pool.dft_basin(d.source_minimum), end=pool.basin_of.get(d.product_species or ""),
+            ends=(start.species_id, d.product_species or "") if start else None,
+            low_level_ts=None if d.ts_calc else d.ts, ts_calc=d.ts_calc)
 
 
-def _degenerate(pool: _Pool, rid: str, source: Source, basin: MinimumRecord, ends: Ends,
-                ts: Geometry | None) -> ReactionRecord | None:
-    """Both ends of a discovery in one basin: a degenerate rearrangement when the basin in the
-    atom orders of the two ends differs as labelled (``_record``), else no reaction."""
-    sa, sb = (pool.species.get(e) for e in ends) if ends else (None, None)
-    if sa is None or sb is None:
-        return None
-    coords = (pool.coords(basin, sa), pool.coords(basin, sb))
-    record = _record(rid, source, (basin, basin), (sa, sb), coords, low_level_ts=ts)
-    return record if record.degenerate else None
+def _ends(pool: _Pool, c: _Candidate, ma: MinimumRecord, mb: MinimumRecord) -> Ends | None:
+    """The species at the two ends: in one basin the discovery's own ends, whose labelling alone
+    tells the rearrangement; else the member pair nearest as labelled (``pick_endpoints``)."""
+    if ma.basin_id == mb.basin_id:
+        sa, sb = (pool.species.get(e) for e in c.ends) if c.ends else (None, None)
+        return None if sa is None or sb is None else (sa, sb)
+    picked = pick_endpoints(pool.members(ma), pool.members(mb), pool.load)
+    return None if picked is None else (pool.species[picked[0]], pool.species[picked[1]])
 
 
-def _auto(pool: _Pool, source: Source, ma: MinimumRecord, mb: MinimumRecord,
-          ts: Geometry | None, ends: Ends) -> ReactionRecord | None:
+def _auto(pool: _Pool, c: _Candidate, ma: MinimumRecord, mb: MinimumRecord
+          ) -> ReactionRecord | None:
+    """An undeclared hypothesis: DFT minima of one level and composition inside the window whose
+    ends differ in bonds (CH-07); in one basin, a degenerate rearrangement."""
     same_level = ma.tier == mb.tier == "dft" and ma.level_key == mb.level_key
     if not same_level or ma.composition_id != mb.composition_id:
         return None
-    rid = reaction_id(source, sha256_text(f"{ma.minimum_id}|{mb.minimum_id}")[:10])
-    if ma.basin_id == mb.basin_id:
-        return _degenerate(pool, rid, source, ma, ends, ts)
     if (mb.energy_hartree - ma.energy_hartree) * HARTREE_TO_KCAL_MOL > pool.window_kcal:
         return None
-    picked = pick_endpoints(pool.members(ma), pool.members(mb), pool.load)
-    if picked is None:
+    ends = _ends(pool, c, ma, mb)
+    if ends is None:
         return None
-    sa, sb = pool.species[picked[0]], pool.species[picked[1]]
-    xa, xb = pool.coords(ma, sa), pool.coords(mb, sb)
-    changed = any(topology.bond_changes(sa.geometry.symbols, xa, xb))
-    if not (changed or _max_distance_change(xa, xb) >= pool.min_distance_A):  # CH-07
-        return None
-    return _record(rid, source, (ma, mb), (sa, sb), (xa, xb), low_level_ts=ts)
+    rid = reaction_id(c.source, sha256_text(f"{ma.minimum_id}|{mb.minimum_id}")[:10])
+    record = _record(rid, c.source, (ma, mb), ends,
+                     (pool.coords(ma, ends[0]), pool.coords(mb, ends[1])),
+                     low_level_ts=c.low_level_ts, ts_calc=c.ts_calc)
+    return None if record.torsional else record
 
 
 def _pool(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[SpeciesRecord],
-          load_xyz: LoadXYZ, window_kcal: float, min_distance_A: float) -> _Pool:
+          load_xyz: LoadXYZ, window_kcal: float) -> _Pool:
     pairs = list(minima)
     by_id = {m.minimum_id: m for m, _ in pairs}
     basin_of: dict[str, MinimumRecord] = {}
@@ -202,37 +201,38 @@ def _pool(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[Sp
             basin_of.setdefault(s, m)
     return _Pool(species={s.species_id: s for s in species}, minima=by_id,
                  structure={m.minimum_id: g for m, g in pairs}, basin_of=basin_of,
-                 load=load_xyz, window_kcal=window_kcal, min_distance_A=min_distance_A)
+                 load=load_xyz, window_kcal=window_kcal)
 
 
-def _lend_ts(record: ReactionRecord, ts: Geometry | None) -> ReactionRecord:
-    """A repeated minima pair keeps its first hypothesis, which borrows a low-level TS it lacks."""
-    if record.low_level_ts is None and ts is not None:
-        return record.model_copy(update={"low_level_ts": ts})
-    return record
+def _lend(record: ReactionRecord, c: _Candidate) -> ReactionRecord:
+    """The TS a repeated pair's first hypothesis lacks: a low-level TS, and a verified DFT saddle
+    even when a low-level TS was lent first (the case validates the saddle first)."""
+    return record.model_copy(update={"low_level_ts": record.low_level_ts or c.low_level_ts,
+                                     "ts_calc": record.ts_calc or c.ts_calc})
 
 
 def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[SpeciesRecord],
            discoveries: Iterable[DiscoveryRecord], declared: Sequence[ReactionInput],
            load_xyz: LoadXYZ, *, window_kcal: float = Policy.reaction_window_kcal,
-           min_distance_A: float = 0.2, max_per_composition: int = 6) -> list[ReactionRecord]:
-    """One ReactionRecord per hypothesis; a repeated minima pair keeps the first hypothesis.
+           max_per_composition: int = 6) -> list[ReactionRecord]:
+    """One ReactionRecord per hypothesis. A repeated minima pair keeps the first one, which
+    borrows the TS it lacks, also from a discovery that is no hypothesis (an inversion's saddle).
     ``minima`` pairs every minimum (any tier) with its optimized structure."""
-    found = list(discoveries)
-    pool = _pool(minima, species, load_xyz, window_kcal, min_distance_A)
+    pool = _pool(minima, species, load_xyz, window_kcal)
     records = [_declared(pool, r) for r in declared]
     index = {frozenset(r.minima): i for i, r in enumerate(records)}
     per_composition = Counter(r.reactants[0].composition_id for r in records if r.reactants)
-    for source, ma, mb, ts, ends in _candidates(pool, found):
+    for c in _candidates(pool, discoveries):
+        ma, mb = c.start, c.end
         if ma is None or mb is None:
             continue
         pair = frozenset((ma.minimum_id, mb.minimum_id))
         if pair in index:
-            records[index[pair]] = _lend_ts(records[index[pair]], ts)
+            records[index[pair]] = _lend(records[index[pair]], c)
             continue
         if per_composition[ma.composition_id] >= max_per_composition:
             continue
-        record = _auto(pool, source, ma, mb, ts, ends)
+        record = _auto(pool, c, ma, mb)
         if record is not None:
             index[pair] = len(records)
             records.append(record)

@@ -141,20 +141,14 @@ def is_first_order_saddle(freq: Evidence, *, saddle: Evidence, policy: Policy = 
 
 
 def barrier_verdict(
-    energies: Sequence[float],
-    *,
-    source: Literal["screen", "string"],
-    max_node_spacing_A: float | None = None,
-    policy: Policy = _DEFAULT,
+    energies: Sequence[float], *, source: Literal["screen", "string"], policy: Policy = _DEFAULT
 ) -> BarrierVerdict:
     """Class of a DFT profile with the two DFT minima energies at its ends, at resolution_kcal:
     a continuous path's maximum bounds the saddle from above."""
     if len(energies) < 3:
         return BarrierVerdict(verdict="unavailable", source=source, reasons=("too_few_points",))
-    rel = (max(energies[1:-1]) - max(energies[0], energies[-1])) * HARTREE_TO_KCAL_MOL
     verdict = classify(energies, policy.resolution_kcal / HARTREE_TO_KCAL_MOL)
-    return BarrierVerdict(verdict=verdict, source=source, max_rel_kcal=rel,
-                          max_node_spacing_A=max_node_spacing_A)
+    return BarrierVerdict(verdict=verdict, source=source)
 
 
 def _side_reasons(index: int, side: Evidence, ts: Evidence, drop: float) -> list[str]:

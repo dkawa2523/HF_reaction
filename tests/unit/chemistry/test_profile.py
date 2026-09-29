@@ -1,4 +1,4 @@
-"""Path class, peak interpolation, node spacing and tangents (design §5.5, CH-08)."""
+"""Path class, peak interpolation and tangents (design §5.5, CH-08)."""
 
 import numpy as np
 import pytest
@@ -37,8 +37,7 @@ def test_hei_interpolates_parabola_and_coordinates_at_the_given_peak():
         prof.hei(frames, energies, 0)
 
 
-def test_spacing_and_tangent():
+def test_tangent():
     frames = [np.array([[x, 0.0, 0.0]]) for x in (0.0, 0.1, 0.5)]
-    assert prof.max_node_spacing(frames) == pytest.approx(0.4)
     assert prof.tangent(frames, 1) == pytest.approx(np.array([[1.0, 0.0, 0.0]]))
     assert prof.tangent(frames, 0) == pytest.approx(np.array([[1.0, 0.0, 0.0]]))

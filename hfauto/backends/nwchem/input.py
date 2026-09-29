@@ -102,8 +102,8 @@ def _dft(mol: Molecule, method: MethodSpec, setup: Setup) -> list[str]:
         lines.append(f"  disp vdw {_VDW[method.dispersion]}")
     if setup.restart_vectors:
         lines.append(f"  vectors input {setup.name}.movecs")
-    if setup.scf_rescue:  # converged the P3c H3 bead where DIIS, damping and rabuck oscillated
-        lines.append("  cgmin")  # (docs/validation.md); it prints no <S2>
+    if setup.scf_rescue:  # closed-shell DFT only: cgmin prints no <S2>, so an open-shell
+        lines.append("  cgmin")  # result could never pass spin_ok (engine._scf_rescuable)
     return [*lines, "end"]
 
 

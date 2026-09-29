@@ -1,6 +1,6 @@
 """Thermochemistry (design §8.2 thermo): GoodVibes in this process, the frequencies it gets,
-the optical isomer term, standard states, ensembles, association, reaction deltas and the
-ranking quantity dG_eff.
+the optical isomer term, standard states, association, reaction deltas and the ranking
+quantity dG_eff.
 
 Energies are in Hartree unless a name ends in ``_kcal``; free energies of single species are
 gas-phase 1 atm values (GoodVibes' default reference) and are moved to other standard states
@@ -136,24 +136,12 @@ def standard_state_shift(dn: float, T: float, to: StandardState) -> float:
     return dn * R_KCAL_MOL_K * T * math.log(pressure_atm)
 
 
-def _rt_hartree(T: float) -> float:
-    if not (math.isfinite(T) and T > 0.0):
-        raise ValueError("temperature must be finite and positive")
-    return R_KCAL_MOL_K * T / HARTREE_TO_KCAL_MOL
-
-
 def chiral_G(T: float) -> float:
     """-RT ln 2 (Hartree): the G term of a chiral structure, whose mirror image is the same
     basin (optical isomer number m = 2; Fernandez-Ramos et al., Theor. Chem. Acc. 118, 813)."""
-    return -_rt_hartree(T) * math.log(2.0)
-
-
-def ensemble_G(G_hartree: Sequence[float], T: float) -> float:
-    """-RT ln sum exp(-G_i / RT): the free energy of the ensemble (<= its lowest member)."""
-    if not G_hartree:
-        raise ValueError("empty ensemble")
-    rt, low = _rt_hartree(T), min(G_hartree)
-    return low - rt * math.log(sum(math.exp(-(g - low) / rt) for g in G_hartree))
+    if not (math.isfinite(T) and T > 0.0):
+        raise ValueError("temperature must be finite and positive")
+    return -R_KCAL_MOL_K * T * math.log(2.0) / HARTREE_TO_KCAL_MOL
 
 
 def association(

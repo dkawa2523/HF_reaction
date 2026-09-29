@@ -205,7 +205,7 @@ def test_rankable():  # any dZPE; a barrierless outcome ranks by its dG_eff
 
 def test_reaction_tier():
     saddle = r.SaddleClaim(saddle_calc="s", freq_calc="f", imag_cm1=-700.0, energy_hartree=E_TS)
-    link = r.ConnectionClaim(side_calcs=("p", "m"), minima=("A", "B"), amplitude_A=0.1)
+    link = r.ConnectionClaim(side_calcs=("p", "m"), minima=("A", "B"))
     assert g.reaction_tier(reaction(outcome=None)) == "screening"
     assert g.reaction_tier(reaction(outcome=CaseOutcome.BLOCKED)) == "screening"
     assert g.reaction_tier(reaction(outcome=CaseOutcome.SAME_BASIN)) == "minima"
@@ -216,12 +216,9 @@ def test_reaction_tier():
 def test_barrier_verdict_classifies_a_profile_between_the_dft_minima():
     single = g.barrier_verdict((0.0, 2 * K, 3 * K, 1 * K, 0.5 * K), source="screen")
     assert (single.verdict, single.source) == ("single", "screen")
-    assert single.max_rel_kcal == pytest.approx(2.5)  # above the higher end
     well = g.barrier_verdict((0.0, 2 * K, 0.5 * K, 3 * K, 6 * K, 9 * K, 10 * K), source="string")
-    assert well.verdict == "intermediate" and well.max_rel_kcal == pytest.approx(-1.0)
-    flat = g.barrier_verdict((0.0, 0.2 * K, 0.4 * K, 0.5 * K), source="string",
-                             max_node_spacing_A=0.12)
-    assert (flat.verdict, flat.max_node_spacing_A, flat.reasons) == ("barrierless", 0.12, ())
+    assert well.verdict == "intermediate"
+    flat = g.barrier_verdict((0.0, 0.2 * K, 0.4 * K, 0.5 * K), source="string")
+    assert (flat.verdict, flat.reasons) == ("barrierless", ())
     none = g.barrier_verdict((0.0, 5 * K), source="screen")
-    assert (none.verdict, none.max_rel_kcal, none.reasons) == ("unavailable", None,
-                                                               ("too_few_points",))
+    assert (none.verdict, none.reasons) == ("unavailable", ("too_few_points",))

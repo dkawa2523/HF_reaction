@@ -68,7 +68,7 @@ def finalize(
 
 
 def _child(parent: ReactionRecord, index: int, minima: tuple[str, str],
-           endpoints: tuple[str, str], torsional: bool) -> ReactionRecord:
+           endpoints: tuple[str, str], torsional: bool, ts_calc: str | None) -> ReactionRecord:
     return ReactionRecord(
         reaction_id=f"{parent.reaction_id}_split{index}",
         source="split",
@@ -77,6 +77,7 @@ def _child(parent: ReactionRecord, index: int, minima: tuple[str, str],
         minima=minima,
         endpoints=endpoints,
         torsional=torsional,
+        ts_calc=ts_calc,
     )
 
 
@@ -85,12 +86,16 @@ def split(
     intermediate: MinimumRecord,
     intermediate_species: SpeciesRecord,
     structures: tuple[np.ndarray, np.ndarray, np.ndarray],
+    *,
+    ts: tuple[int, str] | None = None,
 ) -> tuple[ReactionRecord, ReactionRecord]:
     """Fresh child cases R→I and I→P of a multi-step case.
 
     ``structures`` are the basin structures of R, I and P in one atom order. Stoichiometry is
     inherited from the parent; a child is torsional when its own ends differ in no bond. The
-    declared coordinate and low-level TS describe the whole step and are not inherited.
+    declared coordinate and low-level TS describe the whole step and are not inherited; ``ts``
+    (child 1 or 2, saddle calc) is a TS the parent validated between that child's ends, which
+    the child validates first (``ts_calc``) instead of searching again.
     """
     compositions = {t.composition_id for t in (*parent.reactants, *parent.products)}
     if intermediate.composition_id not in compositions:
@@ -101,7 +106,8 @@ def split(
     symbols, (a, i, b) = intermediate_species.geometry.symbols, structures
     first, second = (not any(bond_changes(symbols, x, y)) for x, y in ((a, i), (i, b)))
     m, s = intermediate.minimum_id, intermediate_species.species_id
+    calc = dict([ts]) if ts else {}
     return (
-        _child(parent, 1, (parent.minima[0], m), (parent.endpoints[0], s), first),
-        _child(parent, 2, (m, parent.minima[1]), (s, parent.endpoints[1]), second),
+        _child(parent, 1, (parent.minima[0], m), (parent.endpoints[0], s), first, calc.get(1)),
+        _child(parent, 2, (m, parent.minima[1]), (s, parent.endpoints[1]), second, calc.get(2)),
     )

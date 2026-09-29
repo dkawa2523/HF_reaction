@@ -171,7 +171,8 @@ class _Run:
         self.history[sid].append(f"joined:{record.basin_id}")
 
     def discovery(self, done: _Relaxed) -> DiscoveryRecord | None:
-        """source_minimum = side 1's minimum, product_species = side 2, ts = the saddle."""
+        """source_minimum = side 1's minimum, product_species = side 2, ts = the saddle; at the
+        DFT tier ts_calc is its opt: a verified DFT saddle, validated directly by the case."""
         parent, saddle, freq = done[0].species.species_id, done[1].opt, done[1].freq
         a, b = self.records.get(f"{parent}_mf1"), self.records.get(f"{parent}_mf2")
         if a is None or b is None or saddle is None or freq is None:
@@ -179,7 +180,8 @@ class _Run:
         return DiscoveryRecord(
             discovery_id=f"disc_mode_follow_{parent}", source_minimum=a.minimum_id,
             mechanism="mode_follow", outcome="product", product_species=f"{parent}_mf2",
-            ts=saddle.final, ts_imag_cm1=min(freq.frequencies_cm1 or (0.0,)),
+            ts=saddle.final, ts_calc=driver.calc_id(saddle) if self.cfg.level == "dft" else None,
+            ts_imag_cm1=min(freq.frequencies_cm1 or (0.0,)),
             dE_act_kcal=(saddle.energy_hartree - a.energy_hartree) * HARTREE_TO_KCAL_MOL,
             dE_rxn_kcal=(b.energy_hartree - a.energy_hartree) * HARTREE_TO_KCAL_MOL,
         )

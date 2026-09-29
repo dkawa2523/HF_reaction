@@ -21,6 +21,7 @@ DEGENERATE = CASE.model_copy(update={"minima": ("ma", "ma"), "degenerate": True}
 GEO = Geometry(file=FileRef(path="seed.xyz", sha256="0" * 64), fingerprint="f", symbols=("H",))
 SEED = st.Seed(geometry=GEO, source="screen_ts", tangent=None)
 HIGHER = st.Seed(geometry=GEO, source="higher_order_retry", tangent=None)
+RESTART = st.Seed(geometry=GEO, source="saddle_restart", tangent=None)
 CLAIM = r.SaddleClaim(saddle_calc="s", freq_calc="f", imag_cm1=-1131.0, energy_hartree=-93.0)
 SOFT = CLAIM.model_copy(update={"imag_cm1": -30.0})  # |nu| < saddle_cm1 = 50
 RULES = st.CaseRules()
@@ -36,7 +37,9 @@ def minimum(mid: str, basin: str, kcal: float = 0.0, *,
 
 MA, MB = minimum("ma", "A"), minimum("mb", "B", 10.0)
 BASE = CaseState(minima=(MA, MB))  # nothing done yet
-S = replace(BASE, screen=BV(verdict="single", source="screen"))  # screened, one peak found
+S = replace(BASE, screen=BV(verdict="single", source="screen"), neb_done=True)  # one peak
+SHORTCUT = replace(BASE, screen=BV(verdict="single", source="screen"), saddle_attempts=1,
+                   last_saddle="failed")  # the seed of a low-level TS has failed
 BLOCKED = Decision(A.BLOCKED, "endpoints_not_on_one_pes", C.BLOCKED)
 NO_PATH = Decision(A.FIND_PATH, "no_dft_path")
 NEXT_CHUNK = Decision(A.FIND_PATH, "next_chunk")
@@ -87,6 +90,8 @@ ROW_CASES = [  # (row, id, case, state, rules, expected decision)
      Decision(A.CONNECT, "ts_validated")),
     (10, "converged", CASE, replace(S, last_saddle="converged", saddle_attempts=1), RULES,
      Decision(A.VALIDATE_TS, "saddle_converged")),
+    (10, "given_ts_calc", CASE.model_copy(update={"ts_calc": "calc_ts"}),
+     replace(BASE, last_saddle="converged"), RULES, Decision(A.VALIDATE_TS, "saddle_converged")),
     (11, "collapsed", CASE, replace(S, last_saddle="converged", ts_check="collapsed",
                                     seeds=(SEED,)), RULES, COLLAPSED),
     (11, "after_an_endpoint_well", CASE, replace(S, last_saddle="converged", ts_check="collapsed",
@@ -98,6 +103,9 @@ ROW_CASES = [  # (row, id, case, state, rules, expected decision)
     (12, "screen", CASE, BASE, RULES, Decision(A.SCREEN, "screen")),
     (12, "degenerate_goes_on", DEGENERATE, replace(BASE, minima=(MA, MA)), RULES,
      Decision(A.SCREEN, "screen")),
+    (12, "after_the_shortcut_seed", CASE, SHORTCUT, RULES, Decision(A.SCREEN, "screen")),
+    (12, "a_given_ts_failed", CASE, replace(BASE, last_saddle="failed"), RULES,
+     Decision(A.SCREEN, "screen")),
     (13, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
                                        seeds=(SEED,)), RULES,
      Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")),
@@ -106,22 +114,32 @@ ROW_CASES = [  # (row, id, case, state, rules, expected decision)
     (14, "higher_order_retry", CASE, replace(S, seeds=(HIGHER,), last_saddle="failed",
                                              saddle_attempts=1), RULES,
      Decision(A.REFINE_SADDLE, "seed:higher_order_retry")),
+    (14, "restart_at_the_limit", CASE, replace(S, seeds=(RESTART,), last_saddle="failed",
+                                               saddle_attempts=2), RULES,
+     Decision(A.REFINE_SADDLE, "seed:saddle_restart")),
     (15, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), RULES, NO_PATH),
     (15, "screen_off", CASE, BASE, replace(RULES, screen=False), NO_PATH),
     (15, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
      RULES, NO_PATH),
+    (15, "after_the_screen_path", CASE, replace(SHORTCUT, neb_done=True), RULES, NO_PATH),
     (16, "seeds_failed", CASE, replace(S, screen=BV(verdict="single", source="string"),
                                        path_runs=1, saddle_attempts=1, last_saddle="failed"),
      RULES, NEXT_CHUNK),
     (16, "after_an_endpoint_well", CASE, replace(S, screen=BV(verdict="intermediate",
                                                               source="string"),
                                                  intermediate="same_as_endpoint", path_runs=2,
-                                                 saddle_attempts=2), RULES, NEXT_CHUNK),
+                                                 saddle_attempts=1), RULES, NEXT_CHUNK),
     (17, "exhausted", CASE, replace(S, path_runs=1, seeds=(SEED,), saddle_attempts=2,
                                     last_saddle="failed"), RULES, EXHAUSTED),
     (17, "chunks_used", CASE, replace(S, screen=BV(verdict="single", source="string"),
                                       path_runs=3, saddle_attempts=1), RULES, EXHAUSTED),
     (17, "string_failed", CASE, replace(S, path_runs=1, saddle_attempts=1), RULES, EXHAUSTED),
+    # R3: no string whose peak seed could never be refined
+    (17, "no_string_without_attempts", CASE, replace(S, saddle_attempts=2, last_saddle="failed"),
+     RULES, EXHAUSTED),
+    (17, "no_chunk_without_attempts", CASE, replace(S, screen=BV(verdict="single", source="string"),
+                                                    path_runs=1, saddle_attempts=2), RULES,
+     EXHAUSTED),
 ]
 
 
@@ -164,11 +182,26 @@ def test_a_new_profile_reopens_the_checks_of_an_earlier_saddle():
     assert record_profile(BASE, BV(verdict="single", source="screen")).path_runs == 0
 
 
-def test_seeds_share_one_attempt_budget():
-    """U6-P3 / U6-P6: a higher-order push or a stalled search's restart is an ordinary seed."""
+def test_seeds_share_one_attempt_budget_but_a_restart_is_not_counted():
+    """U6-P3: a higher-order push is an ordinary seed; U6-P6 / R3: a stalled search's one
+    restart runs even at the limit, and a used budget ends the case without a string."""
     first = replace(S, seeds=(HIGHER,), last_saddle="failed", saddle_attempts=1, path_runs=1)
     assert decide(CASE, first, RULES) == Decision(A.REFINE_SADDLE, "seed:higher_order_retry")
     assert decide(CASE, replace(first, saddle_attempts=2), RULES) == EXHAUSTED
+    restart = replace(first, seeds=(RESTART, HIGHER), saddle_attempts=2)
+    assert decide(CASE, restart, RULES) == Decision(A.REFINE_SADDLE, "seed:saddle_restart")
+    assert decide(CASE, replace(restart, seeds=(HIGHER,)), RULES) == EXHAUSTED
+
+
+def test_the_screen_path_runs_once_after_a_failed_shortcut_seed():
+    """R4: a shortcut's seed goes first; once it fails, the low-level path runs before any
+    string, and never again."""
+    seeded = replace(SHORTCUT, seeds=(SEED,), saddle_attempts=0, last_saddle=None)
+    assert decide(CASE, seeded, RULES) == Decision(A.REFINE_SADDLE, "seed:screen_ts")
+    assert decide(CASE, SHORTCUT, RULES) == Decision(A.SCREEN, "screen")
+    assert decide(CASE, replace(SHORTCUT, neb_done=True), RULES) == NO_PATH
+    screen_off = replace(RULES, screen=False)
+    assert decide(CASE, SHORTCUT, screen_off) == NO_PATH
 
 
 def test_a_soft_ts_whose_qrc_failed_is_validated_as_a_collapsed_saddle():

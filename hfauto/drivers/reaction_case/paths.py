@@ -79,10 +79,12 @@ def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
 
 
 def screen(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """Barrier pre-check: shortcut from a low-level TS, else the low-level path (chem 16)."""
-    found = None if ctx.case.low_level_ts is None else _shortcut(ctx, ctx.case.low_level_ts)
+    """Barrier pre-check (chem 16): first the shortcut from a low-level TS; the low-level path
+    when there is none, it is not a single step, or its seed has failed (a second SCREEN)."""
+    ts = ctx.case.low_level_ts
+    found = None if ts is None or state.screen is not None else _shortcut(ctx, ts)
     if found is None or found[0].verdict != "single":
-        found = _screen_path(ctx)
+        found, state = _screen_path(ctx), replace(state, neb_done=True)
     verdict, seed = found
     ctx.note(f"screen:{verdict.verdict}:{','.join(verdict.reasons)}")
     return case_state.record_profile(state, verdict, seed)
