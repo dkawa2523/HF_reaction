@@ -1,4 +1,5 @@
-"""Tasks, adapters and the JobRunner: cache, attempt ladder and core semaphore (design §7.1)."""
+"""Tasks, adapters and the JobRunner: cache, attempt ladder, core semaphore and the rank share
+of concurrent items (design §7.1)."""
 
 from __future__ import annotations
 
@@ -8,7 +9,8 @@ from collections import Counter
 from collections.abc import Callable, Generator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from contextvars import ContextVar
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
@@ -31,6 +33,8 @@ LADDER: dict[FailureKind, int] = {
     FailureKind.INPUT_INVALID: 1,
     FailureKind.SCF_NOT_CONVERGED: 1,
 }
+# Set by thread_map in its workers: the MPI ranks one of several concurrent items may use.
+_RANK_SHARE: ContextVar[int | None] = ContextVar("rank_share", default=None)
 
 
 @dataclass(frozen=True)
@@ -132,6 +136,7 @@ class JobRunner:
         used: Counter[FailureKind] = Counter()
         current = task
         while True:
+            current = replace(current, execution=_shared(current.execution))
             timeout_s = _attempt_timeout(current.execution, deadline)
             if timeout_s is None:
                 return Failure(
@@ -176,6 +181,16 @@ class JobRunner:
                 self._failures[str(result.kind)] += 1
 
 
+def _shared(execution: ExecutionSpec) -> ExecutionSpec:
+    """At most _RANK_SHARE ranks, with the timeout stretched by the same factor so that a job
+    that ends within its timeout at full ranks also ends at the share (same core-seconds)."""
+    share = _RANK_SHARE.get()
+    if share is None or share >= execution.ranks:
+        return execution
+    return execution.model_copy(
+        update={"ranks": share, "timeout_s": execution.timeout_s * execution.ranks / share})
+
+
 def _attempt_timeout(execution: ExecutionSpec, deadline: Deadline | None) -> float | None:
     if deadline is None:
         return execution.timeout_s
@@ -205,8 +220,20 @@ def _stamp(result: T | Failure, key: str) -> T | Failure:
 def thread_map(
     fn: Callable[[ItemT], ResultT], items: Sequence[ItemT], *, workers: int
 ) -> list[ResultT]:
-    """``[fn(x) for x in items]`` on up to ``workers`` threads; results keep the input order."""
+    """``[fn(x) for x in items]`` on up to ``workers`` (the cores) threads, in input order.
+
+    The items run in waves of up to ``workers``, and the jobs of an item run with at most
+    workers // (items in its wave) MPI ranks: independent small jobs run side by side instead
+    of each on all ranks, and a short last wave (9 items on 4 cores: 4, 4, 1) gets the cores
+    it leaves free. Serial code keeps full ranks."""
     if workers <= 1 or len(items) <= 1:
         return [fn(item) for item in items]
-    with ThreadPoolExecutor(max_workers=min(workers, len(items))) as pool:
-        return list(pool.map(fn, items))
+    at_once = min(workers, len(items))
+
+    def shared(indexed: tuple[int, ItemT]) -> ResultT:
+        i, item = indexed  # set in the pool's threads, which end with this call
+        _RANK_SHARE.set(workers // min(at_once, len(items) - i // at_once * at_once))
+        return fn(item)
+
+    with ThreadPoolExecutor(max_workers=at_once) as pool:
+        return list(pool.map(shared, enumerate(items)))

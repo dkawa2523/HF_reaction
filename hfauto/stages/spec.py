@@ -57,7 +57,7 @@ class StageRuntime(Protocol):
 
     def resolve(self, ref: FileRef) -> Path: ...  # the file a FileRef of the run names
 
-    def thread_map(  # in input order; the core semaphore sets how many jobs run at once
+    def thread_map(  # in input order; each item's jobs get cores // (items in its wave) ranks
         self, fn: Callable[[ItemT], ResultT], items: Sequence[ItemT]
     ) -> list[ResultT]: ...
 

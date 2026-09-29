@@ -119,6 +119,12 @@ class DriftingPath(fakes.FakePath):  # like NWChem freezeN: the last bead moves,
         return run.model_copy(update={"images": fakes._ref(self.root, path)})
 
 
+class Batches(list):  # CaseRuntime.map: records each batch's size, runs it backwards (like
+    def __call__(self, fn, items):  # threads finishing out of order), returns it in input order
+        self.append(len(items))
+        return [fn(x) for x in reversed(items)][::-1]
+
+
 def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None, neb=()):
     qm, load = fakes.FakeQM(root, pes), fakes.xyz_loader(root)
     registry, minima, species, ids = Registry([], load), {}, {}, []
@@ -136,8 +142,8 @@ def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None, neb=()
         screen_qm=fakes.FakeQM(root, screen_pes or pes),
         screen_path=fakes.FakePath(root, pes, neb, tsopt=True),
         method=DFT, screen_method=XTB, registry=registry, load_xyz=load, case_dir=root / "cases",
-        file_ref=lambda p: fakes._ref(root, p),
-        resolve=lambda ref: root / ref.path, minima=minima, species=species, calcs={})
+        file_ref=lambda p: fakes._ref(root, p), resolve=lambda ref: root / ref.path,
+        map=Batches(), minima=minima, species=species, calcs={})
     case = ReactionRecord(reaction_id="rx", reactants=(), products=(), minima=tuple(ids),
                           endpoints=("reactant", "product"), degenerate=ids[0] == ids[1],
                           source="declared")
@@ -236,7 +242,7 @@ def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path, monkeypat
     claim, first = ctx.work.connection, qrc_step(ctx)
     assert state.connection == "elementary" and set(claim.minima) == set(ctx.case.minima)
     assert ctx.rt.qm.calls[-2:] == ["optimize+init_hessian"] * 2  # both sides: the TS Hessian
-    assert len(set(claim.side_calcs)) == 2 and "minus_is_image" not in str(logged)  # asymmetric
+    assert len(set(claim.side_calcs)) == 2 == ctx.rt.map[-1] and "minus_is_image" not in str(logged)
     state = act(ctx, replace(state, connection=None), Action.CONNECT)  # 2nd amplitude: × 2
     assert qrc_step(ctx) == pytest.approx(2 * first, abs=1e-6)
     monkeypatch.setattr(actions, "BOUNDS_A", (0.03, 0.05))  # the first one is capped
@@ -263,7 +269,7 @@ def test_a_symmetric_ts_optimizes_one_qrc_side_and_carries_its_image(tmp_path) -
     ctx.log = logged.append
     state = act(ctx, state, Action.CONNECT)
     assert ctx.rt.qm.calls[jobs:] == ["optimize+init_hessian"] and state.connection == "degenerate"
-    assert len(set(ctx.work.connection.side_calcs)) == 1
+    assert len(set(ctx.work.connection.side_calcs)) == 1 == ctx.rt.map[-1]
     assert {"note": "qrc1:minus_is_image"} in logged
 
 
@@ -406,9 +412,10 @@ def test_screen_takes_dft_energies_inside_the_neb_between_the_dft_minima(tmp_pat
     state = act(ctx, state, Action.SCREEN)
     assert ctx.rt.screen_path.calls == [f"find_path:{(*neb, 'pes')[0]}"]
     assert ctx.rt.qm.calls.count("energy") == energy + SCREEN_IMAGES - 2
-    assert ctx.rt.qm.calls.count("frequencies") == freq
+    assert ctx.rt.qm.calls.count("frequencies") == freq and ctx.rt.map == [SCREEN_IMAGES - 2]
     assert state.screen.verdict == "single" and [s.source for s in state.seeds] == [seed]
-    frames = ctx.work.path.frames
+    frames = ctx.work.path.frames  # SP energies in frame order
+    assert ctx.work.path.energies[1:-1] == tuple(ctx.rt.qm.pes.energy(f) for f in frames[1:-1])
     assert np.allclose(frames[0], ctx.ends[0]) and mapped_rmsd(frames[-1], ctx.ends[1]) < 1e-6
     assert ("screen_neb:nonzero_exit" in [r["note"] for r in logged]) is bool(neb)
 
@@ -438,7 +445,7 @@ def test_a_barrierless_profile_is_densified_beside_its_highest_node(tmp_path, bu
     ctx.rt = replace(ctx.rt, qm=Bumped(tmp_path, ctx.rt.qm.pes, mids[1], bump))
     v = ctx.verdict(frames, inner, "string")
     assert (v.verdict, v.source) == (verdict, "string") and ctx.rt.qm.calls == ["energy"] * 2
-    assert v.reasons == (("midpoint_single_point",) if bump is None else ())
+    assert v.reasons == (("midpoint_single_point",) if bump is None else ()) and ctx.rt.map[-1] == 2
     path = ctx.work.path
     assert len(path.frames) == 7 + 2 * (bump is not None)
     if bump is not None:

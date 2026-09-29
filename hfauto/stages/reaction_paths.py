@@ -71,6 +71,7 @@ def _case_runtime(config: ReactionPathsConfig, rt: StageRuntime, inputs: Manifes
         file_ref=rt.file_ref,
         case_dir=rt.stage_dir / "cases",
         resolve=rt.resolve,
+        map=rt.thread_map,
         minima=minima,
         species=species,
         calcs=_calcs(inputs.of(ArtifactType.CALCULATION)),

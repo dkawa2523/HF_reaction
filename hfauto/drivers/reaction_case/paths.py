@@ -66,7 +66,7 @@ def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
         frames, ts = _neb(ctx, idpp(ctx.symbols, *ctx.ends, SCREEN_IMAGES))
     except ValueError as exc:
         return _unavailable(f"idpp:{exc}"), None
-    inner = [ctx.sp(f) for f in frames[1:-1]]
+    inner = ctx.sps(frames[1:-1])
     if any(e is None for e in inner):
         return _unavailable("screen_single_point"), None
     verdict = ctx.verdict(frames, [e for e in inner if e is not None], "screen")

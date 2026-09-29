@@ -225,13 +225,17 @@ class _NWChem:
         )
 
     def _argv(self, task: Task) -> tuple[str, ...]:
-        """nwchem <deck>, under ``mpirun -np <ranks>`` only when the site names mpirun."""
+        """nwchem <deck>, under ``mpirun -np <ranks>`` only when the site names mpirun. A job
+        given fewer ranks than the site's (one of several run at once, jobs.thread_map) is not
+        bound: every mpirun binds its ranks from core 0, so concurrent jobs would share cores."""
         exe = self._site.executables
         nwchem = resolve_executable("nwchem", exe.get("nwchem")) or exe.get("nwchem", "nwchem")
         if "mpirun" not in exe:
             return (nwchem, f"{NAME}.nw")
         mpirun = resolve_executable("mpirun", exe["mpirun"]) or exe["mpirun"]
-        return (mpirun, "-np", str(task.execution.ranks), nwchem, f"{NAME}.nw")
+        ranks = task.execution.ranks
+        unbound = ("--bind-to", "none") if ranks < self._site.execution.ranks else ()
+        return (mpirun, "-np", str(ranks), *unbound, nwchem, f"{NAME}.nw")
 
     def _observed(self, task: Task, text: str) -> Level | Failure:
         level = nw_out.observe_level(text)

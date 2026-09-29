@@ -78,8 +78,8 @@ class Runtime:
         return self.jobs.store.resolve(ref)
 
     def thread_map(self, fn: Callable[[ItemT], ResultT], items: Sequence[ItemT]) -> list[ResultT]:
-        """``[fn(x) for x in items]`` on site.cores threads, in input order; the JobRunner's core
-        semaphore decides how many jobs run at once."""
+        """``[fn(x) for x in items]`` on site.cores threads, in input order; each item's jobs get
+        site.cores // (items in its wave) MPI ranks, and the core semaphore decides how many run."""
         from hfauto.execution.jobs import thread_map
 
         return thread_map(fn, items, workers=self.site.cores)

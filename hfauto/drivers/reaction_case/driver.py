@@ -4,10 +4,10 @@ seen only through ``hfauto.backends.protocols``; the stage builds the CaseRuntim
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -38,7 +38,8 @@ if TYPE_CHECKING:
 class CaseRuntime:
     """``minima`` (DFT minimum id → record, optimized geometry) and ``species`` grow as cases
     register basins, ``calcs`` (calculation id → Evidence) as cases finish; ``resolve`` opens a
-    FileRef of the run (trajectories, Hessians)."""
+    FileRef of the run (trajectories, Hessians); ``map`` (StageRuntime.thread_map) runs
+    independent jobs at once, in input order."""
 
     qm: QMEngine
     saddle: SaddleRefiner
@@ -52,6 +53,7 @@ class CaseRuntime:
     file_ref: Callable[[Path], FileRef]
     case_dir: Path  # cases/; each case writes below case_dir/<reaction_id>
     resolve: Callable[[FileRef], Path]
+    map: Callable[[Callable[[Any], Any], Sequence[Any]], list[Any]]
     minima: dict[str, tuple[MinimumRecord, Geometry]]
     species: dict[str, SpeciesRecord]
     calcs: dict[str, Evidence]

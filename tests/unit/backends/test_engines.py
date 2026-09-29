@@ -1,11 +1,13 @@
-"""Engine registry: the final table, KeyError for unknown keys, the Protocol check (§6.2)."""
+"""Engine registry: the final table, KeyError for unknown keys, the Protocol check (§6.2);
+the NWChem command line."""
 
 import fakes
 import pytest
 
 from hfauto.backends import engines
 from hfauto.backends.protocols import Capability as C
-from hfauto.core.method import EngineSite
+from hfauto.core.method import EngineSite, ExecutionSpec
+from hfauto.execution.jobs import Task
 
 
 def create(capability, name):
@@ -43,3 +45,16 @@ def test_create_checks_the_capability_protocol(tmp_run, monkeypatch) -> None:
     with pytest.raises(TypeError, match="QMEngine"):
         create(C.QM, "nwchem")
     assert create(C.PATH, "nwchem_string") is path
+
+
+def test_nwchem_with_fewer_ranks_than_the_site_runs_unbound() -> None:
+    exe = {"nwchem": "hfauto-no-nwchem", "mpirun": "hfauto-no-mpirun"}
+    site = EngineSite(version="7.2.3", executables=exe, execution=ExecutionSpec(ranks=4))
+    qm = engines.create(C.QM, "nwchem", jobs=None, site=site)
+
+    def argv(ranks):
+        return qm._argv(Task("nwchem", "7.2.3", "energy", {}, ExecutionSpec(ranks=ranks)))
+
+    assert argv(4) == ("hfauto-no-mpirun", "-np", "4", "hfauto-no-nwchem", "job.nw")
+    assert argv(2) == ("hfauto-no-mpirun", "-np", "2", "--bind-to", "none",
+                       "hfauto-no-nwchem", "job.nw")

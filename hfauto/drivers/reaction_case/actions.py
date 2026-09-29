@@ -117,7 +117,16 @@ class Ctx:
         return ev
 
     def sp(self, coords: np.ndarray) -> float | None:
-        ev = self.rt.qm.energy(self.mol(coords), self.rt.method, deadline=self.deadline)
+        return self.sps([coords])[0]
+
+    def sps(self, frames: Sequence[np.ndarray]) -> list[float | None]:
+        """DFT SPs at ``frames``, independent jobs run at once (CaseRuntime.map); kept and
+        noted in order."""
+        rt = self.rt
+        return [self._energy(ev) for ev in rt.map(
+            lambda x: rt.qm.energy(self.mol(x), rt.method, deadline=self.deadline), frames)]
+
+    def _energy(self, ev: Evidence | Failure) -> float | None:
         if isinstance(ev, Failure):
             self.note(f"sp:{ev.kind.value}")
             return None
@@ -149,7 +158,7 @@ class Ctx:
             return verdict
         k = 1 + int(np.argmax(inner))
         mids = [0.5 * (frames[i] + frames[i + 1]) for i in (k - 1, k)]
-        low, high = (self.sp(x) for x in mids)
+        low, high = self.sps(mids)
         if low is None or high is None:
             return BarrierVerdict(verdict="unavailable", source=source,
                                   reasons=("midpoint_single_point",))
@@ -341,12 +350,14 @@ def _sides(ctx: Ctx, freq: Evidence, starts: tuple[np.ndarray, np.ndarray], atte
     """The QRC sides optimized from the TS Hessian and their final structures; None when one
     fails. At a symmetric TS the minus start is an exact image of the plus start (identity.carry
     within IMAGE_A), so on the invariant PES the minus optimum is the plus one's image: only the
-    plus side runs and stands for both, the minus structure carried by that image."""
+    plus side runs and stands for both, the minus structure carried by that image. Two sides
+    run at once (CaseRuntime.map)."""
+    rt = ctx.rt
     image = carry(ctx.symbols, starts[1], starts[0], starts[0])[0] <= IMAGE_A
     if image:
         ctx.note(f"qrc{attempt}:minus_is_image")
-    runs = [ctx.rt.qm.optimize(ctx.mol(y), ctx.rt.method, init_hessian=freq,
-                               deadline=ctx.deadline) for y in starts[:1 if image else 2]]
+    runs = rt.map(lambda y: rt.qm.optimize(ctx.mol(y), rt.method, init_hessian=freq,
+                                           deadline=ctx.deadline), starts[:1 if image else 2])
     plus, minus = runs[0], runs[-1]
     if isinstance(plus, Failure) or isinstance(minus, Failure):
         ctx.note(f"qrc{attempt}:side_failed")

@@ -24,14 +24,16 @@ class Out(BaseModel):
 
 
 class ScriptAdapter:
-    """Runs inputs['codes'][0] after dropping a unique marker file; continuation drops that code."""
+    """Runs inputs['codes'][0] after dropping a unique marker file; continuation drops that code.
+    ``seen`` holds the execution of every attempt."""
 
     result_type = Out
 
     def __init__(self, store, marker):
-        self.store, self.marker = store, marker
+        self.store, self.marker, self.seen = store, marker, []
 
     def prepare(self, task, workdir):
+        self.seen.append(task.execution)
         mark = f"import uuid; open({str(self.marker)!r} + '/' + uuid.uuid4().hex, 'w').close()\n"
         code = mark + task.inputs["codes"][0]
         return Command(argv=(task.inputs.get("exe", sys.executable), "-c", code), cwd=workdir)
@@ -56,8 +58,8 @@ def _setup(tmp_path, cores=1, **store_options):
     return JobRunner(store, cores=cores), ScriptAdapter(store, tmp_path / "marker")
 
 
-def _task(*codes, name="a", timeout_s=30.0, ranks=1):
-    execution = ExecutionSpec(timeout_s=timeout_s, ranks=ranks)
+def _task(*codes, name="a", timeout_s=30.0, ranks=1, threads=1):
+    execution = ExecutionSpec(timeout_s=timeout_s, ranks=ranks, threads=threads)
     return Task("script", "1", "run", {"name": name}, execution, {"codes": codes})
 
 
@@ -129,13 +131,13 @@ def test_parse_exception_is_a_remembered_incomplete_output(tmp_path, monkeypatch
     assert retry.run(task, adapter) == out and _runs(tmp_path) == 3
 
 
-def _meet(runner, adapter, room, wait_s, ranks):
+def _meet(runner, adapter, room, wait_s, **execution):
     """Two jobs each touch a file in ``room`` and wait for the other; returns what each saw."""
     code = (f"import pathlib, time; d = pathlib.Path({str(room)!r}); d.mkdir(exist_ok=True)\n"
             f"(d / pathlib.Path.cwd().parent.name).touch(); end = time.time() + {wait_s}\n"
             "while len(list(d.iterdir())) < 2 and time.time() < end: time.sleep(0.02)\n"
             "open('out.txt', 'w').write(str(len(list(d.iterdir()))))")
-    tasks = [_task(code, name=f"{room.name}{i}", ranks=ranks) for i in range(2)]
+    tasks = [_task(code, name=f"{room.name}{i}", **execution) for i in range(2)]
     outs = thread_map(lambda t: runner.run(t, adapter), tasks, workers=2)
     assert [o.job_key for o in outs] == [runner.store.key(t) for t in tasks]
     return sorted(out.value for out in outs)
@@ -143,7 +145,28 @@ def _meet(runner, adapter, room, wait_s, ranks):
 
 def test_core_semaphore_serializes_and_job_lock_dedupes(tmp_path):
     runner, adapter = _setup(tmp_path, cores=2)
-    assert _meet(runner, adapter, tmp_path / "wide", 0.3, 2) == ["1", "2"]  # one at a time
-    assert _meet(runner, adapter, tmp_path / "narrow", 10, 1) == ["2", "2"]  # concurrent
+    assert _meet(runner, adapter, tmp_path / "wide", 0.3, threads=2) == ["1", "2"]  # in turn
+    assert _meet(runner, adapter, tmp_path / "narrow", 10) == ["2", "2"]  # concurrent
+    assert _meet(runner, adapter, tmp_path / "ranks", 10, ranks=2) == ["2", "2"]  # 1 rank each
     same = thread_map(lambda t: runner.run(t, adapter), [_task(OK, name="s")] * 2, workers=2)
-    assert same[0] == same[1] and _runs(tmp_path) == 5
+    assert same[0] == same[1] and _runs(tmp_path) == 7
+
+
+def test_rank_share_applies_only_inside_thread_map_and_never_to_the_key(tmp_path):
+    runner, adapter = _setup(tmp_path, cores=4)
+
+    def run(task):
+        return runner.run(task, adapter)
+
+    three = thread_map(run, [_task(OK, name=f"t{i}", ranks=4) for i in range(3)], workers=4)
+    two = thread_map(run, [_task(OK, name=f"d{i}", ranks=4) for i in range(2)], workers=4)
+    thread_map(run, [_task(OK, name="one", ranks=4)], workers=4)
+    run(_task(OK, name="serial", ranks=4))
+    # ranks 4 // (items at once); the timeout keeps the job's core-seconds
+    assert [(e.ranks, e.timeout_s) for e in adapter.seen] == [
+        (1, 120.0)] * 3 + [(2, 60.0)] * 2 + [(4, 30.0)] * 2
+    full = _task(OK, name="t0", ranks=4)
+    assert runner.store.key(full) == runner.store.key(replace(full, execution=ExecutionSpec()))
+    assert run(full) == three[0] and two[0].job_key and len(adapter.seen) == 7  # a hit
+    thread_map(run, [_task(OK, name=f"w{i}", ranks=4) for i in range(5)], workers=4)
+    assert sorted(e.ranks for e in adapter.seen[7:]) == [1, 1, 1, 1, 4]  # waves of 4 and 1
