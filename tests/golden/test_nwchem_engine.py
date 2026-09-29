@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from hfauto.backends.nwchem.engine import NWChemEngine, NWChemSaddle, NWChemString
+from hfauto.backends.nwchem.input import hess_text
 from hfauto.backends.nwchem.output import geometry_block, read_hess
 from hfauto.chemistry.vibrations import shape_hessian
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz, write_xyz_trajectory
@@ -97,12 +98,7 @@ def test_frequencies_cache_and_input_checks(nwchem, golden):
     assert len(ev.imaginary_modes) == 1
     assert np.load(jobs.store.run_dir / ev.hessian.path).shape == (9, 9)
     assert engine.frequencies(mol, FINE) == ev and jobs.stats().hits == 1
-    near, far = (Molecule(XYZ(mol.xyz.symbols, mol.xyz.coords + [d, 0, 0]), 0, 1)
-                 for d in (0.1, 0.6))
-    side = engine.optimize(near, FINE, init_hessian=ev)  # a QRC side from its TS Hessian
-    assert isinstance(side, Evidence) and side.task == "opt"
-    deck = (jobs.store.attempt_dir(side.job_key, 0) / "job.nw").read_text()
-    assert "inhess 2" in deck and "trust 0.3" in deck
+    far = Molecule(XYZ(mol.xyz.symbols, mol.xyz.coords + [0.6, 0, 0]), 0, 1)
     failure = engine.optimize(far, FINE, init_hessian=ev)  # beyond 0.5 Å per atom
     assert failure.kind is FailureKind.INPUT_INVALID
     assert failure.reason == "hessian_geometry_mismatch"
@@ -110,6 +106,33 @@ def test_frequencies_cache_and_input_checks(nwchem, golden):
     assert triplet.kind is FailureKind.METHOD_MISMATCH and "multiplicity" in triplet.reason
     grid = engine.frequencies(mol, XFINE)
     assert grid.kind is FailureKind.METHOD_MISMATCH and "grid" in grid.reason
+
+
+def test_a_first_order_saddle_hessian_starts_a_minimization_as_its_positive_definite_model(
+        nwchem, golden):
+    """K1: the TS Hessian of G07 (one mode below -saddle_cm1) is written as its positive-definite
+    model under a new job key; with a second saddle mode (a higher-order saddle) the same
+    Hessian is written as it is under the old key."""
+    jobs, site = nwchem
+    engine, mol = NWChemEngine(jobs=jobs, site=site), _hcn_ts(golden)
+    ts = engine.frequencies(mol, FINE)
+    side = Molecule(XYZ(mol.xyz.symbols, mol.xyz.coords + [0.1, 0, 0]), 0, 1)
+    raw = np.load(jobs.store.resolve(ts.hessian))
+    higher = ts.model_copy(update={"frequencies_cm1": (-120.0, *ts.frequencies_cm1)})
+    decks = []
+    for freq, written, reshaped in ((ts, shape_hessian(raw, side.xyz.coords, None), True),
+                                    (higher, raw, False)):
+        opt = engine.optimize(side, FINE, init_hessian=freq)
+        assert isinstance(opt, Evidence) and opt.task == "opt"
+        payload = {"method": FINE.signature(), "molecule": side.fingerprint(),
+                   "hessian": freq.hessian.sha256}
+        old = jobs.store.key(Task(engine="nwchem", version_pin="7.2.3", kind="optimize",
+                                  key_payload=payload, execution=site.execution))
+        assert (opt.job_key != old) is reshaped
+        attempt = jobs.store.attempt_dir(opt.job_key, 0)
+        assert (attempt / "job.hess").read_text() == hess_text(written)
+        decks.append((attempt / "job.nw").read_text())
+    assert decks[0] == decks[1] and "trust 0.3\n  inhess 2" in decks[0]
 
 
 def test_double_hybrids_are_rejected_and_autoz_falls_back_to_cartesians(nwchem, golden, tmp_path):

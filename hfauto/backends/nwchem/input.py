@@ -120,9 +120,12 @@ def render_optimize(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, 
                     init_hessian: bool = False) -> str:
     """Default driver thresholds; ``init_hessian`` reads <name>.hess.
 
-    ``trust 0.3`` (the NWChem default) with an initial Hessian (a QRC side from its TS, a
-    complex from xTB), ``trust 0.1`` without: from a mode-follow displacement the diagonal
-    guess overshoots back above the TS energy (HCN->HNC in NWChem 7.2.3).
+    ``trust 0.3`` (the NWChem default) with an initial Hessian (a QRC or mode-follow side from
+    its saddle, a complex from xTB), ``trust 0.1`` without: from a displaced start the diagonal
+    guess overshoots back above the TS energy (HCN->HNC in NWChem 7.2.3). NWChem clamps a
+    minimization step along a negative eigenvalue to 0.03-0.3 x trust and its BFGS update keeps
+    the sign (opt_drv.F 7.2.3): the adapter writes a first-order saddle's Hessian as its
+    positive-definite model.
     """
     options = ["  trust 0.3", "  inhess 2"] if init_hessian else ["  trust 0.1"]
     return _deck(setup, _system(mol, method, setup), _dft(mol, method, setup),

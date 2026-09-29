@@ -23,11 +23,11 @@ from pydantic import BaseModel
 from hfauto.backends.nwchem import input as nw_in
 from hfauto.backends.nwchem import output as nw_out
 from hfauto.backends.protocols import Requirements
+from hfauto.chemistry.gates import Policy
 from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian
 from hfauto.chemistry.xyz import (
     XYZ,
     Molecule,
-    geometry_fingerprint,
     read_xyz,
     read_xyz_trajectory,
     write_xyz,
@@ -49,7 +49,8 @@ from hfauto.execution.process import STDOUT_NAME, Command, CommandResult, resolv
 
 NAME = "job"  # NWChem file prefix: job.nw, job.movecs, job.hess, job.drv.hess
 FRAME_TOL_A = 1.0e-4
-HESSIAN_NEAR_A = 0.5  # optimize: largest per-atom distance to the init_hessian's structure
+HESSIAN_NEAR_A = 0.5  # largest per-atom distance from a start to its init Hessian's structure
+_SADDLE_CM1 = Policy().saddle_cm1  # a saddle direction, as the gates count them
 _TASK: dict[str, Literal["sp", "opt", "freq", "saddle"]] = {
     "energy": "sp", "optimize": "opt", "frequencies": "freq", "saddle": "saddle"}
 _DRIVER_JOBS = frozenset({"optimize", "saddle"})
@@ -76,13 +77,6 @@ def _dft_supported(method: MethodSpec) -> bool:
 
 def _wft_supported(method: MethodSpec) -> bool:
     return method.kind == "wft" and method.wft_method is not None and bool(method.basis)
-
-
-def _written_fingerprint(mol: Molecule) -> str:
-    """Fingerprint of ``mol`` as an xyz file stores it (8 decimals), like Evidence geometries."""
-    rows = np.asarray(mol.xyz.coords, dtype=float).reshape(-1, 3)
-    written = np.array([[float(f"{v:.8f}") for v in r] for r in rows])
-    return geometry_fingerprint(mol.xyz.symbols, written)
 
 
 def _max_shift_A(xyz: XYZ, mol: Molecule) -> float:
@@ -148,16 +142,14 @@ class _NWChem:
                     execution=self._site.execution, inputs=inputs)
         return self._jobs.run(task, self, deadline=deadline)
 
-    def _hessian_file(self, freq: Evidence, mol: Molecule, *, near_A: float | None = None
-                      ) -> Path | Failure:
-        """The canonical .npy of a freq Evidence (any Level) computed at exactly ``mol`` or,
-        with ``near_A``, at the same atoms in the same frame within ``near_A`` per atom."""
+    def _hessian_file(self, freq: Evidence, mol: Molecule) -> Path | Failure:
+        """The canonical .npy of a freq Evidence (any Level) computed at the same atoms in the
+        same frame within HESSIAN_NEAR_A per atom of ``mol``."""
         store = self._jobs.store
-        if freq.task != "freq" or freq.hessian is None:
+        if (freq.task != "freq" or freq.hessian is None
+                or _max_shift_A(read_xyz(store.resolve(freq.final.file)), mol) > HESSIAN_NEAR_A):
             return _invalid("hessian_geometry_mismatch")
-        at = (freq.final.fingerprint == _written_fingerprint(mol) if near_A is None
-              else _max_shift_A(read_xyz(store.resolve(freq.final.file)), mol) <= near_A)
-        return store.resolve(freq.hessian) if at else _invalid("hessian_geometry_mismatch")
+        return store.resolve(freq.hessian)
 
     # --- Adapter side ------------------------------------------------------------------
 
@@ -166,8 +158,8 @@ class _NWChem:
             shutil.copyfile(source, workdir / Path(source).name)
         if task.inputs.get("hessian") is not None:
             h = np.load(task.inputs["hessian"])
-            if task.kind == "saddle":  # minimizations (QRC sides) keep the raw Hessian
-                h = shape_hessian(h, task.inputs["mol"].xyz.coords, task.inputs["mode"])
+            if task.kind == "saddle" or task.inputs.get("hessian_model") == "positive":
+                h = shape_hessian(h, task.inputs["mol"].xyz.coords, task.inputs.get("mode"))
             (workdir / f"{NAME}.hess").write_text(nw_in.hess_text(h), encoding="ascii")
         if task.inputs.get("initial_path") is not None:
             shutil.copyfile(task.inputs["initial_path"], workdir / nw_in.INITIAL_PATH)
@@ -339,14 +331,21 @@ class NWChemEngine(_NWChem):
     def optimize(self, mol: Molecule, method: MethodSpec, *,
                  init_hessian: Evidence | None = None,
                  deadline: Deadline | None = None) -> Evidence | Failure:
-        """``init_hessian`` may come from a nearby structure (a QRC side from its TS)."""
-        hessian = None if init_hessian is None else self._hessian_file(
-            init_hessian, mol, near_A=HESSIAN_NEAR_A)
+        """``init_hessian`` may come from a nearby structure (a QRC or mode-follow side from its
+        saddle). A first-order saddle's (one mode below -saddle_cm1: the side's only negative
+        direction is its displacement) is written as its positive-definite model
+        (vibrations.shape_hessian; why in input.render_optimize). Any other is written as it
+        is: from a higher-order saddle the side must stay free to leave its other saddle
+        directions (DME C2v seed: 29 steps as it is, unconverged after 207 as the model)."""
+        hessian = None if init_hessian is None else self._hessian_file(init_hessian, mol)
         if isinstance(hessian, Failure):
             return hessian
         sha = init_hessian and init_hessian.hessian and init_hessian.hessian.sha256
-        return self._qm("optimize", mol, method, deadline, payload={"hessian": sha},
-                        hessian=hessian)
+        first_order = init_hessian is not None and hessian is not None and sum(
+            f < -_SADDLE_CM1 for f in init_hessian.frequencies_cm1 or ()) == 1
+        model = {"hessian_model": "positive"} if first_order else {}
+        return self._qm("optimize", mol, method, deadline, payload={"hessian": sha, **model},
+                        hessian=hessian, **model)
 
     def frequencies(self, mol: Molecule, method: MethodSpec, *,
                     deadline: Deadline | None = None) -> Evidence | Failure:
@@ -364,7 +363,7 @@ class NWChemSaddle(_NWChem):
                mode: Sequence[float], deadline: Deadline | None = None) -> Evidence | Failure:
         if not _dft_supported(method):
             return _invalid(f"unsupported_method:{method.id}")
-        path = self._hessian_file(hessian, seed, near_A=HESSIAN_NEAR_A)
+        path = self._hessian_file(hessian, seed)
         if isinstance(path, Failure):
             return path
         unit = np.ravel(mode) / np.linalg.norm(mode)

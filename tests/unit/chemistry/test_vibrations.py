@@ -73,6 +73,17 @@ def test_shape_hessian_leaves_only_the_reaction_mode_negative(reaction):
     assert values == pytest.approx(sorted([*expected, 0, 0, 0, 0, 0, 0]), abs=1e-10)
 
 
+def test_without_a_reaction_mode_the_model_is_positive_definite_on_the_same_modes():
+    x, rigid, internal = _four_atoms()
+    curvature = np.array([-0.2, -0.1, 1e-6, 0.4, 0.5, 0.6])
+    h = internal @ np.diag(curvature) @ internal.T - 0.3 * np.outer(rigid[:, 5], rigid[:, 5])
+    model = vib.shape_hessian(h, x, None)
+    expected = np.maximum(np.abs(curvature), 1e-3)  # |λ| with the floor, no sign flip
+    assert model == pytest.approx(internal @ np.diag(expected) @ internal.T, abs=1e-10)
+    assert np.abs(model @ rigid).max() < 1e-10  # rigid motions projected out
+    assert np.linalg.eigvalsh(internal.T @ model @ internal).min() >= 1e-3 - 1e-12
+
+
 def test_canonical_npy(tmp_path):
     h = np.diag([0.5] + [0.0] * 5)  # Eh/bohr², atom 0 along x
     out = vib.to_canonical_npy(h, tmp_path / "freq" / "hessian.npy")

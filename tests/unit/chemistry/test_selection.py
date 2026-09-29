@@ -1,6 +1,6 @@
 """Structures for minima(dft) (§8.2); K cases ported from test_dft_minima_refinement."""
 
-from hfauto.chemistry.selection import Candidate, rerank, select_for_refinement
+from hfauto.chemistry.selection import Candidate, crowded, rerank, select_for_refinement
 
 KCAL = 1 / 627.5094740631
 
@@ -24,12 +24,17 @@ def test_discovery_endpoints_always_kept_unranked_dropped_and_rerank():
             Candidate("product", "A", "p", None, always=True),
             Candidate("unscreened", "A", "u", None)]
     assert ids(select_for_refinement(pool, per_state=1)) == ["low", "source", "product"]
-    sp = {"low": -2.0, "mid": -2.3}  # re-ranked by single points; no point, no refinement
-    assert ids(rerank(pool, sp, 1, window_kcal=6.0)) == ["mid", "source", "product"]
+    chosen = select_for_refinement(pool, per_state=8)
+    assert ids(crowded(chosen, 1)) == ["low", "mid"]  # always kept: never a single point
+    sp = {"low": -2.0, "mid": -2.3}  # re-ranked by single points
+    assert ids(rerank(chosen, sp, 1, window_kcal=6.0)) == ["mid", "source", "product"]
 
 
-def test_rerank_applies_the_window_to_the_single_point_energies():
-    pool = [Candidate(f"c{i}", "A", "s", -1.0 + i * KCAL) for i in range(3)]
-    pool.append(Candidate("source", "A", "s", -1.0, always=True))
-    sp = {"c0": -2.0, "c1": -2.0 + 5 * KCAL, "c2": -2.0 + 7 * KCAL}  # c2 now 7 kcal/mol up
-    assert ids(rerank(pool, sp, 3, window_kcal=6.0)) == ["c0", "c1", "source"]
+def test_rerank_cuts_crowded_groups_by_single_points_and_keeps_small_groups_whole():
+    pool = [Candidate(f"c{i}", "A", "s", -1.0 + i * KCAL) for i in range(4)]
+    pool += [Candidate("source", "A", "s", -1.0, always=True),
+             Candidate("b0", "B", "s", -3.0), Candidate("b1", "B", "s", -3.0 + 5 * KCAL)]
+    assert ids(crowded(pool, 3)) == ["c0", "c1", "c2", "c3"]  # B holds only 2: no single point
+    sp = {"c0": -2.0, "c1": -2.0 + 5 * KCAL, "c2": -2.0 + 7 * KCAL}  # c2 7 kcal/mol up, c3 failed
+    assert ids(rerank(pool, sp, 3, window_kcal=6.0)) == ["c0", "c1", "source", "b0", "b1"]
+    assert ids(rerank(pool, {}, 4, window_kcal=6.0)) == ids(pool)  # no crowded group

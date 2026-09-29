@@ -2,9 +2,10 @@
 
 Same-element atoms are matched with scipy's Hungarian solver, alternating with a proper Kabsch
 fit from several starting orientations (the alternation only finds a local optimum). A basin
-(``same_basin``, ``assign``) admits proper and improper rotations: mirror images are one minimum,
-a chiral one with m = 2 (``is_chiral``). Labelled comparisons (``mapped_rmsd``) stay proper, so
-that a degenerate rearrangement such as the NH3 inversion differs from the identity.
+(``assign``) admits proper and improper rotations: mirror images are one minimum, a chiral one
+with m = 2 (``is_chiral``). Labelled comparisons (``mapped_rmsd``, ``same_as_labelled``) stay
+proper, so that a degenerate rearrangement such as the NH3 inversion differs from the identity.
+``carry`` moves a structure along the relabelling, mirror and rotation that match two others.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from scipy.optimize import linear_sum_assignment
 
 from hfauto.chemistry.geometry import kabsch
 
+IMAGE_A = 0.005  # an exact image: QRC ± starts at a symmetric TS <= 0.0009 A, others >= 0.025 A
 _RMSD_A = 0.05  # one basin: permutation-invariant RMSD (mirror image included) ...
 _DE_HARTREE = 5.0e-5  # ... and |dE|, with the best match clearly ahead of the runner-up
 _RUNNER_UP_RATIO, _RUNNER_UP_GAP_A = 3.0, 0.1
@@ -129,6 +131,28 @@ def _basin_match(symbols: Sequence[str], a: np.ndarray, b: np.ndarray
     return (m_rmsd, m_perm, True) if m_rmsd < rmsd else (rmsd, perm, False)
 
 
+def carry(symbols: Sequence[str], ref: np.ndarray, x: np.ndarray, other: np.ndarray
+          ) -> tuple[float, np.ndarray]:
+    """(rmsd, carried): the basin RMSD of x matched onto ref (relabelling and mirror image
+    included), and ``other``, a structure in the atom order and frame of x, carried by that
+    relabelling, mirror, Kabsch rotation and centroid shift into the atom order and frame of ref.
+    The caller judges the RMSD (IMAGE_A for an exact image, _RMSD_A for one basin)."""
+
+    rmsd, perm, mirrored = _basin_match(symbols, ref, x)
+    sign = np.array([-1.0 if mirrored else 1.0, 1.0, 1.0])
+    xs, ys = (np.asarray(y, dtype=float).reshape(-1, 3)[perm] * sign for y in (x, other))
+    centre, target = xs.mean(axis=0), np.asarray(ref, dtype=float).reshape(-1, 3).mean(axis=0)
+    return rmsd, (ys - centre) @ kabsch(xs - centre, _centered(ref)) + target
+
+
+def same_as_labelled(xa: np.ndarray, xb: np.ndarray, ea: float, eb: float) -> bool:
+    """One structure as labelled: |ea - eb| <= 5e-5 Eh and the identity-mapped RMSD (proper
+    rotations) <= 0.05 A. The two structures of a degenerate rearrangement (the NH3 inversion,
+    an enantiomerization) are one basin but two structures as labelled."""
+
+    return abs(ea - eb) <= _DE_HARTREE and mapped_rmsd(xa, xb) <= _RMSD_A
+
+
 def is_chiral(symbols: Sequence[str], x: np.ndarray) -> bool:
     """True when x and its mirror image are distinct under proper rotations and relabelling
     (optical isomer number m = 2)."""
@@ -158,13 +182,6 @@ def assign(
         if not separated:
             return None
     return scored[0][1]
-
-
-def same_basin(symbols: Sequence[str], a: np.ndarray, b: np.ndarray, ea: float, eb: float
-               ) -> bool:
-    """Structures a and b (energies ea, eb) lie in one basin by assign's criterion."""
-
-    return assign(symbols, a, ea, {"b": (b, eb)}) is not None
 
 
 def basin_coords(symbols: Sequence[str], basin: np.ndarray, own: np.ndarray) -> np.ndarray:

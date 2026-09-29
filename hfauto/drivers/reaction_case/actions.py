@@ -25,7 +25,7 @@ from hfauto.chemistry.geometry import (
     declared_coordinate_gradient,
     most_changed_dihedral,
 )
-from hfauto.chemistry.identity import mapped_equivalent, periodic_nearest
+from hfauto.chemistry.identity import IMAGE_A, carry, mapped_equivalent, periodic_nearest
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.modes import BOUNDS_A, TARGET_HARTREE, amplitude, displace, overlap
 from hfauto.chemistry.xyz import (
@@ -292,10 +292,12 @@ def validate_ts(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
 
 
 def _register(ctx: Ctx, coords: np.ndarray, name: str,
-              source: Literal["connection", "intermediate"]) -> MinimumRecord | None:
-    """relax_to_minimum → Registry: the known basin, a new one, or None (no minimum)."""
+              source: Literal["connection", "intermediate"], opt: Evidence | None = None
+              ) -> MinimumRecord | None:
+    """relax_to_minimum (from ``opt`` when it has converged already, not optimized again) →
+    Registry: the known basin, a new one, or None (no minimum)."""
     rt = ctx.rt
-    out = relax_to_minimum(ctx.mol(coords), rt.method, rt.qm, known=rt.registry,
+    out = relax_to_minimum(ctx.mol(coords), rt.method, rt.qm, known=rt.registry, opt=opt,
                            deadline=ctx.deadline, gates=ctx.rules.gates)
     if out.status == "known" and out.known_basin is not None:
         return ctx.record(out.known_basin)
@@ -321,48 +323,67 @@ def _register(ctx: Ctx, coords: np.ndarray, name: str,
 
 
 def _assign(ctx: Ctx, side: Evidence, x: np.ndarray, name: str) -> str | None:
-    """Registry.find; a torsional case falls back to the nearest declared dihedral (CH-04)."""
-    basin = ctx.rt.registry.find(side)
+    """Registry.find of the side at ``x`` (its own structure, or its image's); a torsional case
+    falls back to the nearest declared dihedral (CH-04); else the converged side is registered."""
+    basin = ctx.rt.registry.find(side, coords=x)
     if basin is not None:
         return ctx.record(basin).minimum_id
     terms = ctx.case.coordinate
     if ctx.case.torsional and terms and all(t.kind == "dihedral" for t in terms):
         values = [declared_coordinate(terms, end) for end in ctx.raw]
         return ctx.case.minima[periodic_nearest(declared_coordinate(terms, x), values)]
-    record = _register(ctx, x, name, "connection")
+    record = _register(ctx, x, name, "connection", opt=side)
     return None if record is None else record.minimum_id
+
+
+def _sides(ctx: Ctx, freq: Evidence, starts: tuple[np.ndarray, np.ndarray], attempt: int
+           ) -> tuple[tuple[Evidence, Evidence], tuple[np.ndarray, np.ndarray]] | None:
+    """The QRC sides optimized from the TS Hessian and their final structures; None when one
+    fails. At a symmetric TS the minus start is an exact image of the plus start (identity.carry
+    within IMAGE_A), so on the invariant PES the minus optimum is the plus one's image: only the
+    plus side runs and stands for both, the minus structure carried by that image."""
+    image = carry(ctx.symbols, starts[1], starts[0], starts[0])[0] <= IMAGE_A
+    if image:
+        ctx.note(f"qrc{attempt}:minus_is_image")
+    runs = [ctx.rt.qm.optimize(ctx.mol(y), ctx.rt.method, init_hessian=freq,
+                               deadline=ctx.deadline) for y in starts[:1 if image else 2]]
+    plus, minus = runs[0], runs[-1]
+    if isinstance(plus, Failure) or isinstance(minus, Failure):
+        ctx.note(f"qrc{attempt}:side_failed")
+        return None
+    x = ctx.coords(plus.final)
+    y = carry(ctx.symbols, starts[1], starts[0], x)[1] if image else ctx.coords(minus.final)
+    return (plus, minus), (x, y)
 
 
 def connect(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """QRC: displace ± along the TS mode by an energy target, optimize, assign, gate."""
-    rt, freq = ctx.rt, ctx.work.ts_freq
+    freq = ctx.work.ts_freq
     attempt = state.connection_attempts + 1
     state = replace(state, connection_attempts=attempt)
     if freq is None or not freq.imaginary_modes:
         return replace(state, connection="failed")
     step = min(_amplitude(ctx, freq, 0) * QRC_RETRY_FACTOR ** (attempt - 1), BOUNDS_A[1])
-    mode = np.asarray(freq.imaginary_modes[0])
-    plus, minus = (rt.qm.optimize(ctx.mol(y), rt.method, init_hessian=freq, deadline=ctx.deadline)
-                   for y in displace(ctx.coords(freq.final), mode, step))  # the TS Hessian
-    if isinstance(plus, Failure) or isinstance(minus, Failure):
-        ctx.note(f"qrc{attempt}:side_failed")
+    optimized = _sides(ctx, freq, displace(ctx.coords(freq.final),
+                                           np.asarray(freq.imaginary_modes[0]), step), attempt)
+    if optimized is None:
         return replace(state, connection="failed")
-    finals = [ctx.coords(plus.final), ctx.coords(minus.final)]
+    sides, finals = optimized
     first, second = (_assign(ctx, s, x, f"qrc{attempt}_{i}")
-                     for i, (s, x) in enumerate(zip((plus, minus), finals, strict=True)))
+                     for i, (s, x) in enumerate(zip(sides, finals, strict=True)))
     distinct = mapped_equivalent(ctx.symbols, *finals) if ctx.case.degenerate else True
     bonds = tuple(topology.bonds(ctx.symbols, x) for x in (*ctx.ends, finals[1], finals[0]))
-    gate, label = connection(freq, (plus, minus), (first, second), frozenset(ctx.case.minima),
+    gate, label = connection(freq, sides, (first, second), frozenset(ctx.case.minima),
                              degenerate=ctx.case.degenerate, sides_distinct=distinct,
                              bond_sets=bonds)
     if label == "failed" or first is None or second is None:
         ctx.note(f"qrc{attempt}:{','.join(gate.reasons)}")
         retry = "sides_same_basin" in gate.reasons  # the only failure worth a wider displacement
         return replace(state, connection="same_basin" if retry else "failed")
-    sides = (calc_id(ctx.keep(plus)), calc_id(ctx.keep(minus)))
+    side_calcs = (calc_id(ctx.keep(sides[0])), calc_id(ctx.keep(sides[1])))
     if (two := _two_steps(ctx, state, label, (first, second))) is not None:
         return two
-    ctx.work.connection = ConnectionClaim(side_calcs=sides, minima=(first, second))
+    ctx.work.connection = ConnectionClaim(side_calcs=side_calcs, minima=(first, second))
     return replace(state, connection=label)
 
 

@@ -15,6 +15,27 @@ CHFCLBR = np.array(
 MIRROR = CHFCLBR * [-1.0, 1.0, 1.0]
 CH4 = np.array([[0, 0, 0], [0.63, 0.63, 0.63], [-0.63, -0.63, 0.63], [-0.63, 0.63, -0.63],
                 [0.63, -0.63, -0.63]])
+# QRC ± starts displaced from the DFT TS (VAL runs, Å): images at the D3h NH3 and SN2 TSs,
+# not at the HCN -> HNC TS.
+QRC_STARTS = {  # name: (symbols, plus, minus)
+    "nh3": (NH3_SYMBOLS,
+            np.array([[0.0, 0.0, 0.01079], [1.00157, -2e-05, -0.05019],
+                      [-0.5008, -0.86742, -0.04958], [-0.5008, 0.86738, -0.05023]]),
+            np.array([[0.0, 0.0, -0.0108], [1.00159, 2e-05, 0.04981],
+                      [-0.50078, -0.86738, 0.05042], [-0.50078, 0.86741, 0.04977]])),
+    "sn2_cl": (["C", "H", "H", "H", "Cl", "Cl"],
+               np.array([[1e-05, 1e-05, 0.05], [-0.54054, 0.93624, 0.00099],
+                         [1.08107, 0.0, 0.0005], [-0.54054, -0.93624, 0.00115],
+                         [-0.00083, -0.0002, -2.32979], [0.00084, 0.00019, 2.31256]]),
+               np.array([[-3e-05, 0.0, -0.05], [-0.54054, 0.93624, -0.00076],
+                         [1.08107, 0.0, -0.00127], [-0.54054, -0.93624, -0.00061],
+                         [-0.00082, -0.00019, -2.31256], [0.00085, 0.00019, 2.32979]])),
+    "hcn": (["C", "N", "H"],
+            np.array([[-0.02629, -0.46541, -0.42539], [0.72056, 0.21233, 0.19408],
+                      [-0.73139, 0.22832, 0.20868]]),
+            np.array([[-0.02406, -0.47242, -0.4318], [0.71292, 0.21442, 0.19598],
+                      [-0.65175, 0.28276, 0.25844]])),
+}
 
 
 def _proper_rotation(seed: int) -> np.ndarray:
@@ -23,16 +44,24 @@ def _proper_rotation(seed: int) -> np.ndarray:
 
 
 def test_ammonia_inversion_is_one_basin_and_a_degenerate_pair():
-    assert idn.same_basin(NH3_SYMBOLS, NH3, INVERTED, -56.5, -56.5)
+    assert idn.assign(NH3_SYMBOLS, NH3, -56.5, {"inverted": (INVERTED, -56.5)}) == "inverted"
     assert idn.mapped_equivalent(NH3_SYMBOLS, NH3, INVERTED)  # labels differ: proper only
+    assert not idn.same_as_labelled(NH3, INVERTED, -56.5, -56.5)  # two structures as labelled
     assert not idn.mapped_equivalent(NH3_SYMBOLS, NH3, NH3)
     assert not idn.is_chiral(NH3_SYMBOLS, NH3)
+
+
+def test_same_as_labelled_is_the_identity_mapping_within_the_basin_tolerances():
+    moved = NH3 @ _proper_rotation(4).T + [0.5, 0.0, -1.0]
+    assert idn.same_as_labelled(NH3, moved, 0.0, 3e-5)
+    assert not idn.same_as_labelled(NH3, moved, 0.0, 6e-5)  # 5e-5 Eh
+    assert not idn.same_as_labelled(NH3, NH3[[0, 2, 1, 3]] @ _proper_rotation(4).T, 0.0, 0.0)
 
 
 def test_enantiomers_are_one_chiral_basin():
     assert idn.permutation_invariant_rmsd(CHFCLBR_SYMBOLS, CHFCLBR, MIRROR)[0] > 1.0  # proper
     moved = MIRROR @ _proper_rotation(5).T + [0.3, 0.0, -1.0]
-    assert idn.same_basin(CHFCLBR_SYMBOLS, CHFCLBR, moved, -1.0, -1.0)
+    assert idn.assign(CHFCLBR_SYMBOLS, CHFCLBR, -1.0, {"s": (moved, -1.0)}) == "s"
     assert idn.is_chiral(CHFCLBR_SYMBOLS, CHFCLBR) and idn.is_chiral(CHFCLBR_SYMBOLS, moved)
     assert idn.mapped_equivalent(CHFCLBR_SYMBOLS, CHFCLBR, MIRROR)  # R -> S is degenerate
 
@@ -59,17 +88,46 @@ def test_rotated_permuted_copy_is_recovered():
 
 
 def test_one_criterion_energy_first_then_a_unique_structure():
-    assert idn.same_basin(NH3_SYMBOLS, NH3, NH3, 0.0, 3e-5)  # 5e-5 Eh
-    assert not idn.same_basin(NH3_SYMBOLS, NH3, NH3, 0.0, 6e-5)
     squeezed = NH3 * [1.0, 1.0, 0.5]
-    assert not idn.same_basin(NH3_SYMBOLS, NH3, squeezed, 0.0, 0.0)
+    assert idn.assign(NH3_SYMBOLS, NH3, 3e-5, {"up": (NH3, 0.0)}) == "up"  # 5e-5 Eh
+    assert idn.assign(NH3_SYMBOLS, NH3, 6e-5, {"up": (NH3, 0.0)}) is None
+    assert idn.assign(NH3_SYMBOLS, squeezed, 0.0, {"up": (NH3, 0.0)}) is None  # 0.05 A
     candidates = {"up": (NH3, 0.0), "flat": (squeezed, 0.0)}
     assert idn.assign(NH3_SYMBOLS, NH3 + 1e-4, 1e-6, candidates) == "up"
-    assert idn.assign(NH3_SYMBOLS, NH3, 1e-3, candidates) is None  # energy off
     twins = {"a": (NH3, 0.0), "b": (NH3 + 0.004, 0.0)}
     assert idn.assign(NH3_SYMBOLS, NH3 + 0.002, 0.0, twins) is None  # not unique
     twins["b"] = (NH3 + 0.004, 1e-3)  # another energy never competes as the runner-up
     assert idn.assign(NH3_SYMBOLS, NH3 + 0.002, 0.0, twins) == "a"
+
+
+@pytest.mark.parametrize("name", ["nh3", "sn2_cl"])
+def test_the_qrc_starts_of_a_symmetric_ts_are_exact_images(name):
+    symbols, plus, minus = QRC_STARTS[name]
+    rmsd, carried = idn.carry(symbols, minus, plus, plus)
+    assert rmsd < idn.IMAGE_A
+    assert np.sqrt(np.mean(np.sum((carried - minus) ** 2, axis=1))) == pytest.approx(rmsd)
+
+
+def test_the_qrc_starts_of_an_asymmetric_ts_are_not_images():
+    symbols, plus, minus = QRC_STARTS["hcn"]
+    assert idn.carry(symbols, minus, plus, plus)[0] == pytest.approx(0.042, abs=5e-4)
+    symbols, plus, minus = QRC_STARTS["sn2_cl"]
+    bent = plus.copy()
+    bent[[1, 3], 2] += 0.055  # two H atoms off the image: 0.025 A, like acac's ± starts
+    rmsd = idn.carry(symbols, minus, bent, bent)[0]
+    assert idn.IMAGE_A < rmsd == pytest.approx(0.025, abs=1e-3)
+
+
+def test_carry_takes_other_into_the_atom_order_and_frame_of_ref():
+    rotation, shift = _proper_rotation(3).T, np.array([1.0, -2.0, 0.5])
+    asym = NH3 + [[0.0, 0.0, 0.0], [0.05, 0.0, 0.0], [0.0, 0.03, 0.0], [0.0, 0.0, -0.04]]
+    order = [0, 3, 1, 2]  # a relabelled copy of asym, and its inversion in the same frame
+    x, other = ((y @ rotation + shift)[order] for y in (asym, asym * [1.0, 1.0, -1.0]))
+    rmsd, carried = idn.carry(NH3_SYMBOLS, asym, x, other)
+    assert rmsd < 1e-6 and np.allclose(carried, asym * [1.0, 1.0, -1.0])
+    x, other = (y * [-1.0, 1.0, 1.0] @ rotation + shift for y in (CHFCLBR, 1.1 * CHFCLBR))
+    rmsd, carried = idn.carry(CHFCLBR_SYMBOLS, CHFCLBR, x, other)  # through the mirror image
+    assert rmsd < 1e-6 and np.allclose(carried, 1.1 * CHFCLBR)
 
 
 def test_periodic_nearest_wraps():

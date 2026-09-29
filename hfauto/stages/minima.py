@@ -1,40 +1,45 @@
 """minima stage (design §4.1 #3, §7.2, §8.2): selection → relax_to_minimum → Registry.
 
 ``level: screen`` relaxes every input species; ``level: dft`` refines a selection
-(``chemistry.selection``) started from the screen minima's optimized structures. Jobs run
-serially in species-id order and each is registered as soon as it is relaxed, so a later job
-that falls into a registered basin (its mirror image included) is ``known`` and skips its freq
-job (one identity criterion: identity.assign). A saddle whose ± displacements reach two
-distinct minima gives two ``mode_follow`` species, relaxed and registered right after it, their
-minima and a ``mode_follow`` discovery; the saddle's own species joins the side basin nearer its
-input structure (note ``endpoint_was_saddle``).
+(``chemistry.selection``) of the reacting compositions, started from the screen minima's
+optimized structures. Jobs run serially in species-id order and each is registered at once, so a
+later job that falls into a registered basin (mirror image included) is ``known`` and skips its
+freq job (one identity criterion: identity.assign). An exact permutation or mirror image of an
+earlier start (identity.carry within IMAGE_A) runs no job: the PES is invariant under both, so it
+joins that start's basin when that start relaxed straight into a minimum. A saddle whose ±
+displacements reach two distinct minima gives two ``mode_follow`` species at the driver's side
+minima, registered by identity with no new job, and a ``mode_follow`` discovery; the saddle's
+own species joins the side basin nearer its input structure (note ``endpoint_was_saddle``).
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import ClassVar, Literal, cast
 
 from pydantic import BaseModel, ConfigDict
 
 from hfauto.backends.protocols import Capability, QMEngine
-from hfauto.chemistry.identity import permutation_invariant_rmsd
-from hfauto.chemistry.selection import Candidate, rerank, select_for_refinement
+from hfauto.chemistry.identity import IMAGE_A, carry, permutation_invariant_rmsd
+from hfauto.chemistry.selection import Candidate, crowded, rerank, select_for_refinement
+from hfauto.chemistry.thermo import monomer_states
 from hfauto.chemistry.topology import fragments, state_label
-from hfauto.chemistry.xyz import Molecule
+from hfauto.chemistry.xyz import XYZ, Molecule, hill_formula
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FailureKind, Geometry
 from hfauto.core.ids import species_artifact_id
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec, level_mismatches
 from hfauto.core.records import ArtifactType, DiscoveryRecord, MinimumRecord, Payload, SpeciesRecord
+from hfauto.core.system import SystemConfig
 from hfauto.drivers import minimum as driver
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
 T = ArtifactType
 _TIE_A = 0.05  # side RMSDs this close to the input count as equally near: the lower minimum wins
+_MOVED = ("follow", "soft")  # steps along a mode, whose sign an image's relaxation need not share
 
 
 def _artifact(artifact_id: str, payload: Payload) -> Artifact:
@@ -72,6 +77,25 @@ class _Job:
 
 
 _Relaxed = tuple[_Job, driver.MinimumOutcome]
+_Side = tuple[SpeciesRecord, MinimumRecord]
+
+
+def _image_groups(jobs: Sequence[_Job], load_xyz: Callable[[Geometry], XYZ]
+                  ) -> list[list[_Job]]:
+    """Jobs of one composition (charge and multiplicity included) and atom order whose starts
+    are exact permutation or mirror images (identity.carry within IMAGE_A), in input order."""
+    groups: list[tuple[XYZ, list[_Job]]] = []
+    for job in jobs:
+        x = load_xyz(job.start)
+        group = next((members for ref, members in groups
+                      if members[0].species.composition_id == job.species.composition_id
+                      and ref.symbols == x.symbols
+                      and carry(x.symbols, ref.coords, x.coords, x.coords)[0] <= IMAGE_A), None)
+        if group is None:
+            groups.append((x, [job]))
+        else:
+            group.append(job)
+    return [members for _, members in groups]
 
 
 @dataclass
@@ -83,6 +107,7 @@ class _Run:
     registry: driver.Registry
     calcs: dict[str, Evidence] = field(default_factory=dict)
     minima: dict[str, MinimumRecord] = field(default_factory=dict)  # latest record per basin
+    species: list[SpeciesRecord] = field(default_factory=list)  # mode_follow sides
     extra: list[Artifact] = field(default_factory=list)  # discoveries and failed minima
     records: dict[str, MinimumRecord | None] = field(default_factory=dict)  # per species id
     history: dict[str, list[str]] = field(default_factory=dict)  # diagnostics.json
@@ -93,19 +118,21 @@ class _Run:
     def keep(self, *evidence: Evidence | None) -> None:
         self.calcs.update((driver.calc_id(ev), ev) for ev in evidence if ev is not None)
 
-    def settle(self, job: _Job) -> _Relaxed:
-        """relax, then register at once: a later job in this basin is known (no freq job)."""
-        done = self.relax(job)
-        sid = job.species.species_id
-        self.records[sid] = self.register(done)
-        self.history[sid] = [done[1].status, *done[1].history]
-        return done
-
-    def relax(self, job: _Job) -> _Relaxed:
+    def process(self, job: _Job) -> _Relaxed:
+        """relax and register; at a TS candidate, its two side minima, the join of the saddle
+        species to the nearer side and a mode_follow discovery."""
         mol = self.molecule(job.species, job.start)
-        return job, driver.relax_to_minimum(
+        done = job, driver.relax_to_minimum(
             mol, self.method, self.qm, known=self.registry, init_hessian=self.init_hessian(mol),
             max_mode_follow=self.cfg.mode_follow, gates=self.rt.policy, load_xyz=self.rt.load_xyz)
+        self.register(done)
+        sides = self.sides(done)
+        if len(sides) == 2:
+            self.join_nearer_side(job, sides)
+            found = self.discovery(done, sides)
+            if found is not None:
+                self.extra.append(_artifact(found.discovery_id, found))
+        return done
 
     def init_hessian(self, mol: Molecule) -> Evidence | None:
         spec = self.cfg.init_hessian
@@ -123,63 +150,81 @@ class _Run:
         return {sid: ev.energy_hartree for sid, ev in done.items()}
 
     def register(self, done: _Relaxed) -> MinimumRecord | None:
+        """Registry.add (a known or identical basin is joined), at once: a later job in this
+        basin is known (no freq job)."""
         job, outcome = done
-        self.keep(outcome.opt, outcome.freq, *(outcome.ts_candidate or ()))
+        sid, record = job.species.species_id, None
+        self.keep(outcome.opt, outcome.freq)
+        self.history[sid] = [outcome.status, *outcome.history]
         if outcome.status in ("minimum", "soft_minimum", "known"):
             record = self.registry.add(outcome, job.species, tier=self.cfg.level)
             self.minima[record.basin_id] = record
-            return record
-        if outcome.ts_candidate is None:  # a TS candidate is reported as a discovery instead
+        elif outcome.ts_candidate is None:  # a TS candidate is reported as a discovery instead
             failure = outcome.failure or Failure(kind=FailureKind.GATE_REJECTED,
                                                  reason=f"relaxed_to_{outcome.status}")
             self.extra.append(Artifact(
-                artifact_id=f"min_{job.species.species_id}_{self.rt.stage_id}", type=T.MINIMUM,
-                status="failed", failure=failure,
-                parents=(species_artifact_id(job.species.species_id),)))
-        return None
+                artifact_id=f"min_{sid}_{self.rt.stage_id}", type=T.MINIMUM, status="failed",
+                failure=failure, parents=(species_artifact_id(sid),)))
+        self.records[sid] = record
+        return record
 
-    def sides(self, done: _Relaxed) -> list[_Job]:
-        """New species at the two minima reached from a TS candidate."""
-        parent, jobs = done[0].species, []
-        for i, freq in enumerate(done[1].ts_candidate or (), start=1):
-            xyz = self.rt.load_xyz(freq.start)
+    def join_image(self, job: _Job, first: _Relaxed) -> bool:
+        """``job`` starts at an exact image of ``first``'s start and joins its basin with no job
+        when ``first`` relaxed straight into a minimum or a known basin; False otherwise (a
+        saddle endpoint, a soft minimum, a failure or a step along a mode)."""
+        rep, outcome = first
+        record = self.records.get(rep.species.species_id)
+        moved = any(step.startswith(_MOVED) for step in outcome.history)
+        if record is None or outcome.status not in ("minimum", "known") or moved:
+            return False
+        sid = job.species.species_id
+        self.minima[record.basin_id] = self.records[sid] = self.registry.join(record.basin_id, sid)
+        self.history[sid] = [f"image_of:{rep.species.species_id}"]
+        return True
+
+    def sides(self, done: _Relaxed) -> list[_Side]:
+        """New species at the two minima the driver reached from a TS candidate, registered by
+        identity with no job (the mirror side of a symmetric saddle joins the other's basin)."""
+        parent, out = done[0].species, []
+        for i, side in enumerate(done[1].ts_candidate or (), start=1):
+            if side.opt is None:
+                continue
+            xyz = self.rt.load_xyz(side.opt.final)
             species = parent.model_copy(update={
-                "species_id": f"{parent.species_id}_mf{i}", "geometry": freq.start,
+                "species_id": f"{parent.species_id}_mf{i}", "geometry": side.opt.final,
                 "source": "mode_follow", "state_label": state_label(xyz.symbols, xyz.coords),
-                "energy_hartree": freq.energy_hartree, "level_key": freq.level.full_key()})
-            jobs.append(_Job(species, freq.start))
-        return jobs
+                "energy_hartree": side.opt.energy_hartree, "level_key": side.opt.level.full_key()})
+            self.species.append(species)
+            record = self.register((_Job(species, side.opt.final), side))
+            if record is not None:
+                out.append((species, record))
+        return out
 
-    def join_nearer_side(self, done: _Relaxed) -> None:
+    def join_nearer_side(self, job: _Job, sides: list[_Side]) -> None:
         """The species of a TS candidate joins the side basin nearer its input structure
         (permutation-invariant RMSD; the lower minimum when both are within _TIE_A)."""
-        job, outcome = done
-        if outcome.ts_candidate is None:
-            return
-        sid, x = job.species.species_id, self.rt.load_xyz(job.start)
-        sides = [(permutation_invariant_rmsd(x.symbols, x.coords,
-                                             self.rt.load_xyz(freq.start).coords)[0], record)
-                 for i, freq in enumerate(outcome.ts_candidate, start=1)
-                 if (record := self.records.get(f"{sid}_mf{i}")) is not None]
-        if len(sides) != 2:
-            return
-        nearest = min(rmsd for rmsd, _ in sides)
-        basin = min((m for rmsd, m in sides if rmsd - nearest <= _TIE_A),
+        x = self.rt.load_xyz(job.start)
+        near = [(permutation_invariant_rmsd(x.symbols, x.coords,
+                                            self.rt.load_xyz(s.geometry).coords)[0], m)
+                for s, m in sides]
+        nearest = min(rmsd for rmsd, _ in near)
+        basin = min((m for rmsd, m in near if rmsd - nearest <= _TIE_A),
                     key=lambda m: m.energy_hartree)
+        sid = job.species.species_id
         record = self.registry.join(basin.basin_id, sid, "endpoint_was_saddle")
         self.minima[record.basin_id] = self.records[sid] = record
         self.history[sid].append(f"joined:{record.basin_id}")
 
-    def discovery(self, done: _Relaxed) -> DiscoveryRecord | None:
+    def discovery(self, done: _Relaxed, sides: list[_Side]) -> DiscoveryRecord | None:
         """source_minimum = side 1's minimum, product_species = side 2, ts = the saddle; at the
         DFT tier ts_calc is its opt: a verified DFT saddle, validated directly by the case."""
+        (_, a), (product, b) = sides
         parent, saddle, freq = done[0].species.species_id, done[1].opt, done[1].freq
-        a, b = self.records.get(f"{parent}_mf1"), self.records.get(f"{parent}_mf2")
-        if a is None or b is None or saddle is None or freq is None:
+        if saddle is None or freq is None:
             return None
         return DiscoveryRecord(
             discovery_id=f"disc_mode_follow_{parent}", source_minimum=a.minimum_id,
-            mechanism="mode_follow", outcome="product", product_species=f"{parent}_mf2",
+            mechanism="mode_follow", outcome="product", product_species=product.species_id,
             ts=saddle.final, ts_calc=driver.calc_id(saddle) if self.cfg.level == "dft" else None,
             ts_imag_cm1=min(freq.frequencies_cm1 or (0.0,)),
             dE_act_kcal=(saddle.energy_hartree - a.energy_hartree) * HARTREE_TO_KCAL_MOL,
@@ -222,17 +267,38 @@ def _pool(inputs: Manifest, species: dict[str, SpeciesRecord]
     return pool
 
 
+def _reacting(candidates: Iterable[Candidate], species: dict[str, SpeciesRecord],
+              system: SystemConfig) -> set[str]:
+    """Compositions of the declared endpoints and of the discovery sources and products (the
+    always-kept candidates), plus the monomers of those complexes: the association and
+    separated references of the thermo stage (thermo.monomer_states)."""
+    ends = {species[s.id].composition_id for s in system.species
+            if s.role == "endpoint" and s.id in species}
+    reacting = ends | {c.composition_id for c in candidates if c.always}
+    monomers = monomer_states(species.values(), system.compositions)
+    formulas = {(hill_formula(s.geometry.symbols), s.charge) for s in species.values()
+                if s.composition_id in reacting}
+    return reacting | {state[0] for f in formulas for state, _ in monomers.get(f, ())}
+
+
 def _jobs(inputs: Manifest, cfg: MinimaConfig, run: _Run) -> list[_Job]:
+    """Every species (screen, all), or the window selection of the reacting compositions (the
+    others are noted not_reacting); single points rerank only the crowded groups."""
     species = {s.species_id: s for s in inputs.records(T.SPECIES, SpeciesRecord)}
     if cfg.level == "screen" or cfg.select.include == "all":
         return [_Job(s, s.geometry) for s in species.values()]
     pool, sel = _pool(inputs, species), cfg.select
+    candidates = [candidate for candidate, _ in pool.values()]
+    reacting = _reacting(candidates, species, run.rt.system)
+    for composition in sorted({c.composition_id for c in candidates} - reacting):
+        run.history[composition] = ["not_reacting"]
     chosen = select_for_refinement(
-        [candidate for candidate, _ in pool.values()],
+        [c for c in candidates if c.composition_id in reacting],
         per_state=sel.rerank_top if sel.rerank_sp else sel.per_state, window_kcal=sel.window_kcal)
     if sel.rerank_sp:
-        energies = run.single_points([pool[c.species_id][1] for c in chosen if not c.always])
-        chosen = rerank(chosen, energies, sel.per_state, sel.window_kcal)
+        crowd = crowded(chosen, sel.per_state)
+        chosen = rerank(chosen, run.single_points([pool[c.species_id][1] for c in crowd]),
+                        sel.per_state, sel.window_kcal)
     return [pool[c.species_id][1] for c in chosen]
 
 
@@ -245,19 +311,13 @@ class MinimaStage:
         method = rt.method(cfg.method)
         qm = cast(QMEngine, rt.engine(Capability.QM, cfg.engine))
         run = _Run(rt, cfg, qm, method, _known(inputs, cfg, rt, qm, method))
-        side_jobs: list[_Job] = []
-        for job in sorted(_jobs(inputs, cfg, run), key=lambda j: j.species.species_id):
-            done = run.settle(job)
-            sides = run.sides(done)  # mode-follow sides right after their parent
-            for side in sides:
-                run.settle(side)
-            side_jobs += sides
-            run.join_nearer_side(done)
-            found = run.discovery(done)
-            if found is not None:
-                run.extra.append(_artifact(found.discovery_id, found))
+        jobs = sorted(_jobs(inputs, cfg, run), key=lambda j: j.species.species_id)
+        for first, *images in _image_groups(jobs, rt.load_xyz):
+            done = run.process(first)
+            for image in images:
+                if not run.join_image(image, done):
+                    run.process(image)
         (rt.stage_dir / "diagnostics.json").write_text(json.dumps(run.history, indent=1))
         return [*(_artifact(k, ev) for k, ev in run.calcs.items()),
-                *(_artifact(species_artifact_id(j.species.species_id), j.species)
-                  for j in side_jobs),
+                *(_artifact(species_artifact_id(s.species_id), s) for s in run.species),
                 *(_artifact(m.minimum_id, m) for m in run.minima.values()), *run.extra]

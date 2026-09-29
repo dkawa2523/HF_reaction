@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from hfauto.chemistry.gates import Policy, imaginary_tier, is_minimum, spin_ok
-from hfauto.chemistry.identity import assign, is_chiral, mapped_equivalent, same_basin
+from hfauto.chemistry.identity import assign, is_chiral, same_as_labelled
 from hfauto.chemistry.modes import BOUNDS_A, amplitude, classify_mode_follow
 from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.xyz import XYZ, Molecule, composition_key
@@ -36,8 +36,8 @@ class MinimumOutcome:
     history: tuple[str, ...]
     known_basin: str | None = None  # existing basin id when status == "known"
     failure: Failure | None = None
-    # ± reached two minima distinct as labelled (their freq Evidence): a free TS candidate
-    ts_candidate: tuple[Evidence, Evidence] | None = None
+    # ± reached two minima distinct as labelled: a free TS candidate, with each side's outcome
+    ts_candidate: tuple[MinimumOutcome, MinimumOutcome] | None = None
     notes: tuple[str, ...] = ()  # MinimumRecord.notes: *_imaginary_mode, spin_contaminated
 
 
@@ -100,8 +100,8 @@ class _Ctx:
 
     def relax(self, coords: np.ndarray, source: _Point) -> _Point | None:
         """opt → freq from coordinates displaced from ``source``, whose freq Hessian starts the
-        opt as it is (NWChem minimizes along |e| of a negative eigenvalue, trust 0.3); None
-        when either job fails."""
+        opt (the engine writes a first-order saddle's as its positive-definite model,
+        trust 0.3); None when either job fails."""
         xyz = XYZ(symbols=list(self.template.xyz.symbols), coords=coords)
         opt = self.qm.optimize(self.molecule(xyz), self.method, init_hessian=source.freq,
                                deadline=self.deadline)
@@ -111,34 +111,28 @@ class _Ctx:
         return point if isinstance(point, _Point) else None
 
 
-def _same(a: _Point, b: _Point) -> bool:
-    """One structure as labelled: one basin that no relabelling or mirror image maps between
-    (the NH3 inversion, a symmetric proton transfer or an enantiomerization is a degenerate
-    rearrangement between two structures, as in the reaction case)."""
-    symbols, xa, xb = a.xyz.symbols, a.xyz.coords, b.xyz.coords
-    return (same_basin(symbols, xa, xb, a.opt.energy_hartree, b.opt.energy_hartree)
-            and not mapped_equivalent(symbols, xa, xb))
-
-
 def _labels(source: _Point, sides: list[_Point | None]) -> list[str | None]:
-    """Identity labels (source, plus, minus): equal labels mean the same structure."""
+    """Identity labels (source, plus, minus): equal labels mean one structure as labelled, so
+    the two structures of a degenerate rearrangement (the NH3 inversion) get two labels."""
     seen: list[tuple[_Point, str]] = [(source, "source")]
     labels: list[str | None] = ["source"]
     for name, side in zip(("plus", "minus"), sides, strict=True):
         if side is None:
             labels.append(None)
             continue
-        label = next((known for point, known in seen if _same(side, point)), name)
+        label = next((known for p, known in seen if same_as_labelled(
+            side.xyz.coords, p.xyz.coords, side.opt.energy_hartree, p.opt.energy_hartree)), name)
         seen.append((side, label))
         labels.append(label)
     return labels
 
 
 def _follow(ctx: _Ctx, point: _Point, history: list[str]
-            ) -> tuple[_Point, tuple[Evidence, Evidence] | None]:
+            ) -> tuple[_Point, tuple[MinimumOutcome, MinimumOutcome] | None]:
     """Up to max_mode_follow cycles from a saddle: ± along the imaginary mode of a first-order
-    saddle (a TS candidate when both sides are minima); one side along all the modes below
-    -saddle_cm1 of a higher-order one (± would mostly stop at first-order saddles)."""
+    saddle (a TS candidate when both sides are minima, each side settled as its own outcome);
+    one side along all the modes below -saddle_cm1 of a higher-order one (± would mostly stop
+    at first-order saddles)."""
     for cycle in range(1, ctx.max_mode_follow + 1):
         if point.tier != "saddle" or not point.freq.imaginary_modes:
             break
@@ -153,7 +147,8 @@ def _follow(ctx: _Ctx, point: _Point, history: list[str]
         reached = [s for s, label in zip(sides, labels[1:], strict=True)
                    if s is not None and label != "source"]
         if verdict == "ts_candidate" and all(s.tier != "saddle" for s in reached):
-            return point, (reached[0].freq, reached[1].freq)
+            a, b = (_outcome(ctx, s, [f"opt:follow{cycle}", f"freq:{s.tier}"]) for s in reached)
+            return point, (a, b)
         point = min(reached, key=lambda s: (s.tier == "saddle", s.opt.energy_hartree))
     return point, None
 
@@ -169,6 +164,16 @@ def _soften(ctx: _Ctx, point: _Point, history: list[str]) -> tuple[_Point, Statu
     return point, "soft_minimum"
 
 
+def _outcome(ctx: _Ctx, point: _Point, history: list[str],
+             pair: tuple[MinimumOutcome, MinimumOutcome] | None = None) -> MinimumOutcome:
+    """A saddle as it is; else a minimum, after one push when a soft mode remains."""
+    status: Status = "saddle" if point.tier == "saddle" else "minimum"
+    if point.tier == "soft":
+        point, status = _soften(ctx, point, history)
+    return MinimumOutcome(status, point.opt, point.freq, tuple(history), ts_candidate=pair,
+                          notes=point.notes)
+
+
 def _failed(history: list[str], failure: Failure, opt: Evidence | None = None) -> MinimumOutcome:
     history.append(f"failed:{failure.kind.value}")
     return MinimumOutcome("failed", opt, None, tuple(history), failure=failure)
@@ -181,6 +186,7 @@ def relax_to_minimum(
     *,
     known: Registry | None = None,
     init_hessian: Evidence | None = None,
+    opt: Evidence | None = None,
     max_mode_follow: int = 2,
     gates: Policy = _GATES,
     deadline: Deadline | None = None,
@@ -188,32 +194,29 @@ def relax_to_minimum(
 ) -> MinimumOutcome:
     """opt (with init_hessian) → known check → freq → mode-follow (saddle) / one push (soft).
 
-    ``load_xyz`` defaults to ``known.load_xyz``; one of them is required because the
-    driver re-reads the optimized geometry before the separate freq job.
+    A converged ``opt`` is taken as it is (``mol`` then gives only charge and multiplicity).
+    ``load_xyz`` (default ``known.load_xyz``) reads the optimized geometry for the freq job.
     """
     load = load_xyz or (known.load_xyz if known is not None else None)
     if load is None:
         raise ValueError("relax_to_minimum needs load_xyz or a known Registry")
     ctx = _Ctx(mol, method, qm, load, max_mode_follow, gates, deadline)
-    history = ["opt"]
-    opt = qm.optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
-    if isinstance(opt, Failure):
-        return _failed(history, opt)
+    history = ["opt" if opt is None else "opt:reused"]
+    done = opt if opt is not None else qm.optimize(
+        mol, method, init_hessian=init_hessian, deadline=deadline)
+    if isinstance(done, Failure):
+        return _failed(history, done)
     if known is not None:
-        basin = known.find(opt)
+        basin = known.find(done)
         if basin is not None:
             history.append(f"known:{basin}")
-            return MinimumOutcome("known", opt, None, tuple(history), known_basin=basin)
-    point = ctx.frequencies(opt)
+            return MinimumOutcome("known", done, None, tuple(history), known_basin=basin)
+    point = ctx.frequencies(done)
     if isinstance(point, Failure):
-        return _failed(history, point, opt)
+        return _failed(history, point, done)
     history.append(f"freq:{point.tier}")
     point, pair = _follow(ctx, point, history)
-    status: Status = "saddle" if point.tier == "saddle" else "minimum"
-    if point.tier == "soft":
-        point, status = _soften(ctx, point, history)
-    return MinimumOutcome(status, point.opt, point.freq, tuple(history),
-                          ts_candidate=pair, notes=point.notes)
+    return _outcome(ctx, point, history, pair)
 
 
 @dataclass
@@ -237,20 +240,19 @@ class Registry:
             record.basin_id: _Entry(record, load_xyz(geometry)) for record, geometry in minima
         }
 
-    def find(self, opt: Evidence) -> str | None:
+    def find(self, opt: Evidence, coords: np.ndarray | None = None) -> str | None:
         """Basin id that identity.assign uniquely matches with the optimized structure of
-        ``opt``, among the basins of its element list, composition (charge and multiplicity of
-        its Level) and level_key; else None."""
-        xyz, level = self.load_xyz(opt.final), opt.level
-        key = (composition_key(xyz.symbols, level.charge, level.multiplicity), level.full_key())
+        ``opt`` (or ``coords`` in its atom order: an image of it), among the basins of its
+        element list, composition (charge and multiplicity of its Level) and level_key; else
+        None."""
+        symbols, level = list(opt.final.symbols), opt.level
+        x = self.load_xyz(opt.final).coords if coords is None else coords
+        key = (composition_key(symbols, level.charge, level.multiplicity), level.full_key())
         candidates = {basin: (entry.xyz.coords, entry.record.energy_hartree)
                       for basin, entry in self._basins.items()
-                      if list(entry.xyz.symbols) == list(xyz.symbols)
+                      if list(entry.xyz.symbols) == symbols
                       and (entry.record.composition_id, entry.record.level_key) == key}
-        return assign(xyz.symbols, xyz.coords, opt.energy_hartree, candidates)
-
-    def members(self, basin_id: str) -> tuple[str, ...]:
-        return self._basins[basin_id].record.members
+        return assign(symbols, x, opt.energy_hartree, candidates)
 
     def add(self, outcome: MinimumOutcome, species: SpeciesRecord, *,
             tier: Literal["screen", "dft"]) -> MinimumRecord:

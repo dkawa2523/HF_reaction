@@ -1,5 +1,7 @@
 """minima stage on fake surfaces (§4.1 #3, §7.2); K cases of test_minimum_mode_follow_stage."""
 
+import json
+
 import fakes
 import numpy as np
 from scipy.spatial.distance import pdist
@@ -13,7 +15,7 @@ from hfauto.core.method import MethodSpec
 from hfauto.core.records import ArtifactType as T
 from hfauto.core.records import DiscoveryRecord, MinimumRecord, SpeciesRecord
 from hfauto.core.system import SystemConfig
-from hfauto.stages.minima import MinimaConfig, MinimaStage
+from hfauto.stages.minima import MinimaConfig, MinimaStage, _image_groups, _Job
 
 METHODS = {"gfn2": MethodSpec(id="gfn2", kind="xtb", gfn=2),
            "pbe0": MethodSpec(id="pbe0", kind="dft", functional="pbe0", basis="def2-svp")}
@@ -35,18 +37,21 @@ class StuckQM(fakes.FakeQM):
         return super().optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
 
 
-def species(root, pes, sid, point, shift=0.0):
-    x = pes.points[point] + shift
-    record = SpeciesRecord(species_id=sid, composition_id=composition_key(pes.symbols, 0, 1),
+def species_at(root, sid, symbols, x):
+    record = SpeciesRecord(species_id=sid, composition_id=composition_key(symbols, 0, 1),
                            charge=0, multiplicity=1, source="input",
-                           geometry=fakes.write_geometry(root, f"in/{sid}.xyz", pes.symbols, x),
-                           state_label=state_label(pes.symbols, x))
+                           geometry=fakes.write_geometry(root, f"in/{sid}.xyz", symbols, x),
+                           state_label=state_label(symbols, x))
     return Artifact(artifact_id=sid, type=T.SPECIES, payload=record)
 
 
-def stage(fake_runtime, tmp_run, pes, low=fakes.FakeQM):  # run(id, view, **config) -> view+out
-    xtb, dft = low(tmp_run, pes), fakes.FakeQM(tmp_run, pes)
-    rt = fake_runtime(SystemConfig(system_id="t", species=[]),
+def species(root, pes, sid, point):
+    return species_at(root, sid, pes.symbols, pes.points[point])
+
+
+def stage(fake_runtime, tmp_run, pes, low=fakes.FakeQM, system=None):  # run(id, view, **cfg)
+    xtb, dft = low(tmp_run, pes), fakes.FakeQM(tmp_run, pes)  # -> view + output
+    rt = fake_runtime(system or SystemConfig(system_id="t", species=[]),
                       {(Capability.QM, "xtb"): xtb, (Capability.QM, "nwchem"): dft}, METHODS)
 
     def run(stage_id, artifacts, **config):
@@ -61,9 +66,10 @@ def stage(fake_runtime, tmp_run, pes, low=fakes.FakeQM):  # run(id, view, **conf
 
 
 def test_one_basin_gets_one_freq_job_per_tier_and_dft_starts_from_screen(fake_runtime, tmp_run):
-    pes = fakes.harmonic()
-    run, xtb, dft = stage(fake_runtime, tmp_run, pes)
-    inputs = [species(tmp_run, pes, "a", "start"), species(tmp_run, pes, "b", "start", 0.01)]
+    pes = fakes.harmonic()  # "a" is a declared endpoint: its composition reacts
+    system = SystemConfig(system_id="t", species=[{"id": "a", "xyz": "a.xyz", "role": "endpoint"}])
+    run, xtb, dft = stage(fake_runtime, tmp_run, pes, system=system)
+    inputs = [species(tmp_run, pes, "a", "start"), species(tmp_run, pes, "b", "minimum")]
     screen = run("screen", inputs, **SCREEN)
     (low,) = screen.records(T.MINIMUM, MinimumRecord)
     assert low.tier == "screen" and low.members == ("a", "b")
@@ -142,12 +148,81 @@ def test_an_atom_is_relaxed_and_registered_like_any_species(fake_runtime, tmp_ru
 def test_enantiomers_fall_into_one_chiral_basin(fake_runtime, tmp_run):
     ref = np.array([[0.0, 0.0, 0.0], [0.63, 0.63, 0.63], [-0.8, -0.8, 0.8], [-1.0, 1.0, -1.0],
                     [1.1, -1.1, -1.1]])  # CHFClBr held by pairwise springs
+    nudge = np.zeros((5, 3))
+    nudge[1, 0] = 0.03  # s starts near the mirror image, not at it: its own opt runs
     pes = fakes.PES(("C", "H", "F", "Cl", "Br"),
                     lambda x: float(np.sum((pdist(np.reshape(x, (-1, 3))) - pdist(ref)) ** 2)),
-                    {"r": ref, "s": ref * [-1.0, 1.0, 1.0]})
+                    {"r": ref, "s": ref * [-1.0, 1.0, 1.0] + nudge})
     run, xtb, _ = stage(fake_runtime, tmp_run, pes)
     screen = run("screen", [species(tmp_run, pes, "r", "r"), species(tmp_run, pes, "s", "s")],
                  **SCREEN)
     (low,) = screen.records(T.MINIMUM, MinimumRecord)
     assert low.chiral and low.members == ("r", "s")
     assert xtb.calls == ["optimize", "frequencies", "optimize"]  # s is known: no freq job
+
+
+def diagnostics(tmp_run, stage_id):
+    return json.loads((tmp_run / stage_id / "diagnostics.json").read_text(encoding="utf-8"))
+
+
+def test_mirror_sides_of_a_symmetric_saddle_give_one_basin_and_no_job(fake_runtime, tmp_run):
+    pes = fakes.symmetric_double_well()  # F-H-F: the two sides are permutation images
+    run, xtb, _ = stage(fake_runtime, tmp_run, pes)
+    out = run("screen", [species(tmp_run, pes, "t", "ts")], **SCREEN)
+    (basin,) = out.records(T.MINIMUM, MinimumRecord)
+    assert basin.members == ("t_mf1", "t_mf2", "t") and basin.notes == ("endpoint_was_saddle",)
+    assert len(xtb.calls) == 6 and xtb.calls.count("frequencies") == 3  # the driver's jobs only
+    (found,) = out.records(T.DISCOVERY, DiscoveryRecord)
+    assert (found.source_minimum, found.product_species) == (basin.minimum_id, "t_mf2")
+
+
+def test_an_exact_image_joins_a_minimum_with_no_job_and_settles_after_a_saddle(fake_runtime,
+                                                                               tmp_run):
+    pes = fakes.symmetric_double_well()  # reactant and product: F1 and F2 relabelled
+    run, xtb, _ = stage(fake_runtime, tmp_run, pes)
+    inputs = [species(tmp_run, pes, "a", "reactant"), species(tmp_run, pes, "b", "product")]
+    (basin,) = run("screen", inputs, **SCREEN).records(T.MINIMUM, MinimumRecord)
+    assert basin.members == ("a", "b") and xtb.calls == ["optimize", "frequencies"]
+    assert diagnostics(tmp_run, "screen")["b"] == ["image_of:a"]
+    run, soft, _ = stage(fake_runtime, tmp_run, pes, low=SoftQM)  # a soft minimum: b settles
+    run("soft", inputs, **SCREEN)
+    assert diagnostics(tmp_run, "soft")["a"][0] == "soft_minimum"
+    assert diagnostics(tmp_run, "soft")["b"][0] == "known" and soft.calls[-1] == "optimize"
+
+    well = fakes.double_well()  # p's first opt stops on the saddle; q is p rotated by 180°
+    run, stuck, _ = stage(fake_runtime, tmp_run, well, low=StuckQM)
+    p = species(tmp_run, well, "p", "product")
+    q = species_at(tmp_run, "q", well.symbols, well.points["product"] * [-1.0, 1.0, 1.0])
+    jobs = [_Job(a.payload, a.payload.geometry) for a in (p, q)]
+    assert [len(g) for g in _image_groups(jobs, fakes.xyz_loader(tmp_run))] == [2]
+    out = run("saddle", [p, q], **SCREEN)
+    (joined,) = [m for m in out.records(T.MINIMUM, MinimumRecord) if "p" in m.members]
+    assert joined.notes == ("endpoint_was_saddle",) and "q" in joined.members
+    assert diagnostics(tmp_run, "saddle")["q"][:2] == ["known", "opt"]  # its own opt
+    assert stuck.calls[-1] == "optimize"
+
+
+def test_only_reacting_compositions_and_their_monomers_are_refined(fake_runtime, tmp_run):
+    tetra = np.array([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) * 0.34
+    springs = lambda x: float(np.sum((pdist(np.reshape(x, (-1, 3))) - 0.92) ** 2))
+    pes = fakes.PES(("H", "F"), springs, {})  # every pair at 0.92 A: HF, H2 and tetrahedra
+    system = SystemConfig(system_id="t", species=[{"id": "hf", "xyz": "hf.xyz"},
+                                                  {"id": "h2", "xyz": "h2.xyz"}],
+                          compositions=[{"id": "hf2", "components": {"hf": 2}},
+                                        {"id": "hf_h2", "components": {"hf": 1, "h2": 1}}])
+    run, _, dft = stage(fake_runtime, tmp_run, pes, system=system)
+    inputs = [species_at(tmp_run, "hf", ("H", "F"), [[0, 0, 0], [0, 0, 0.95]]),
+              species_at(tmp_run, "h2", ("H", "H"), [[0, 0, 0], [0, 0, 0.9]]),
+              species_at(tmp_run, "hf2_c00", ("H", "F", "H", "F"), tetra + 0.02 * np.eye(4, 3)),
+              species_at(tmp_run, "hf_h2_c00", ("H", "F", "H", "H"), tetra)]
+    screen = run("screen", inputs, **SCREEN)
+    (source,) = [m for m in screen.records(T.MINIMUM, MinimumRecord) if m.species_id == "hf2_c00"]
+    found = DiscoveryRecord(discovery_id="disc", source_minimum=source.minimum_id,
+                            mechanism="nt2", outcome="product", product_species="hf2_c00")
+    disc = Artifact(artifact_id="disc", type=T.DISCOVERY, payload=found)
+    out = run("dft", [*screen.artifacts, disc], **DFT, select={"rerank_sp": True})
+    refined = {m.composition_id for m in out.records(T.MINIMUM, MinimumRecord) if m.tier == "dft"}
+    assert refined == {"F2H2_q0_m1", "FH_q0_m1"}  # (HF)2 reacts; HF is its monomer
+    skipped = {k for k, v in diagnostics(tmp_run, "dft").items() if v == ["not_reacting"]}
+    assert skipped == {"H2_q0_m1", "FH3_q0_m1"}
+    assert "energy" not in dft.calls  # one candidate per group: no rerank single point

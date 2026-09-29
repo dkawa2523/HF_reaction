@@ -31,8 +31,10 @@ def add(registry, outcome, sid):
 
 
 class SoftQM(fakes.FakeQM):
-    def frequencies(self, mol, method, *, deadline=None):  # a spurious −30 cm⁻¹ mode
+    def frequencies(self, mol, method, *, deadline=None):  # a spurious −30 cm⁻¹ mode at minima
         ev = super().frequencies(mol, method, deadline=deadline)
+        if ev.imaginary_modes:
+            return ev
         return ev.model_copy(update={"frequencies_cm1": (-30.0, *ev.frequencies_cm1[1:]),
                                      "imaginary_modes": (tuple(np.eye(9)[3]),)})
 
@@ -44,6 +46,15 @@ def test_harmonic_start_gives_a_minimum_or_with_a_stuck_soft_mode_a_soft_minimum
     soft = relax(tmp_run, fakes.harmonic(), "start", SoftQM(tmp_run, fakes.harmonic()))
     assert soft.status == "soft_minimum" and soft.notes == ("soft_imaginary_mode",)
     assert soft.history[-1] == "soft:persisted"
+
+
+def test_a_converged_opt_is_taken_as_it_is(tmp_run):
+    pes = fakes.harmonic()
+    qm = fakes.FakeQM(tmp_run, pes)
+    opt = qm.optimize(pes.molecule("start"), M)
+    out = relax(tmp_run, pes, "start", qm, opt=opt)
+    assert out.status == "minimum" and out.history == ("opt:reused", "freq:none")
+    assert out.opt is opt and qm.calls == ["optimize", "frequencies"]  # no second optimize
 
 
 def springs(symbols, ref, points):
@@ -74,9 +85,20 @@ def test_a_first_order_saddle_goes_both_ways_from_its_own_hessian(tmp_run, pes) 
     out = relax(tmp_run, pes, "ts", qm)
     assert out.status == "saddle" and out.history[-1] == "follow1:ts_candidate"
     ends = sorted(pes.energy(pes.points[p]) for p in ("reactant", "product"))
-    assert sorted(ev.energy_hartree for ev in out.ts_candidate) == pytest.approx(ends)
-    assert qm.calls.count("optimize+init_hessian") == 2  # each side from the TS Hessian
-    assert "optimize" not in qm.calls[1:]
+    assert sorted(side.opt.energy_hartree for side in out.ts_candidate) == pytest.approx(ends)
+    for side in out.ts_candidate:  # each side's outcome, from its one opt and freq
+        assert side.status == "minimum" and side.history == ("opt:follow1", "freq:none")
+        assert side.freq.start.fingerprint == side.opt.final.fingerprint
+    assert qm.calls == ["optimize", "frequencies", *["optimize+init_hessian", "frequencies"] * 2]
+
+
+def test_a_soft_side_of_a_ts_candidate_gets_its_own_push(tmp_run) -> None:
+    pes = fakes.double_well()
+    out = relax(tmp_run, pes, "ts", SoftQM(tmp_run, pes))
+    assert out.status == "saddle" and out.history[-1] == "follow1:ts_candidate"
+    for side in out.ts_candidate:
+        assert side.status == "soft_minimum" and side.notes == ("soft_imaginary_mode",)
+        assert side.history == ("opt:follow1", "freq:soft", "soft:persisted")
 
 
 @pytest.mark.parametrize("symbols", [("N", "H", "H", "H"), ("N", "H", "F", "Cl")])
@@ -88,7 +110,7 @@ def test_a_planar_amine_gives_an_inversion_ts_candidate(tmp_run, symbols) -> Non
     pes = springs(symbols, pyramid, {"planar": pyramid * [1.0, 1.0, 0.0]})
     out = relax(tmp_run, pes, "planar")
     assert out.status == "saddle" and out.history[-1] == "follow1:ts_candidate"
-    plus, minus = (fakes.xyz_loader(tmp_run)(ev.start).coords for ev in out.ts_candidate)
+    plus, minus = (fakes.xyz_loader(tmp_run)(side.opt.final).coords for side in out.ts_candidate)
     assert plus[0, 2] * minus[0, 2] < 0  # N above and below the H3 plane
 
 
@@ -115,13 +137,19 @@ def test_registry_known_new_joined_and_init_hessian(tmp_run) -> None:
     assert known.status == "known" and known.known_basin == ra.basin_id
     assert qm.calls[-1] == "optimize+init_hessian"  # used, and no freq job after it
     assert add(registry, known, "a2").basin_id == ra.basin_id
+    calls = len(qm.calls)
+    reused = relax_to_minimum(pes.molecule("reactant"), M, qm, known=registry, opt=b.opt)
+    assert reused.known_basin == rb.basin_id and len(qm.calls) == calls  # no job at all
+    image = fakes.xyz_loader(tmp_run)(b.opt.final).coords * [-1.0, 1.0, 1.0]
+    assert registry.find(a.opt, coords=image) is None  # the coordinates, not the opt's final
+    assert registry.find(b.opt, coords=image) == rb.basin_id  # a mirror image is one basin
     assert relax(tmp_run, pes, "product", qm, init_hessian=hess).failure.kind == "input_invalid"
     energy = ra.energy_hartree
     shifted = replace(a, opt=a.opt.model_copy(update={"energy_hartree": energy + 3e-5}))
-    assert add(registry, shifted, "c").basin_id == ra.basin_id  # one criterion: assign
+    joined = add(registry, shifted, "c")  # one criterion: assign
+    assert joined.basin_id == ra.basin_id and joined.members == ("a", "a2", "c")
     far = replace(a, opt=a.opt.model_copy(update={"energy_hartree": energy + 6e-5}))
     assert add(registry, far, "d").basin_id not in (ra.basin_id, rb.basin_id)
-    assert registry.members(ra.basin_id) == ("a", "a2", "c")
     rebuilt = Registry([(rb, b.opt.final)], load)  # (record, geometry)
     assert rebuilt.find(b.opt) == rb.basin_id and not rb.chiral
 

@@ -9,9 +9,9 @@ import numpy as np
 import pytest
 
 from hfauto.chemistry.geometry import declared_coordinate_gradient
-from hfauto.chemistry.identity import mapped_rmsd
+from hfauto.chemistry.identity import mapped_equivalent, mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
-from hfauto.chemistry.modes import BOUNDS_A, overlap
+from hfauto.chemistry.modes import BOUNDS_A, displace, overlap
 from hfauto.chemistry.xyz import (
     XYZ,
     composition_key,
@@ -121,7 +121,7 @@ class DriftingPath(fakes.FakePath):  # like NWChem freezeN: the last bead moves,
 
 def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None, neb=()):
     qm, load = fakes.FakeQM(root, pes), fakes.xyz_loader(root)
-    registry, minima, species = Registry([], load), {}, {}
+    registry, minima, species, ids = Registry([], load), {}, {}, []
     for name in ("reactant", "product"):
         geo = fakes.write_geometry(root, f"in/{name}.xyz", pes.symbols, pes.points[name])
         species[name] = SpeciesRecord(species_id=name, state_label="x", charge=0,
@@ -129,7 +129,8 @@ def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None, neb=()
                                       composition_id=composition_key(pes.symbols, 0, 1))
         out = relax_to_minimum(pes.molecule(name), DFT, qm, load_xyz=load)
         record = registry.add(out, species[name], tier="dft")
-        minima[record.minimum_id] = (record, out.opt.final)
+        minima.setdefault(record.minimum_id, (record, out.opt.final))  # image ends: one basin
+        ids.append(record.minimum_id)
     rt = CaseRuntime(
         qm=qm, saddle=saddle or fakes.FakeSaddle(root, pes), path=fakes.FakePath(root, pes, script),
         screen_qm=fakes.FakeQM(root, screen_pes or pes),
@@ -137,10 +138,11 @@ def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None, neb=()
         method=DFT, screen_method=XTB, registry=registry, load_xyz=load, case_dir=root / "cases",
         file_ref=lambda p: fakes._ref(root, p),
         resolve=lambda ref: root / ref.path, minima=minima, species=species, calcs={})
-    case = ReactionRecord(reaction_id="rx", reactants=(), products=(), minima=tuple(minima),
-                          endpoints=("reactant", "product"), source="declared")
+    case = ReactionRecord(reaction_id="rx", reactants=(), products=(), minima=tuple(ids),
+                          endpoints=("reactant", "product"), degenerate=ids[0] == ids[1],
+                          source="declared")
     ctx = open_case(case, rt, CaseRules(screen=False), Deadline.after(600), root, lambda _: None)
-    return ctx, CaseState(minima=tuple(record for record, _ in minima.values()))
+    return ctx, CaseState(minima=tuple(minima[m][0] for m in ids))
 
 
 def act(ctx, state, action, reason="test"):
@@ -234,6 +236,7 @@ def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path, monkeypat
     claim, first = ctx.work.connection, qrc_step(ctx)
     assert state.connection == "elementary" and set(claim.minima) == set(ctx.case.minima)
     assert ctx.rt.qm.calls[-2:] == ["optimize+init_hessian"] * 2  # both sides: the TS Hessian
+    assert len(set(claim.side_calcs)) == 2 and "minus_is_image" not in str(logged)  # asymmetric
     state = act(ctx, replace(state, connection=None), Action.CONNECT)  # 2nd amplitude: × 2
     assert qrc_step(ctx) == pytest.approx(2 * first, abs=1e-6)
     monkeypatch.setattr(actions, "BOUNDS_A", (0.03, 0.05))  # the first one is capped
@@ -242,6 +245,39 @@ def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path, monkeypat
         state = act(ctx, replace(state, connection=None), Action.CONNECT)
         amplitudes.append((state.connection, qrc_step(ctx)))
     assert amplitudes == [("elementary", pytest.approx(0.05, abs=1e-6))] * 2
+
+
+def test_a_symmetric_ts_optimizes_one_qrc_side_and_carries_its_image(tmp_path) -> None:
+    """CA-1b: at the F-H-F TS the minus start is the plus start with F1 and F2 exchanged, so
+    only the plus side is optimized; its image is the minus side's own optimum as labelled and
+    makes a degenerate step with distinct sides, both claimed by the one optimization."""
+    pes = fakes.symmetric_double_well()
+    ctx, state = case_ctx(tmp_path, pes)
+    freq = ctx.work.ts_freq = ctx.rt.qm.frequencies(pes.molecule("ts"), DFT)
+    starts = displace(pes.points["ts"], np.asarray(freq.imaginary_modes[0]), 0.1)
+    (plus, minus), (x_plus, x_minus) = actions._sides(ctx, freq, starts, 1)
+    alone = ctx.coords(ctx.rt.qm.optimize(ctx.mol(starts[1]), DFT, init_hessian=freq).final)
+    assert plus is minus and mapped_rmsd(x_minus, alone) < 1e-3
+    assert mapped_equivalent(pes.symbols, x_plus, x_minus)  # H at F2, H at F1: one basin
+    jobs, logged = len(ctx.rt.qm.calls), []
+    ctx.log = logged.append
+    state = act(ctx, state, Action.CONNECT)
+    assert ctx.rt.qm.calls[jobs:] == ["optimize+init_hessian"] and state.connection == "degenerate"
+    assert len(set(ctx.work.connection.side_calcs)) == 1
+    assert {"note": "qrc1:minus_is_image"} in logged
+
+
+def test_a_qrc_side_in_a_new_basin_is_registered_from_its_own_optimization(tmp_path) -> None:
+    """K5: the converged QRC side toward the intermediate is the new minimum's opt; registering
+    it adds only its freq job, no second optimization."""
+    pes = fakes.triple_well()
+    ctx, state = case_ctx(tmp_path, pes)
+    ctx.work.ts_freq, jobs = ctx.rt.qm.frequencies(pes.molecule("ts1"), DFT), len(ctx.rt.qm.calls)
+    state, claim = act(ctx, state, Action.CONNECT), ctx.work.connection
+    assert ctx.rt.qm.calls[jobs:] == ["optimize+init_hessian"] * 2 + ["frequencies"]
+    (well,) = ctx.work.minima.values()
+    assert state.connection == "reassigned" and well.minimum_id in claim.minima
+    assert well.opt_calc in claim.side_calcs
 
 
 def test_a_higher_order_saddle_is_pushed_once_and_refined_from_its_ts_hessian(tmp_path):
@@ -292,14 +328,15 @@ def test_a_stalled_saddle_restarts_once_from_its_last_frame(tmp_path) -> None:
 
 
 def test_a_failed_shortcut_seed_goes_on_to_the_screen_path_once(tmp_path) -> None:
-    """R4: the low-level TS's seed goes first; once it fails, SCREEN runs the xTB NEB and DFT
-    SPs (not the shortcut again) before any string."""
+    """R4: the low-level TS's seed goes first (one DFT SP there, no NEB); once it fails, SCREEN
+    runs the xTB NEB and DFT SPs (not the shortcut again) before any string."""
     ctx, state = case_ctx(tmp_path, fakes.double_well(), saddle=FailingSaddle(tmp_path, None))
     ts = fakes.write_geometry(tmp_path, "ts.xyz", ("N", "H", "O"), ctx.rt.qm.pes.points["ts"])
     ctx.case, ctx.rules = ctx.case.model_copy(update={"low_level_ts": ts}), CaseRules()
     energies = ctx.rt.qm.calls.count("energy")
     state = act(ctx, state, Action.SCREEN)
     assert [s.source for s in state.seeds] == ["discovery_ts"] and not state.neb_done
+    assert state.screen.verdict == "single" and ctx.rt.qm.calls.count("energy") == energies + 1
     state = act(ctx, state, Action.REFINE_SADDLE)
     assert decide(ctx.case, state, ctx.rules) == Decision(Action.SCREEN, "screen")
     state = act(ctx, state, Action.SCREEN)
@@ -352,16 +389,6 @@ def test_reaction_direction_is_a_low_level_mode_the_reaction_centre_or_a_torsion
     ctx.case = ctx.case.model_copy(update={"coordinate": angle})
     assert np.allclose(ctx.direction(a, Seed(geo, "path_hei", None)),
                        declared_coordinate_gradient(angle, a))
-
-
-def test_screen_shortcut_from_a_low_level_ts(tmp_path) -> None:
-    ctx, state = case_ctx(tmp_path, fakes.double_well())
-    ts = fakes.write_geometry(tmp_path, "ts.xyz", ("N", "H", "O"), ctx.rt.qm.pes.points["ts"])
-    ctx.case = ctx.case.model_copy(update={"low_level_ts": ts})
-    energies = ctx.rt.qm.calls.count("energy")
-    state = act(ctx, state, Action.SCREEN)
-    assert state.screen.verdict == "single" and ctx.rt.qm.calls.count("energy") == energies + 1
-    assert state.seeds[0].source == "discovery_ts" and ctx.rt.screen_path.calls == []
 
 
 @pytest.mark.parametrize("xtb,neb,seed", [(None, (), "screen_ts"),

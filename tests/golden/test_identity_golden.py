@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from hfauto.chemistry.identity import permutation_invariant_rmsd, same_basin
+from hfauto.chemistry.identity import assign, permutation_invariant_rmsd
 from hfauto.chemistry.xyz import read_xyz
 
 pytestmark = pytest.mark.golden
@@ -17,4 +17,5 @@ def test_g21_water_structures_are_same(golden):
     energies = [float(re.findall(r"Total DFT energy =\s+(\S+)", out)[-1]) for out in outputs]
     rmsd, _ = permutation_invariant_rmsd(ref.symbols, ref.coords, other.coords)
     assert rmsd == pytest.approx(8e-6, abs=2e-6)
-    assert same_basin(ref.symbols, ref.coords, other.coords, *energies)
+    assert assign(ref.symbols, ref.coords, energies[0],
+                  {"distorted": (other.coords, energies[1])}) == "distorted"

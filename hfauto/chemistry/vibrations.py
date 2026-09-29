@@ -83,19 +83,21 @@ def projected_frequencies(
     return freqs, modes, k
 
 
-def shape_hessian(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray, reaction_mode: np.ndarray,
-                  floor: float = 1.0e-3) -> np.ndarray:
-    """Initial saddle-search Hessian whose only negative curvature is the reaction mode: P·H·P
-    (P projects out the unweighted rigid motions) rebuilt from max(|λ_i|, floor) Eh/bohr²,
-    negative for the eigenvector most parallel to ``reaction_mode``. Eigenvector following
-    climbs that mode (moddir 1) and descends all others (Baker 1986); the inertia survives
-    the internal-coordinate transformation (Sylvester)."""
+def shape_hessian(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray,
+                  reaction_mode: np.ndarray | None, floor: float = 1.0e-3) -> np.ndarray:
+    """Initial driver Hessian: P·H·P (P projects out the unweighted rigid motions) on its own
+    eigenvectors with max(|λ_i|, floor) Eh/bohr², rigid motions at 0. ``reaction_mode`` turns
+    its most parallel eigenvector negative, the only negative curvature: eigenvector following
+    climbs it (moddir 1) and descends all others (Baker 1986). Without it the model is positive
+    definite (a minimization from a TS's side). The inertia survives the internal-coordinate
+    transformation (Sylvester)."""
     n = np.size(coords_A) // 3
     u, k, _ = _external_svd(["H"] * n, coords_A)  # equal masses: unweighted, about the centroid
     values, vectors = np.linalg.eigh(u[:, k:].T @ _square_hessian(hessian_eh_bohr2, n) @ u[:, k:])
     modes = u[:, k:] @ vectors
     curvature = np.maximum(np.abs(values), floor)
-    curvature[np.argmax(np.abs(modes.T @ np.ravel(reaction_mode)))] *= -1.0
+    if reaction_mode is not None:
+        curvature[np.argmax(np.abs(modes.T @ np.ravel(reaction_mode)))] *= -1.0
     return (modes * curvature) @ modes.T
 
 
