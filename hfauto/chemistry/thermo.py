@@ -177,24 +177,17 @@ def participants(reaction: ReactionRecord) -> tuple[str, ...]:
 
 def reaction_delta(
     reaction: ReactionRecord, species_thermo: Mapping[str, SpeciesThermo]
-) -> tuple[float | None, float | None, float | None]:
-    """(dG_act, dG_rxn, dzpe_act) in kcal/mol at 1 atm from the thermo of each subject.
+) -> tuple[float | None, float | None]:
+    """(dG_act, dG_rxn) in kcal/mol at 1 atm from the thermo of each subject; dG_act exists only
+    when ``participants`` includes the TS."""
 
-    dG_act and dzpe_act exist only when ``participants`` includes the TS."""
-
-    def value(subject: str, field: str) -> float | None:
+    def value(subject: str) -> float | None:
         thermo = species_thermo.get(subject)
-        return None if thermo is None else getattr(thermo, field)
+        return None if thermo is None else thermo.G_hartree
 
     reactant, product, *ts = participants(reaction)
-    dG_rxn = _kcal(value(product, "G_hartree"), value(reactant, "G_hartree"))
-    if not ts:
-        return None, dG_rxn, None
-    return (
-        _kcal(value(ts[0], "G_hartree"), value(reactant, "G_hartree")),
-        dG_rxn,
-        _kcal(value(ts[0], "zpe_hartree"), value(reactant, "zpe_hartree")),
-    )
+    G_R = value(reactant)
+    return (_kcal(value(ts[0]), G_R) if ts else None), _kcal(value(product), G_R)
 
 
 def effective_barrier(G_ts: float | None, G_R: float, G_P: float) -> float:

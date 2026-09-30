@@ -217,7 +217,7 @@ def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject], monomers: Monom
     """tables: the thermo of every settings variant at T (index 0 = main settings)."""
     names, table = th.participants(rx), tables[0]
     subs = [subjects[p] for p in names if p in subjects]
-    dG_act, dG_rxn, dzpe = th.reaction_delta(rx, table)
+    dG_act, dG_rxn = th.reaction_delta(rx, table)
     n_r, n_p = (sum(t.coefficient for t in terms) for terms in (rx.reactants, rx.products))
     shifts = (th.standard_state_shift(1 - n_r, T, state),
               th.standard_state_shift(n_p - n_r, T, state))
@@ -228,7 +228,7 @@ def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject], monomers: Monom
     return ReactionThermo(
         reaction_id=rx.reaction_id, T_K=T, standard_state=state,
         dE_act_kcal=_kcal(subjects, names[2], names[0]) if len(names) == 3 else None,
-        dE_rxn_kcal=_kcal(subjects, names[1], names[0]), dzpe_act_kcal=dzpe,
+        dE_rxn_kcal=_kcal(subjects, names[1], names[0]),
         dG_act_kcal=None if dG_act is None else dG_act + shifts[0],
         dG_rxn_kcal=None if dG_rxn is None else dG_rxn + shifts[1],
         dG_assoc_kcal=assoc, dG_act_vs_separated_kcal=vs_separated,

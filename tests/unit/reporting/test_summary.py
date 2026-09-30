@@ -16,7 +16,7 @@ def rxn(rid, outcome=EL, minima=("mr", "mp"), **kw):
 
 def th(rid, dg, band=None, T=298.15, blockers=()):
     return rec.ReactionThermo(reaction_id=rid, T_K=T, standard_state="1atm", dE_act_kcal=dg,
-                              dE_rxn_kcal=1.0, dzpe_act_kcal=-0.5, dG_act_kcal=dg,
+                              dE_rxn_kcal=1.0, dG_act_kcal=dg,
                               dG_rxn_kcal=1.0, dG_eff_kcal=dg, band_kcal=band, blockers=blockers,
                               energy_level="wb97x-d3/def2-tzvpd")
 

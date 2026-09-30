@@ -308,8 +308,7 @@ class _NWChem:
         if len(frames) != n or len(energies) != n or any(f.symbols != symbols for f in frames):
             return _incomplete("string_path_images")
         return PathProfile(engine=task.engine, level=level,
-                           images=self._jobs.store.file_ref(images), energies_hartree=energies,
-                           job_key="")
+                           images=self._jobs.store.file_ref(images), energies_hartree=energies)
 
 
 class NWChemEngine(_NWChem):

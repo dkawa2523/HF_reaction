@@ -100,8 +100,7 @@ class _Adapter:
             ts_imag_cm1=data["ts_imag_cm1"], dE_act_kcal=data["dE_act_kcal"],
             dE_rxn_kcal=data["dE_rxn_kcal"],
             irc_connected_to_source=data["irc_connected_to_source"],
-            electronic_temperature_K=data["electronic_temperature_K"], job_key="",
-        )
+            electronic_temperature_K=data["electronic_temperature_K"])
 
     def _geometry(self, workdir: Path, name: str | None) -> Geometry | None:
         return None if name is None else written_geometry(workdir / name,

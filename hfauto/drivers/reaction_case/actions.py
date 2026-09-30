@@ -232,11 +232,12 @@ def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """The front seed's reaction direction and initial Hessian → saddle.refine with only that
     direction negative. A search stalled at maxiter restarts once from its last frame with a
     fresh Hessian: a new front seed that is not counted (the attempts count per case, a split
-    child starts from 0; only the walltime deadline is shared)."""
+    child starts from 0; only the walltime deadline is shared). A new search drops the claim
+    and connection verdict of an earlier TS whose sides joined one basin (row 8)."""
     rt, seed = ctx.rt, state.seeds[0]
     counted = int(seed.source != "saddle_restart")
     state = replace(state, seeds=state.seeds[1:], saddle_attempts=state.saddle_attempts + counted,
-                    last_saddle="failed", ts_check=None)
+                    last_saddle="failed", ts_check=None, claim=None, connection=None)
     x = ctx.coords(seed.geometry)
     direction = ctx.direction(x, seed)
     hessian = _seed_hessian(ctx, seed, x, direction)

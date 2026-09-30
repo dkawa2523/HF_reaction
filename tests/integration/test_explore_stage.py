@@ -76,7 +76,7 @@ def _explore(fake_runtime, tmp_run):
             outcome="product" if found else "negative", reason=reason,
             product=hnc if found else None, ts=hnc if act else None, ts_imag_cm1=-1400.0,
             dE_act_kcal=act, dE_rxn_kcal=40.0 if found else None,
-            irc_connected_to_source=found, electronic_temperature_K=300.0, job_key="j")
+            irc_connected_to_source=found, electronic_temperature_K=300.0)
 
     fake = FakeDiscovery(script)
     rt = fake_runtime(SystemConfig(system_id="t", species=[SpeciesInput(id="hcn", smiles="C#N")]),

@@ -112,7 +112,6 @@ class PathProfile(BaseModel):
     images: FileRef  # multi-frame xyz
     energies_hartree: tuple[float, ...] = ()  # bead energies (nwchem_string); none from the NEB
     ts: Geometry | None = None  # TS optimized from the climbing image (pysis_neb)
-    job_key: str
 
 
 class FailureKind(StrEnum):

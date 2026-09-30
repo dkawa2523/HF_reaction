@@ -1,7 +1,8 @@
 # Appends to an existing run (hfauto run method_panel ... --run-dir <run>): single points of
 # the stationary points at every panel method, the composite thermochemistry on the reference
-# method (its values replace the earlier thermo; ranking.csv names the energy_level), then the
-# panel report. panel_thermo takes temperatures_K / standard_states like any thermo stage.
+# method (its values replace the earlier thermo of the same (T, standard state); ranking.csv names
+# the energy_level), then the panel report. panel_thermo takes temperatures_K / standard_states
+# like any thermo stage.
 # For small molecules (up to about four heavy atoms) add ccsd-t_def2-tzvpd to methods and make
 # it the energy_method (HCN / HONO take seconds to minutes per point; with five heavy atoms the
 # (T) step cannot allocate its arrays at 1,200 MB per rank; CH3O. ROHF-CCSD(T) takes about

@@ -172,7 +172,7 @@ def reaction(**kw) -> r.ReactionRecord:
 
 def thermo(dG_eff: float | None = 12.2, blockers: tuple[str, ...] = ()) -> r.ReactionThermo:
     return r.ReactionThermo(reaction_id="r", T_K=298.15, standard_state="1atm", dE_act_kcal=13.6,
-                            dE_rxn_kcal=1.0, dzpe_act_kcal=-9.0, dG_act_kcal=12.2,
+                            dE_rxn_kcal=1.0, dG_act_kcal=12.2,
                             dG_rxn_kcal=1.0, dG_eff_kcal=dG_eff, blockers=blockers)
 
 

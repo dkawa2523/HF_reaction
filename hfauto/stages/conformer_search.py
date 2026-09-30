@@ -9,7 +9,7 @@ settings (a second stop fails). Compositions take the summed charge of their com
 declared multiplicity (or the only one spin coupling allows; otherwise INPUT_INVALID), and get
 ``--notopo`` on every atom: hfauto's state label decides the state, CREST only samples. When a
 search fails its input (monomer) or placement seeds (composition) are output instead (CREST 3.0.2
-fails on open-shell and some small ionic compositions). Users set quick, ewin_kcal,
+fails when GFN2 has no minimum complex, e.g. a barrierless association, or its SCC fails). Users set quick, ewin_kcal,
 seeds_per_composition and keep_per_state; CREST threads come from the site.
 """
 

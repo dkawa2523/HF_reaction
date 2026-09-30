@@ -181,6 +181,8 @@ def _r08_connection(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decisio
         return Decision(Action.CONNECT, "connection_retry")  # a wider displacement
     if _soft_ts_failed(s, p):
         return None  # validated as a collapsed saddle (row 11)
+    if s.connection == "same_basin" and _attempts_left(s, p):
+        return None  # a saddle of another process (both sides in one basin): search on (12-17)
     return _complete(CaseOutcome.UNRESOLVED, "connection_failed")
 
 

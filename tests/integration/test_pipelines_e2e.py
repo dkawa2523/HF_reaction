@@ -49,7 +49,7 @@ def pipeline(tmp_path, tmp_run, monkeypatch):
         ok, x = source.xyz.coords.size == 9, source.xyz.coords
         return DiscoveryResult(
             outcome="product" if ok else "negative", reason=None if ok else "no_nt2_maximum",
-            product=geo["product" if x[1, 0] < 0 else "reactant"] if ok else None, job_key="rd",
+            product=geo["product" if x[1, 0] < 0 else "reactant"] if ok else None,
             ts=geo["ts"] if ok else None, ts_imag_cm1=-1e3, dE_act_kcal=7.2,
             dE_rxn_kcal=2.4, irc_connected_to_source=ok, electronic_temperature_K=300.0)
 

@@ -35,7 +35,7 @@ def test_report_stage_writes_tables_from_a_fake_view(fake_runtime, tmp_run):
                                   minima=("reactant", "product"), endpoints=("a", "b"),
                                   source="declared", outcome=rec.CaseOutcome.ELEMENTARY_STEP)
     thermo = rec.ReactionThermo(reaction_id="r1", T_K=298.15, standard_state="1atm",
-                                dE_act_kcal=6.0, dE_rxn_kcal=2.0, dzpe_act_kcal=-1.0,
+                                dE_act_kcal=6.0, dE_rxn_kcal=2.0,
                                 dG_act_kcal=5.0, dG_rxn_kcal=2.0, band_kcal=(4.5, 5.5),
                                 dG_eff_kcal=5.0, energy_level="wb97x/def2-tzvpd")
     hot = thermo.model_copy(update={"T_K": 400.0, "dG_eff_kcal": 7.0})  # a second temperature

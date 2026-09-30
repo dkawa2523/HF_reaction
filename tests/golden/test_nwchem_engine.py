@@ -282,6 +282,6 @@ def test_g13_string_profile_from_its_initial_path(nwchem, golden):
                                                            initial_path=ref)
     assert isinstance(profile, PathProfile) and len(profile.energies_hartree) == 11
     assert profile.ts is None
-    attempt = jobs.store.attempt_dir(profile.job_key, 0)
+    attempt = (jobs.store.run_dir / profile.images.path).parent
     assert "xyz_path initial_path.xyz" in (attempt / "job.nw").read_text()
     assert sha256_file(attempt / "initial_path.xyz") == ref.sha256

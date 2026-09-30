@@ -309,8 +309,7 @@ class FakePath(_Surface):
                  if self.tsopt else (None, False))
         ts = write_geometry(self.root, folder / "ts.xyz", start.xyz.symbols, x) if ok else None
         return PathProfile(engine=self.name, level=fake_level(method, start), ts=ts,
-                           images=_ref(self.root, xyz), energies_hartree=tuple(e.tolist()),
-                           job_key=key)
+                           images=_ref(self.root, xyz), energies_hartree=tuple(e.tolist()))
 
 
 class _Scripted(_Fake):  # replays the results in order, or calls a callable script

@@ -216,4 +216,20 @@ def test_a_soft_ts_whose_qrc_failed_is_validated_as_a_collapsed_saddle():
     assert decide(CASE, replace(validated, intermediate="distinct"), RULES) == DISTINCT
     assert decide(CASE, replace(validated, intermediate="same_as_endpoint"), RULES) == NO_PATH
     unresolved = Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)
-    assert decide(CASE, replace(failed, claim=CLAIM), RULES) == unresolved  # a hard TS
+    hard = replace(failed, claim=CLAIM, saddle_attempts=2)  # a hard TS, no saddle attempt left
+    assert decide(CASE, hard, RULES) == unresolved
+
+
+def test_a_hard_ts_whose_sides_join_one_basin_leaves_the_search_open():
+    """VAL7/s6_oh_ch4: a -73i reorientation saddle of the OH...CH4 complex (both QRC sides in
+    its basin at both amplitudes) is not the abstraction TS; with a saddle attempt left the case
+    goes on to the string (the W3 run found the -481i TS there) instead of stopping."""
+    other = replace(S, claim=CLAIM, last_saddle="converged", ts_check="ok", saddle_attempts=1,
+                    connection="same_basin", connection_attempts=2)
+    assert decide(CASE, other, RULES) == NO_PATH
+    seeded = replace(other, seeds=(SEED,))
+    assert decide(CASE, seeded, RULES) == Decision(A.REFINE_SADDLE, "seed:screen_ts")
+    assert decide(CASE, replace(other, path_runs=1), RULES) == EXHAUSTED
+    failed = replace(other, connection="failed")  # a side did not optimize: no new evidence
+    assert decide(CASE, failed, RULES) == Decision(A.COMPLETE, "connection_failed",
+                                                   C.UNRESOLVED)

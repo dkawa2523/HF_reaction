@@ -193,7 +193,6 @@ class ReactionThermo(BaseModel):
     standard_state: StandardState
     dE_act_kcal: float | None
     dE_rxn_kcal: float | None
-    dzpe_act_kcal: float | None  # dE0(act) - dE(act)
     dG_act_kcal: float | None  # TST barrier seen from the reaction's own reactant minimum
     dG_rxn_kcal: float | None
     dG_assoc_kcal: float | None = None

@@ -19,9 +19,9 @@
 | cli | 5 コマンド(`doctor`、`run`、`status`、`report`、`case`) |
 | pipeline | 設定の読み込み、preflight、run ディレクトリ(`RunLayout`)、`StageRuntime` の実装、`run_pipeline` |
 | stages | 8 つの stage |
-| drivers | `MinimumDriver`(`drivers/minimum.py`)と `ReactionCaseDriver`(`drivers/reaction_case/`) |
+| drivers | `MinimumDriver`(`hfauto/drivers/minimum.py`)と `ReactionCaseDriver`(`hfauto/drivers/reaction_case/`) |
 | reporting | 順位・被覆率・手法パネルの表と静的 HTML |
-| backends | 能力 Protocol(`backends/protocols.py`)、registry(`backends/engines.py`)、5 つのアダプタ |
+| backends | 能力 Protocol(`hfauto/backends/protocols.py`)、registry(`hfauto/backends/engines.py`)、5 つのアダプタ |
 | execution | `run_command`、`JobStore`、`JobRunner`、`SiteLock`、worker |
 | chemistry | ゲートと化学カーネル(純関数。ファイル IO は xyz の読み書きだけ) |
 | core | `Evidence`、payload、manifest、`MethodSpec`、system のモデル |
@@ -37,24 +37,24 @@ ruff は `C901`(max-complexity 15)と `TID251`(`subprocess` の禁止)を有効�
 
 ## 2. 処理区分の責務
 
-レビュー `2026-09-27_platform_review.md` §1.1 の区分(U0〜U9)とコードの対応。
+レビュー `docs/reviews/2026-09-27_platform_review.md` §1.1 の区分(U0〜U9)とコードの対応。
 
 | 区分 | 責務 | 実装 | 出力 |
 |---|---|---|---|
-| U0 プロトコル | 段ごとの理論レベルと順位の面を決め、LOT をエンジンに渡して出力の観測で照合する(Z>36 の def2-ECP は自動) | `configs/methods/`、`core/method.py`、アダプタの入力生成 | `Level`、デッキ |
-| U1 入力・電子状態 | 化学種と組成を、対応元素・電荷・多重度・状態ラベルを持つ構造にする。範囲外は入口で 1 回だけ拒否する | structures、`chemistry/electronic_state.py`・`elements.py`・`topology.py` | `SpeciesRecord` |
-| U2 配座・錯体配置 | screen に渡す候補構造を作る(同一性の確定と窓の選抜はしない) | conformers、`chemistry/placement.py`、CREST | 状態ラベルごとの候補 |
-| U3 極小の確定 | 同じ LOT で確かめた極小を basin に登録する。鞍点に落ちた入力は mode-follow で解消する | minima、`MinimumDriver`、`chemistry/identity.py`・`selection.py` | `MinimumRecord` |
-| U4 反応探索 | 生成物を仮定しない片端探索で、低レベルの固有な生成物と TS を出す | explore、`chemistry/trials.py`、ReaDuct | `DiscoveryRecord` |
-| U5 仮説・経路 | 極小対から仮説を作り、DFT 極小を固定端とする経路を分類して種を渡す | `chemistry/hypotheses.py`・`profile.py`、SCREEN・FIND_PATH | `ReactionRecord`、`BarrierVerdict` |
+| U0 プロトコル | 段ごとの理論レベルと順位の面を決め、LOT をエンジンに渡して出力の観測で照合する(Z>36 の def2-ECP は自動) | `configs/methods/`、`hfauto/core/method.py`、アダプタの入力生成 | `Level`、デッキ |
+| U1 入力・電子状態 | 化学種と組成を、対応元素・電荷・多重度・状態ラベルを持つ構造にする。範囲外は入口で 1 回だけ拒否する | structures、`hfauto/chemistry/` の electronic_state・elements・topology | `SpeciesRecord` |
+| U2 配座・錯体配置 | screen に渡す候補構造を作る(同一性の確定と窓の選抜はしない) | conformers、`hfauto/chemistry/placement.py`、CREST | 状態ラベルごとの候補 |
+| U3 極小の確定 | 同じ LOT で確かめた極小を basin に登録する。鞍点に落ちた入力は mode-follow で解消する | minima、`MinimumDriver`、`hfauto/chemistry/` の identity・selection | `MinimumRecord` |
+| U4 反応探索 | 生成物を仮定しない片端探索で、低レベルの固有な生成物と TS を出す | explore、`hfauto/chemistry/trials.py`、ReaDuct | `DiscoveryRecord` |
+| U5 仮説・経路 | 極小対から仮説を作り、DFT 極小を固定端とする経路を分類して種を渡す | `hfauto/chemistry/` の hypotheses・profile、SCREEN・FIND_PATH | `ReactionRecord`、`BarrierVerdict` |
 | U6 鞍点・接続 | 種を 1 次の鞍点に精密化し、別ジョブの freq で TS を確かめ、QRC で両側の極小につなぐ | REFINE_SADDLE・VALIDATE_TS・CONNECT・VALIDATE_INTERMEDIATE | `SaddleClaim`、`ConnectionClaim`、outcome |
-| U7 熱化学 | 停留点の G(qRRHO、キラリティ、エネルギー層)と順位の量 δG_eff を出す | thermo、`chemistry/thermo.py`(GoodVibes) | `SpeciesThermo`、`ReactionThermo` |
-| U8 一点計算・報告 | エネルギー層を順位に使う点だけで計算し、δG_eff で並べ、手法の幅を列で示す | sp、report、`reporting/` | ranking.csv、method_panel.csv、report.html |
-| U9 実行基盤 | stage を動かし、ジョブを再利用・継続し、失敗を閉じ込め、コアと予算を管理する | `pipeline/`、`execution/`、`cli/` | manifest、JobStore、終了コード |
+| U7 熱化学 | 停留点の G(qRRHO、キラリティ、エネルギー層)と順位の量 δG_eff を出す | thermo、`hfauto/chemistry/thermo.py`(GoodVibes) | `SpeciesThermo`、`ReactionThermo` |
+| U8 一点計算・報告 | エネルギー層を順位に使う点だけで計算し、δG_eff で並べ、手法の幅を列で示す | sp、report、`hfauto/reporting/` | ranking.csv、method_panel.csv、report.html |
+| U9 実行基盤 | stage を動かし、ジョブを再利用・継続し、失敗を閉じ込め、コアと予算を管理する | `hfauto/pipeline/`、`hfauto/execution/`、`hfauto/cli/` | manifest、JobStore、終了コード |
 
 ## 3. Evidence とゲート
 
-`Evidence`(`core/evidence.py`)は正常終了した外部ジョブ 1 本の観測事実で、存在すれば次が成り立つ: 正常終了と SCF 収束、opt / saddle の収束、freq なら 3N − n_external 本の振動数(単原子は 0 本)、原子順序と入力フレームの保持、出力から観測した `Level` が要求した `MethodSpec` と site の版数 pin に一致すること。満たさなければアダプタは `Failure(kind, reason)` を返す(maxiter で止まった saddle は最終フレームも持つ)。振動数と正準形式の Hessian(Eh/bohr²)は、どのエンジンでも `chemistry/vibrations.py` の補空間射影(並進・回転を除き、主同位体の質量)で求めるので、NWChem の表示値とは低振動モードで数 cm⁻¹ ずれる(G で約 0.02 kcal/mol)。
+`Evidence`(`hfauto/core/evidence.py`)は正常終了した外部ジョブ 1 本の観測事実で、存在すれば次が成り立つ: 正常終了と SCF 収束、opt / saddle の収束、freq なら 3N − n_external 本の振動数(単原子は 0 本)、原子順序と入力フレームの保持、出力から観測した `Level` が要求した `MethodSpec` と site の版数 pin に一致すること。満たさなければアダプタは `Failure(kind, reason)` を返す(maxiter で止まった saddle は最終フレームも持つ)。振動数と正準形式の Hessian(Eh/bohr²)は、どのエンジンでも `hfauto/chemistry/vibrations.py` の補空間射影(並進・回転を除き、主同位体の質量)で求めるので、NWChem の表示値とは低振動モードで数 cm⁻¹ ずれる(G で約 0.02 kcal/mol)。
 
 FailureKind は executable_missing、input_invalid、timeout、nonzero_exit、scf_not_converged、geometry_maxiter、incomplete_output、method_mismatch、budget_exhausted、gate_rejected の 10 種。
 
@@ -77,7 +77,7 @@ claim を作るのは 1 か所だけである。`MinimumRecord` は minima stage
 
 ## 4. payload
 
-各 stage の `<run>/<stage_id>/manifest.json` にはその stage の出力だけを入れる。artifact は `status: success | failed` を持ち、payload は `kind` で判別する frozen なタグ付き共用体(`core/records.py`、`extra="forbid"`)である。
+各 stage の `<run>/<stage_id>/manifest.json` にはその stage の出力だけを入れる。artifact は `status: success | failed` を持ち、payload は `kind` で判別する frozen なタグ付き共用体(`hfauto/core/records.py`、`extra="forbid"`)である。
 
 | 型 | レコード | 出す stage | 主な中身 |
 |---|---|---|---|
@@ -87,7 +87,7 @@ claim を作るのは 1 か所だけである。`MinimumRecord` は minima stage
 | discovery | `DiscoveryRecord` | explore、minima(mode_follow) | 機構、trial、product / negative / failed と理由、低レベル TS、ΔE‡・ΔE_rxn。DFT 段の mode-follow は鞍点の opt(`ts_calc`) |
 | reaction | `ReactionRecord` | reaction-paths | 両端の極小と構造、source、検証済みの DFT 鞍点(`ts_calc`)、`BarrierVerdict`、`SaddleClaim`、`ConnectionClaim`、`CaseOutcome` |
 | species_thermo | `SpeciesThermo` | thermo | T ごとの G / H / ZPE(失敗は None) |
-| reaction_thermo | `ReactionThermo` | thermo | δG_eff と感度の幅、ΔE‡、ΔE_rxn、ΔZPE‡、ΔG‡、ΔG_rxn、ΔG_assoc、分離反応物基準の ΔG‡、blockers、`energy_level`、注記 |
+| reaction_thermo | `ReactionThermo` | thermo | δG_eff と感度の幅、ΔE‡、ΔE_rxn、ΔG‡、ΔG_rxn、ΔG_assoc、分離反応物基準の ΔG‡、blockers、`energy_level`、注記 |
 | report | `ReportRecord` | report | 順位の行と表のファイル |
 
 CaseOutcome は elementary_step、degenerate_rearrangement、reassigned_step、multi_step、barrierless_at_resolution、same_basin、out_of_window、unresolved_within_budget、blocked_upstream の 9 種。id は species が `species_<id>`、minimum が `min_<species>_<level_key[:8]>`、分割した子反応が `<parent>_split<n>`。
@@ -105,31 +105,32 @@ CaseOutcome は elementary_step、degenerate_rearrangement、reassigned_step、m
 - エンジンは `cls(jobs=JobRunner, site=EngineSite)` で作る。`engines.create` は Protocol を満たさなければ `TypeError`、表にない名前は `KeyError`。registry を import してよいのは pipeline だけである。
 - すべてのアダプタに電荷と多重度を渡す(NWChem の `charge` / `mult`、xTB と CREST の `--chrg` / `--uhf`、pysisyphus と ReaDuct の計算器設定)。
 - 初期 Hessian は freq の `Evidence` で渡す。saddle は種と同じ構造、optimize は同じ原子順序で各原子が 0.5 Å 以内の構造のものだけを受け付け、外れれば `INPUT_INVALID(hessian_geometry_mismatch)`。xTB は初期 Hessian を使わない。
+- optimize に渡す一次の鞍点の Hessian(ν < −50 cm⁻¹ = 既定の saddle_cm1 がちょうど 1 本: QRC と mode-follow の側)は、固有値を max(\|λ\|, 1e-3) にした正定値のモデル(`vibrations.shape_hessian(h, x, None)`、ジョブ鍵に `hessian_model: positive`)にして書く。NWChem は負の固有値に沿った最小化の歩幅を trust の 0.03〜0.3 倍に切り、BFGS 更新は符号を保つので、負のまま渡すと下りが遅い(acac の QRC 34/27 歩 → 15/14 歩)。高次の鞍点と xTB の錯体の Hessian はそのまま書く(高次の鞍点からの側は別の鞍点方向へ出られる必要がある。DME C2v はそのままで 29 歩、モデルでは 207 歩で未収束)。
 - SCINE と pysisyphus は `python -m hfauto.execution.worker <module:function> <job.json>` の子プロセスの中だけで import する。
-- 熱化学はエンジンではない。qRRHO は閉じた式なので、`chemistry/thermo.py` の `species_thermo` が GoodVibes 4.3.0 を同じプロセスで呼ぶ(ジョブにしない)。版数は preflight が照合し、結果は golden で保証する。
+- 熱化学はエンジンではない。qRRHO は閉じた式なので、`hfauto/chemistry/thermo.py` の `species_thermo` が GoodVibes 4.3.0 を同じプロセスで呼ぶ(ジョブにしない)。版数は preflight が照合し、結果は golden で保証する。
 
 エンジンを足す手順:
 1. アダプタ(`prepare` / `parse` / `continuation` と `result_type`)とエンジンクラスを `hfauto/backends/<engine>/` に書く。Level は出力から観測し、振動数は `projected_frequencies` で求める。
-2. `backends/engines.py` の表に 1 行足し、`pyproject.toml` の `adapters-private` と `adapters-independent` にモジュールを加える。
+2. `hfauto/backends/engines.py` の表に 1 行足し、`pyproject.toml` の `adapters-private` と `adapters-independent` にモジュールを加える。
 3. golden: 実出力を `tests/golden/excerpt.py` の規則で抜粋して `tests/golden/data/<engine>/` に置き、出所と sha を `tests/golden/SOURCES.json` に書き、パーサのテストを書く。
 4. smoke: `tests/smoke/` に `pytest.mark.real` のテストを書く(`real_engine` fixture)。
 5. `configs/sites/wsl_local.yaml` に `EngineSite` を加え、`hfauto doctor` で確かめる。
 
 ## 6. driver
 
-### 6.1 MinimumDriver(`drivers/minimum.py`)
+### 6.1 MinimumDriver(`hfauto/drivers/minimum.py`)
 
 `relax_to_minimum` の手順:
-1. opt(初期 Hessian があれば使う)。最終構造が `Registry` の既存の basin(同じ組成・電荷・多重度・level_key)に一意に割り付けば、freq を省いて `known`。
+1. opt(初期 Hessian があれば使う。収束済みの opt を渡せば省く: QRC の側、`opt:reused`)。最終構造が `Registry` の既存の basin(同じ組成・電荷・多重度・level_key)に一意に割り付けば、freq を省いて `known`。
 2. 別ジョブの freq → `is_minimum` と `spin_ok`。
-3. saddle 級なら ν < −saddle_cm1 の虚モードに沿って `modes.amplitude`(½κs² = 3e-4 Eh、0.05〜0.4 Å)だけ変位し、変位元の freq を初期 Hessian にして opt → freq(最大 `mode_follow` サイクル)。虚モード 1 本なら ± 両側、2 本以上なら全モードの和の方向へ片側だけ押す。両側がラベル付きで別の構造なら `ts_candidate`(縮退転位を含む。minima stage が `mode_follow` の discovery にし、元の化学種は入力構造に近い側の basin に注記 `endpoint_was_saddle` 付きで加わる)、同じなら置き換え、片側だけならその側を採る。
+3. saddle 級なら ν < −saddle_cm1 の虚モードに沿って `modes.amplitude`(½κs² = 3e-4 Eh、0.05〜0.4 Å)だけ変位し、変位元の freq を初期 Hessian にして opt → freq(最大 `mode_follow` サイクル。履歴 `follow<n>:<判定>`、側は `opt:follow<n>`)。虚モード 1 本なら ± 両側、2 本以上なら全モードの和の方向へ片側だけ押す。判定は、両側がラベル付きで別の構造なら `ts_candidate`(縮退転位を含む。両側の結果 opt・freq・注記を返す)、両側が同じ構造なら `replace`、片側だけ動けば `one_side`(その側を採る)。minima stage は `ts_candidate` の両側をジョブなしで同一性だけで登録し(鏡像の側は同じ basin)、`mode_follow` の discovery にする(DFT 段では鞍点の opt が `ts_calc`)。元の化学種は入力構造に近い側の basin に注記 `endpoint_was_saddle` 付きで加わる。
 4. soft なら ν < −noise_cm1 の虚モードの和の方向へ 1 回だけ押し、残れば `soft_minimum`。noise はそのまま `minimum`。
 
-`Registry` は組成 × level_key ごとの basin の集合で、同一性の基準は `identity.assign` の 1 つだけである(\|ΔE\| ≤ 5e-5 Eh の候補のうち、回転と鏡映を許す置換不変 RMSD ≤ 0.05 Å で、次点と十分離れていること)。鏡像は同じ basin で、鏡像と重ならない構造の basin は `chiral`(m = 2)を持つ。ラベル付きの比較(`mapped_rmsd`)は真の回転だけなので、NH3 の反転のような縮退転位は恒等と区別される。minima stage はジョブを species id の順に直列で relax し、直後に登録するので、同じ stage の中でも登録済みの basin に落ちたジョブは freq を省く。mode-follow の経過は `<run>/<stage_id>/diagnostics.json` に書く(記録用で、読むコードはない)。
+`Registry` は組成 × level_key ごとの basin の集合で、同一性の基準は `identity.assign` の 1 つだけである(\|ΔE\| ≤ 5e-5 Eh の候補のうち、回転と鏡映を許す置換不変 RMSD ≤ 0.05 Å で、次点と十分離れていること)。鏡像は同じ basin で、鏡像と重ならない構造の basin は `chiral`(m = 2)を持つ。ラベル付きの比較(`identity.same_as_labelled`: \|ΔE\| ≤ 5e-5 Eh かつ `mapped_rmsd` ≤ 0.05 Å)は真の回転だけなので、NH3 の反転のような縮退転位は恒等と区別される。minima stage はジョブを species id の順に直列で relax し(relaxation の seed は最後)、直後に登録するので、同じ stage の中でも登録済みの basin に落ちたジョブは freq を省く。開始構造が先のジョブの厳密な置換・鏡像の像(`identity.carry` の RMSD ≤ `IMAGE_A` 0.005 Å。対称な像は 0.0009 Å 以下、それ以外の組は 0.025 Å 以上で、basin の 0.05 Å とは別の基準)であるジョブは計算しない。PES は同種核の置換と反転で不変なので、代表がそのまま極小か既知の basin に落ちたときだけその basin に入る(`image_of:<sid>`)。代表が鞍点・soft・失敗なら自分で緩和する。mode-follow の経過は `<run>/<stage_id>/diagnostics.json` に書く(記録用で、読むコードはない)。
 
-### 6.2 ReactionCaseDriver(`drivers/reaction_case/`)
+### 6.2 ReactionCaseDriver(`hfauto/drivers/reaction_case/`)
 
-`decide(case, state, rules)` は `state.py` の 17 行を上から評価する純関数で、driver はその action を実行して `CaseState` を積み上げる。ジョブはすべて JobStore を通るので、再実行すると同じ判断を数秒でたどり直す。判断は `<run>/<stage_id>/cases/<reaction_id>/log.jsonl` に書く(`hfauto case` で表示する)。
+`decide(case, state, rules)` は `hfauto/drivers/reaction_case/state.py` の 17 行を上から評価する純関数で、driver はその action を実行して `CaseState` を積み上げる。ジョブはすべて JobStore を通るので、再実行すると同じ判断を数秒でたどり直す。判断は `<run>/<stage_id>/cases/<reaction_id>/log.jsonl` に書く(`hfauto case` で表示する)。
 
 | # | 条件 | 決定(reason) |
 |---:|---|---|
@@ -140,7 +141,7 @@ CaseOutcome は elementary_step、degenerate_rearrangement、reassigned_step、m
 | 5 | 中間体が両端と別の basin | MULTI_STEP(`intermediate_distinct`)。子反応 R→I、I→P に分ける(深さ `max_split_depth` まで) |
 | 6 | 最新の DFT プロファイル(SCREEN か string)が barrierless | BARRIERLESS(`screen:barrierless` / `string:barrierless`) |
 | 7 | 予算 `walltime_h` を使い切った(残りが 60 s 未満で、どのジョブも始められない) | UNRESOLVED(`walltime`) |
-| 8 | 接続を判定したが完了していない | 両側が同じ basin で 2 回未満なら CONNECT(振幅 × 2、`connection_retry`)。\|ν\| < saddle_cm1 の TS なら行 11 へ、それ以外は UNRESOLVED(`connection_failed`) |
+| 8 | 接続を判定したが完了していない | 両側が同じ basin で 2 回未満なら CONNECT(振幅 × 2、`connection_retry`)。\|ν\| < saddle_cm1 の TS なら行 11 へ。2 回とも両側が同じ basin の TS は別の過程の鞍点なので、saddle の試行が残れば探索を続ける(行 12〜17。次の saddle 探索がその TS の主張を捨てる)。それ以外は UNRESOLVED(`connection_failed`) |
 | 9 | 未接続の SaddleClaim がある | CONNECT(`ts_validated`) |
 | 10 | saddle が収束し未検証(`ts_calc` の case は最初から) | VALIDATE_TS(`saddle_converged`) |
 | 11 | TS 検証で崩壊した(最低モード ≥ −noise_cm1)か、柔らかい TS の QRC が失敗した | VALIDATE_INTERMEDIATE(`saddle_collapsed`) |
@@ -155,10 +156,10 @@ CaseOutcome は elementary_step、degenerate_rearrangement、reassigned_step、m
 
 action:
 - **SCREEN**: 低レベル TS(explore か mode-follow)があれば xTB freq で確かめ、その構造の DFT SP と両端の DFT 極小の 3 点が single なら種にする(`discovery_ts`)。なければ DFT 極小の間の IDPP 11 点を初期経路に `pysis_neb`(xTB の CI-NEB、端は固定、未収束でも経路として使い、CI から TSOpt)で緩和し、内部 9 点の DFT SP と両端の DFT 極小のエネルギーを `barrier_verdict` で分ける。single の種は NEB の TS(`screen_ts`)か、山を放物線補間した構造(`screen_hei`)。NEB が失敗したら IDPP のまま分ける。経路の両端は常に DFT 極小なので、低レベルの PES に端点の極小は要らない。barrierless は最も高い内部点の両隣の区間の中点 2 点の DFT SP を加えて分類し直してから受け入れる(SP が失敗したら unavailable、`midpoint_single_point`)。FIND_PATH も同じ。
-- **REFINE_SADDLE**: 反応方向は 1 つの規則で決める。低レベル TS の種はその虚モード、高次 saddle を押した種はその反応モード、それ以外は経路の接線のうち反応中心(結合が変わる原子とその隣接原子)の成分。結合が変わらなければ宣言座標の勾配、なければ最も変わる二面角の勾配、それもなければ全原子の接線。初期 Hessian は、種が 0.5 Å 以内の検証済み TS freq を持てばそれ、なければ種の xTB freq で負モードのどれかと方向の重なりが 0.3 以上ならそれ、そうでなければ種の DFT freq。adapter はその Hessian を、方向と最も重なる固有ベクトルだけが負になるように整えて渡す(`vibrations.shape_hessian`)。saddle が maxiter で止まったら、最終フレームを種(`saddle_restart`)にして新しい Hessian で 1 回だけやり直す。
+- **REFINE_SADDLE**: 反応方向は 1 つの規則で決める。低レベル TS の種はその虚モード、高次 saddle を押した種はその反応モード、それ以外は経路の接線のうち反応中心(結合が変わる原子とその隣接原子)の成分。結合が変わらなければ宣言座標の勾配、なければ最も変わる二面角の勾配、それもなければ全原子の接線。初期 Hessian は、種が 0.5 Å 以内の検証済み TS freq を持てばそれ、なければ種の xTB freq で負モードのどれかと方向の重なりが 0.3 以上ならそれ、そうでなければ種の DFT freq。adapter はその Hessian を、方向と最も重なる固有ベクトルだけが負になるように整えて渡す(`vibrations.shape_hessian`)。saddle が maxiter で止まったら(柔らかい反応モードや押した種では、2 本目の負の固有値が十数歩残って停滞しやすい)、最終フレームを種(`saddle_restart`)にして新しい Hessian で 1 回だけやり直す。この再開は試行に数えず、上限に達していても通す(再開の再開はしない)。
 - **VALIDATE_TS**: 別ジョブの DFT freq → `is_first_order_saddle`。`ts_calc`(mode-follow の鞍点か親が検証した TS)はまずそれを検証し(freq は JobStore の再利用)、ゲートを通らなければ SCREEN へ。higher_order なら、方向と最も重なる負モード以外で最も負のモードに沿って片側に押した構造を種(`higher_order_retry`)にし、検証済みの freq をその Hessian にする。
 - **FIND_PATH**: ZTS を 1 チャンク(9 beads、maxiter 20)だけ走らせ、収束を問わず `barrier_verdict` で分ける。初期経路は最新の DFT プロファイルの経路、なければ IDPP。端点は DFT 極小にし、画像を隣へ逐次整列する。種は single のときだけ山の放物線補間(`path_hei`)。種が尽きれば行 16 がその経路から次のチャンクを続ける。
-- **CONNECT(QRC)**: TS の虚モードに沿って ± に変位し(振幅はエネルギー目標 max(3 × qrc_drop, 3e-4 Eh) と ν・質量から 0.05〜0.4 Å。再試行は 2 倍で 0.4 Å で切る)、TS の freq Hessian で opt し、`Registry` に割り付け(未知なら `relax_to_minimum` で新しい basin)、`connection` で判定する。reassigned のうち片側だけが端点の basin で他方が別の DFT basin なら行 5 で分割し、その 2 つを結ぶ子反応に TS を渡す(`ts_calc`)。どちらの端点も含まない TS は reassigned のまま。
+- **CONNECT(QRC)**: TS の虚モードに沿って ± に変位し(振幅はエネルギー目標 max(3 × qrc_drop, 3e-4 Eh) と ν・質量から 0.05〜0.4 Å。再試行は 2 倍で 0.4 Å で切る)、TS の freq Hessian(§5 の正定値のモデル)で opt し、`Registry` に割り付け(未知なら収束した側の opt から `relax_to_minimum` で新しい basin)、`connection` で判定する。対称な TS では − の開始構造が + の厳密な像(`IMAGE_A` 以内)なので + 側だけを opt し、− 側はその像を運んだ構造で割り付ける(注記 `qrc<n>:minus_is_image`、`side_calcs` は (plus, plus)、ゲートは同じ)。それ以外は両側を同時に走らせる(§8)。reassigned のうち片側だけが端点の basin で他方が別の DFT basin(freq で確かめた極小)なら行 5 で 2 つの子反応に分割し(注記 `qrc<n>:end<i>_to_new_basin`)、その 2 つを結ぶ子に TS を渡す(`ts_calc`。子は検証と QRC を JobStore から再生する)。中間体は他方の端点の配座でもよく、そのとき残りの子はねじれの case になる(case が 1 つ増える)。どちらの端点も含まない TS は reassigned のまま。多段の親は順位を持たず(outcome `multi_step`)、子反応がそれぞれ順位に載る。
 - **VALIDATE_INTERMEDIATE**: 崩壊した saddle か最新のプロファイルの最も低い井戸を `relax_to_minimum` にかける。両端と別の basin なら行 5 で分割する。緩和が失敗したら結果とせず(端点扱いも barrierless もしない)、最も高い山を種にする。端点に落ちたら、内部の最大 − 高い方の端点 < resolution_kcal なら barrierless、そうでなければ最も高い山を種にする。
 
 ## 7. 化学プロトコル
@@ -168,18 +169,18 @@ action:
 | 段 | 既定値と規則 |
 |---|---|
 | 共通 | DFT は PBE0-D3BJ/def2-SVPD、grid fine、`convergence energy` 1e-7(opt・freq・SP で同じ)。反復上限は DFT `iterations 100`、WFT の SCF `maxiter 100`。SCF 未収束の救済は閉殻 DFT が `cgmin`、WFT が前回の vectors からの再開で、1 回だけ(smear・fon は PES を変えるので使わない)。開殻 DFT は cgmin が ⟨S²⟩ を出さず Evidence にならないので救済しない。geometry は `units angstrom nocenter noautosym`、autoz が失敗したら Cartesian で再投入。Z>36 の元素には def2 系の基底のときだけ `<元素> library def2-ecp` を元素ごとに書く |
-| structures | 化学種は xyz と SMILES のちょうど一方。SMILES は RDKit ETKDG の 1 配座(同位体と `'.'` は不可)。宣言反応の端点は xyz(SMILES では原子の対応と配座が決まらない)で、両端の組成・電荷・多重度と原子順序が一致すること。元素・電荷・多重度はここで 1 回だけ検査する(範囲外の元素は `unsupported_element`、d ブロック元素を含む化学種かスピン結合で多重度が 1 つに決まらない組成で未宣言なら `declare_multiplicity`、電子数とのパリティ違いは `INPUT_INVALID`)。組成の電荷は成分の和、多重度は宣言値かスピン結合で 1 つに決まる値。開殻の成分から多重度 1 を作る宣言は `open_shell_singlet_unsupported` |
-| conformers | 単量体: `crest --gfn2 --quick -T <n> --ewin 6 --chrg --uhf`(重原子 3 個以下で回転可能結合のない分子は省く)。トポロジー変化で止まったら停止構造を残し、そこから 1 回だけ再実行する。組成: 受容原子の lone-pair 円錐に極性 H を置く seed(donor / 受容原子がなければ vdW 接触 + 0.5 Å の剛体配置)を `seeds_per_composition` 個作り、先頭の seed から `--nci --quick --notopo <全原子> --noopt` で探索する(状態は hfauto の状態ラベルが決め、CREST はサンプリングだけを行う。`--noopt` は CREST 3.0.2 の初期トポロジー検査が `--notopo` を見ないため)。CREST が失敗した組成(開殻など)は seed をそのまま出す。選抜は状態ラベルごとに GFN2 エネルギーの低い `keep_per_state` 個。CREST は attempt ディレクトリで `--scratch` なしに実行する |
-| minima(screen) | xTB `--opt vtight` → `--hess`、mode-follow 最大 2 サイクル。状態ラベルが変わった seed は members に記録し、DFT には流さない |
-| explore | 出発点は組成 × 状態ラベルごとの screen 最低 `sources_per_state` 個。trial は元素に依らない列挙器 1 つで作る: 形成の候補対は結合しておらず r ≤ Σr_vdW でグラフ上 3 結合以上離れた対。T1 移動・置換(形成 1 + 切断 1)、T2 リレー(H 移動 2 つの連鎖)、T3 形成だけ、T4 切断(開殻か電荷系だけ)を順に巡回し、出発点あたり `max_trials_per_source` 件。変化後の結合数が元素の最大配位数を超える drive は作らず、原子クラスと距離が同じ drive は 1 件にする。各 trial で NT2 を 1 回(AFIR は過去の実 run の 65 件がすべて陰性で生成物 0 だったので削除)。IRC のどちらの端も source の添字付き結合を持たないときは、source と同じ状態ラベルで basin RMSD ≤ 0.05 Å の端を source の添字置換像とみなし、他端と TS を source の添字・座標系へ運ぶ。単位は並列に走らせ、入力順に記録する。採否は `discovery_verdict`。残した生成物は同じ組成の screen 極小と既出の生成物に状態ラベルと置換不変 RMSD で 1 回だけ同定し、新しい basin だけを species にする(縮退の生成物は添字付きの結合の一致も要る)。screen で失われた seed の状態(同じ組成の screen 極小にそのラベルがない)は、組成 × 状態ラベルごとに 1 件の `relaxation` 生成物(低レベルエネルギー最小の seed、なければ species id 順、未緩和)にする。minima はそれを `spc_<discovery_id>` として最後に未緩和の構造から xTB の初期 Hessian なしで 1 回 opt し(seed は xTB の停留点ではない)、別の状態に落ちたら diagnostics に `collapsed_at_dft_from_seed` と書く(barrierless とは呼ばない)。状態を保てば seed の basin → 崩壊先の basin を仮説にする(結合変化・窓・`max_per_composition` は他と同じ、TS なし)。ReaDuct の `spin_mode` は `restricted_open_shell` |
-| minima(dft) | 選択 `window`: 組成 × 状態ラベルごとに `window_kcal` 以内の `per_state` 構造 + explore の生成物 + 入力単量体の最低構造(`rerank_sp` なら上位 `rerank_top` 構造を DFT SP で並べ直してから同じ窓で切る)。`all` は入力の化学種全部。opt は初期 Hessian なしなら `trust 0.1`、ありなら `trust 0.3`、maxiter 100。2 断片以上は `init_hessian` の xTB Hessian を使う |
-| 仮説 | 優先順は宣言反応 → explore の生成物(低レベル TS を優先)→ mode-follow の TS 候補。宣言反応は必ず評価する。それ以外は同じレベルの DFT 極小の対(または 1 つの basin)で、ΔE_rxn ≤ reaction_window_kcal、端点の間で結合が変わるものだけ(組成あたり 6 件まで)。未宣言のねじれ・配座変化・鏡像化は仮説にしない(Curtin–Hammett)。両端が同じ basin の発見は、結合の相手が入れ替わるときだけ縮退反応にする。DFT 段の mode-follow の鞍点は `ts_calc` として同じ basin の対(宣言反応を含む)に貸す。縮退・結合変化・ねじれは basin の最適化構造を端点の原子順と掌性に並べた構造で判定する。explore の陰性結果は仮説を棄却しない |
+| structures | 化学種は xyz と SMILES のちょうど一方。SMILES は RDKit ETKDG の 1 配座(同位体と `'.'` は不可)。宣言反応の端点は xyz(SMILES では原子の対応と配座が決まらない)で、両端の組成・電荷・多重度と原子順序が一致すること。化学種の元素・電荷・多重度はここで 1 回だけ検査する(範囲外の元素は `unsupported_element`、d ブロック元素を含む化学種で未宣言なら `declare_multiplicity`、電子数とのパリティ違いは `INPUT_INVALID`)。組成は conformers の入口で決める: 電荷は成分の和、多重度は宣言値かスピン結合で 1 つに決まる値(決まらなければ `declare_multiplicity`、開殻の成分から多重度 1 を作る宣言は `open_shell_singlet_unsupported`) |
+| conformers | 単量体: `crest --gfn2 --quick -T <n> --ewin 6 --chrg --uhf`(重原子 3 個以下で回転可能結合のない分子は省く)。トポロジー変化で止まったら停止構造を残し、そこから 1 回だけ再実行する。組成: 受容原子の lone-pair 円錐に極性 H を置く seed(donor / 受容原子がなければ vdW 接触 + 0.5 Å の剛体配置)を `seeds_per_composition` 個作り、先頭の seed から `--nci --quick --notopo <全原子> --noopt` で探索する(状態は hfauto の状態ラベルが決め、CREST はサンプリングだけを行う。`--noopt` は CREST 3.0.2 の初期トポロジー検査が `--notopo` を見ないため)。CREST が失敗した組成は seed をそのまま出す。CREST 3.0.2 が失敗するのは GFN2 に錯体の極小がない組成(障壁のない会合・引き抜き。CH3·O2 は rc −11、OH·CH4 は MTD が収束せず rc 1)と SCC が収束しない組成で、開殻そのものは原因ではない(六重項の FeCl3·CH4 は rc 0)。選抜は状態ラベルごとに GFN2 エネルギーの低い `keep_per_state` 個。CREST は attempt ディレクトリで `--scratch` なしに実行する |
+| minima(screen) | xTB `--opt vtight` → `--hess`、mode-follow 最大 2 サイクル。状態ラベルが変わった seed は落ちた basin の members に記録する(失われた状態は explore の `relaxation` が DFT に 1 回問う) |
+| explore | 出発点は組成 × 状態ラベルごとの screen 最低 `sources_per_state` 個。trial は元素に依らない列挙器 1 つで作る: 形成の候補対は結合しておらず r ≤ Σr_vdW でグラフ上 3 結合以上離れた対。T1 移動・置換(形成 1 + 切断 1)、T2 リレー(H 移動 2 つの連鎖)、T3 形成だけ、T4 切断(開殻か電荷系だけ)を順に巡回し、出発点あたり `max_trials_per_source` 件。変化後の結合数が元素の最大配位数を超える drive は作らず、原子クラスと距離が同じ drive は 1 件にする。各 trial で NT2 を 1 回(AFIR は生成物を残さなかったので削除した。[validation.md](validation.md) §6)。IRC のどちらの端も source の添字付き結合を持たないときは、source と同じ状態ラベルで basin RMSD ≤ 0.05 Å の端を source の添字置換像とみなし、他端と TS を source の添字・座標系へ運ぶ。単位は並列に走らせ、入力順に記録する。採否は `discovery_verdict`。残した生成物は同じ組成の screen 極小と既出の生成物に状態ラベルと置換不変 RMSD で 1 回だけ同定し、新しい basin だけを species にする(縮退の生成物は添字付きの結合の一致も要る)。screen で失われた seed の状態(同じ組成の screen 極小にそのラベルがない)は、組成 × 状態ラベルごとに 1 件の `relaxation` 生成物(低レベルエネルギー最小の seed、なければ species id 順、未緩和)にする。minima はそれを `spc_<discovery_id>` として最後に未緩和の構造から xTB の初期 Hessian なしで 1 回 opt し(seed は xTB の停留点ではない)、別の状態に落ちたら diagnostics に `collapsed_at_dft_from_seed` と書く(barrierless とは呼ばない。障壁なしと言えるのは DFT のプロファイル(行 6)だけである)。状態を保てば seed の basin → 崩壊先の basin を仮説にする(結合変化・窓・`max_per_composition` は他と同じ、TS なし)。ReaDuct の `spin_mode` は `restricted_open_shell` |
+| minima(dft) | 選択 `window`: 反応する組成(宣言反応の端点、発見の出発点と生成物、それらの錯体の単量体 = `thermo.monomer_states`)だけを、組成 × 状態ラベルごとに `window_kcal` 以内の `per_state` 構造で DFT にかける(発見の出発点・生成物と relaxation の seed は必ず含む)。ほかの組成は diagnostics に `not_reacting`。その代償に、反応のない組成は DFT 極小も DFT の mode-follow の発見も持たない(VAL・FINAL・SC でそうした発見は 0 件)。`rerank_sp` は候補が `per_state` を超える組(組成 × 状態)だけ、上位 `rerank_top` 構造を DFT SP で並べ直してから同じ窓で切る。`all` は入力の化学種全部。opt は初期 Hessian なしなら `trust 0.1`、ありなら `trust 0.3`、maxiter 100。2 断片以上は `init_hessian` の xTB Hessian を使う(relaxation の seed を除く) |
+| 仮説 | 優先順は宣言反応 → explore の生成物(低レベル TS を優先)→ mode-follow の TS 候補。宣言反応は必ず評価する。それ以外は同じレベルの DFT 極小の対(または 1 つの basin)で、ΔE_rxn ≤ reaction_window_kcal、端点の間で結合が変わるものだけ(組成あたり 6 件まで)。未宣言のねじれ・配座変化・鏡像化は仮説にしない(Curtin–Hammett)。両端が同じ basin の発見は、結合の相手が入れ替わるときだけ縮退反応にする。DFT 段の mode-follow の鞍点は `ts_calc` として同じ basin の対(宣言反応を含む)に貸す。縮退・結合変化・ねじれは basin の最適化構造を端点の原子順と掌性に並べた構造で判定する。explore の陰性結果は仮説を棄却しない(GFN2 で障壁がなく発見にならない反応も、宣言すれば評価する) |
 | reaction-paths | saddle は `trust 0.1`、`sadstp 0.1`、maxiter 50、`inhess 2`、`moddir 1`(整えた Hessian の負のモード)。maxiter は継続せず、最終フレームを持つ `Failure` を返す。ZTS は `nbeads 9`、`stepsize 0.05`、`interpol 3`、`freeze1` / `freezeN`、maxiter 20 のチャンクで、NWChem の収束判定は使わない。`pysis_neb` は IDPP を初期経路とする Cartesian の CI-NEB(`opt: lbfgs`、max_cycles 100)と rsprfo の TSOpt。QRC の振幅の上限 0.4 Å は初期 Hessian を受け付ける距離 0.5 Å 以下にする |
 | sp | `methods` の各 LOT で、順位に使う点だけを計算する: 順位を付けられる outcome の反応の TS、その反応物・生成物と同じ状態の DFT 極小すべて、組成の単量体の状態の DFT 極小。freq の最終構造で計算し、parents に対象(minimum_id か TS の freq calc)を書く。thermo と手法パネルはこの parents だけで SP と停留点を対応付ける。CCSD(T) は閉殻が RHF の ccsd モジュール、開殻が ROHF 参照の TCE(`2eorb 2emet 13`)。`freeze atomic` は ECP 原子の軌道を凍結しない |
-| thermo | GoodVibes 4.3.0 に自前の振動数を渡す。H は RRHO、S は Grimme の qRRHO(`qs`、`cutoff_cm1` 100)。対称数は pymsym(libmsym)の点群から、等価判定のしきい値を既定の 5e-4 から 2e-3 に緩めて求める(最適化の終点のわずかなずれで C3v が Cs になるのを防ぐ)。スケール因子は `vib_scale` の 1 つ(既定 1.0、振動数と ZPE の両方)。負モードは固定の規則: 極小は全モードを \|ν\| に、TS は最低モードを除いて \|ν\| にする。キラルな極小と TS の G に −RT ln 2 を加える(鏡像対は 1 つの basin で m = 2。σ の比は対称数で入る)。種の値は 1 atm で、反応は `standard_states` ごとに換算する。状態の G は、その状態の極小のうち錯体(または基準)と同じ LOT で spin_contaminated でないものの最小の G で、反応物・生成物と会合量の単量体で同じ定義(LOT 判定は `same_pes(state=False)`)。感度の幅は qs × cutoff 50/100/150。G がなければ `thermo_unavailable`、LOT の不一致は `mixed_level_of_theory`。トンネル補正はない |
+| thermo | GoodVibes 4.3.0 に自前の振動数を渡す。H は RRHO、S は Grimme の qRRHO(`qs`、`cutoff_cm1` 100)。対称数は pymsym 0.3.5(libmsym)の点群から、等価判定のしきい値を既定の 5e-4 から 2e-3 に緩めて求める(最適化の終点のわずかなずれで C3v が Cs になるのを防ぐ)。スケール因子は `vib_scale` の 1 つ(既定 1.0、振動数と ZPE の両方)。負モードは固定の規則: 極小は全モードを \|ν\| に、TS は最低モードを除いて \|ν\| にする。キラルな極小と TS の G に −RT ln 2 を加える(鏡像対は 1 つの basin で m = 2。σ の比は対称数で入る)。種の値は 1 atm で、反応は `standard_states` ごとに換算する。状態の G は、その状態の極小のうち錯体(または基準)と同じ LOT で spin_contaminated でないものの最小の G で、反応物・生成物と会合量の単量体で同じ定義(LOT 判定は `same_pes(state=False)`)。感度の幅は qs × cutoff 50/100/150。G がなければ `thermo_unavailable`、LOT の不一致は `mixed_level_of_theory`。トンネル補正はない |
 | report | rankable な反応を δG_eff で並べ、感度の幅が重なれば同順位。(T, 標準状態) は report の `T_K`・`standard_state`、なければ thermo の最初の組。ranking.csv の列は rank、reaction_id、outcome、tier、rankable、T_K、standard_state、energy_level、dG_eff_kcal、band_low_kcal、band_high_kcal、dG_act_kcal、dG_rxn_kcal、dG_act_vs_separated_kcal、torsional(結合変化のない段)、blockers、notes。エネルギーが 2 つ以上の LOT にあれば `dE_act_panel_min_kcal`・`dE_act_panel_max_kcal` を足す(手法の幅は列で示し、順位は止めない)。coverage.csv は機構別の試行・生成物・陰性理由・FailureKind |
 
-結合と状態(`chemistry/topology.py`): 結合は r < r_cov,i + r_cov,j + 0.4 Å(Cordero の共有結合半径)で 1 つの構造だけから決め、`bond_changes` は結合集合の差で向きに対称である。状態ラベルは断片の組成式と WL ハッシュ。FHF⁻ と I3⁻ は 1 断片、ハロゲン結合(I···N 2.8 Å)は非結合。イオン–双極子錯体は許容値の内側なら 1 断片になり、GFN2 の強い H 結合錯体は閾値の近くでラベルが分かれうる(DFT 極小には影響しない)。
+結合と状態(`hfauto/chemistry/topology.py`): 結合は r < r_cov,i + r_cov,j + 0.4 Å(Cordero の共有結合半径)で 1 つの構造だけから決め、`bond_changes` は結合集合の差で向きに対称である。状態ラベルは断片の組成式と WL ハッシュ。FHF⁻ と I3⁻ は 1 断片、ハロゲン結合(I···N 2.8 Å)は非結合。イオン–双極子錯体は許容値の内側なら 1 断片になり、GFN2 の強い H 結合錯体は閾値の近くでラベルが分かれうる(DFT 極小には影響しない)。
 
 ### 7.2 順位の量 δG_eff
 
@@ -187,7 +188,7 @@ action:
 
 ### 7.3 エネルギー層と手法パネル
 
-既定の順位は停留点レベル(PBE0-D3BJ/def2-SVPD)の G で付ける。エネルギー層(composite G = E_SP + (G_GV − E_GV))は、既存の run に `method_panel` を `--run-dir` で追記して使う: panel_sp → panel_thermo(`energy_method` = 参照手法)→ panel_report。thermo の結果の id は stage id を含まないので、追記した層が元の thermo の値を上書きし、ranking.csv の `energy_level` 列に並べた層が出る。元の値を残したいときは run ディレクトリを複製してから追記する(`cp -a`)。SP の対象は単量体を含むので ΔG_assoc も同じ層で出る。エネルギー層の SP がない対象は `energy_layer_missing`(G = None)で、その SP にも `spin_ok` をかける。
+既定の順位は停留点レベル(PBE0-D3BJ/def2-SVPD)の G で付ける。エネルギー層(composite G = E_SP + (G_GV − E_GV))は、既存の run に `method_panel` を `--run-dir` で追記して使う: panel_sp → panel_thermo(`energy_method` = 参照手法)→ panel_report。thermo の結果の id は stage id を含まないので、追記した層が同じ (T, 標準状態) の元の thermo の値を置き換え、ranking.csv の `energy_level` 列に並べた層が出る。元の値を残したいときは run ディレクトリを複製してから追記する(`cp -a`)。SP の対象は単量体を含むので ΔG_assoc も同じ層で出る。エネルギー層の SP がない対象は `energy_layer_missing`(G = None)で、その SP にも `spin_ok` をかける。
 
 - ωB97X-D3/def2-TZVPD は閉殻 4 系中 3 系で CCSD(T) に近い(平均絶対誤差 2.1 → 1.3 kcal/mol)が、17 原子の SP が 1 点 29 分かかるので既定の pipeline には入れない。
 - CCSD(T)/def2-TZVPD は重原子約 4 個までの分子で `methods` に足して `energy_method` にする(5 個では (T) が 1,200 MB/rank で配列を確保できない)。多参照性のゲートはない。
@@ -195,7 +196,7 @@ action:
 ### 7.4 結果の読み方
 
 - 停留点レベルを def2-SVPD にしたのは、FHF⁻ の De が拡散関数のない SVP では 21.7 kcal/mol 過大になるが SVPD では実験値の誤差内に入るからである。
-- PBE0 の障壁の系統誤差は反応クラスで違う(平均符号付き誤差: H 移動 −4.2、重原子移動 −6.6、求核置換 −1.9 kcal/mol。Zhao & Truhlar, J. Phys. Chem. A 109, 2012 (2005))。CCSD(T)/def2-TZVPD(SVPD 構造での SP)との差の実測は HCN −1.2、HONO +2.0、SN2 −3.0 kcal/mol。順位は δG_eff の序数として読み、反応クラスが混ざるときは数 kcal/mol 未満の差の順序は入れ替わり得る。
+- PBE0 の障壁の系統誤差は反応クラスで違う(平均符号付き誤差: H 移動 −4.2、重原子移動 −6.6、求核置換 −1.9 kcal/mol。Zhao & Truhlar, J. Phys. Chem. A 109, 2012 (2005))。CCSD(T)/def2-TZVPD(SVPD 構造での SP)との差の実測は HCN −1.2、HONO +2.0、SN2 −3.0 kcal/mol。OH + CH4 の H 引き抜きは分離反応物基準の ΔE‡ が 0.79 で、文献の約 5 を大きく下回る。順位は δG_eff の序数として読み、反応クラスが混ざるときは数 kcal/mol 未満の差の順序は入れ替わり得る。
 - SCREEN・FIND_PATH の barrierless は停留点レベルの PES 上の判定で、エネルギー層では確かめない。
 - 電荷系では PBE0 の非局在化誤差で電荷の広がった TS・錯体が低く出やすく、D3 は電荷に依らない。電荷系の障壁と ΔG_assoc はエネルギー層で確かめる。
 - ΔG_assoc は BSSE を補正しない値で、結合を過大に見積もることがある。qRRHO の扱いによる幅は 298 K で約 1.2 kcal/mol(TMA·(HF)₂)。
@@ -203,12 +204,12 @@ action:
 
 ## 8. 実行基盤
 
-- **JobStore**(`execution/jobstore.py`): run ごとの内容アドレス型キャッシュで、`<run>/jobs/<k[:2]>/<key>/` に job.json、result.json、attempt_NN/ を置く。キーは正規化 JSON {engine, version_pin, kind, key_payload} の sha256 で、結果を変える入力(method、構造の指紋、パラメータ、入力ファイルの sha)をすべて含み、`ExecutionSpec`(ranks、メモリ、timeout、パス)は含めない。再利用時はファイルの sha を照合する。終端的な失敗も記録し、`--retry-failed` で指定した種類だけを再実行する。キーにコードの版数は入らないので、パーサを直した後は `--retry-failed incomplete_output` で取り直す。
-- **ladder**(`execution/jobs.py` の `LADDER`。これ以外の自動再試行はない): timeout と geometry_maxiter は最新構造からの継続を 2 回まで(saddle の maxiter は継続しない)、input_invalid(autoz)は Cartesian で 1 回、scf_not_converged は閉殻 DFT の `cgmin` か WFT の再開で 1 回(開殻 DFT はなし)。attempt の timeout は min(設定値, 予算の残り) で、残りが 60 s 未満なら `budget_exhausted`。
+- **JobStore**(`hfauto/execution/jobstore.py`): run ごとの内容アドレス型キャッシュで、`<run>/jobs/<k[:2]>/<key>/` に job.json、result.json、attempt_NN/ を置く。キーは正規化 JSON {engine, version_pin, kind, key_payload} の sha256 で、結果を変える入力(method、構造の指紋、パラメータ、入力ファイルの sha)をすべて含み、`ExecutionSpec`(ranks、メモリ、timeout、パス)は含めない。再利用時はファイルの sha を照合する。終端的な失敗も記録し、`--retry-failed` で指定した種類だけを再実行する。キーにコードの版数は入らないので、パーサを直した後は `--retry-failed incomplete_output` で取り直す。
+- **ladder**(`hfauto/execution/jobs.py` の `LADDER`。これ以外の自動再試行はない): timeout と geometry_maxiter は最新構造からの継続を 2 回まで(saddle の maxiter は継続しない)、input_invalid(autoz)は Cartesian で 1 回、scf_not_converged は閉殻 DFT の `cgmin` か WFT の再開で 1 回(開殻 DFT はなし)。attempt の timeout は min(設定値, 予算の残り) で、残りが 60 s 未満なら `budget_exhausted`。
 - **失敗の閉じ込め**: `adapter.parse` の例外はそのジョブの `Failure(incomplete_output, 'parse:<型>: <1 行目>')` になる。反応ケースの例外はそのケースを unresolved(`error:<型>`)にし、log.jsonl に 1 行書いてほかのケースを続ける。消費する型の入力がない stage は 0 artifact で done になり、上流の失敗を warning に出して後続の stage(report を含む)へ進む。`HFAUTO_STRICT=1`(テスト専用、`tests/conftest.py`)は前 2 つを再送出にする。
-- **並行実行**: `JobRunner` のセマフォで実行中のジョブの ranks × threads の合計を site の `cores` 以下に保つ。同時に走るジョブの数はこれだけで決まる。極小(xTB と DFT)と反応ケースは直列(Registry の決定性のため)、CREST と explore の単位は `thread_map` で並列(結果は入力順)。`SiteLock`(`<scratch_root>/.hfauto_site.lock`)は `hfauto run` の間ずっと保持し、別の run の同時起動を拒否する。
+- **並行実行**: `JobRunner` のセマフォで実行中のジョブの ranks × threads の合計を site の `cores` 以下に保つ。CREST と explore の単位は `thread_map` で並列(結果は入力順)。反応ケースは直列だが、ケースの中の独立な NWChem ジョブ(SCREEN の内部 9 点と barrierless の中点 2 点の SP、非対称な QRC の両側)は `CaseRuntime.map`(`thread_map`)で同時に走らせる。項目は `cores` 個ずつの波で走り、各項目は cores // (その波の項目数) の MPI rank を使い(4 コアで 9 点の SP は 4×1、4×1、1×4)、timeout は同じ倍率で延ばす。rank を減らした NWChem は mpirun に `--bind-to none` を付けて走らせる(Open MPI 5 は np ≤ 2 の mpirun をすべてコア 0 に束ねる)。rank は `ExecutionSpec` なので鍵に入らず、同じ鍵のエネルギーは直列と 1e-8 Eh 以内で一致する。極小の stage(xTB と DFT)と mode-follow のような直列の連鎖は全 rank のまま直列にする(大きさの違う化学種に同じ rank を割ると遅くなる。validation.md §5)。`SiteLock`(`<scratch_root>/.hfauto_site.lock`)は `hfauto run` の間ずっと保持し、別の run の同時起動を拒否する。
 - **シグナル**: `run_command` は外部プログラムを新しいセッションで起動して登録する。`hfauto run` は SIGINT・SIGTERM・SIGHUP を受けると(POSIX)登録済みのプロセスグループをすべて止め、実行中の stage を failed と記録して 128 + signum で終わる。止めたジョブは JobStore に残らないので、再開すると取り直す。
-- **run ディレクトリ**: `<run>/<stage_id>/manifest.json`、`<run>/<stage_id>/cases/`、`<run>/run_state.json`(実行順の stage 状態とジョブの統計)、`<run>/resolved_config.yaml`(設定と code_version = git の sha、差分があれば -dirty)。stage の入力 view は、run_state でその stage より前にある done の manifest を実行順に合わせたもの(別の pipeline を同じ run に追記できる)。done で入力と設定の sha が変わらない stage は飛ばし(再開)、`--from X` は X 以降を取り直す。
+- **run ディレクトリ**: `<run>/<stage_id>/manifest.json`、`<run>/<stage_id>/cases/`、`<run>/run_state.json`(実行順の stage 状態とジョブの統計)、`<run>/resolved_config.yaml`(設定と code_version = git の sha、差分があれば -dirty)。stage の入力 view は、run_state でその stage より前にある done の manifest を実行順に合わせたもの(別の pipeline を同じ run に追記できる)。done で入力と設定の sha が変わらない stage は飛ばし(再開)、`--from X` は X 以降を取り直す。記録の型は未知のフィールドを拒否する(`extra="forbid"`)ので、round 7 より前の run は再開も `--from` もできない。新しい run dir で流し直す。
 
 ## 9. 設定
 

@@ -7,8 +7,8 @@ halogen with a lone pair left) on the other, the H sits on the acceptor's lone-p
 Otherwise the guest is placed as a rigid body in a random orientation at van der Waals
 contact + 0.5 Å. All directions are taken in molecule-fixed frames, so seeds do not depend
 on the input orientation. Three or more fragments are stacked one at a time. CREST ``--nci``
-samples from seed00; the seeds themselves are the output when CREST fails (open-shell
-compositions), and there the H-bond cone keeps complex states that rigid contact seeds lose in
+samples from seed00; the seeds themselves are the output when CREST fails (no GFN2 minimum
+complex or an SCC failure), and there the H-bond cone keeps complex states that rigid contact seeds lose in
 the xTB screen.
 """
 

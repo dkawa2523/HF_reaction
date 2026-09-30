@@ -13,7 +13,8 @@
 | CREST | 3.0.2 | 公式バイナリを `/home/user/.local/opt/crest-3.0.2` に置く | `crest --version`(doctor) |
 | pysisyphus | 1.0 | production extra。xTB ネイティブ計算器の CI-NEB(`pysis_neb`)だけに使う | worker の import(doctor)。pin は xTB の版数 |
 | SCINE ReaDuct | 6.1.0(scine-xtb-wrapper 3.0.2) | production extra | worker の import(doctor) |
-| GoodVibes | 4.3.0(対称数に pymsym。0.3.5 に固定し、WSL の pytest が照合) | production extra。thermo stage が同じプロセスで呼ぶ | `hfauto run` の preflight が thermo を含む pipeline で照合する |
+| GoodVibes | 4.3.0 | production extra。thermo stage が同じプロセスで呼ぶ | `hfauto run` の preflight が thermo を含む pipeline で照合する |
+| pymsym | 0.3.5(対称数 σ の libmsym) | production extra で `pymsym==0.3.5` に固定。入れ直さない(別の libmsym のビルドは σ を変えうる) | `importlib.metadata.version('pymsym')`(WSL の既定テストが照合) |
 
 production extra(`pyproject.toml`)は Linux・CPython 3.12 のときだけ入り、rdkit、numba、llvmlite と、scine_utilities が宣言せずに使う setuptools を含む。本体の依存は pydantic、typer、PyYAML、rich、numpy、scipy だけである。外部プログラムを conda でそろえる場合は `environment.production.yml` を使う。
 
@@ -35,14 +36,14 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 | 項目 | 設定 |
 |---|---|
 | `.wslconfig` | `C:\Users\user\.wslconfig` に `processors=4`、`memory=12GB`、`swap=2GB`(WSL から 4 vCPU・約 11.9 GB)。site は `cores: 4` |
-| scratch | ext4 上の `/home/user/hfauto_scratch`(NWChem は `.../nwchem`)。`/mnt/<ドライブ>` 上の scratch は preflight が拒否する。`/tmp` も使わない |
+| scratch | ext4 上の `/home/user/hfauto_scratch`(NWChem は `/home/user/hfauto_scratch/nwchem`)。`/mnt/<ドライブ>` 上の scratch は preflight が拒否する。`/tmp` も使わない |
 | run ディレクトリ | `--run-dir` で ext4 上に置く(例 `/home/user/hfauto_runs/<run>`)。省略するとリポジトリ内の `runs/<system_id>_<pipeline_id>` になる |
-| NWChem | 4 rank × `memory_mb_per_rank` 1,200 MB、`timeout_s` 14,400。ranks × メモリの合計は MemTotal の 0.8 倍以下にする。`OMP_NUM_THREADS=1`(MPI rank で並列化) |
+| NWChem | 4 rank × `memory_mb_per_rank` 1,200 MB、`timeout_s` 14,400。ranks × メモリの合計は MemTotal の 0.8 倍以下にする。`OMP_NUM_THREADS=1`(MPI rank で並列化)。反応ケースの中で同時に走る SP・QRC の側は rank を分け合い(cores // 同時の数)、timeout を同じ倍率で延ばし、mpirun に `--bind-to none` を付ける |
 | xTB・CREST・ReaDuct | `OMP_NUM_THREADS=<threads>,1`、`OMP_STACKSIZE=4G`(アダプタが設定する)。CREST の `-T` は site の `engines.crest.execution.threads`(4)から決まる |
-| コア数 | 実行中のジョブの ranks × threads の合計を `cores` 以下に保つ(`JobRunner` のセマフォ) |
+| コア数 | 実行中のジョブの ranks × threads の合計を `cores` 以下に保つ(`JobRunner` のセマフォ)。極小の stage は全 rank で直列 |
 | 系のサイズ | 4 コア・def2-SVPD では解析 freq が約 35 原子でジョブの timeout(4 h)に達し、途中継続がないので全損する。大きな系は ranks を増やす |
-| シグナル | `hfauto run` は SIGTERM・SIGHUP で外部プログラム(NWChem の MPI ランクを含むプロセスグループ)を止め、128 + signum で終わる。SIGKILL は捕まえられないので、`timeout` は既定の SIGTERM で使い(`-s KILL` にしない)、スケジューラの SIGTERM から SIGKILL までの猶予(Slurm の KillWait)は数秒以上にする |
-| SiteLock | `hfauto run` は実行中ずっと `<scratch_root>/.hfauto_site.lock` を保持し、別の run は保持者(pid、run ディレクトリ、時刻)を示して直ちに失敗する。pid が死んだロックは奪う |
+| シグナル | `hfauto run` は SIGINT・SIGTERM・SIGHUP で外部プログラム(NWChem の MPI ランクを含むプロセスグループ)を止め、128 + signum で終わる。SIGKILL は捕まえられないので、`timeout` は既定の SIGTERM で使い(`-s KILL` にしない)、スケジューラの SIGTERM から SIGKILL までの猶予(Slurm の KillWait)は数秒以上にする |
+| SiteLock | `hfauto run` は実行中ずっと `<scratch_root>/.hfauto_site.lock` を保持し、別の run は保持者(pid、run ディレクトリ、時刻)を示して直ちに失敗する。pid が死んだロックは奪う。run を止めるシグナルは hfauto の python プロセスに送る(`time` などの親だけに送ると python が残り、ロックを持ち続ける) |
 
 `.wslconfig` を 16 vCPU / 48 GB に広げたときの site の値(cores 16、NWChem 16 rank × 2,000 MB、CREST threads 4)は `configs/sites/wsl_local.yaml` のコメントにある。
 

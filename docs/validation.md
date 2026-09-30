@@ -1,129 +1,174 @@
 # 実計算による検証の記録
 
-計算基盤の改良(`docs/reviews/2026-09-27_platform_review.md`、以下レビュー)の M0〜M5・S-A〜S-D・FINAL を終えたコードで、レビュー §6.1 の検証セットを 1 回ずつ流した記録である。改良の途中の段ごとの実測、v3〜v5 と W7 の記録は git の履歴(`git show 496fad0:docs/validation.md`)にある。
+round 7 の改良(W0〜W5、結果報告 [2026-09-30_round7_result.md](reviews/2026-09-30_round7_result.md))の実計算の記録である。検証セットはレビュー `docs/reviews/2026-09-27_platform_review.md` §6 と、round 7 で足した分岐用の系。round 6 までの記録(VAL を含む)は git の履歴(`git show f2309b9:docs/validation.md`)にある。
 
 ## 1. 条件
 
-- コード: `496fad0` と、この検証で直した対称数の修正(§4)。修正は S2 の後に入れたので、S20 CH3O• 以降の run は修正後のコードで流し、それより前の順位の付く run は修正後のコードで thermo だけを取り直した(§4)。
-- 環境: WSL2 Ubuntu(4 vCPU / 11 GB)、`configs/sites/wsl_local.yaml`(NWChem 7.2.3 を 4 rank × 1,200 MB、xTB 6.7.1、CREST 3.0.2、SCINE ReaDuct 6.1.0、pysisyphus 1.0、GoodVibes 4.3.0 と pymsym)。
-- 手法: 停留点と振動は PBE0-D3BJ/def2-SVPD(Te・I は def2-ECP)、低レベルは GFN2-xTB。ΔG は 298.15 K、1 atm(S19 を除く)。順位の量は δG_eff。
-- run: WSL の `/home/user/hfauto_r6/VAL/runs/<run>`(すべて新しい run dir を 1 本ずつ直列)。スクリプトは同じ場所の `chain.sh`・`runcase.sh`・`ho_harness.py`(S11)。configs の外の入力(S5・S9 の多重度を外した system、S19 の条件、S20 の CCSD(T) 入りのパネル)は `/home/user/hfauto_r6/VAL/outside`。
-- 時間は `/usr/bin/time` の壁時計。上限は `timeout` の 3,600 s(S16・S19 は 5,400 s)で、打ち切った run はない。smoke から S16 までの直列の合計は 4:11(S16 1:31、S19 0:31、S10 0:22)。
-- 合否: レビュー §6 のとおり、終了コード、電子数と Level の照合、⟨S²⟩、outcome、既知の数値(以前の段の値)で判定する。文献値は PBE0/SVPD の誤差を含むので参考にとどめる。終了コード 1 は「failed の artifact がある」の意味で、一部の seed の失敗を含む S5・S6 の discover ではそれ自体を不合格にしない。
+- コード: 各 wave の作業ツリー(W1 = `707e656`、W2 = `26389e3`、W3 = `2eaaf53`、W4 = `c5b515e` でコミットしたもの)。VAL7 は W5 の作業ツリー(W4 に挙動を変えない削除だけを足したもの)で、§6 の全体と round 7 の系を `/home/user/hfauto_r7/VAL7` に流し直した(`/home/user/hfauto_r7/VAL7/chain.sh`、比較は `/home/user/hfauto_r7/VAL7/val7check.py` と `/home/user/hfauto_r7/VAL7/val7walls.py`)。数値の比較先 VAL は round 6 の検証(`/home/user/hfauto_r6/VAL/runs`、コード `d5fd24c`)。
+- 環境: WSL2 Ubuntu(4 vCPU / 11 GB)、`configs/sites/wsl_local.yaml`(NWChem 7.2.3 を 4 rank × 1,200 MB、xTB 6.7.1、CREST 3.0.2、SCINE ReaDuct 6.1.0、pysisyphus 1.0、GoodVibes 4.3.0、pymsym 0.3.5)。
+- 手法: 停留点と振動は PBE0-D3BJ/def2-SVPD(I は def2-ECP)、低レベルは GFN2-xTB。298.15 K・1 atm、順位の量は δG_eff(kcal/mol)。
+- run: `/home/user/hfauto_r7/<wave>/<run>` に新しい run dir で 1 本ずつ直列(`/home/user/hfauto_r7/runcase.sh`。`/usr/bin/time -v`、終了後の孤児プロセス検査、status と report)。記録の型が変わったので round 6 の run は再開せず、VAL との比較は生の JSON と xyz だけを読む。QM 時間は一意のジョブ鍵ごとの秒数(`/home/user/hfauto_r7/tools/jobtime.py`)。GNU timeout は負荷の下で約 5.5% 遅れて発火する。
+- 一時 pipeline(`/home/user/hfauto_r7/pipelines/`):
+  - `known_endpoints_noscreen`: known_endpoints から reaction-paths の `screen:` を外したもの(行 12 がなく、FIND_PATH が string を走らせる)。
+  - `known_endpoints_walltime`: known_endpoints の reaction-paths に `policy: {walltime_h: 0.01}` を足したもの(行 7 の予算の仕組みだけを見る)。
+- 合否: 終了コード、outcome、⟨S²⟩、既知の数値(VAL)からの差 0.01 kcal/mol 以内(意図した変化を除く)。新しい系の期待値は、DFT プローブ(`/home/user/hfauto_r7/W1/probe`、pipeline と同じ Level)で状態を確かめてから system の見出しに書いた。期待の分岐に入らなかった run は未達として記録し、期待や閾値は動かしていない。
 
 ## 2. 実計算で通した範囲
 
-| 項目 | DFT(PBE0/SVPD)まで通したもの | 低レベル(xTB・CREST・ReaDuct)だけ |
+| 項目 | DFT(PBE0/SVPD)まで通したもの | 低レベルだけ |
 |---|---|---|
-| 元素 | H、C、N、O、F、Cl、I(ECP)、Te(ECP) | S(SO2·NMe3)、Fe(FeCl3·CH4) |
+| 元素 | H、C、N、O、F、Cl、I(ECP)。Te(ECP、VAL7/s3_h2te) | S(SO2·NMe3)。Fe(FeCl3·CH4、VAL7/s9_conformers) |
 | 電荷 | 0、−1(Cl⁻・I⁻ の SN2) | — |
-| スピン | 一重項、二重項(CH3O•、H + H2、CH3•)、三重項(O2 の極小) | 二重項の錯体(CH3·O2、OH·CH4)、六重項(Fe、宣言が必須) |
-| 反応型 | 1,2-H 移動(HCN、CH3O•)、ねじれ異性化(HONO)、1,3-H 移動(HONO → HNO2)、縮退転位(NH3 反転、H2O2 と DME のねじれ、マロンアルデヒドと acac の PT、Cl・I の恒等 SN2、H + H2 と NH3·HF の H 交換、(HF)₂ の入れ替え)、会合(TMA·(HF)₂、同一 basin) | H 引き抜き(OH + CH4)、ハロゲン結合(NH3···ICl)、配位付加体(SO2·NMe3)、ラジカル会合(CH3 + O2) |
-| エネルギー層 | PBE0/TZVPD、ωB97X-D3/TZVPD、閉殻 CCSD(T)、ROHF-CCSD(T)(いずれも def2-TZVPD の SP) | — |
+| スピン | 一重項、二重項(CH3O•、H + H2、OH···CH4)、三重項(O2) | — |
+| 反応型 | 1,2-H 移動(HCN、CH3O•、HCOH → H2CO)、ねじれ(HONO、シュウ酸の 2 段)、1,3-H 移動、縮退転位(NH3、DME、H2O2、PT、恒等 SN2、H 交換、(HF)₂)、H 引き抜き(OH···CH4 → CH3···H2O)、障壁なし(H2O·HF の反転、水二量体の受容体交換)、会合(TMA·(HF)₂) | ラジカル会合(CH3 + O2 → CH3OO•、UKS 参照がスピン汚染で結論なし)、ハロゲン結合、配位付加体 |
 
-通していないもの: 陽イオン、−2 以下の陰イオン、遷移金属の DFT、開殻一重項(broken-symmetry は対象外)、溶媒(気相だけが対象)。
+通していないもの: 陽イオン、−2 以下の陰イオン、遷移金属の DFT、開殻一重項、溶媒。
 
 ## 3. 結果
 
-判定の内訳: R1〜R4 はすべて合格。S 系 20 のうち 17 が合格、S6 は条件付き合格(引き抜きは緩和としてだけ出る)、S15 と S17 は期待した分岐(多段、BARRIERLESS)に入らなかった(どちらも結果は化学的に正しい)。S2 で見つけた対称数の不具合は直した(§4)。
+### 3.1 回帰(R1〜R4、known_endpoints)
 
-### 3.1 R1〜R4(基準値)
-
-| # | 系 | 期待(v5 と M2 以後の値) | 実測 | 時間 | 判定 |
+| # | 系 | VAL | W0〜W2 | W3・W4・VAL7 | 判定 |
 |---|---|---|---|---|---|
-| R1 | HCN → HNC(`hcn`) | `elementary_step`、ΔG‡ 42.1783 | `elementary_step`(TS −1128.5i)、ΔE‡ 46.621、δG_eff 42.1783 | 1:17 | 合格 |
-| R2 | HONO trans → cis(`hono`) | `elementary_step`、12.2265 − RT ln 2 ≈ 11.82 | `elementary_step`(−681.6i)、ΔE‡ 13.671、δG_eff 11.8158(TS はキラルで m = 2) | 3:03 | 合格 |
-| R3 | NH3 反転(`nh3_inversion`) | `degenerate_rearrangement`、3.8395 | `degenerate_rearrangement`(−757.7i)、ΔE‡ 4.260、δG_eff 3.8395 | 1:15 | 合格 |
-| R4 | 水(`water_same_basin`) | `same_basin` | `same_basin`、順位なし(blocker `outcome:same_basin`) | 0:11 | 合格 |
+| R1 | HCN → HNC | 42.1783 | 42.1783(`hcn_noscreen` の string 経由も 42.1786、TS は R1 と 1e-8 Eh 以内) | 42.1784 | 合格 |
+| R2 | HONO trans → cis | 11.8158 | 11.8158 | 11.8159 | 合格 |
+| R3 | NH3 反転 | 3.8395 | 3.8395(`nh3_planar_seed` 3.8400) | 3.8395 | 合格 |
+| R4 | 水 | same_basin | same_basin | same_basin | 合格 |
 
-### 3.2 known_endpoints の系
+VAL7 と、行 8 の修正の後の `/home/user/hfauto_r7/W5` の再実行は W4 と 1e-6 以内(W5 の壁時計はホストの別の計算で約 2 倍に伸びたので比べない)。W3 以後の差(≤ 1.2e-4)は freq の SCF を opt の vectors から始める修正(§7)による。
 
-| # | 系 | 型 | 期待 | 実測(kcal/mol) | 時間 | 判定 |
-|---|---|---|---|---|---|---|
-| S1 | Cl⁻ + CH3Cl(`sn2_cl`) | 恒等 SN2、単原子の単量体 | rc 0、degenerate、ΔE‡ 10.45、`dG_act_vs_separated` が出る(参考 −0.74) | rc 0、`degenerate_rearrangement`(−393.6i)、ΔE‡ 10.446、ΔG‡ 11.077、ΔG_assoc −5.08、`dG_act_vs_separated` +6.00 | 7:30 | 合格。解離極限基準の値は 1 atm の G で会合のエントロピー損失を含み、参考値とは基準が違う |
-| S2 | I⁻ + CH3I(`sn2_i`) | 恒等 SN2、ECP | rc 0、α 電子数が ECP と整合、Level 一致 | 全 NWChem ジョブで `I library def2-ecp`・α 30、`degenerate_rearrangement`(−307.8i)、ΔE‡ 6.553。ΔG‡ は 7.533 と出て、対称数の修正後に 6.882(§4) | 13:19 | 合格(対称数の不具合を修正) |
-| S3 | H2Te(`h2te`) | 極小のみ、Te | structures → dft → thermo が通る | 通過(`Te library def2-ecp`、E −269.20860 Eh) | 0:17 | 合格 |
-| S4 | CH3O• → CH2OH•(`ch3o_doublet`、生成物は Cs) | 二重項の 1,2-H 移動 | 宣言反応が elementary、ΔG‡ ≈ 30.6、鏡像化の偽反応がない | 宣言反応 `elementary_step`(−2015.5i)、ΔE‡ 33.012、δG_eff 30.612、⟨S²⟩ ≤ 0.76。Cs の CH2OH• は DFT で saddle になり、mode-follow が CH2OH• のねじれの縮退 case(−533.3i、δG_eff 3.878、torsional)を加えた | 14:30 | 合格。加わった case は実在のねじれで偽反応ではない |
-| S12 | DME の粗い入力(`dme_rough`) | 縮退 | `degenerate_rearrangement`、ΔE‡ ≈ 2.3 | `degenerate_rearrangement`(−226.9i)、ΔE‡ 2.330、δG_eff 1.964 | 10:04 | 合格 |
-| S13 | H2O2 g+ → g−(`h2o2_gauche`) | ねじれ、低障壁 | 接続が確定、ΔE‡ ≈ 1.15、degenerate | `degenerate_rearrangement`(−290.5i、NEB の HEI から、DFT Hessian の種)、ΔE‡ 1.147、δG_eff 1.180 | 1:38 | 合格 |
-| S14 | マロンアルデヒドの PT(`malonaldehyde`) | ZPE で沈む障壁 | note `submerged_barrier`、δG_eff は max 規則 | `degenerate_rearrangement`(−1100.2i)、ΔE‡ 2.011、ΔZPE‡ −2.402、`submerged_barrier`、δG_eff 0.0(表示用の ΔG‡ 0.250) | 16:52 | 合格 |
-| S15 | trans-HONO → HNO2(`hono_hno2`) | 多段を想定 | `multi_step` と子反応 2 本 | `elementary_step`(直接の 1,3-H 移動の TS −2088.1i)、ΔE‡ 55.316、δG_eff 52.016。cis の井戸は経路に現れず分割は起きない | 2:46 | 期待の分岐は未達。直接の TS は化学的に正しい。中間体・分割・子 case は QM なしのテストだけ |
-| S16 | acac の PT(`acac`、15 原子) | 縮退 PT、傍観者の回転 | xTB Hessian 採用、DFT Hessian 0 本、PT の TS | `degenerate_rearrangement`(−986.8i、`soft_secondary_mode`)。種の Hessian は xTB(方向との重なり 1.00)。ΔE‡ 1.980、ΔZPE‡ −2.607、ΔG‡ −0.93 で `submerged_barrier`、δG_eff 0.0。dft 1,334 s、paths 4,123 s | 1:30:57 | 合格 |
-| S17 | (HF)₂ の入れ替え(`hf_dimer_swap`) | 解像度未満の障壁 | barrierless、δG_eff = max(ΔG_rxn, 0) | `degenerate_rearrangement`(C2h の TS −227.3i)、ΔE‡ 1.256、δG_eff 1.392 | 1:35 | 期待の分岐は未達。障壁 1.26 が解像度 1.0 を超えるので BARRIERLESS にならないのが正しい |
-| S18 | H + H2(`h3_doublet`) | 二重項の引き抜き | unresolved でなく TS が得られる | `degenerate_rearrangement`(−605.7i)、⟨S²⟩ 0.750〜0.768、ΔE‡ 4.563、δG_eff 4.091(共線 H3 の真の障壁 約 9.6 は参考。PBE0 の過小評価) | 0:48 | 合格 |
+### 3.2 known_endpoints の系(W2、S1・S14・S16 は W4、すべて VAL7 で再現)
 
-### 3.3 discover の系(explore まで、または全体)
+VAL7 の δG_eff は round 7 の値と 2e-4 以内で、outcome も同じ。時間は VAL7 の壁時計。
 
-| # | 系 | 型 | 期待 | 実測 | 時間 | 判定 |
-|---|---|---|---|---|---|---|
-| S5 | CH3• + O2(`ch3_o2`) | 二重項の会合 | 多重度の宣言なしは INPUT_INVALID、m = 2 で UKS mult 2 | 宣言なし: conformers が `input_invalid`(`declare_multiplicity: candidates (2, 4)`)。宣言 2: CREST の argv に `--uhf 1`(rc −11 で失敗、開殻の組成の既知の挙動)、placement の 6 seed のうち 1 つが xTB で CH3OO•(1 断片)に結合し、5 つは xTB の収束失敗。`known_endpoints --to dft` で CH3• は m 2・⟨S²⟩ 0.7544、O2 は m 3・⟨S²⟩ 2.0096 | 0:02 / 0:04 / 0:44 | 合格 |
-| S6 | OH···CH4(`oh_ch4`) | 二重項の H 引き抜き | 引き抜きの生成物が出る | 引き抜きは GFN2 で障壁がなく、placement の seed が screen で CH3···H2O に落ちる(緩和の発見 `collapsed_to:CH3+H2O` 2 件)。CH3···H2O を出発点に 11 attempt(AFIR 3)、生成物は CH3OH + H の 2 件(ΔE‡ 31.6 / 37.8)。seed 4 本は xTB の失敗 | 0:07 | 条件付き合格。引き抜きの生成物は緩和として出るが、TS 付きの発見にはならない |
-| S7 | NH3···ICl(`nh3_icl`) | ハロゲン結合 | 2 断片、無意味な polar_h がない | 錯体 6 配座はすべて 2 断片の状態(ClI+H3N)、polar_h の drive なし。4 attempt で生成物 0 | 0:10 | 合格 |
-| S8 | SO2·NMe3(`so2_nme3`) | 配位付加体 | CREGEN が付加体を捨てない | 付加体 2 配座が CREGEN を通り、screen 極小(ラベルは 2 断片)として残る。24 attempt で生成物 0 | 1:04 | 合格 |
-| S9 | FeCl3·CH4(`fecl3_ch4`、conformers まで) | Fe、剛体配置 | 例外なし、多重度未宣言は INPUT_INVALID | 宣言なし: `species_fecl3` が `input_invalid`(`declare_multiplicity: d-block element(s) Fe`)。宣言 6: 例外なく CREST 6 配座(`CH4Cl3Fe_q0_m6`) | 0:01 / 0:30 | 合格 |
-| S10 | NH3·HF、TMA·HF(`amine_pilot2`、全体) | 二重 H 交換(縮退) | −1265i の drive が 1 件、product になり縮退 case が走る | explore 25 attempt(AFIR 4)、NH3·HF の二重 H 交換(xTB −1265.3i)が生成物 1 件。発見の case が `degenerate_rearrangement`(DFT −1081.3i)、ΔE‡ 32.888、δG_eff 32.289、ΔG_assoc −5.66 | 22:24 | 合格 |
-| S11 | DME の C2v 重なり形の種(`ho_harness.py`) | 負モード 2 本 | 一次鞍点 約 226i、ΔE‡ ≈ 2.3、停滞が再現しない | 1 回目(xTB Hessian、重なり 0.30)は 2 次の saddle(−232.1i / −128.6i)→ `higher_order`。−128.6i に 0.23 Å 押し、TS freq を Hessian に 2 回目で一次鞍点 −226.8i、ΔE‡ 2.33。`max_saddle_attempts` 2 の中で終わる | 7:03 | 合格 |
-| S19 | TMA·(HF)₂(`tma_hf2`)と条件の追記 | 会合、複数条件 | 反応の δG_eff は標準状態で不変、ΔG_assoc だけが動く | `discover`: explore 15 attempt(すべて NT2)と緩和の発見 3、生成物 0。宣言反応 `neutral_to_shared_proton` は DFT で shared_proton が neutral に落ちて `same_basin`(順位なし)、ΔG_assoc −11.53。追記した thermo → report で ΔG_assoc は 1 atm で −14.52 / −11.53 / −5.11、1 M で −17.52 / −15.32 / −10.66(250 / 298.15 / 400 K、差は 2RT ln(RT/P°))。反応の δG_eff の不変性は S1 の複製への同じ追記で確かめた(250 / 298.15 / 400 K の δG_eff 10.898 / 11.077 / 11.435 が 1 atm と 1 M で同じ。ΔG_assoc は 1 M で 1.50 / 1.90 / 2.78 低い) | 30:38 / 0:01 | 合格 |
+| # | 系 | outcome | VAL → round 7 | 時間 VAL → VAL7 | 判定 |
+|---|---|---|---|---|---|
+| S1 | Cl⁻ + CH3Cl | degenerate(−393.6i) | 11.077 → 11.0774(ΔG_assoc −5.08、分離基準 +6.00) | 7:30 → 4:18 | 合格 |
+| S2 | I⁻ + CH3I | degenerate(−307.8i) | 6.8817 → 6.8816 | 13:19 → 7:05 | 合格 |
+| S4 | CH3O• → CH2OH• | elementary(−2015.5i) | 1 位が未宣言のねじれ(3.878)→ 宣言反応 30.612 だけ | 14:30 → 6:27 | 合格(意図した変化) |
+| S12 | DME の粗い入力 | degenerate(−226.9i) | 1.964 → 1.9638 | 10:04 → 6:53 | 合格 |
+| S13 | H2O2 のねじれ | degenerate(−290.5i) | 1.180 → 1.1802 | 1:38 → 1:05 | 合格 |
+| S14 | マロンアルデヒドの PT | degenerate、`submerged_barrier` | 0.0 → 0.0 | 16:52 → 10:10 | 合格 |
+| S15 | trans-HONO → HNO2 | elementary(−2088.1i、ΔE‡ 55.3) | 52.016 → 52.016 | 2:46 → 2:15 | 回帰だけ(多段の被覆には数えない) |
+| S16 | acac の PT(15 原子) | degenerate、`submerged_barrier` | 0.0 → 0.0 | 1:30:57 → 52:14 | 合格 |
+| S17 | (HF)₂ の入れ替え | degenerate(C2h −227.3i、ΔE‡ 1.256) | 1.392 → 1.392 | 1:35 → 1:01 | 回帰だけ(障壁なしの被覆には数えない) |
+| S18 | H + H2 | degenerate(−605.7i) | 4.091 → 4.0909 | 0:48 → 0:31 | 合格 |
 
-### 3.4 手法パネル(S20、known_endpoints の run の複製に CCSD(T) 入りの method_panel を追記)
+### 3.3 round 7 で足した系(W1、`oxalic_two_step` は W2)
 
-ΔE‡(kcal/mol)。δG_eff は ωB97X-D3/TZVPD の層。panel の min / max は method_panel.csv の最小・最大と一致した。
+VAL7 でもすべて同じ outcome で、δG_eff の差は 2e-4 以内(oxalic は 33:21、`hono_walltime` は W1 の `hono_walltime_b` と同じくジョブ 4 本で行 7)。
 
-| 系 | PBE0/SVPD | PBE0/TZVPD | ωB97X-D3/TZVPD | CCSD(T)/TZVPD | δG_eff | 時間 | 判定 |
-|---|---|---|---|---|---|---|---|
-| HCN → HNC | 46.621 | 46.429 | 46.369 | 47.807 | 41.926 | 1:24 | 合格 |
-| Cl⁻ + CH3Cl | 10.446 | 11.146 | 15.101 | 13.436 | 15.732(`dG_act_vs_separated` 11.43) | 11:14 | 合格 |
-| CH3O• → CH2OH• | 33.012 | 32.713 | 33.578 | 33.372(ROHF-CCSD(T)) | 31.178 | 6:19 | 合格 |
-| CH2OH• のねじれ | 4.482 | 4.665 | 4.818 | 4.836(ROHF-CCSD(T)) | 4.213 | (同上) | 合格 |
+| 系 | 通す分岐 | 実測 | 判定 |
+|---|---|---|---|
+| `formaldehyde` | 行 3 と 1,2-H 移動 | 順方向 out_of_window(ΔE_rxn 53.75)。逆方向 elementary(−2084.1i、ΔE‡ 32.96、δG_eff 29.02) | 合格 |
+| `h2o_hf_inversion` | 行 6 | `screen_midpoints:barrierless` → barrierless_at_resolution、SP 11 本(9 + 中点 2)、saddle ジョブ 0、δG_eff 0。両端はピラミッド形(DFT プローブで 45.5°) | コードの通過だけ(対称な経路なので、中点の SP が隠れた障壁を見つけることは確かめていない) |
+| `water_dimer_as` | 行 6 か 8・11 | 行 6(中点 2 点を加えても barrierless)、δG_eff 0。文献の障壁 0.5〜0.6 は解像度 1.0 未満 | そのまま記録 |
+| `oxalic_two_step` | GEN-05 の multi_step | `qrc1:end0_to_new_basin` → multi_step。split1 cTc → tTc は `ts_calc` から検証して新しいジョブ 0、elementary(−666.8i、ΔE‡ 15.08、δG_eff 12.781)。split2 tTc → tTt は elementary(−630.2i、ΔE‡ 13.23、δG_eff 13.763)。W1 は QRC の片側が OH のねじれを 110 歩以上滑って CAP 5,400 s に達し、W2 は 38:16 | 合格 |
+| `nh3_planar_seed` | DFT の mode-follow と `ts_calc` | D3h の NH3 が `follow1:ts_candidate` で NH3 の basin に入り、R3 の case は `ts_calc` の validate_ts から始まる(paths の新しいジョブ 0)。3.8400 | 合格 |
+| `dme_c2v_seed` | 虚モード 2 本の片側 follow | C2v の DME が `follow1:one_side` で DME の極小へ。宣言反応は 1.9638 | 合格 |
+| `hcn_noscreen` | 行 15 → string → `path_hei` | TS は R1 と同じ(1e-8 Eh 以内)、42.1786 | 合格 |
+| `hf_dimer_swap_noscreen` | `path_hei` → higher_order_retry | `path_hei` から直接 C2h の TS(−226.9i、ΔE‡ 1.256)、degenerate 1.392 | higher_order_retry はここでは未達(§4 で W3/s6 が通した) |
+| `hono_walltime_b` | 行 7 | 最初の decide で `walltime`、report が出て孤児 0 | 予算の仕組みだけ |
 
-### 3.5 smoke と golden
+宣言反応で行 1 を通す系はない。両端の多重度が違う宣言は structures が拒否する(`/home/user/hfauto_r7/W1/probe/ch3n_spin`: `endpoints differ in charge, multiplicity or atom order`)。
 
-- 実エンジンの smoke(`HFAUTO_REAL=1 pytest -m real tests/smoke`): 13 件合格(64 s)。水の opt と別ジョブの freq、NH3 の saddle と 2 本目の負モードの追跡、I の def2-ECP と Cl⁻、閉殻 CCSD(T) と ωB97X-D3、ROHF-CCSD(T)、HCN の string 1 チャンク(STO-3G)、ReaDuct の NT2、xTB、pysis NEB、CREST(電荷・スピン、陰イオン)、GoodVibes の CLI との一致。
-- golden(レビュー §6.2)は `tests/golden` にあり、既定のテストで毎回通る: OH•(UKS、⟨S²⟩ 0.7526)の opt・freq、FHF⁻ の opt・freq・SP、HI の SP(α 13、E −298.3091 Eh)と CCSD(T) の凍結軌道、Cl⁻ の xTB と NWChem、OH• の ROHF-CCSD(T)、I⁻···CH3I の対称数(§4)。
-- QM なしの fixture(レビュー §6.3): Ar の S°(154.850 J/mol/K、JANAF 154.846)、δG_eff の場合分け、経路の分類器のモデル曲線、`shape_hessian`、結合判定の距離、多重度の規則、鏡映を含む同一性。
+### 3.4 discover の系(W3、VAL7)
 
-### 3.6 到達表
+VAL7 では S7・S8(生成物 0、試行数 2・19)、S10(32.2892)、S19(`collapsed_at_dft_from_seed`、ΔG_assoc −11.5288)が W3・W4 と同じ。S5 と S6 は平らな PES の上で NWChem の軌跡が run ごとに分かれ、次のように変わった。
 
-`log.jsonl` の decide の reason と job.json から数えた(括弧は通った run の数)。
+- S5(`/home/user/hfauto_r7/VAL7/s5_ch3_o2`): CH3···O2 → CH3OO• の case は 2 回目の再開が DFT の Hessian(重なり 0.21)で収束し、2 つの CH3···O2 vdW 極小を結ぶ −72.0i の鞍点で reassigned(`spin_contaminated` で順位なし)。会合の結論がないことは W3 と同じ。
+- S6(`/home/user/hfauto_r7/VAL7/s6_oh_ch4`): 同じジョブ鍵の CH3OH + H の opt が W3 では肩(−6.5i の雑音モード、0.10 kcal/mol 上)に止まり、VAL7 では真の極小に入って 2 つの発見が 1 つの basin にまとまった(W3 の multi_step は reassigned 30.659 に、発見の仮説は 1 件減った)。R6 の仮説 OH···CH4 → CH3···H2O は screen の頂点から −73.0i の鞍点に収束したが、QRC の両側が 2 回とも OH···CH4 の basin に戻り(行 8 の初めての到達)、saddle の試行を 1 回残したまま `connection_failed` で終わった。この打ち切りを直し(§7)、同じ run を paths から流し直した `/home/user/hfauto_r7/W5/s6_oh_ch4_rowfix` では FIND_PATH → `path_hei`(maxiter)→ 再開 → −58.6i の鞍点も両側が同じ basin で、試行を使い切って unresolved。W3 の −481.1i の引き抜きの TS(δG_eff 1.48)は VAL7・W5 では再現していない。
 
-| 対象 | 実計算で通ったもの | 通らないもの(QM なしのテストで確認) |
+| # | 系 | 実測 | 時間 | 判定 |
+|---|---|---|---|---|
+| S5 | CH3• + O2 | CREST rc −11 で配置の seed を使う。失われた seed の状態を DFT に問うと CH3···O2 の vdW 極小(C···O 2.84 Å)が残るが ⟨S²⟩ 1.71(spin_contaminated)。CH3···O2 → CH3OO• の case は saddle の maxiter 4 回で attempts_exhausted。別の発見の case は reassigned(32.67) | 46:49 | 結論なし(多参照性のある二重項の結合) |
+| S6 | OH···CH4 | CREST rc 1。IRC の端の添字の付け直しで未接続 2 → 0。seed の DFT opt は対称な鞍点に止まり mode-follow で 1 つの basin。仮説 OH···CH4 → CH3···H2O は SCREEN single → saddle の maxiter 2 回 → string → `path_hei` で −481.1i、elementary、ΔE‡ 2.40(分離基準 0.79、文献 約 5)、δG_eff 1.48 で 1 位。CH3···H2O → CH3OH + H の発見は multi_step(split1 elementary 48.48、split2 は分割の深さの上限で未解決) | 1:33:13 | W3 は合格(基準どおり)。VAL7・W5 は TS を再現せず(上記) |
+| S7 | NH3···ICl(`--to explore`) | 2 attempt、生成物 0(VAL と同じ) | 0:13 | 合格 |
+| S8 | SO2·NMe3(`--to explore`) | 付加体(N···S 2.17 Å)が screen の極小に残る(`--notopo` のない旧規則では残らず、最低でも +17.3 の vdW 構造だけ)。19 attempt、生成物 0(VAL と同じ) | 1:10 | 合格 |
+| S10 | amine_pilot2 | 二重 H 交換 degenerate 32.2892(W2 32.2887)。C3H9N と C3H10FN は `not_reacting` で DFT に流さない | 3:30 | 合格 |
+| S19 | TMA·(HF)₂ | 失われた seed(17 原子)は DFT の 1 歩目で状態を離れ、45 歩・2,033 s で既知の neutral の basin に落ちた(`collapsed_at_dft_from_seed`、freq なし)。宣言反応は same_basin、ΔG_assoc −11.528。付け直した IRC の端 2 件は障壁の上限で棄却(ΔE‡ 115.9 / 139.9) | 1:05:16 | 合格 |
+| S4 | CH3O•(`--to explore`) | T1 の 1,2-H 移動が両向きで生成物(GFN2 の ΔE‡ 31.2 / 39.7)、T4 の切断 5 件は `no_nt2_maximum` | 0:05 | 合格 |
+
+### 3.5 手法パネルと条件
+
+- `/home/user/hfauto_r7/W1/s20_sn2_panel`(新しい run に method_panel を追記、report は 400 K・1 M): report.html の δG_eff は全行で ranking.csv と一致(16.09)。298.15 K・1 atm の ωB97X-D3 層は 15.732(VAL と同じ)。
+- ΔG_assoc は状態の G を 1 つの定義(spin_contaminated でない最小の G)にしても S19 で −11.5275(VAL −11.5274)。
+- VAL7 で流し直した低レベル・パネルの系: S3 H2Te(`Te library def2-ecp`、opt・freq のエネルギーは VAL と 5e-9 Eh 以内)、S9 FeCl3·CH4(宣言がなければ `declare_multiplicity: d-block element(s) Fe`、六重項で CREST rc 0)、CCSD(T) パネル(PBE0/SVPD の ΔE‡ − CCSD(T): HCN −1.19(`s20_hcn_panel`、閉殻)、CH3O• −0.36(`s20_ch3o_panel`、開殻)、どちらも VAL と 1e-3 以内)、`s20_sn2_panel` 16.090(W1 と同じ)。S11 の DME C2v の harness は流していない(VAL だけ)。
+
+### 3.6 テストとシグナル
+
+- 既定のテストの合否は WSL の prod venv で判定する。Windows の QA venv は RDKit の DLL がアプリケーション制御で止まり、GoodVibes と pymsym も入らない。pymsym は 0.3.5 に固定し、既定のテストが版を照合する。
+- SIGINT(`/home/user/hfauto_r7/W1/sigint_hcn`): 実行中の HCN の run が rc 130 で終わり、外部プロセスは 0.8 s で消えた。
+
+## 4. 到達表(round 7 の実 run だけ)
+
+`log.jsonl` の decide の reason と注記、minima の diagnostics.json から数えた。run dir は `/home/user/hfauto_r7/` 以下。
+
+| 対象 | 通ったもの | 通っていないもの |
 |---|---|---|
-| 決定表の行 | 2 same_basin(3)、4 connection(17)、9 ts_validated・10 saddle_converged・12 screen・14 seed(各 17) | 1・3・5〜8・11・13・15〜17(17 行すべての reason を `tests/unit/drivers/test_reaction_case_decide.py` が確かめる) |
-| saddle の種と Hessian | 種 `screen_ts` 14・`screen_hei` 2・`discovery_ts` 3、S11 の `higher_order_retry`。Hessian は xTB 15・DFT 2・検証済み TS freq(S11) | 種 `path_hei`・`saddle_restart` |
-| outcome | `elementary_step` 6、`degenerate_rearrangement` 13、`same_basin` 3 | `multi_step`、`barrierless`、`unresolved_within_budget` |
-| エンジン | CREST、xTB opt/freq、ReaDuct の NT2/AFIR、pysis NEB、NWChem の opt/freq/saddle/SP(PBE0 SVPD/TZVPD、ωB97X-D3、閉殻 CCSD(T)、ROHF-CCSD(T))。GoodVibes は同一プロセス | NWChem string(FIND_PATH)は smoke の 1 チャンクだけ |
+| 決定表の行 | 8(VAL7/s6_oh_ch4 の `connection_retry` → `connection_failed`、W5/s6_oh_ch4_rowfix の `connection_retry` → FIND_PATH)、2(W0〜W4/water_same_basin、s19)、3(W1/formaldehyde)、4(R1〜R3 ほか多数)、5(W1・W2・W4/oxalic_two_step、W3/s6_oh_ch4)、6(W1/h2o_hf_inversion、W1/water_dimer_as)、7(W1/hono_walltime_b)、9・10・12・14(R1〜R3 ほか多数)、13(W3/s6_oh_ch4)、15(W1/hcn_noscreen、W1/hf_dimer_swap_noscreen、W3/s5_ch3_o2、W3/s6_oh_ch4)、17(W3/s5_ch3_o2) | 1(端点の DFT 極小が欠けたときだけ発火)、11(崩壊した鞍点)、16(string の次のチャンク)、近道の種が失敗した後の 2 回目の SCREEN、ケースの例外の閉じ込め |
+| 検証済みの鞍点(`ts_calc`) | W1・W2/nh3_planar_seed、W1・W2・W4/oxalic_two_step(split1)、W3/s6_oh_ch4(split1) | ゲートを通らず SCREEN へ戻る分岐 |
+| saddle の種 | `screen_ts`(R1〜R3 ほか多数)、`screen_hei`(W2/s13_h2o2_gauche、W2/s18_h3_doublet、W3/s5、W3/s6)、`discovery_ts`(W2〜W4/s10、W3/s5、W3/s6)、`path_hei`(W1 の noscreen 2 本、W3/s5、W3/s6)、`higher_order_retry`(W3/s6 の split2_split2、Hessian は検証済み TS freq)、`saddle_restart`(W3/s5 に 2 回、W3/s6 に 2 回) | — |
+| 初期 Hessian | xTB(65 case)、DFT 5 case(W1 の noscreen 2 本、W2/s13、W2/s18、W3/s6)、TS freq 1(W3/s6) | — |
+| outcome | elementary、degenerate、same_basin、out_of_window(W1/formaldehyde)、multi_step(oxalic、S6)、barrierless_at_resolution(W1/h2o_hf_inversion、water_dimer_as)、reassigned(W3/s5、W3/s6)、unresolved_within_budget(W1/hono_walltime_b、W3/s5) | blocked_upstream |
+| QRC | `minus_is_image`(W2 の NH3、nh3_planar_seed、dme_c2v_seed、S1、S2、S10、S12〜S14、S17、S18。W3・W4 の再実行も)、`end<i>_to_new_basin`(oxalic、S6) | — |
+| 極小 | DFT の mode-follow `ts_candidate`(W1・W2/nh3_planar_seed、W1・W2/s4、W3/s6)と `one_side`(W1・W2/dme_c2v_seed)、`image_of`(W2 以後の NH3、nh3_planar_seed、S1、S2、S10、S13、S14、S16〜S18)、`not_reacting`(W2〜W4/s10)、`collapsed_at_dft_from_seed`(W3・W4/s19)、screen の `soft:resolved`(s19) | DFT の soft_minimum |
+| explore | 付け直した IRC の端(W3/s6 2 件、W3/s19 2 件)、relaxation(W3/s5、s6、s19)、CREST 失敗時の seed(W3/s5、s6) | S8・S10 の付け直し(該当する端がない) |
+| エンジン | CREST、xTB、ReaDuct NT2、pysis NEB、NWChem の opt・freq・saddle・SP・string(W1 の noscreen 2 本、W3/s5、W3/s6)、ωB97X-D3 の SP(W1/s20_sn2_panel)、CCSD(T) の SP(VAL7/s20_hcn_panel が閉殻、VAL7/s20_ch3o_panel が開殻) | — |
 
-## 4. この検証で直した不具合
+## 5. 計算量
 
-- **対称数の揺らぎ(S2)**: 同じ入力の I⁻···CH3I 錯体(C3v)が、FINAL の run では C3v(σ 3)、この run では Cs(σ 1)と判定され、ΔG‡ が RT ln 3 = 0.65 kcal/mol 違った(6.882 → 7.533)。NWChem の最適化の終点で I⁻ が C3 軸から 0.03° ずれただけで、振動数は 0.1 cm⁻¹ 以内で同じだった。GoodVibes が呼ぶ libmsym(pymsym)の等価判定のしきい値(相対 5e-4)が、最適化の収束の幅より狭いのが原因である。
-- 修正: `chemistry/thermo.symmetry_number` が libmsym の等価しきい値を 2e-3 にして点群を求め、σ を GoodVibes に渡す(`symm=False`)。FINAL と VAL の NWChem freq の構造 126 本(21 組成)で、しきい値 2e-3 が既定と違う点群を出すのは S2 のこの構造と H + H2 の TS(Cs から「群なし」、どちらも σ 1)だけだった。S2 の構造はしきい値 5.5e-4 で既に C3v になり、FINAL の構造はしきい値 1e-2 まで σ が変わらない。回帰テストは `tests/golden/test_goodvibes_thermo.py::test_symmetry_number_tolerates_an_optimised_c3v_complex`。
-- 修正前に流した run(R1〜R4、S1〜S4、S13、S15、S17、S18)と S12・S14 の複製に、`--from thermo` で thermo と report を取り直した。14 run の複製(`rt_<run>`)の結果: S2 の錯体の G だけが変わり(−635.36312 → −635.36208 Eh)、ΔG‡ は 7.533 → 6.882(FINAL の run の 6.882 と一致)。ほかの 13 run は反応と化学種の thermo が 1e-9 以内で同じ。S20 の HCN・SN2 のパネルの構造も σ は変わらない(上の 126 本に含む)。
+QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ鍵の合計(複写したジョブを除く)。W4 は同時実行で 1 ジョブの秒数が伸びるので壁時計で比べる。
 
-## 5. 改良中の実計算プローブで決めたこと
-
-| 案 | プローブ | 決定 |
+| 比較 | 対象 | 結果 |
 |---|---|---|
-| U8-P3 エネルギー層 | 5 系で PBE0/SVPD・ωB97X-D3/TZVPD・CCSD(T) の ΔE‡ を比較。ωB97X-D3 は CCSD(T) との平均絶対誤差 1.29(PBE0/SVPD 2.07)だが、17 原子で 1 点 29 分 | 既定の pipeline は PBE0/SVPD のまま。層は method_panel の追記で使う |
-| U5-P2 SCREEN | GS と固定端 CI-NEB を 11 系で比較。NEB は全系で収束し、(HF)₂ は未解決から C2h の TS に、acac は完走し、HONO と H2O2 は FIND_PATH に入らない | 固定端 CI-NEB を採用 |
-| U0-P5 SCF の救済 | 収束しない H3 の bead で、反復増・damping・level shift・rabuck は未収束、`cgmin` だけが 5〜8 反復で収束 | 救済は `cgmin` の 1 本。cgmin は ⟨S²⟩ を出さないので、⟨S²⟩ のない開殻 DFT は `incomplete_output` |
-| U8-P7 開殻 CCSD(T) | CH3O• の TCE ROHF-CCSD(T) は `2eorb` なしで GA の確保に失敗、`2eorb 2emet 13` で 63 s | TCE に `2eorb 2emet 13` |
-| U2-P2・U2-P6 CREST | `--noopt` 案と初期最適化案、円錐と剛体の配置を 8 組成で比較 | `--noopt` と全原子の `--notopo`、円錐の配置を残す(開殻の組成で CREST は失敗し seed を使う) |
-| U7-P5 GoodVibes | 同一プロセスの呼び出しで既存 run の G・H・ZPE を 1.1e-13 Eh 以内で再現 | 同一プロセスで呼ぶ |
-| U9-P7 外部プロセス | `timeout` で止めた `mpirun nwchem` が signal handler ありで残らない | handler を入れた |
+| VAL → W2 | 対になる 16 run | 12,743 s / 369 ジョブ → 8,334 s / 325 ジョブ(−34.6%)。QRC の側の opt 4,477 → 2,064 s(529 → 259 歩)、dft の freq 3,357 → 2,432 s、dft の opt 1,153 → 644 s と Hessian 付き 921 → 559 s、rerank の SP 90 → 0 s。経路の SP と saddle は横ばい |
+| W1 → W2 | 対になる 13 run | 10,008 s → 6,480 s(−35.2%) |
+| W2 → W3 | 失われた seed の DFT(R6) | S19 +2,033 s(17 原子の seed opt、Hessian なし 45 歩)、S6 +536 s(mode-follow の 2 側を含む)、S5 +208 s。予測(3 opt + 3 freq、約 1,371 s)に対して 5 opt + 4 freq |
+| VAL → VAL7 | 対になる 24 run | 14,071 s / 467 ジョブ → 13,579 s / 406 ジョブ(−3.5%)、壁時計 14,385 → 11,164 s(−22.4%)。S19 は失われた seed の DFT(R6、+2,308 s)を含む。S19 を除く 23 run は 12,231 → 9,430 s(−22.9%)、壁時計 12,548 → 7,111 s(−43.3%)。種類別: QRC の側 4,477 → 3,051 s(529 → 279 歩)、dft の freq 3,367 → 2,454 s、Hessian 付きの dft の opt 921 → 584 s、rerank の SP 90 → 0 s。経路の SP は 750 → 1,321 s(rank を分けた同時実行でジョブあたりの秒数が伸びる。壁時計は減る) |
+| W4 → VAL7 | 同じ 10 系 | QM 13,627 → 13,440 s(−1.4%)、ジョブ 234 → 229、壁時計 10,337 → 10,528 s(+1.8%)。増えたのは S10(185 → 225 s: 上流の入力の違いで QRC の側が 21 → 40 歩、NWChem の AUTOZ の失敗による 2 回目の試行 1 件)と S19(3,893 → 4,053 s: seed の opt 52 → 53 歩)。ほかは ±6% 以内。孤児は全 35 run で 0 |
+| W2・W3 → W4 | 壁時計 | S16 61:20 → 52:42、S14 10:35 → 9:38、S1 5:42 → 4:19、HCN 1:25 → 1:01、HONO 2:59 → 2:18、oxalic 38:16 → 33:32、S19 65:16 → 64:53。SCREEN の SP の区間 S14 93 → 55 s(−41%)、S16 315 → 193 s(−39%)、非対称な QRC の対 HCN −21%、acac 1,314 → 1,074 s(−18%)、HONO −19%、oxalic −6%(片側だけが長い)。同じ鍵のエネルギーの差は最大 8.9e-9 Eh、max RSS ≤ 329 MB、孤児 0 |
 
-## 6. 撤回する値
+内訳(VAL → W2): QRC と mode-follow の側の Hessian を正定値のモデルにした(acac の QRC 34/27 → 15/14 歩、S4 の mode-follow の側 36/36 → 13/13 歩)、厳密な像の端点と対称な TS の − 側を計算しない、反応しない組成を DFT に流さない(S10 の dft の freq 861 → 30 s)、mode-follow の側を stage で緩和し直さない(S4 の opt 4 → 2、freq 5 → 4)、rerank の SP を混んだ組だけにした(S10 4 → 0、S19 3 → 0)。
 
-- HONO trans → cis の ΔG‡ **24.11 kcal/mol**(旧 `hono_isomerization_v3`)。ZPE の二重計上と basin 判定の回帰による。正しくは ΔE‡ 13.67、ΔG‡ 12.23(m = 1)、m = 2 を数えた今の δG_eff は 11.82。
-- HCN → HNC の ΔG_rxn **18.05 kcal/mol**(内部フォールバックの熱化学)。D3BJ の実測は 12.68。
-- I⁻ + CH3I の ΔG‡ **7.53 kcal/mol**(この検証の最初の S2、対称数の誤判定)。正しくは 6.88(§4)。
-- M2 以前の R2 の 12.2265(v5)は、TS のキラリティ(m = 2)を数えていない。比べるときは 11.82 を使う。
+極小の stage を同時に走らせる案は落とした。`/home/user/hfauto_r7/W4/s19_tma_hf2`(途中で止めた run)では 4 つの opt を 1 rank ずつにすると、TMA が 206 s(4 rank で 105 s)、錯体は約 620 s で 4 歩(直列は 383 s で 8 歩)で 2 コアが遊び、43 歩の seed opt は 1 rank で約 2 h の見込みになった。S10 も変わらなかった(dft 45 s 対 48 s)。
 
-## 7. 残る課題
+## 6. プローブと実 run で決めたこと
 
-1. **実計算で通らない決定表の行**: 1・3・5〜8・11・13・15〜17(QM なしの `tests/unit/drivers/test_reaction_case_decide.py` だけ)。中でも多段(S15 は直接の TS が見つかる)、BARRIERLESS(S17 は障壁が解像度を超える)、FIND_PATH(smoke の 1 チャンクだけ)は実計算の系がない。これらを通す系(cis の井戸を必ず経る多段反応、障壁 1 kcal/mol 未満の入れ替え)は見つかっていない。
-2. **開殻の組成の配座探索**: CREST は開殻の組成で必ず失敗し(rc −11)、placement の seed も xTB の SCF・最適化で半数以上が落ちる(S5 5/6、S6 4/5)。S6 の引き抜きは GFN2 で障壁がなく、TS 付きの発見にならない。
-3. **範囲外**: 陽イオン、遷移金属の DFT、開殻一重項、溶媒。宣言した範囲(README)どおり。
-4. **精度**: PBE0/SVPD の ΔE‡ は CCSD(T) から最大 3 kcal/mol ずれる(SN2 −3.0、HONO +2.0)。高精度が要る反応は method_panel を追記する(17 原子の ωB97X-D3/TZVPD は 1 点約 30 分)。H + H2 の障壁(4.6)は PBE0 の既知の過小評価。
-5. **時間**: 15 原子の acac は 1:31(paths 4,123 s の大半が QRC と TS freq)。17 原子の DFT freq は 1 本約 15 分で、discover の dft stage の大半を占める。
-6. **対称数のしきい値**: 2e-3 は検証セットの 126 構造で確かめただけである。より大きく柔らかい錯体では、最適化の収束の幅がしきい値を超えうる。
-7. **S7**: M4 で得た NH2I + HCl(NT2)は、S-C で状態のまとめ方を変えてから出発点に入らず、再現しない。
+| 案 | 根拠 | 決定 |
+|---|---|---|
+| K1 最小化の初期 Hessian | 計画の規則(射影した固有値が −1e-3 未満なら正定値のモデル)では、DME C2v の 2 本目の鞍点方向(−129.6i)が這い、207 歩で未収束(そのままなら 29 歩。`/home/user/hfauto_r7/W2/superseded_k1neg/dme_c2v_seed`)。xTB の錯体の Hessian も鍵が変わり S18 の熱化学が動いた | 一次の鞍点の Hessian だけをモデルにする。VAL と対の QRC の側は 17.6 → 13.6 歩/側(−23%)。小さな対称の側は速くならない(S10 14.5 → 22 歩、`/home/user/hfauto_r7/knowhow_probe/qrc`) |
+| QRC の尾の早期停止 | K1 の後の acac の側は basin に入ってから 7/15 歩と 6/14 歩で、その間の ΔE は 0.004 / 0.009 kcal/mol | 採らない |
+| K6 linopt 0(U3-P11) | `/home/user/hfauto_r7/knowhow_probe/opt2.log` と `qrc_all.log`: DME の QRC 143 → 91 s、acac 723 → 662 s は速く、HCN 11 → 15 s、マロンアルデヒド 105 → 148 s、acac の極小 293 → 326 s は遅い | 採らない(閉じる) |
+| AFIR | M4 より後の run(SA〜VAL)の AFIR 41 件(一意の discovery)はすべて陰性で生成物 0。M4 の生成物は、今の結合規則ではハロゲン結合錯体 ClI+H3N(W3/s7 の screen basin にある)と、同じ run で NT2 も見つけた恒等 SN2 | W3 で削除 |
+| R17 開殻 DFT の SCF 救済 | cgmin の出力は ⟨S²⟩ を出さず、救済したジョブは必ず捨てられる(`/home/user/hfauto_r6/SA/sac_probe/scf/h3p3c/a00_bead_000003_cgmin/stdout.txt`)。実 run での発生は 0 | 開殻 DFT は救済しない(round 7 の run でも発生なし) |
+| K4 CREST の電子温度 | `/home/user/hfauto_r7/knowhow_probe/crest`: OH·CH4 は 1,000 K・3,000 K なら完走するが、組成ごとに低レベルの PES を変える | 採らない。CREST が失敗した組成は seed を使い、失われた状態は DFT に 1 回問う |
+| 失われた seed の DFT(R6) | S6 は PBE0 で OH···CH4 が残り、引き抜きの TS と順位に届いた。S19 は DFT でも崩れた(`collapsed_at_dft_from_seed`) | 採用。崩れても障壁なしとは呼ばない |
+| 付け直した IRC の端(R5a) | 事前の数え上げ(0.05 Å で 4 件)どおり、未接続が S6 2 → 0、S19 5 → 3 | 採用。許容は 0.05 Å のまま |
+| pymsym | prod venv の版は 0.3.5 | 固定。入れ直さない |
+
+## 7. round 7 で直した不具合
+
+- **締め切りの意味**(`/home/user/hfauto_r7/W1/hono_walltime`): 予算を使い切った case が、拒否されるジョブを重ねて行 15・17 まで進んだ。`Deadline.expired()` を「どのジョブも始められない(残り 60 s 未満)」にして、行 7 で閉じるようにした(`hono_walltime_b`)。
+- **freq の電子状態**(`/home/user/hfauto_r7/W3/superseded_nofreqguess/s6_oh_ch4`): UKS の OH···CH4 錯体の freq が SCF をゼロから始めて OH の別の π 成分に落ち(opt より 7.2e-5 Eh 高い)、`is_minimum` が `state_mismatch` で seed を捨てた(同じ run の QRC の側も)。freq は opt・saddle の収束 vectors から始める(`scf_guess`、鍵に入る)。golden の回帰テストを足した。
+
+- **予算を残した打ち切り**(`/home/user/hfauto_r7/VAL7/s6_oh_ch4`): 両側が 2 回とも同じ basin に戻る TS(別の過程の鞍点)で、行 8 が saddle の試行を残したまま `connection_failed` で閉じていた。試行が残れば行 12〜17 に進み、次の saddle 探索がその TS の主張を捨てる(`/home/user/hfauto_r7/W5/s6_oh_ch4_rowfix` で FIND_PATH に進むのを確認)。回帰テストを足した。
+
+## 8. 撤回・訂正した値
+
+- HONO trans → cis の ΔG‡ 24.11(旧 `hono_isomerization_v3`、ZPE の二重計上)。HCN → HNC の ΔG_rxn 18.05(内部フォールバック。正しくは 12.68)。I⁻ + CH3I の ΔG‡ 7.53(対称数の誤判定。正しくは 6.8817)。M2 以前の R2 12.2265(キラリティ m = 2 を数えていない。今は 11.8158)。
+- S4 の 1 位だった CH2OH• のねじれ(3.878): 宣言していないねじれは仮説にしないので、順位から消える。
+- 期待値の訂正(system の見出し): S15 は直接の 1,3-H 移動の TS(ΔE‡ 55.3、δG_eff 52.0)で elementary、S17 は障壁 1.256 が解像度 1.0 を超えるので degenerate、ホルムアルデヒドの順方向は ΔE_rxn 53.75 で窓の外。
+
+## 9. 残る課題
+
+1. **実計算で通っていない分岐**: 行 1・11・16、2 回目の SCREEN、ケースの例外の閉じ込め、DFT の soft_minimum。行 6 の中点による高密度化は対称な経路でしか通っておらず、隠れた障壁を見つけた例はない。
+2. **既定の順位の精度**: PBE0/SVPD は CCSD(T) から最大 3 kcal/mol ずれ(SN2 −3.0、HONO +2.0)、H 引き抜きは分離基準の ΔE‡ 0.79 と文献 約 5 を大きく下回る。反応クラスが混ざる順位は method_panel を追記して読む。
+3. **開殻の会合**: S5 の UKS CH3···O2 は ⟨S²⟩ 1.71 で、障壁なしかどうかを判定できない。多参照かスピン射影の扱いが要る。
+4. **失われた seed の費用**: S19 の seed は DFT の 1 歩目で状態を離れたのに、既知の basin に入るまで 44 歩(約 33 分)払った。
+5. **鞍点探索の空回り**: 柔らかい H 引き抜き・ラジカル会合では string の前に saddle が maxiter で 2 回止まる(S5 で saddle 826 s)。
+6. **対称な鞍点の mode-follow**: ± の側は厳密な像なのに 2 本とも opt と freq を払う(S6 で 329 s、NH3 は 21 歩/側)。
+7. **近直線の錯体の熱化学**: S18 の H···H2 は、軸から 0.006 Å 外れた極小が非直線(振動 3 本、δG_eff 4.091)、正確に直線の極小が直線(4 本、6.360)と扱われる(`vibrations._EXTERNAL_RANK_TOL` = 1e-3、`/home/user/hfauto_r7/W2/superseded_k1neg/s18_h3_doublet`)。直線性を対称性で決める必要がある。
+8. **分割の深さ**: W3 の S6 の CH3OH + H 側は、ほぼ縮退した緩い錯体(ΔE_rxn ≤ 0.11)の分割で `max_split_depth` に達し、順位が付かない(VAL7 ではその 2 つの極小が 1 つの basin にまとまった)。
+9. **平らな PES の引き抜きの TS の再現性**: S6 の OH···CH4 → CH3···H2O は W3 だけが −481.1i の TS に届き、VAL7・W5 は OH···CH4 の向きを変える鞍点(−73.0i、−58.6i、両側が同じ basin)に収束して試行を使い切った。虚モードが仮説の結合変化を担わない鞍点を QRC の前に見分け、結合変化の方向に拘束して探す必要がある(その鞍点の QRC は 2 振幅 × 2 本)。
+10. **NWChem の AUTOZ の失敗**: VAL7/s10 の QRC の側の opt が 21 歩目で内部座標の再構築に失敗し、続きからの 2 回目の試行で収束した(+53 s)。VAL7 で 2 回目の試行はこの 1 件。

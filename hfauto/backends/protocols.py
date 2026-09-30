@@ -75,7 +75,6 @@ class DiscoveryResult(BaseModel):
     dE_rxn_kcal: float | None
     irc_connected_to_source: bool
     electronic_temperature_K: float
-    job_key: str
 
 
 @runtime_checkable

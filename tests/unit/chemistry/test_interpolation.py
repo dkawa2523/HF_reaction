@@ -18,7 +18,7 @@ TRANS_HONO = np.array([[-0.19774781, -0.94387557, 0.0], [0.02491128, -0.00145366
                        [1.40706589, 0.00832925, 0.0], [1.82767063, 1.09719998, 0.0]])
 
 
-def max_node_spacing(frames):
+def largest_step(frames):
     return max(float(np.linalg.norm(b - a)) for a, b in pairwise(frames))
 
 
@@ -34,7 +34,7 @@ def test_idpp_inversion_path_is_smooth_with_fixed_ends():
     assert len(path) == 11
     assert np.array_equal(path[0], NH3)
     assert np.array_equal(path[-1], itp.align_mapped(NH3, inverted))
-    assert max_node_spacing(path) < 0.1
+    assert largest_step(path) < 0.1
     assert min(itp.min_interatomic_distance(x) for x in path) > 0.9
 
 
@@ -60,10 +60,10 @@ def test_align_sequential_removes_a_rigid_jump_inside_a_path():
     path = [x - x.mean(axis=0) for x in path]  # each frame already aligned onto its neighbours
     rotated = list(path)
     rotated[3] = path[3] @ np.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]).T
-    assert max_node_spacing(rotated) > 1.0
+    assert largest_step(rotated) > 1.0
     aligned = itp.align_sequential(rotated)
     assert np.array_equal(aligned[0], rotated[0])
-    assert max_node_spacing(aligned) == pytest.approx(max_node_spacing(path), abs=1e-10)
+    assert largest_step(aligned) == pytest.approx(largest_step(path), abs=1e-10)
 
 
 def test_idpp_leaves_the_plane_between_planar_cis_trans_hono():

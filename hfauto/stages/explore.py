@@ -1,12 +1,12 @@
 """explore stage (design §4.1 #4, §8.2): reaction trials on screen minima with a discovery engine.
 
 Sources are the ``sources_per_state`` lowest screen minima of each composition × state label,
-started from their screen-optimized structures. Each (source, trial) unit runs NT2; the units run
-through ``thread_map`` and every attempt is recorded in input order: product, negative or failed. A kept product joins a known
-basin (a screen minimum or an earlier product of its composition: state label and permutation-
-invariant RMSD; ReaDuct's and the screen's xTB energies are not compared) or becomes a species;
-a degenerate one (the source's label) also needs the same atom-indexed bonds, so it never joins
-its source. A seed state the screen lost becomes one ``relaxation`` product (``_relaxations``).
+started from their screen-optimized structures. Each (source, trial) unit runs NT2 once (through
+``thread_map``); every attempt is recorded in input order: product, negative or failed. A kept
+product joins a known basin (a screen minimum or an earlier product of its composition: state
+label and permutation-invariant RMSD; ReaDuct's and the screen's xTB energies are not compared)
+or becomes a species; a degenerate one (the source's label) also needs the same atom-indexed
+bonds, so it never joins its source. A lost seed state becomes one ``relaxation`` product.
 """
 
 from __future__ import annotations

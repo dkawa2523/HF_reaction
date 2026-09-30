@@ -119,8 +119,7 @@ class NEBAdapter:
             return _fail(FailureKind.METHOD_MISMATCH, "; ".join(problems))
         ts = data.get("ts")
         return PathProfile(engine=PysisNEB.name, level=level, images=self.file_ref(images),
-                           ts=self._geometry(workdir / "ts.xyz", symbols, ts) if ts else None,
-                           job_key="")
+                           ts=self._geometry(workdir / "ts.xyz", symbols, ts) if ts else None)
 
     def _geometry(self, path: Path, symbols: list[str], coords: Any) -> Geometry:
         return written_geometry(write_xyz(XYZ(symbols, np.asarray(coords, dtype=float)), path),

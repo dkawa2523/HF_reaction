@@ -46,7 +46,7 @@ PAYLOADS = {
         zpe_hartree=None, settings_sha="abc", notes=("thermo_unavailable",)),
     AT.REACTION_THERMO: r.ReactionThermo(
         reaction_id="r1", T_K=298.15, standard_state="1M", dE_act_kcal=46.7, dE_rxn_kcal=14.0,
-        dzpe_act_kcal=-4.4, dG_act_kcal=42.3, dG_rxn_kcal=12.7, band_kcal=(42.0, 42.6),
+        dG_act_kcal=42.3, dG_rxn_kcal=12.7, band_kcal=(42.0, 42.6),
         dG_eff_kcal=42.3, notes=("submerged_barrier",)),
     AT.REPORT: r.ReportRecord(
         rows=(r.RankRow(reaction_id="r1", outcome=ELEMENTARY, tier="connected", rankable=True,

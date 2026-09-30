@@ -26,9 +26,9 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 |---|---|
 | `structures` | system の化学種(xyz / SMILES)を読み、元素・電荷・多重度と宣言反応の原子順序を検査する |
 | `conformers` | 単量体の CREST 配座探索と、組成(錯体)の配置 seed と `--nci` 探索 |
-| `minima` | opt → 別ジョブの freq → 虚振動に沿った mode-follow → 極小の登録 |
+| `minima` | opt → 別ジョブの freq → 虚振動に沿った mode-follow → 極小の登録。反応する組成だけを DFT にかけ、厳密な像と既知の basin はジョブなしで登録する |
 | `explore` | 元素に依らない結合変化の列挙で反応 trial を作り、ReaDuct の NT2 で生成物を探す。screen で失われた seed の状態は DFT に 1 回問う |
-| `reaction-paths` | 反応仮説ごとに、経路の分類 → 鞍点 → TS の振動数検証 → QRC による接続 |
+| `reaction-paths` | 反応仮説ごとに、経路の分類 → 鞍点 → TS の振動数検証 → QRC による接続。検証済みの鞍点(mode-follow、分割した親)は探し直さず検証から始める |
 | `sp` | 順位に使う点だけの一点計算(エネルギー層と手法パネル) |
 | `thermo` | qRRHO(GoodVibes 4.3.0)、キラリティ、会合量、順位の量 δG_eff |
 | `report` | ranking.csv、coverage.csv、method_panel.csv、report.html |
@@ -43,7 +43,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 
 - 順位の量は δG_eff = max(G_TS, G_R, G_P) − G_R(kcal/mol)。G_R・G_P は反応物・生成物と同じ状態の DFT 極小の最小 G。障壁なし(`barrierless_at_resolution`)と ZPE で沈む障壁(注記 `submerged_barrier`)は max(ΔG_rxn, 0) で同じ表に並ぶ。qRRHO の扱いによる感度の幅が重なる反応は同順位。
 - 既定の順位は PBE0-D3BJ/def2-SVPD の値の序数として読む。PBE0 の障壁の誤差は反応クラスで違うので、クラスが混ざるとき数 kcal/mol 未満の差の順序は入れ替わり得る。精度が要るときは `method_panel` を追記する(ranking.csv の `energy_level` 列に並べた層が出て、手法ごとの ΔE‡ の最小・最大が列に付く)。
-- 順位を付けない反応も outcome と blockers 付きで ranking.csv に載る。判断の経過は `hfauto case` で見る。
+- 順位を付けない反応も outcome と blockers 付きで ranking.csv に載る。多段反応(`multi_step`)の親は順位を持たず、分割した子反応(`<id>_split<n>`)がそれぞれ並ぶ。判断の経過は `hfauto case` で見る。
 
 ## インストール
 
@@ -60,18 +60,18 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 | `hfauto case RUN_DIR REACTION_ID` | 反応ケースの判断ログ(log.jsonl)を表示する |
 
 - PIPELINE・SYSTEM・SITE には YAML のパスか、カレントディレクトリの `configs/<kind>/` の下の名前を指定する。method は pipeline ファイルの隣の `methods/<id>.yaml`、なければ `configs/methods/<id>.yaml` を読む。
-- `run` の終了コード: 0 は成功、1 は failed の artifact か失敗した stage がある、2 は設定か preflight の問題、SIGTERM・SIGHUP では外部プログラムを止めて 128 + signum。failed の artifact は後続の stage を止めず report も出るので、結果は終了コードではなく `hfauto status` と report で判断する。
+- `run` の終了コード: 0 は成功、1 は failed の artifact か失敗した stage がある、2 は設定か preflight の問題、SIGINT・SIGTERM・SIGHUP では外部プログラムを止めて 128 + signum。failed の artifact は後続の stage を止めず report も出るので、結果は終了コードではなく `hfauto status` と report で判断する。
 - `--from ID` はその stage 以降を取り直し、`--retry-failed KINDS`(例 `incomplete_output,timeout`)は JobStore に残った該当の失敗だけを再実行する。
 
 ## クイックスタート(HCN → HNC)
 
 ```bash
-hfauto run known_endpoints --system hcn --site wsl_local --run-dir /home/user/hfauto_runs/hcn
-hfauto status /home/user/hfauto_runs/hcn
-hfauto report /home/user/hfauto_runs/hcn
+hfauto run known_endpoints --system hcn --site wsl_local --run-dir $HOME/hfauto_runs/hcn
+hfauto status $HOME/hfauto_runs/hcn
+hfauto report $HOME/hfauto_runs/hcn
 ```
 
-リポジトリの直下で実行する。`--run-dir` を省くと `runs/<system_id>_<pipeline_id>` になるので、本番の run は ext4 上を明示する。4 vCPU の WSL で約 1.5 分かかる。
+リポジトリの直下で実行する。`--run-dir` を省くと `runs/<system_id>_<pipeline_id>` になるので、本番の run は ext4 上を明示する。4 vCPU の WSL で約 1 分かかる。round 7 より前の run dir は記録の型が違うので再開できない。
 
 ## 基準値
 
@@ -83,11 +83,11 @@ WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD、298.15 K・1 atm。全体と所要�
 | HONO trans → cis(`hono`) | known_endpoints | elementary_step | 11.82(TS がキラルで m = 2) |
 | NH3 の反転(`nh3_inversion`) | known_endpoints | degenerate_rearrangement | 3.84 |
 | 水(`water_same_basin`) | known_endpoints | same_basin | — |
-| TMA·(HF)₂(`tma_hf2`) | discover | same_basin(プロトン移動の TS はない。全体で約 30 分) | — |
+| TMA·(HF)₂(`tma_hf2`) | discover | same_basin(プロトン移動の TS はない。全体で約 65 分、うち screen で失われた seed の DFT opt が約 34 分) | — |
 
 ## 文書
 
 - [docs/design.md](docs/design.md): 設計(層と import 契約、処理区分の責務、Evidence とゲート、判断表、化学プロトコル、順位の量、実行基盤、設定)
 - [docs/environment.md](docs/environment.md): 版数、インストール、WSL の資源、テスト
 - [docs/validation.md](docs/validation.md): WSL の実計算による検証の記録
-- [docs/reviews/](docs/reviews/): 設計の根拠になったレビュー(現行の改良は `2026-09-27_platform_review.md`)
+- [docs/reviews/](docs/reviews/): 設計の根拠になったレビューと改良の結果報告(最新は [2026-09-30_round7_result.md](docs/reviews/2026-09-30_round7_result.md))
