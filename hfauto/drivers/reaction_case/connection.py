@@ -1,4 +1,4 @@
-"""The connection and intermediate actions of a reaction case (design §6.2): QRC from a
+"""The connection and intermediate actions of a reaction case (design §7.3): QRC from a
 validated TS, assignment of its sides to DFT basins, and the wells that split a case. A well
 that becomes an endpoint is the structure the case reached, in its atom order; a case is
 judged at the granularity its ends differ in (``_key``)."""

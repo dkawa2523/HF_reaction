@@ -1,4 +1,4 @@
-"""Reaction-case state and the pure decision table (design §6.2).
+"""Reaction-case state and the pure decision table (design §7.3).
 
 ``decide`` evaluates the 17 rows of ``ROWS`` from the top and returns the first decision.  The
 driver accumulates ``CaseState`` in memory; actions only change the state, never the table.
@@ -28,7 +28,7 @@ from hfauto.core.records import (
     SaddleClaim,
 )
 
-QRC_AMPLITUDES = 2  # QRC tries at most two amplitudes (design §6.2, CONNECT)
+QRC_AMPLITUDES = 2  # QRC tries at most two amplitudes (design §7.3, CONNECT)
 STRING_CHUNKS = 3  # DFT string chunks (maxiter 20 each) per case
 
 
@@ -77,7 +77,7 @@ class Seed:
 class CaseState:
     """Snapshot accumulated by the driver (never replayed from the log).
 
-    ``minima`` (not in the §6.2 listing) holds the registry records of ``case.minima``, None when
+    ``minima`` (not in the §7.3 listing) holds the registry records of ``case.minima``, None when
     an endpoint has none: rows 1-3 need their tier, level, basin and energy, which a
     ReactionRecord does not carry. ``screen`` is the verdict of the latest DFT profile (SCREEN
     or string), which decides rows 6, 13 and 16 and goes into the record. ``neb_done``: the

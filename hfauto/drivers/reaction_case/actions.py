@@ -13,7 +13,14 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 import numpy as np
 
 from hfauto.chemistry import profile, topology
-from hfauto.chemistry.gates import barrier_verdict, is_first_order_saddle, qrc_drop, spin_ok
+from hfauto.chemistry.gates import (
+    Gate,
+    barrier_verdict,
+    is_first_order_saddle,
+    qrc_drop,
+    reaction_mode_character,
+    spin_ok,
+)
 from hfauto.chemistry.geometry import declared_coordinate_gradient, most_changed_dihedral
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.modes import TARGET_HARTREE, amplitude, displace, overlap
@@ -156,7 +163,7 @@ class Ctx:
         return verdict
 
     def direction(self, x: np.ndarray, seed: Seed | None = None) -> np.ndarray:
-        """Reaction direction at a seed (design §6): a TS's own imaginary mode, else the path
+        """Reaction direction at a seed (design §7.3): a TS's own imaginary mode, else the path
         tangent (the endpoint chord off a path) on the reaction centre; with no bond change,
         the gradient of the declared coordinate, else of the most changed dihedral."""
         if seed is not None and seed.tangent is not None and seed.source in _MODE_SEEDS:
@@ -261,8 +268,18 @@ def _pushed(ctx: Ctx, freq: Evidence, x: np.ndarray, name: str) -> Seed:
     return Seed(ctx.geometry(name, pushed), "higher_order_retry", freq.imaginary_modes[r], freq)
 
 
+def _reaction_mode(ctx: Ctx, freq: Evidence, x: np.ndarray) -> Gate:
+    """The TS mode against this hypothesis: the bond change of the labelled case ends (never of
+    the QRC sides, which in a degenerate case show none), else the declared coordinate."""
+    formed, broken = topology.bond_changes(ctx.symbols, *ctx.ends)
+    terms = ctx.case.coordinate
+    gradient = declared_coordinate_gradient(terms, x) if terms else None
+    return reaction_mode_character(freq.imaginary_modes[0], x, formed | broken, gradient)
+
+
 def validate_ts(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """Separate DFT freq on the saddle → is_first_order_saddle and spin_ok."""
+    """Separate DFT freq on the saddle → is_first_order_saddle, reaction_mode_character (a
+    rejected saddle stays a counted attempt and gets no QRC) and spin_ok."""
     rt, saddle, gates = ctx.rt, ctx.work.saddle, ctx.rules.gates
     if saddle is None:
         return replace(state, last_saddle="failed")
@@ -272,6 +289,9 @@ def validate_ts(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
         ctx.note(f"ts_freq:{freq.kind.value}")
         return replace(state, last_saddle="failed")
     gate = is_first_order_saddle(freq, saddle=saddle, policy=gates)
+    if gate and not (mode := _reaction_mode(ctx, freq, x)):
+        ctx.note(f"ts_rejected:{','.join(mode.reasons)}")
+        return replace(state, last_saddle="failed")
     if gate:
         ctx.work.ts_freq = ctx.keep(freq)
         notes = (*gate.notes, *spin_ok(freq, gates).reasons)

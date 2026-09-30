@@ -343,3 +343,69 @@ CUR のうち paths を持つ 33 本の 41 case について、記録と case �
   - W5_s6 と s6_oh_ch4 の f9bc(検証 (c))は再生していない。予算(壁時計 2 h、QM 1.5 h)を W3_s6 と s5 で使い切ったためである。W3_s6 の 460166732f は、同じ −1347.6i の TS、同じ両端 (p02, bfac)、同じ中間体の状態を持つので、判定の経路は同じである。ただし、子の新しい探索の結果は run ごとに違いうる。
   - s5 の b3e2f366b6 の子の連鎖の完了。
 - 見えた課題(M2 の外): 行 5 の分割は、TS が端の状態と、それより低い別の状態を結ぶときにも中間体を作る。S5 の split2 では、CH2O + OH から 26.1 kcal/mol 下った HCO• + H2O(QRC の側の opt の最終エネルギーの差)を経る R → I → P になる。これは basin の単位の頃からの GEN-05 の規則で、M2 では変えていない。
+
+## 13. M3 反応モード性 χ(X1 / G1-P2)
+
+分析の §2.1 G1-P2、§3 X1 と §4.1 M3 にあたる。規則は [design.md](design.md) §3 の `reaction_mode_character` と §6.2 の VALIDATE_TS。
+
+### 13.1 変えたこと
+
+- `gates.reaction_mode_chi` / `reaction_mode_character`: χ = ‖Q_Bᵀq̂‖。q̂ は質量の重みを外して正規化した Cartesian の虚モード、Q_B は仮説で変わる結合の Wilson 伸縮ベクトルが張る空間の正規直交基底である。結合が変わらない仮説は宣言座標の勾配との \|cos\| を使い、どちらもない仮説(ねじれの自動検出)にはかけない。
+- Q_B は QR ではなく SVD で作る。伸縮の組は線形従属になりうる。共線の 3 原子の 3 結合では、QR は余分な方向を足して並進に χ 0.17 を与える。単体テストは、SVD ではこれが 0 になることを確かめる。
+- `validate_ts`: `is_first_order_saddle` を通った後にかける。結合は case のラベル付きの両端(`ctx.ends`)から取り、QRC の側からは取らない。不合格なら注記 `ts_rejected:not_reaction_mode` を残し、`last_saddle='failed'` にする。試行は数えたままで、QRC はしない。
+- `REACTION_MODE_MIN` = 0.3 は gates のモジュール定数で、YAML では変えない。値は 13.2 の分布の空白から決めた。
+
+### 13.2 分布(QM なし、`/home/user/hfauto_r9/tools/chi.py`、出力は `/home/user/hfauto_r9/M3/chi/`)
+
+- 道具は、case ごとに種(case のフォルダの単一フレームの xyz、screen_idpp から始めた NEB の TS、`low_level_ts`)から始まった DFT saddle ジョブ、その maxiter の最終フレームからの再開、`ts_calc` を集める。そして、それぞれの最終構造での DFT freq の χ を、case の両端(driver の `_endpoint`)の結合変化で測る。
+  - reassigned の記録は `minima` を TS の側に書き換えるので、仮説の極小は端点の species の basin から戻す。
+  - CUR の TS freq 38 本のうち 35 本を case に割り当てた。残る 3 本は W3_s6 の JobStore にある、M1 で消えた f9bc の分割の子のものである(今の記録に case がない)。
+- 結果(CUR、`chi_CUR.txt`)。接続した TS は、いずれかの case が connected の outcome(multi_step を含む)で主張したもの。
+
+| 区分 | 接続した TS(χ) | 接続しなかった一次の鞍点(χ) |
+|---|---|---|
+| H 移動(HCN、HONO → HNO2、ホルムアルデヒド、CH3O•、S6 の引き抜き −481.1i と −485.8i、PT 2 件、S10、H + H2) | 13 件、0.640〜1.000 | S6 の 790468f505(W5_s6、s6_oh_ch4)の −73.2i、−73.0i、−58.6i: 4 件、0.002〜0.023 |
+| 重原子の結合変化を含む(SN2 の Cl と I 3 件、S6 の C–O の置換 5 件、S5 の O–O 開裂を伴う H 移動 −1866.6i) | 9 件、0.776〜0.930 | — |
+| 宣言座標だけ(HONO のねじれ、\|cos\|) | 1 件、0.571 | — |
+| 会合(S5 の b3febc8052 −72.0i、CH3 + O2 → CH3OO•) | CUR(M1 の記録)では reassigned だが順位なし(spin_contaminated) | M2 の再ステージ(`chi_M2_s5_b3febc.txt`)では same_state で未接続: 0.004 |
+| 結合変化も宣言もない(S12、S13、S17、NH3、oxalic など計 10 件) | ゲートはかからない | — |
+
+- 空白: 接続しなかった鞍点は ≤ 0.023、接続した TS は ≥ 0.571 である(結合変化のある TS だけなら ≥ 0.640、重原子を含むものは ≥ 0.776)。0.3 はこの空白の中にあり、§2.1 の予想と一致する。
+- 見かけの合格でないこと
+  - S6 だけで決めていない。順位のある接続した TS 23 件(重原子の標本 9 件を含む)と、接続しなかった鞍点 5 件(S6 の 4 件と、M2 の判定での S5 の −72i)の分布から決めた。
+  - χ は QRC の側から測っていない。縮退反応(SN2、PT、H 交換)は、ラベル付きの両端の結合変化で 0.83〜1.00 になる。
+- 順位のある接続反応(CUR の 23 件)で χ < 0.3 のものは 0 件である。
+- 空白に最も近い鞍点: M2 の再生で S5 の split2(CH2OOH• → CH2O + OH、O–O 開裂)が見つけた −299.2i は χ 0.257 である(`s5_split2.txt`。記録が書かれる前に CAP で止まった run なので、親の記録から端を組み立てて測った)。
+  - 構造(M3 の再生での −299.3i)は CH2OOH• そのもの(C–O 1.32 Å、O–O 1.50 Å。極小の O–O は 1.42 Å)で、CH2OOH• の極小の 0.8 kcal/mol 上にある。虚モードの大半は CH2 のねじれで、O–O の伸縮は一部だけである。
+  - M2 の QRC の両側は CH2O + OH と HCO• + H2O で、どちらの側も CH2OOH• に戻らなかった。
+  - M3 ではこれを拒否し、split2 は O–O 開裂の探索を続ける(§12.3 の「見えた課題」)。0.3 との差は 0.04 しかないので、この種の鞍点が増えたら分布を測り直す。
+- χ はラベル付きの端点に依る(M1 の添字の連続性が前提)。M1 の前の VAL7 の記録(`chi_VAL7.txt`)では、s6 の f9bc の −1347.6i は、端点の添字の誤りのために 0.289 だった。M1 の端点では 0.798 である。
+
+### 13.3 再生と実計算(統合、`/home/user/hfauto_r9/M3/`)
+
+- strict(`tools/replay.py M3 --src CUR --strict`、下の 3 本を除く 33 本、壁時計 7 分): 33 本すべて PASS。misses 0、新しいジョブ 0、記録は同一である。
+- 実計算 S6(`M3/real/s6`。CUR/s6_oh_ch4 の複製を paths から再ステージ。G1-P1 なし。壁時計 13.6 分、新しいジョブ 15 本、2,883 core 秒)
+  - `rxn_discovery_790468f505`: screen_hei からの −73.0i と、path_hei の再開からの −73.2i が、どちらも `validate_ts` の直後に `ts_rejected:not_reaction_mode` になった。QRC の注記はなく、この case の新しいジョブは 0 件(QRC の opt の秒数も 0)。試行を使い切って unresolved_within_budget(`attempts_exhausted`)。
+  - 新しいジョブ 15 本はすべて `rxn_discovery_f9bc3a1cd8` の分割の子 split1 の探索である(M2 の検証 (c) の再生。SCREEN の SP 9、NEB 1(失敗)、xTB freq 1、saddle 1、freq 1、QRC の opt 2)。
+  - f9bc は multi_step になった。split1(CH3 + H2O → CH4 + HO)は −479.4i(χ 0.681)で elementary(δG_eff 16.02)、split2 は親の −1347.6i を再検証して elementary(41.25)である。W3_s6 の 460166732f の子(15.92、41.25)と一致する。
+- 報告だけの再生(`--allow-new`。すべて CAP の前に完了)
+
+| run | 壁時計 | 新しいジョブ | 結果 |
+|---|---|---|---|
+| s6_oh_ch4 | 8.2 分 | 15 本、1,871 core 秒 | 実計算と同じ経過。790468f505 は −73.0i と −73.2i を拒否して attempts_exhausted。f9bc は multi_step(split1 −478.3i、δG_eff 16.04) |
+| W5_s6 | 10.7 分 | 15 本、2,165 core 秒 | 790468f505 は −73.0i と −58.6i(χ 0.023)を拒否して attempts_exhausted。W5 で 1,346 s かかった QRC の opt 2 本は走らない。f9bc は multi_step(split1 −480.5i、16.02) |
+| s5_ch3_o2 | 18.5 分 | 19 本、4,331 core 秒 | 下記 |
+
+- s5_ch3_o2
+  - `rxn_discovery_b3febc8052`: 2 回目の試行の再開で得た −72.0i(χ 0.004)を拒否し、attempts_exhausted。QRC の側の極小と species、この鞍点の熱化学の記録は消えた。paths を b3febc8052 に限った CUR の再ステージ(`M3/real/s5_b3febc`、hits 21、misses 0)でも同じだった。
+  - `rxn_discovery_b3e2f366b6`: multi_step。split1(CH3OO• → CH2OOH•)は −1866.6i を再検証して elementary(δG_eff 46.34)。
+  - split2(CH2OOH• → CH2O + OH): −299.3i(χ 0.257)と −277.4i(χ 0.221)を拒否し、attempts_exhausted。2 つは同じ領域の鞍点である(E の差 0.002 mEh、C–O と O–O の差 0.004 Å 以内)。O–O 開裂の TS には届かなかった。M2 のように HCO• + H2O を経る分割はしない。
+- CUR の 36 本すべてを `M3/replay/<name>` に張り替えた。M2 で M1 のままだった s5・W5_s6・s6_oh_ch4 も、M2 と M3 の完全な再生になった。
+- M3 の CUR の分布(`M3/int/chi_CUR_after_M3.txt`): 接続した TS 28 件は χ 0.571〜1.000、順位のある接続反応で χ < 0.3 は 0 件。接続しない一次の鞍点 7 件は χ 0.002〜0.257(S6 の 4 件、S5 の −72i、split2 の 2 件)。
+- r6・r7 の S6 の JobStore(読むだけ。W3 の manifest は古い schema なので chi.py では読めない)の、ν1 が −40〜−90 cm⁻¹ の DFT freq はすべて χ ≤ 0.023 だった(−77.1i、−73.0i、−70.4i、−60.6i、−58.6i、−57.3i。`M3/int/s6_soft_saddles.txt`)。
+
+### 13.4 実証していないこと
+
+- S6 の OH + CH4 → CH3 + H2O(790468f505)は、どの run でも unresolved のままである。引き抜きの TS には分割の子(split1、逆向き)から届いた。仮説そのものからの到達は G1-P1(M4)で扱う。
+- S5 の CH2OOH• → CH2O + OH(split2)の TS は見つからなかった。
+- 最も近い拒否(split2 の 0.221 と 0.257)と 0.3 の差は 0.04〜0.08 である。仮説と同じ結合を一部動かす鞍点が増えたら、分布を測り直す。

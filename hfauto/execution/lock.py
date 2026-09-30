@@ -1,6 +1,6 @@
 """Lock files created with O_EXCL; a lock whose holder pid is dead is taken over.
 
-The same primitive serves ``SiteLock`` (one run per scratch root, design §8) and the
+The same primitive serves ``SiteLock`` (one run per scratch root, design §7.1) and the
 per-job ``.lock`` of the JobStore; plain files, so it works on Windows and POSIX alike.
 """
 

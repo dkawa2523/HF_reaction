@@ -9,6 +9,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+import numpy as np
+
 from hfauto.chemistry.profile import classify
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Level
@@ -47,6 +49,7 @@ _DEFAULT = Policy()
 LOW_LEVEL_BARRIER_MAX_KCAL = 50.0  # explore's xTB barrier cap; the DFT stages judge the rest
 SCF_NOISE_FACTOR = 20.0  # x scf_tol: the SCF noise of an energy difference at one geometry
 QRC_MIN_DROP_HARTREE = 1.0e-5  # the floor of that noise (H2Te freq vs opt: 3.1e-6 Eh)
+REACTION_MODE_MIN = 0.3  # in the empty χ gap: saddles no case connected ≤ 0.02, TSs ≥ 0.57
 _PES_FIELDS = (
     "program", "version", "method", "basis", "dispersion",
     "charge", "multiplicity", "electronic_temperature_K",
@@ -138,6 +141,35 @@ def is_first_order_saddle(freq: Evidence, *, saddle: Evidence, policy: Policy = 
         reasons.append("higher_order")
     soft = -policy.saddle_cm1 <= second < -policy.noise_cm1
     return _gate(reasons, ("soft_secondary_mode",) if soft else ())
+
+
+def reaction_mode_chi(mode: Sequence[float], coords: np.ndarray, bonds: Bonds,
+                      gradient: np.ndarray | None = None) -> float | None:
+    """χ = ‖Q_Bᵀq̂‖ of the unit Cartesian imaginary mode q̂ (mass weighting removed): Q_B is an
+    orthonormal basis of the Wilson stretch vectors ∂r_ij/∂x of the hypothesis' changed bonds at
+    the saddle ``coords`` (SVD: a set of stretches can be linearly dependent). Without a changed
+    bond, |cos(q̂, ∇q)| of a declared coordinate q; None with neither."""
+    q = np.ravel(np.asarray(mode, dtype=float))
+    q = q / np.linalg.norm(q)
+    if bonds:
+        x, b = np.reshape(coords, (-1, 3)), np.zeros((q.size, len(bonds)))
+        for k, (i, j) in enumerate(sorted(bonds)):
+            e = (x[i] - x[j]) / np.linalg.norm(x[i] - x[j])
+            b[3 * i:3 * i + 3, k], b[3 * j:3 * j + 3, k] = e, -e
+        u, s, _ = np.linalg.svd(b, full_matrices=False)
+        return float(np.linalg.norm(u[:, s > 1e-8 * s[0]].T @ q))
+    if gradient is None or not np.any(gradient):
+        return None
+    return float(abs(q @ np.ravel(gradient)) / np.linalg.norm(gradient))
+
+
+def reaction_mode_character(mode: Sequence[float], coords: np.ndarray, bonds: Bonds,
+                            gradient: np.ndarray | None = None) -> Gate:
+    """A first-order saddle is this hypothesis' TS only when its imaginary mode carries the
+    hypothesis' bond change (or declared coordinate): χ ≥ REACTION_MODE_MIN, else
+    ``not_reaction_mode`` (a reorientation or rotor saddle). Not applied without either."""
+    chi = reaction_mode_chi(mode, coords, bonds, gradient)
+    return _gate(("not_reaction_mode",) if chi is not None and chi < REACTION_MODE_MIN else ())
 
 
 def barrier_verdict(

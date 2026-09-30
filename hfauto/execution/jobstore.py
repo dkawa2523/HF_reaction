@@ -1,4 +1,4 @@
-"""Content-addressed job cache of one run: ``<run>/jobs/<k[:2]>/<key>/`` (design §8).
+"""Content-addressed job cache of one run: ``<run>/jobs/<k[:2]>/<key>/`` (design §7.1).
 
 A job directory holds ``job.json`` (the key document), ``result.json`` and the
 ``attempt_NN/`` working directories. ``result.json`` is

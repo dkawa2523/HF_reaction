@@ -190,7 +190,7 @@ class _NWChem:
         """autoz -> Cartesian coordinates from the same start; SCF -> the old vectors (DFT: with
         the quadratic solver cgmin; none for open-shell DFT, _scf_rescuable); timeout of a
         driver job or maxiter of an opt -> its latest frame with the old vectors and driver
-        Hessian (design §8)."""
+        Hessian (design §7.1)."""
         if failure.kind is FailureKind.INPUT_INVALID and failure.reason == "autoz":
             return replace(task, inputs={**task.inputs, "cartesian": True})
         rescue = failure.kind is FailureKind.SCF_NOT_CONVERGED and _scf_rescuable(task)

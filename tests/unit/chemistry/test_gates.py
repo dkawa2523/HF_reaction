@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from hfauto.chemistry import gates as g
@@ -83,6 +84,39 @@ def test_saddle_mode_rules():  # one negative eigenvalue of any size above the n
     assert soft.ok and soft.notes == ()
     noise = g.is_first_order_saddle(ev(freqs=modes(-8.0)), saddle=saddle)
     assert noise.reasons == ("no_imaginary_mode",)
+
+
+AHB = np.array([[-1.4, 0.0, 0.0], [0.04, 0.0, 0.0], [1.4, 0.0, 0.0]])  # A-H broken, H-B formed
+AHB_BONDS = frozenset({(0, 1), (1, 2)})
+
+
+def test_reaction_mode_character_on_the_changed_bonds():
+    """G1-P2: chi = |Q_B^T q| on the orthonormalized stretches of the changed bonds."""
+    antisymmetric = np.array([1, 0, 0, -2, 0, 0, 1, 0, 0])  # A-H shortens as H-B stretches
+    h_alone = np.eye(9)[3]  # H moves along the axis, A and B stay: sqrt(2/3)
+    rotation = np.cross([0.3, -0.2, 1.0], AHB + [0, 0.5, 0]).ravel()  # rigid, about any point
+    bent = AHB + [[0, 0.5, 0], [0, 0, 0], [0, 0, 0]]
+    rotor = (np.cross([0, 0, 1.0], bent - bent[1]) * [[1], [0], [0]]).ravel()  # A turns about H
+    chi = [g.reaction_mode_chi(-m, x, AHB_BONDS) for m, x in
+           ((antisymmetric, AHB), (h_alone, AHB), (rotation, AHB), (rotor, bent))]
+    assert chi[:2] == pytest.approx([1.0, np.sqrt(2 / 3)])
+    assert chi[2:] == pytest.approx([0.0, 0.0], abs=1e-12)
+    ring = AHB_BONDS | {(0, 2)}  # three collinear stretches span two directions, not three
+    assert g.reaction_mode_chi(np.tile([1.0, 0, 0], 3), AHB, ring) == pytest.approx(0.0)
+    assert g.reaction_mode_character(h_alone, AHB, AHB_BONDS)
+    assert g.reaction_mode_character(rotor, bent, AHB_BONDS).reasons == ("not_reaction_mode",)
+
+
+def test_reaction_mode_character_without_a_bond_change():
+    """A declared coordinate only: |cos(q, grad q)|; with neither the gate is not applied."""
+    gradient = np.eye(9)[4]
+    mode = np.eye(9)[4] + np.eye(9)[1] * np.tan(np.radians(80))  # 80 degrees off the gradient
+    assert g.reaction_mode_chi(-mode, AHB, frozenset(), gradient) == pytest.approx(
+        np.cos(np.radians(80)))
+    assert g.reaction_mode_character(mode, AHB, frozenset(), gradient).reasons == (
+        "not_reaction_mode",)
+    assert g.reaction_mode_chi(mode, AHB, frozenset()) is None
+    assert g.reaction_mode_character(mode, AHB, frozenset(), np.zeros(9))
 
 
 def test_same_pes_and_spin():
