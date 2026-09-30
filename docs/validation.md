@@ -239,3 +239,57 @@ QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ
   - `tools/replay.py M1 --src CUR --allow-new W3_s6`: 振る舞いを変える wave。
   - `tools/replay.py PRE-c --runs hcn --from hcn=paths --strict`: 浅い再ステージが不合格になることの確認。
   - 結果は `/home/user/hfauto_r9/<wave>/replay/summary.json` と `summary.txt` に出る。FAIL があれば終了コードは 1。
+
+## 11. M1 原子の対応(X2-1)
+
+分析の §3 X2-1 と §4.1 M1 にあたる。規則は [design.md](design.md) §6.2 の「原子の対応」。コードは r9-M1 のコミット。
+
+### 11.1 変えたこと
+
+- 中間体: 既知の basin に落ちた井戸は、到達した構造をジョブなしの species `spc_<reaction_id>_intermediate` にして basin に加える。分割の子はその添字で続く(`drivers/reaction_case/connection.py`。接続と中間体の action を `actions.py` から移した。移しただけの段階では振る舞いは変わらない)。
+- 発見: `DiscoveryRecord.source_species` を足し、仮説の両端を discovery 自身の (`source_species`, `product_species`) にした。`hypotheses.pick_endpoints` と、メンバーの対から端を選ぶ分岐は削除した。explore の生成物は、添字付きの結合が等しい既知の構造にだけ同定する(縮退の生成物だけの特例をやめた。CUR の 14 件の生成物では同定は変わらない)。
+- `identity.basin_coords`: 端点の構造が basin と同じ状態ラベルを持つとき、原子を同じ WL クラスの原子にだけ対応させる。統合で選んだ方法である。到達した構造を記録する案もあったが、新しい記録が要り、全 run の MinimumRecord が変わるので採らなかった。
+  - 理由: VAL7/s6 と W5_s6 の bfac(xTB の IRC の端)は、それを含む PBE0 の basin から 0.957 Å 離れている。元素だけで並べると H1 が O に、H6 が C に対応し、`rxn_discovery_f9bc3a1cd8` の結合変化が 8 本になった。IRC 自身の変化は +C0–H2 +C0–O5 −C0–H4 −H2–O5 の 4 本である。この構造を回帰テストにした(`test_basin_coords_keep_the_bonds_of_a_member_far_from_the_basin`)。
+  - 状態ラベルが違う端(basin への緩和で結合が変わった seed)は、今までどおり元素だけで対応させる。そこでの結合変化は化学的な結果である(S5 の b3e2f366b6: xTB の CH2OOH が PBE0 で CH2O + OH に緩和した)。
+
+### 11.2 監査(QM なし)
+
+道具と出力は `/home/user/hfauto_r9/M1/` にある(`audit/`、`audit_ends/`、`integration/`)。
+- `tools/audit_ends.py` は、発見から作った仮説ごとに、case の端の結合変化と discovery 自身の添字付きの結合変化を比べる。
+  - HEAD のコードでは 17 件中 6 件が MISMATCH だった(W5_s6 と s6_oh_ch4 の bfac の端)。
+  - 作業ツリーでは 0 件である。M1 の再生(記録された `source_species` を使い、補完は 0 件)でも 0 件だった(`integration/audit_ends_M1_replay.txt`)。
+  - DFT_STATE の 1 件(S5)は上記の化学的な変化である。
+- CUR の 25 の非代表の端のうち、新しい `basin_coords` で変わるのは bfac の 2 件だけだった(`audit_ends/basin_coords_old_vs_proposed.txt`)。
+
+### 11.3 再生(`tools/replay.py M1 --src CUR`、36 本、壁時計 8 分)
+
+- 発見を持たない 25 本は、strict の条件(misses 0、記録が同一)で PASS した。
+- 発見を持つ 8 本(nh3_planar_seed、s4、s20_ch3o、s7、s8、s10、s19、s5)の差は、新しい欄 `source_species` だけだった。新しいジョブは 0 件である。
+- s6_oh_ch4 と W5_s6: 上の欄のほかに、`rxn_discovery_f9bc3a1cd8` の端が (p02, 05c1) から、discovery 自身の端である (p02, bfac) に変わった。新しいジョブは 0 件で、outcome と数値は同じ。bfac の添字で並べた basin の構造が、05c1 の代表の座標と一致するためである。
+- W3_s6(分析の X2 検証 (b)):
+  - 中間体が bfac の代表から、到達した QRC の側 `spc_rxn_discovery_f9bc3a1cd8_intermediate` に変わった。
+  - split1 は elementary_step のまま(親の TS を JobStore から再検証)。
+  - split2 は `torsional=True`(結合変化なし)で、barrierless_at_resolution になった。以前は偽の H の入れ替えで multi_step になり、split2_split1 と split2_split2 を生んでいた。この 2 つは消えた。
+  - 新しいジョブは、端が変わった split2 の SCREEN の 12 本(NEB 1、DFT SP 11。計 200 core 秒)。hits は 130 から 80 に減った。
+  - 付随する差として、`rxn_discovery_460166732f` の dG_eff が 32.41 から 31.60 kcal/mol に下がった。消えた偽の連鎖が登録していた CH4O+H の状態の極小 2 つがなくなったためである。その G は、この反応の反応物の極小より低かった。状態の G(最小の G)が変わったので dG_eff が変わった。ΔG‡ と ΔE‡ は同じ。
+- CUR は `M1/replay/<name>` に張り替えた。
+
+### 11.4 実計算: マロンアルデヒド(反応の宣言なし、C2v の種から)
+
+- 入力は `/home/user/hfauto_r9/inputs/malonaldehyde_c2v_undeclared_{ab,ba}.yaml`(known_endpoints)。
+  - 種は VAL7/s14 の TS の freq 構造(−1100.1i)を C2v に対称化したもの。
+  - _ab と _ba では、basin の代表になるエノールの登録順を入れ替えてある。
+- 結果(`/home/user/hfauto_r9/M1/real/malon_c2v_{ab,ba}`、1 本ずつ):
+
+| run | 代表 | 仮説の端 | outcome | 記録 | ΔE‡ | dG_eff | 壁時計 | QM |
+|---|---|---|---|---|---|---|---|---|
+| _ab | `min_r1_enol_a_ff60c312` | `ts_c2v_mf1` → `ts_c2v_mf2`(mode_follow) | degenerate_rearrangement | `connection:degenerate`、`qrc1:minus_is_image` | 2.01 | 0.0 | 37:55 | 8 ジョブ、9,084 core 秒 |
+| _ba | `min_r1_enol_b_ff60c312` | 同上 | degenerate_rearrangement | 同上 | 2.01 | 0.0 | 37:58 | 8 ジョブ、9,097 core 秒 |
+
+- 2 本とも、ts_c2v が `follow1:ts_candidate` になり、側が 1 つの basin に入った。case は mode-follow の鞍点(`ts_calc`)を検証し、QRC は + 側だけを走らせた。結論は S14(degenerate、dG_eff 0.0)と同じである。
+- 見かけの合格でないことの確認:
+  - 2 本とも成功した。
+  - 代表が違う。
+  - case の source は mode_follow で、宣言した反応ではない。
+- 実証していないこと: HEAD では、代表の添字が mf2 と同じ run で仮説が消えるはずだった(分析 G8-3 の推論)。HEAD でこの対は走らせていない。
+- 費用: DFT の mode-follow は対称な鞍点でも ± 両側を opt と freq にかける(freq 4 本で 69%)。QRC の像の規則は minima の mode-follow には入っていない。

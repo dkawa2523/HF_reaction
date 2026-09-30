@@ -102,7 +102,8 @@ def test_saddle_structure_gives_a_mode_follow_discovery(fake_runtime, tmp_run):
     (found,) = out.records(T.DISCOVERY, DiscoveryRecord)
     sides = {m.species_id: m for m in out.records(T.MINIMUM, MinimumRecord)}
     assert set(sides) == {"t_mf1", "t_mf2"} and found.mechanism == "mode_follow"
-    assert found.source_minimum == sides["t_mf1"].minimum_id and found.product_species == "t_mf2"
+    assert found.source_minimum == sides["t_mf1"].minimum_id
+    assert (found.source_species, found.product_species) == ("t_mf1", "t_mf2")  # its own ends
     assert found.ts is not None and found.ts_imag_cm1 < -50
     assert found.ts_calc is None  # an xTB saddle is a low-level TS
     assert {s.source for s in out.records(T.SPECIES, SpeciesRecord)} == {"input", "mode_follow"}
@@ -181,7 +182,8 @@ def test_mirror_sides_of_a_symmetric_saddle_give_one_basin_and_no_job(fake_runti
     assert basin.members == ("t_mf1", "t_mf2", "t") and basin.notes == ("endpoint_was_saddle",)
     assert len(xtb.calls) == 6 and xtb.calls.count("frequencies") == 3  # the driver's jobs only
     (found,) = out.records(T.DISCOVERY, DiscoveryRecord)
-    assert (found.source_minimum, found.product_species) == (basin.minimum_id, "t_mf2")
+    assert (found.source_minimum, found.source_species, found.product_species) == (
+        basin.minimum_id, "t_mf1", "t_mf2")
 
 
 def test_an_exact_image_joins_a_minimum_with_no_job_and_settles_after_a_saddle(fake_runtime,

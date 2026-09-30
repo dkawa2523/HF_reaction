@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from hfauto.chemistry import identity as idn
+from hfauto.chemistry import topology
 
 NH3_SYMBOLS = ["N", "H", "H", "H"]
 NH3 = np.array([[0.0, 0.0, 0.38], [0.94, 0.0, 0.0], [-0.47, 0.814, 0.0], [-0.47, -0.814, 0.0]])
@@ -77,6 +78,25 @@ def test_basin_coords_take_the_atom_order_and_handedness_of_the_member():
     order = [0, 2, 3, 1]  # an achiral basin is only relabelled
     x = idn.basin_coords(NH3_SYMBOLS, NH3, NH3[order] @ _proper_rotation(3).T + 0.03)
     assert np.allclose(x, NH3[order])
+
+
+def test_basin_coords_keep_the_bonds_of_a_member_far_from_the_basin():
+    """S6 (W5, VAL7): an xTB product CH3OH + H, 0.96 A from the PBE0 basin that holds it. As
+    elements alone the nearest match moves H1 onto O and H6 onto C (a fake H scramble); within
+    WL classes the member's atom-indexed bonds are kept."""
+    symbols = ["C", "H", "H", "H", "H", "O", "H"]
+    basin = np.array([[-0.3753, -0.5165, 0.3011], [-0.8441, -1.5066, 0.3711],
+                      [0.6085, 0.4446, -1.0785], [0.3826, -0.4401, 1.1004],
+                      [-1.1552, 0.2442, 0.4804], [0.188, -0.413, -0.982],
+                      [1.0871, 2.5978, 0.1369]])
+    own = np.array([[-0.0454, 0.2054, -0.3942], [-0.6118, -0.64, 0.1764],
+                    [-0.0044, -0.0841, -1.4423], [-0.6312, 1.1203, -0.2668],
+                    [-1.2368, -1.598, 0.9061], [1.2626, 0.3256, 0.0606],
+                    [1.267, 0.6708, 0.9603]])
+    by_element = basin[idn.permutation_invariant_rmsd(symbols, own, basin)[1]]
+    assert topology.bonds(symbols, by_element) != topology.bonds(symbols, own)
+    x = idn.basin_coords(symbols, basin, own)
+    assert topology.bonds(symbols, x) == topology.bonds(symbols, own)
 
 
 def test_rotated_permuted_copy_is_recovered():

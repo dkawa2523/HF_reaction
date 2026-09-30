@@ -7,6 +7,9 @@ changes bonds between its ends (CH-07): a conformer change, torsion or enantiome
 only when declared (Curtin-Hammett), so one basin gives a degenerate rearrangement that exchanges
 bonded partners (S10). Bonds and degeneracy are judged on the basins' optimized structures in the
 endpoints' atom order and handedness (``identity.basin_coords``), never on input coordinates.
+A discovery's ends are its own ``source_species`` and ``product_species``, labelled along the
+structures it followed, so a basin representative's arbitrary labelling never makes or hides a
+bond change (analysis X2); a discovery without both ends gives no hypothesis.
 A mode-follow saddle of the DFT tier is a verified saddle (``ts_calc``); any other discovery TS
 is a low-level TS. Negative discoveries never veto a hypothesis (review X1). A relaxation product
 (a seed state lost at screen, R6) runs from the DFT basin of the seed's own job, while it keeps
@@ -50,23 +53,6 @@ def seed_species_id(relaxation: DiscoveryRecord) -> str:
     return f"spc_{relaxation.discovery_id}"
 
 
-def pick_endpoints(
-    members_a: Sequence[SpeciesRecord], members_b: Sequence[SpeciesRecord], load_xyz: LoadXYZ
-) -> tuple[str, str] | None:
-    """Member pair with the smallest identity-mapped RMSD, so that a relabelled representative
-    is never used (chem 13).  None when no pair shares the element order."""
-    scored = [
-        (identity.mapped_rmsd(load_xyz(a.geometry).coords, load_xyz(b.geometry).coords), i, j)
-        for i, a in enumerate(members_a)
-        for j, b in enumerate(members_b)
-        if a.geometry.symbols == b.geometry.symbols
-    ]
-    if not scored:
-        return None
-    _, i, j = min(scored)
-    return members_a[i].species_id, members_b[j].species_id
-
-
 def _stoich(species: SpeciesRecord | None) -> tuple[StoichTerm, ...]:
     if species is None:
         return ()
@@ -91,9 +77,11 @@ class _Pool:
         own = self.load(species.geometry).coords
         return identity.basin_coords(basin.symbols, basin.coords, own)
 
-    def members(self, minimum: MinimumRecord) -> list[SpeciesRecord]:
-        ids = dict.fromkeys((minimum.species_id, *minimum.members))
-        return [self.species[s] for s in ids if s in self.species]
+    def ends(self, d: DiscoveryRecord) -> Ends | None:
+        """The discovery's own ends (source_species, product_species); None unless both are
+        species."""
+        sa, sb = (self.species.get(s or "") for s in (d.source_species, d.product_species))
+        return None if sa is None or sb is None else (sa, sb)
 
     def dft_basin(self, minimum_id: str) -> MinimumRecord | None:
         """DFT minimum holding the representative or a member of ``minimum_id`` (any tier)."""
@@ -118,7 +106,7 @@ class _Candidate:
     source: Source
     start: MinimumRecord | None  # the DFT basin of the discovery's source (a relaxation's seed)
     end: MinimumRecord | None  # the basin of its product
-    ends: tuple[str, str] | None  # the discovery's source and product species (one basin)
+    ends: Ends | None  # the discovery's own source and product species (_Pool.ends)
     low_level_ts: Geometry | None
     ts_calc: str | None  # a verified DFT saddle: a mode-follow saddle of the DFT tier
 
@@ -160,12 +148,14 @@ def _declared(pool: _Pool, reaction: ReactionInput) -> ReactionRecord:
 
 
 def _relaxation(pool: _Pool, d: DiscoveryRecord) -> _Candidate:
-    """Seed -> collapse (R6): the DFT basin of the seed's own job, only while it keeps the
-    seed's state (a seed that collapsed at DFT too gives none), and its collapse basin's."""
-    seed, basin = pool.species.get(seed_species_id(d)), pool.basin_of.get(seed_species_id(d))
-    kept = seed is not None and basin is not None and basin.state_label == seed.state_label
+    """Seed -> collapse (R6): the DFT basin of the seed's own job (``source_species``), only
+    while it keeps the seed's state (a seed that collapsed at DFT too gives none), and its
+    collapse basin's. Both ends carry the seed's labelling."""
+    ends = pool.ends(d)
+    basin = pool.basin_of.get(ends[0].species_id) if ends else None
+    kept = ends is not None and basin is not None and basin.state_label == ends[0].state_label
     return _Candidate(source="discovery", start=basin if kept else None,
-                      end=pool.dft_basin(d.source_minimum), ends=None, low_level_ts=None,
+                      end=pool.dft_basin(d.source_minimum), ends=ends, low_level_ts=None,
                       ts_calc=None)
 
 
@@ -175,39 +165,25 @@ def _candidates(pool: _Pool, discoveries: Iterable[DiscoveryRecord]) -> Iterator
         if d.mechanism == "relaxation":
             yield _relaxation(pool, d)
             continue
-        start = pool.minima.get(d.source_minimum)
         yield _Candidate(
             source="mode_follow" if d.mechanism == "mode_follow" else "discovery",
             start=pool.dft_basin(d.source_minimum), end=pool.basin_of.get(d.product_species or ""),
-            ends=(start.species_id, d.product_species or "") if start else None,
-            low_level_ts=None if d.ts_calc else d.ts, ts_calc=d.ts_calc)
-
-
-def _ends(pool: _Pool, c: _Candidate, ma: MinimumRecord, mb: MinimumRecord) -> Ends | None:
-    """The species at the two ends: in one basin the discovery's own ends, whose labelling alone
-    tells the rearrangement; else the member pair nearest as labelled (``pick_endpoints``)."""
-    if ma.basin_id == mb.basin_id:
-        sa, sb = (pool.species.get(e) for e in c.ends) if c.ends else (None, None)
-        return None if sa is None or sb is None else (sa, sb)
-    picked = pick_endpoints(pool.members(ma), pool.members(mb), pool.load)
-    return None if picked is None else (pool.species[picked[0]], pool.species[picked[1]])
+            ends=pool.ends(d), low_level_ts=None if d.ts_calc else d.ts, ts_calc=d.ts_calc)
 
 
 def _auto(pool: _Pool, c: _Candidate, ma: MinimumRecord, mb: MinimumRecord
           ) -> ReactionRecord | None:
     """An undeclared hypothesis: DFT minima of one level and composition inside the window whose
-    ends differ in bonds (CH-07); in one basin, a degenerate rearrangement."""
+    ends, the discovery's own, differ in bonds (CH-07); in one basin, a degenerate
+    rearrangement."""
     same_level = ma.tier == mb.tier == "dft" and ma.level_key == mb.level_key
-    if not same_level or ma.composition_id != mb.composition_id:
+    if not same_level or ma.composition_id != mb.composition_id or c.ends is None:
         return None
     if (mb.energy_hartree - ma.energy_hartree) * HARTREE_TO_KCAL_MOL > pool.window_kcal:
         return None
-    ends = _ends(pool, c, ma, mb)
-    if ends is None:
-        return None
+    sa, sb = c.ends
     rid = reaction_id(c.source, sha256_text(f"{ma.minimum_id}|{mb.minimum_id}")[:10])
-    record = _record(rid, c.source, (ma, mb), ends,
-                     (pool.coords(ma, ends[0]), pool.coords(mb, ends[1])),
+    record = _record(rid, c.source, (ma, mb), c.ends, (pool.coords(ma, sa), pool.coords(mb, sb)),
                      low_level_ts=c.low_level_ts, ts_calc=c.ts_calc)
     return None if record.torsional else record
 

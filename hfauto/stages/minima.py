@@ -8,8 +8,9 @@ freq job (one identity criterion: identity.assign). An exact permutation or mirr
 earlier start (identity.carry within IMAGE_A) runs no job: the PES is invariant under both, so it
 joins that start's basin when that start relaxed straight into a minimum. A saddle whose ±
 displacements reach two distinct minima gives two ``mode_follow`` species at the driver's side
-minima, registered by identity with no new job, and a ``mode_follow`` discovery; the saddle's
-own species joins the side basin nearer its input structure (note ``endpoint_was_saddle``).
+minima, registered by identity with no new job, and a ``mode_follow`` discovery between them
+(its ends, in the saddle's atom order); the saddle's own species joins the side basin nearer
+its input structure (note ``endpoint_was_saddle``).
 A relaxation product's seed (R6) is asked at DFT once, last, from its unrelaxed geometry as its
 own species (``hypotheses.seed_species_id``; the seed may carry its collapse basin's job); one that
 lands in another state than its own is noted ``collapsed_at_dft_from_seed``.
@@ -230,15 +231,17 @@ class _Run:
                 self.history[seed.species_id].append("collapsed_at_dft_from_seed")
 
     def discovery(self, done: _Relaxed, sides: list[_Side]) -> DiscoveryRecord | None:
-        """source_minimum = side 1's minimum, product_species = side 2, ts = the saddle; at the
-        DFT tier ts_calc is its opt: a verified DFT saddle, validated directly by the case."""
-        (_, a), (product, b) = sides
+        """source_minimum = side 1's minimum, source_species and product_species = the two side
+        species (both in the saddle's atom order), ts = the saddle; at the DFT tier ts_calc is
+        its opt: a verified DFT saddle, validated directly by the case."""
+        (source, a), (product, b) = sides
         parent, saddle, freq = done[0].species.species_id, done[1].opt, done[1].freq
         if saddle is None or freq is None:
             return None
         return DiscoveryRecord(
             discovery_id=f"disc_mode_follow_{parent}", source_minimum=a.minimum_id,
-            mechanism="mode_follow", outcome="product", product_species=product.species_id,
+            mechanism="mode_follow", outcome="product", source_species=source.species_id,
+            product_species=product.species_id,
             ts=saddle.final, ts_calc=driver.calc_id(saddle) if self.cfg.level == "dft" else None,
             ts_imag_cm1=min(freq.frequencies_cm1 or (0.0,)),
             dE_act_kcal=(saddle.energy_hartree - a.energy_hartree) * HARTREE_TO_KCAL_MOL,

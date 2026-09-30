@@ -31,7 +31,7 @@ PAYLOADS = {
         discovery_id="d1", source_minimum="m1", mechanism="nt2", outcome="product",
         trial=r.ReactionTrial(trial_id="t1", source_minimum="m1", kind="transfer",
                               associations=((0, 2),)),
-        product_species="s2", ts=GEO, ts_imag_cm1=-1200.0, dE_act_kcal=45.4, ts_calc="c3"),
+        source_species="s1", product_species="s2", ts=GEO, ts_imag_cm1=-1200.0, dE_act_kcal=45.4, ts_calc="c3"),
     AT.REACTION: r.ReactionRecord(
         reaction_id="r1", reactants=TERM, products=TERM, minima=("m1", "m2"),
         endpoints=("s1", "s2"), source="declared", ts_calc="c3",

@@ -1,8 +1,9 @@
 """explore stage with FakeDiscovery (§8.2): one NT2 attempt per unit, the kcal/mol window,
-failed attempts, one species per product basin (degenerate products kept apart from the
-source), one relaxation product per lost seed state (R6), two lowest sources per state, the
-screen-optimized start structure and the source's charge and multiplicity (HCN⁺•: dissociations
-are trials), and parallel units recorded as serial ones."""
+failed attempts, one species per product basin as labelled (a relabelled product, degenerate
+ones included, kept apart), each discovery's source species (X2), one relaxation product per
+lost seed state (R6), two lowest sources per state, the screen-optimized start structure and the
+source's charge and multiplicity (HCN⁺•: dissociations are trials), and parallel units recorded
+as serial ones."""
 
 import dataclasses
 
@@ -96,9 +97,10 @@ def test_explore_records_every_attempt(fake_runtime, tmp_run):
     [species] = [a.payload for a in out if a.type == SPECIES]  # one HNC basin
     assert (species.source, species.state_label) == ("discovery", state_label(SYMBOLS, HNC))
     assert species.composition_id == CATION
-    for source in ("m0", "m1"):
+    for source in ("m0", "m1"):  # from the source's representative, in whose order it ran
         shift = found[(source, "transfer", CH, "nt2")].payload
         assert (shift.outcome, shift.product_species) == ("product", species.species_id)
+        assert shift.source_species == "s" + source[1:]
     assert got[("m0", "dissociation", CN, "nt2")] == ("product", None)  # 50 and 40 kcal/mol
     assert got[("m1", "dissociation", CN, "nt2")] == ("negative", "out_of_window")  # 50.01
     assert found[("m0", "dissociation", CH, "nt2")].failure.kind == FailureKind.NONZERO_EXIT
@@ -107,6 +109,7 @@ def test_explore_records_every_attempt(fake_runtime, tmp_run):
     assert len(fake.calls) == len(found) - 1  # one NT2 call per unit; the relaxation has none
     relaxed = found[("m0", None, None, "relaxation")].payload  # the lost HNC seed, unrelaxed
     assert (relaxed.outcome, relaxed.product_species, relaxed.ts) == ("product", "seed", None)
+    assert relaxed.source_species == "spc_relax_seed"  # the seed refined as its own species
     assert {c[1].source_minimum for c in fake.calls} == {"m0", "m1"}  # m2: third lowest; m3: Ar
     for source, trial, *_ in fake.calls:  # from the opt final (bent: linear), not species.geometry
         i = int(trial.source_minimum[1:])
@@ -144,13 +147,15 @@ def test_one_relaxation_product_per_lost_seed_state(tmp_run):
     assert (record.mechanism, record.outcome) == ("relaxation", "product")
 
 
-def test_a_degenerate_product_never_joins_its_source_basin():
-    """The NH3·HF double H exchange is the source's basin by permutation-invariant RMSD; its
-    atom-indexed bonds keep it apart, and a second trial that reaches it joins it."""
-    label, xyz = state_label(NH3_HF_SYMBOLS, NH3_HF), XYZ(list(NH3_HF_SYMBOLS), NH3_HF)
-    source = _Basin("source", label, xyz)
-    first = _Basin("p1", label, XYZ(list(NH3_HF_SYMBOLS), NH3_HF_EXCHANGED))
-    second = _Basin("p2", label, XYZ(list(NH3_HF_SYMBOLS), NH3_HF_EXCHANGED + 0.01))
-    assert _basin_of(first, [source], degenerate=False) == "source"
-    assert _basin_of(first, [source], degenerate=True) is None
-    assert _basin_of(second, [source, first], degenerate=True) == "p1"
+def test_a_product_joins_a_known_basin_only_as_labelled():
+    """X2: the NH3·HF double H exchange is the source's basin by permutation-invariant RMSD, but
+    with other atom-indexed bonds: it stays a species of its own (the discovery's ends keep its
+    labelling), which a second trial that reaches it joins; the source's own labelling joins the
+    source."""
+    def basin(sid, coords):
+        return _Basin(sid, XYZ(list(NH3_HF_SYMBOLS), coords))
+
+    source, first = basin("source", NH3_HF), basin("p1", NH3_HF_EXCHANGED)
+    assert _basin_of(first, [source]) is None
+    assert _basin_of(basin("p2", NH3_HF_EXCHANGED + 0.01), [source, first]) == "p1"
+    assert _basin_of(basin("p3", NH3_HF + 0.01), [source, first]) == "source"

@@ -31,7 +31,7 @@ from hfauto.core.records import (
     SpeciesRecord,
 )
 from hfauto.drivers.minimum import Registry, relax_to_minimum
-from hfauto.drivers.reaction_case import actions
+from hfauto.drivers.reaction_case import connection
 from hfauto.drivers.reaction_case.actions import Profile
 from hfauto.drivers.reaction_case.driver import HANDLERS, CaseRuntime, open_case
 from hfauto.drivers.reaction_case.paths import SCREEN_IMAGES, STRING_BEADS
@@ -245,7 +245,7 @@ def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path, monkeypat
     assert len(set(claim.side_calcs)) == 2 == ctx.rt.map[-1] and "minus_is_image" not in str(logged)
     state = act(ctx, replace(state, connection=None), Action.CONNECT)  # 2nd amplitude: × 2
     assert qrc_step(ctx) == pytest.approx(2 * first, abs=1e-6)
-    monkeypatch.setattr(actions, "BOUNDS_A", (0.03, 0.05))  # the first one is capped
+    monkeypatch.setattr(connection, "BOUNDS_A", (0.03, 0.05))  # the first one is capped
     state, amplitudes = replace(state, connection_attempts=0), []
     for _ in range(2):  # C19: × 2, then clipped, so the 2nd amplitude equals the 1st
         state = act(ctx, replace(state, connection=None), Action.CONNECT)
@@ -261,7 +261,7 @@ def test_a_symmetric_ts_optimizes_one_qrc_side_and_carries_its_image(tmp_path) -
     ctx, state = case_ctx(tmp_path, pes)
     freq = ctx.work.ts_freq = ctx.rt.qm.frequencies(pes.molecule("ts"), DFT)
     starts = displace(pes.points["ts"], np.asarray(freq.imaginary_modes[0]), 0.1)
-    (plus, minus), (x_plus, x_minus) = actions._sides(ctx, freq, starts, 1)
+    (plus, minus), (x_plus, x_minus) = connection._sides(ctx, freq, starts, 1)
     alone = ctx.coords(ctx.rt.qm.optimize(ctx.mol(starts[1]), DFT, init_hessian=freq).final)
     assert plus is minus and mapped_rmsd(x_minus, alone) < 1e-3
     assert mapped_equivalent(pes.symbols, x_plus, x_minus)  # H at F2, H at F1: one basin

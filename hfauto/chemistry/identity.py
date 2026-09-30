@@ -11,11 +11,12 @@ proper, so that a degenerate rearrangement such as the NH3 inversion differs fro
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+from hfauto.chemistry import topology
 from hfauto.chemistry.geometry import kabsch
 
 IMAGE_A = 0.005  # an exact image: QRC ± starts at a symmetric TS <= 0.0009 A, others >= 0.025 A
@@ -25,6 +26,7 @@ _RUNNER_UP_RATIO, _RUNNER_UP_GAP_A = 3.0, 0.1
 _MAX_REFINE = 5
 _DEGENERATE_REL = 0.05  # principal moments this close (relative) count as degenerate
 _IN_PLANE_STEP_DEG = 30
+Labels = tuple[Sequence[Hashable], Sequence[Hashable]]  # per atom of a and of b
 # Proper sign flips of the principal axes.
 _SIGN_FLIPS = tuple(np.diag(s) for s in ((1, 1, 1), (1, -1, -1), (-1, 1, -1), (-1, -1, 1)))
 
@@ -68,16 +70,16 @@ def _spins(moments: np.ndarray) -> list[np.ndarray]:
     return spins
 
 
-def _assign(symbols: Sequence[str], a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """perm with b[perm[i]] matched to a[i], same elements only."""
+def _assign(labels: Labels, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """perm with b[perm[i]] matched to a[i], atoms of one label (element or WL class) only."""
 
-    perm = np.arange(len(symbols))
-    elements = np.asarray(symbols)
-    for element in set(symbols):
-        idx = np.flatnonzero(elements == element)
-        cost = np.sum((a[idx, None, :] - b[None, idx, :]) ** 2, axis=-1)
+    perm = np.arange(len(a))
+    la, lb = (np.asarray(x) for x in labels)
+    for label in set(labels[0]):
+        ia, ib = np.flatnonzero(la == label), np.flatnonzero(lb == label)
+        cost = np.sum((a[ia, None, :] - b[None, ib, :]) ** 2, axis=-1)
         rows, cols = linear_sum_assignment(cost)
-        perm[idx[rows]] = idx[cols]
+        perm[ia[rows]] = ib[cols]
     return perm
 
 
@@ -89,11 +91,13 @@ def _check(symbols: Sequence[str], a: np.ndarray, b: np.ndarray) -> tuple[np.nda
 
 
 def permutation_invariant_rmsd(
-    symbols: Sequence[str], a: np.ndarray, b: np.ndarray
+    symbols: Sequence[str], a: np.ndarray, b: np.ndarray, labels: Labels | None = None
 ) -> tuple[float, np.ndarray]:
-    """(rmsd, perm) such that b[perm] is the best proper-rotation match of a."""
+    """(rmsd, perm) such that b[perm] is the best proper-rotation match of a; atoms match
+    within their ``labels`` of a and b (default: the elements)."""
 
     xa, xb = _check(symbols, a, b)
+    labels = labels or (symbols, symbols)
     moments, frame_a = _principal_frame(xa)
     _, frame_b = _principal_frame(xb)
     starts = [kabsch(xb, xa)]  # identity mapping first
@@ -101,9 +105,9 @@ def permutation_invariant_rmsd(
     starts += [frame_b @ flip @ spin @ frame_a.T for flip in _SIGN_FLIPS for spin in spins]
     best = (math.inf, np.arange(len(xa)))
     for start in starts:
-        perm = _assign(symbols, xa, xb @ start)
+        perm = _assign(labels, xa, xb @ start)
         for _ in range(_MAX_REFINE):
-            new_perm = _assign(symbols, xa, xb @ kabsch(xb[perm], xa))
+            new_perm = _assign(labels, xa, xb @ kabsch(xb[perm], xa))
             if np.array_equal(new_perm, perm):
                 break
             perm = new_perm
@@ -122,12 +126,12 @@ def mapped_rmsd(a: np.ndarray, b: np.ndarray) -> float:
     return _rmsd(xb @ kabsch(xb, xa), xa)
 
 
-def _basin_match(symbols: Sequence[str], a: np.ndarray, b: np.ndarray
-                 ) -> tuple[float, np.ndarray, bool]:
+def _basin_match(symbols: Sequence[str], a: np.ndarray, b: np.ndarray,
+                 labels: Labels | None = None) -> tuple[float, np.ndarray, bool]:
     """(rmsd, perm, mirrored): the better of b and its mirror image matched onto a."""
 
-    rmsd, perm = permutation_invariant_rmsd(symbols, a, b)
-    m_rmsd, m_perm = permutation_invariant_rmsd(symbols, a, _mirror(b))
+    rmsd, perm = permutation_invariant_rmsd(symbols, a, b, labels)
+    m_rmsd, m_perm = permutation_invariant_rmsd(symbols, a, _mirror(b), labels)
     return (m_rmsd, m_perm, True) if m_rmsd < rmsd else (rmsd, perm, False)
 
 
@@ -186,12 +190,20 @@ def assign(
 
 def basin_coords(symbols: Sequence[str], basin: np.ndarray, own: np.ndarray) -> np.ndarray:
     """The basin's structure in the atom order of ``own`` (a structure of that basin), mirrored
-    when the basin is chiral and ``own`` has the other handedness."""
+    when the basin is chiral and ``own`` has the other handedness. When ``own`` has the basin's
+    bond graph, an atom maps only onto one of its WL class, so the relabelling keeps own's
+    atom-indexed bonds however far own lies from the basin (an xTB product of a DFT basin, S6);
+    else (own changed state in the basin's relaxation) same elements match."""
 
     x = np.asarray(basin, dtype=float).reshape(-1, 3)
+    y = np.asarray(own, dtype=float).reshape(-1, 3)
+    labels = None
+    if topology.state_label(symbols, y) == topology.state_label(symbols, x):
+        la, lb = (topology.wl_classes(symbols, topology.bonds(symbols, c)) for c in (y, x))
+        labels = la, lb
     if not is_chiral(symbols, x):
-        return x[permutation_invariant_rmsd(symbols, own, x)[1]]
-    _, perm, mirrored = _basin_match(symbols, own, x)
+        return x[permutation_invariant_rmsd(symbols, y, x, labels)[1]]
+    _, perm, mirrored = _basin_match(symbols, y, x, labels)
     return (_mirror(x) if mirrored else x)[perm]
 
 

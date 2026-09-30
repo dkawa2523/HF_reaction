@@ -27,7 +27,7 @@ from hfauto.core.records import (
     SpeciesRecord,
 )
 from hfauto.drivers.minimum import Registry
-from hfauto.drivers.reaction_case import actions, paths
+from hfauto.drivers.reaction_case import actions, connection, paths
 from hfauto.drivers.reaction_case.state import Action, CaseRules, CaseState, Decision, decide
 
 if TYPE_CHECKING:
@@ -110,8 +110,8 @@ HANDLERS: dict[Action, Handler] = {
     Action.REFINE_SADDLE: actions.refine_saddle,
     Action.VALIDATE_TS: actions.validate_ts,
     Action.FIND_PATH: paths.find_path,
-    Action.CONNECT: actions.connect,
-    Action.VALIDATE_INTERMEDIATE: actions.validate_intermediate,
+    Action.CONNECT: connection.connect,
+    Action.VALIDATE_INTERMEDIATE: connection.validate_intermediate,
 }
 
 
@@ -152,8 +152,9 @@ def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline
 
 def _children(record: ReactionRecord, rt: CaseRuntime, ctx: actions.Ctx | None
               ) -> tuple[ReactionRecord, ...]:
-    """The steps R→I and I→P of a multi-step case; the one whose ends a validated TS of this
-    case joins validates it again (a JobStore replay) instead of searching."""
+    """The steps R→I and I→P of a multi-step case, I in the atom order of the structure this
+    case reached; the one whose ends a validated TS of this case joins validates it again (a
+    JobStore replay) instead of searching."""
     if record.outcome is not CaseOutcome.MULTI_STEP or ctx is None or not ctx.work.intermediate:
         return ()
     well, well_species = ctx.work.intermediate

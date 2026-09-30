@@ -2,11 +2,13 @@
 
 Sources are the ``sources_per_state`` lowest screen minima of each composition × state label,
 started from their screen-optimized structures. Each (source, trial) unit runs NT2 once (through
-``thread_map``); every attempt is recorded in input order: product, negative or failed. A kept
-product joins a known basin (a screen minimum or an earlier product of its composition: state
-label and permutation-invariant RMSD; ReaDuct's and the screen's xTB energies are not compared)
-or becomes a species; a degenerate one (the source's label) also needs the same atom-indexed
-bonds, so it never joins its source. A lost seed state becomes one ``relaxation`` product.
+``thread_map``); every attempt is recorded in input order: product, negative or failed, with its
+source species (the source's representative, in whose atom order the trial ran). A kept product
+joins a known basin (a screen minimum or an earlier product of its composition) only as
+labelled: the same atom-indexed bonds and permutation-invariant RMSD (ReaDuct's and the screen's
+xTB energies are not compared); else it becomes a species. So a discovery's ends keep the
+labelling it followed, and a degenerate product never joins its source (analysis X2). A lost
+seed state becomes one ``relaxation`` product, from the seed refined as its own species.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from hfauto.backends.protocols import (
     DiscoverySettings,
 )
 from hfauto.chemistry import gates, identity, topology, trials
+from hfauto.chemistry.hypotheses import seed_species_id
 from hfauto.chemistry.xyz import XYZ, Molecule
 from hfauto.core.evidence import Failure, Geometry
 from hfauto.core.ids import species_artifact_id
@@ -54,23 +57,22 @@ class _Unit:
 
 @dataclass(frozen=True)
 class _Basin:
-    """A known structure of one composition: a screen minimum's or a kept product's."""
+    """A known structure of one composition, as labelled: a screen minimum's or a kept product's."""
 
     species_id: str
-    state_label: str
     xyz: XYZ
 
 
-def _basin_of(product: _Basin, known: Sequence[_Basin], *, degenerate: bool) -> str | None:
-    """The species id of the known basin that holds ``product`` (identity.assign without the
-    energy criterion), else None. A degenerate product also needs the atom-indexed bonds."""
-    bonded = topology.bonds(product.xyz.symbols, product.xyz.coords)
-    candidates = {
-        k.species_id: (k.xyz.coords, 0.0) for k in known
-        if k.state_label == product.state_label and list(k.xyz.symbols) == list(product.xyz.symbols)
-        and not (degenerate and topology.bonds(k.xyz.symbols, k.xyz.coords) != bonded)
-    }
-    return identity.assign(product.xyz.symbols, product.xyz.coords, 0.0, candidates)
+def _basin_of(product: _Basin, known: Sequence[_Basin]) -> str | None:
+    """The species id of the known basin that holds ``product`` as labelled (identity.assign
+    without the energy criterion, among the known structures with its atom-indexed bonds), else
+    None: a relabelled copy (a degenerate one of its source included) is a species of its own."""
+    symbols, coords = product.xyz.symbols, product.xyz.coords
+    bonded = topology.bonds(symbols, coords)
+    candidates = {k.species_id: (k.xyz.coords, 0.0) for k in known
+                  if list(k.xyz.symbols) == list(symbols)
+                  and topology.bonds(k.xyz.symbols, k.xyz.coords) == bonded}
+    return identity.assign(symbols, coords, 0.0, candidates)
 
 
 def _sources(minima: list[MinimumRecord], per_state: int) -> list[MinimumRecord]:
@@ -94,10 +96,11 @@ def _relaxations(species: Mapping[str, SpeciesRecord],
                                                 p[0].energy_hartree or 0.0, p[0].species_id)):
         if (m.composition_id, seed.state_label) not in kept:
             lost.setdefault((m.composition_id, seed.state_label), (seed, m))
-    return [DiscoveryRecord(discovery_id=f"relax_{seed.species_id}", source_minimum=m.minimum_id,
-                            mechanism="relaxation", outcome="product",
-                            product_species=seed.species_id)
-            for seed, m in lost.values()]
+    found = [DiscoveryRecord(discovery_id=f"relax_{seed.species_id}", source_minimum=m.minimum_id,
+                             mechanism="relaxation", outcome="product",
+                             product_species=seed.species_id)
+             for seed, m in lost.values()]
+    return [d.model_copy(update={"source_species": seed_species_id(d)}) for d in found]
 
 
 def _units(minimum: MinimumRecord, species: SpeciesRecord, xyz: XYZ,
@@ -118,7 +121,8 @@ class _Recorder:
     def record(self, unit: _Unit, result: DiscoveryResult | Failure) -> list[Artifact]:
         discovery_id = f"disc_{unit.trial.trial_id}_nt2"
         base = DiscoveryRecord(discovery_id=discovery_id, source_minimum=unit.minimum.minimum_id,
-                               mechanism="nt2", trial=unit.trial, outcome="failed")
+                               source_species=unit.minimum.species_id, mechanism="nt2",
+                               trial=unit.trial, outcome="failed")
         parents = (unit.minimum.minimum_id,)
         if isinstance(result, Failure):
             payload = base.model_copy(update={"reason": f"{result.kind}:{result.reason}"})
@@ -151,16 +155,16 @@ class _Recorder:
                  unit: _Unit) -> tuple[str, SpeciesRecord | None]:
         """(product species id, the new species or None when a known basin holds it)."""
         xyz, source, mol = self.rt.load_xyz(geometry), unit.minimum, unit.start
-        product = _Basin(f"spc_{discovery_id}", topology.state_label(xyz.symbols, xyz.coords), xyz)
+        product = _Basin(f"spc_{discovery_id}", xyz)
         known = self.known[source.composition_id]
-        found = _basin_of(product, known, degenerate=product.state_label == source.state_label)
+        found = _basin_of(product, known)
         if found is not None:
             return found, None
         known.append(product)
         return product.species_id, SpeciesRecord(
             species_id=product.species_id, composition_id=source.composition_id,
             charge=mol.charge, multiplicity=mol.multiplicity, geometry=geometry,
-            source="discovery", state_label=product.state_label)
+            source="discovery", state_label=topology.state_label(xyz.symbols, xyz.coords))
 
 
 class ExploreStage:
@@ -179,7 +183,7 @@ class ExploreStage:
         final = {m.minimum_id: rt.load_xyz(inputs.evidence(m.opt_calc).final) for m in screen}
         known: dict[str, list[_Basin]] = defaultdict(list)
         for m in screen:
-            known[m.composition_id].append(_Basin(m.species_id, m.state_label, final[m.minimum_id]))
+            known[m.composition_id].append(_Basin(m.species_id, final[m.minimum_id]))
         units = [unit for m in _sources(screen, cfg.sources_per_state)
                  for unit in _units(m, species[m.species_id], final[m.minimum_id],
                                     cfg.max_trials_per_source)]

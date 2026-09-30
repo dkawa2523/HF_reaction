@@ -1,5 +1,6 @@
 """Reaction hypotheses (design §8.2): priority, degeneracy on basin structures (declared and
-discovered), undeclared pairs only with a bond change (CH-07), TS lending, chem 13, R6."""
+discovered), undeclared pairs only with a bond change (CH-07), TS lending, R6, and a discovery's
+own ends (X2: never a basin representative's labelling)."""
 
 from __future__ import annotations
 
@@ -8,8 +9,8 @@ from collections.abc import Sequence
 import numpy as np
 from fakes import NH3_HF, NH3_HF_EXCHANGED, NH3_HF_SYMBOLS
 
-from hfauto.chemistry import identity
-from hfauto.chemistry.hypotheses import pick_endpoints, select
+from hfauto.chemistry import identity, topology
+from hfauto.chemistry.hypotheses import select
 from hfauto.chemistry.xyz import XYZ
 from hfauto.core import records as r
 from hfauto.core.evidence import FileRef, Geometry
@@ -17,6 +18,7 @@ from hfauto.core.system import ReactionInput
 
 STORE: dict[str, XYZ] = {}
 GEOMETRY: dict[str, Geometry] = {}  # species id -> its geometry, the basin structure in tests
+REPRESENTATIVE: dict[str, str] = {}  # minimum id -> species id: a discovery's source (explore)
 NH3 = np.array([[0.0, 0.0, 0.38], [0.94, 0.0, 0.0], [-0.47, 0.814, 0.0], [-0.47, -0.814, 0.0]])
 CHFCLBR = np.array(
     [[0.0, 0.0, 0.0], [0.63, 0.63, 0.63], [-0.8, -0.8, 0.8], [-1.0, 1.0, -1.0], [1.1, -1.1, -1.1]]
@@ -37,6 +39,7 @@ def species(sid: str, symbols: Sequence[str], coords) -> r.SpeciesRecord:
 
 def minimum(mid: str, sid: str, energy: float = -1.0, members: tuple[str, ...] = ()
             ) -> r.MinimumRecord:
+    REPRESENTATIVE[mid] = sid
     return r.MinimumRecord(minimum_id=mid, basin_id="b_" + mid, composition_id="c", species_id=sid,
                            tier="dft", level_key="L", opt_calc="o", freq_calc="f",
                            energy_hartree=energy, state_label="x", members=members)
@@ -56,16 +59,19 @@ def methanol(turn_deg: float = 0.0) -> np.ndarray:
 
 
 def product(did: str, source: str, sid: str, ts: Geometry | None = None) -> r.DiscoveryRecord:
+    """An NT2 discovery from the representative of the source minimum (as explore records it)."""
     return r.DiscoveryRecord(discovery_id=did, source_minimum=source, mechanism="nt2",
-                             outcome="product", product_species=sid, ts=ts)
+                             outcome="product", source_species=REPRESENTATIVE[source],
+                             product_species=sid, ts=ts)
 
 
-def saddle(did: str, source: str, sid: str, ts_calc: str | None = "calc_saddle"
-           ) -> r.DiscoveryRecord:
-    """A mode-follow discovery: ts_calc is its verified saddle at the DFT tier, None at screen."""
+def saddle(did: str, source: str, sid: str, ts_calc: str | None = "calc_saddle",
+           side: str | None = None) -> r.DiscoveryRecord:
+    """A mode-follow discovery from side 1 (default: the source minimum's representative) to
+    side 2: ts_calc is its verified saddle at the DFT tier, None at screen."""
     return r.DiscoveryRecord(discovery_id=did, source_minimum=source, mechanism="mode_follow",
-                             outcome="product", product_species=sid, ts=GEOMETRY[sid],
-                             ts_calc=ts_calc)
+                             outcome="product", source_species=side or REPRESENTATIVE[source],
+                             product_species=sid, ts=GEOMETRY[sid], ts_calc=ts_calc)
 
 
 def h2o2(dihedral_deg: float) -> np.ndarray:
@@ -243,12 +249,11 @@ def test_an_undeclared_pair_needs_a_bond_change():
     far = species("far", "FHN", [[0.0, 0, 0], [1.40, 0, 0], [2.28, 0, 0]])
     contact = species("contact", "FHN", [[0.0, 0, 0], [0.93, 0, 0], [2.83, 0, 0]])
     loose = species("loose", "FHN", [[0.0, 0, 0], [0.93, 0, 0], [3.13, 0, 0]])
-    names = ("fhn", "near", "far", "contact", "loose")
+    minima = basins(*(minimum(f"m_{n}", n) for n in ("fhn", "near", "far", "contact", "loose")))
     found = [product("d_near", "m_fhn", "near"), product("d_far", "m_fhn", "far"),
              product("d_loose", "m_contact", "loose")]
 
-    records = select(basins(*(minimum(f"m_{n}", n) for n in names)),
-                     [fhn, near, far, contact, loose], found, [], load)
+    records = select(minima, [fhn, near, far, contact, loose], found, [], load)
     assert [(r.minima, r.torsional) for r in records] == [(("m_fhn", "m_far"), False)]
 
 
@@ -264,7 +269,8 @@ def test_a_relaxation_seed_kept_at_dft_runs_to_its_collapse_basin():
     basin = minimum("d_lost", "seed", -1.01).model_copy(update={"state_label": "HN+F"})
     kept = minimum("d_seed", "spc_relax_seed").model_copy(update={"state_label": "FH+N"})
     relax = r.DiscoveryRecord(discovery_id="relax_seed", source_minimum="s_lost",
-                              mechanism="relaxation", outcome="product", product_species="seed")
+                              mechanism="relaxation", outcome="product",
+                              source_species="spc_relax_seed", product_species="seed")
     minima = [(lost, collapsed), (basin, collapsed), (kept, seed.geometry)]
 
     [rec] = select(minima, [seed, own], [relax], [], load)
@@ -276,10 +282,55 @@ def test_a_relaxation_seed_kept_at_dft_runs_to_its_collapse_basin():
     assert select([(lost, collapsed), (joined, collapsed)], [seed, own], [relax], [], load) == []
 
 
-def test_pick_endpoints_avoids_a_permuted_representative():
-    relabelled = species("rep", "NHHH", NH3[[0, 2, 1, 3]])
-    natural = species("nat", "NHHH", NH3)
-    target = species("tgt", "NHHH", NH3 + [[0.0, 0.0, 0.05], [0, 0, 0], [0, 0, 0], [0, 0, 0]])
-    assert pick_endpoints([relabelled, natural], [target], load) == ("nat", "tgt")
-    assert pick_endpoints([relabelled], [species("hf", "HF", [[0, 0, 0], [0.92, 0, 0]])],
-                          load) is None
+NH4_F = np.vstack([NH3_HF[:4], [[1.0, -0.2, 0.0]], NH3_HF[5:]])  # H4 moved from F to N
+
+
+def change(a: str, b: str) -> tuple[frozenset, frozenset]:
+    """The labelled bond change between two species' own structures."""
+    return topology.bond_changes(STORE[a].symbols, STORE[a].coords, STORE[b].coords)
+
+
+def test_a_discovery_keeps_its_own_ends_under_a_relabelled_representative():
+    """X2 (G8-3): the DFT basins are represented by relabelled species (H3 and H4 swapped). The
+    hypothesis runs between the discovery's own ends, so the case changes the bonds the discovery
+    changed: in one basin the double H exchange stays a degenerate rearrangement (the
+    representative's labelling made it a torsion, no hypothesis), and across two basins the
+    proton moves from F5 to N0 as H4 (not as H3). A discovery without its own ends gives none."""
+    source, swapped = species("own_src", NH3_HF_SYMBOLS, NH3_HF), species(
+        "own_rep", NH3_HF_SYMBOLS, NH3_HF_EXCHANGED)
+    exchanged = species("own_xch", NH3_HF_SYMBOLS, NH3_HF_EXCHANGED + 0.01)
+    moved = species("own_pt", NH3_HF_SYMBOLS, NH4_F)
+    screen = minimum("s_own", "own_src").model_copy(update={"tier": "screen"})
+    basin = minimum("d_own", "own_rep", members=("own_src", "own_xch"))
+    pair = minimum("d_pt", "own_pt", -0.99)
+    everything = [source, swapped, exchanged, moved]
+
+    [rec] = select(basins(screen, basin), everything, [product("xch", "s_own", "own_xch")], [],
+                   load)
+    assert (rec.minima, rec.endpoints) == (("d_own", "d_own"), ("own_src", "own_xch"))
+    assert rec.degenerate and not rec.torsional
+
+    [rec] = select(basins(screen, basin, pair), everything, [product("pt", "s_own", "own_pt")],
+                   [], load)
+    assert (rec.minima, rec.endpoints) == (("d_own", "d_pt"), ("own_src", "own_pt"))
+    assert change("own_src", "own_pt") == ({(0, 4)}, {(4, 5)})  # the discovery's own change
+    ends = [identity.basin_coords(NH3_HF_SYMBOLS, STORE["own_rep"].coords, STORE["own_src"].coords),
+            STORE["own_pt"].coords]
+    assert topology.bond_changes(NH3_HF_SYMBOLS, *ends) == change("own_src", "own_pt")
+
+    anonymous = product("pt", "s_own", "own_pt").model_copy(update={"source_species": None})
+    assert select(basins(screen, basin, pair), everything, [anonymous], [], load) == []
+
+
+def test_a_mode_follow_hypothesis_runs_between_its_side_species():
+    """The DFT saddle's sides (mf1, mf2) are the discovery's ends even when side 1 joined a basin
+    whose representative is labelled otherwise; its verified saddle comes along."""
+    rep = species("mf_rep", NH3_HF_SYMBOLS, NH3_HF_EXCHANGED)
+    one, two = (species("t_mf1", NH3_HF_SYMBOLS, NH3_HF + 0.01),
+                species("t_mf2", NH3_HF_SYMBOLS, NH4_F))
+    minima = basins(minimum("m_one", "mf_rep", members=("t_mf1",)), minimum("m_two", "t_mf2"))
+    [rec] = select(minima, [rep, one, two], [saddle("mf", "m_one", "t_mf2", side="t_mf1")], [],
+                   load)
+    assert (rec.source, rec.minima, rec.endpoints) == ("mode_follow", ("m_one", "m_two"),
+                                                       ("t_mf1", "t_mf2"))
+    assert (rec.ts_calc, rec.low_level_ts, rec.torsional) == ("calc_saddle", None, False)

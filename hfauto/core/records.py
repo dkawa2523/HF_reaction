@@ -79,6 +79,10 @@ class DiscoveryRecord(BaseModel):
     trial: ReactionTrial | None = None
     outcome: Literal["product", "negative", "failed"]
     reason: str | None = None
+    # the species the discovery started from, in whose atom order product_species is labelled
+    # (nt2: the screen representative; relaxation: the seed as its own species; mode_follow:
+    # side 1): the two ends of its hypothesis
+    source_species: str | None = None
     product_species: str | None = None
     ts: Geometry | None = None  # low-level TS with one projected imaginary mode
     ts_imag_cm1: float | None = None
