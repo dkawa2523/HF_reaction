@@ -61,7 +61,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 
 - PIPELINE・SYSTEM・SITE には YAML のパスか、カレントディレクトリの `configs/<kind>/` の下の名前を指定する。method は pipeline ファイルの隣の `methods/<id>.yaml`、なければ `configs/methods/<id>.yaml` を読む。
 - `run` の終了コード: 0 は成功、1 は failed の artifact か失敗した stage がある、2 は設定か preflight の問題、SIGINT・SIGTERM・SIGHUP では外部プログラムを止めて 128 + signum。failed の artifact は後続の stage を止めず report も出るので、結果は終了コードではなく `hfauto status` と report で判断する。
-- `--from ID` はその stage 以降を取り直し、`--retry-failed KINDS`(例 `incomplete_output,timeout`)は JobStore に残った該当の失敗だけを再実行する。
+- `--from ID` はその stage 以降を取り直し、`--retry-failed KINDS`(例 `incomplete_output,nonzero_exit`)は JobStore に記録された該当の種類の失敗を再実行する。timeout と budget_exhausted は記録しないので、取り直せば常に再実行される。
 
 ## クイックスタート(HCN → HNC)
 

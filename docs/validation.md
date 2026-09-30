@@ -172,3 +172,70 @@ QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ
 8. **分割の深さ**: W3 の S6 の CH3OH + H 側は、ほぼ縮退した緩い錯体(ΔE_rxn ≤ 0.11)の分割で `max_split_depth` に達し、順位が付かない(VAL7 ではその 2 つの極小が 1 つの basin にまとまった)。
 9. **平らな PES の引き抜きの TS の再現性**: S6 の OH···CH4 → CH3···H2O は W3 だけが −481.1i の TS に届き、VAL7・W5 は OH···CH4 の向きを変える鞍点(−73.0i、−58.6i、両側が同じ basin)に収束して試行を使い切った。虚モードが仮説の結合変化を担わない鞍点を QRC の前に見分け、結合変化の方向に拘束して探す必要がある(その鞍点の QRC は 2 振幅 × 2 本)。
 10. **NWChem の AUTOZ の失敗**: VAL7/s10 の QRC の側の opt が 21 歩目で内部座標の再構築に失敗し、続きからの 2 回目の試行で収束した(+53 s)。VAL7 で 2 回目の試行はこの 1 件。
+
+## 10. 再生ゲート
+
+振る舞いを保つ整理の合格基準で、各 wave の受け入れの土台でもある(分析 [2026-09-30_remaining_issues_analysis.md](reviews/2026-09-30_remaining_issues_analysis.md) §3 X8、§4.0)。記録済みの run を今の作業ツリーで JobStore から再生し、新しい QM ジョブが 0 件で、結論の記録が変わらないことを確かめる。
+
+- **道具**(repo の外、`/home/user/hfauto_r9/`)
+  - `tools/replay.py`: ゲート本体。
+  - `tools/runs.json`: 再生する run の一覧。
+  - `runcase.sh`: 1 本ずつの実行。
+  - `tools/jobtime.py`: core 秒、歩数、SCF 回数の集計。
+  - `tools/backfill.py`: 旧 JobStore が保存しなかった ladder の最後の失敗を、source の複製に一度だけ保存する(下記)。
+- **再生の手順**: source を `/home/user/hfauto_r9/<wave>/replay/<name>` に複製し、`runcase.sh` で pipeline の最初の stage(`structures`)から再ステージする。パネルの run では続けて panel pipeline を再開する(`RESUME=1`)。最初の pipeline を再ステージするとパネルの stage は stale になる。`--from panel_sp` は、実行順でそれより後にある最初の pipeline の stage まで stale にして入力を失うので使わない。ロック、CAP、log は実 run と同じである。
+- **比べるもの**
+  - stage ごとの `run_state.json`: status、hits、misses、failures_by_kind。再生の開始より後に始まった stage だけを「再生した」と数える。スキップされた stage は hits 0・misses 0 に見えるので、それを合格にしないためである。
+  - 再生したすべての stage の manifest にある結論の record(species、minimum、discovery、reaction、species_thermo、reaction_thermo、report)。artifact id ごとに、欄の単位で比べる。
+  - 複製の中で走ったジョブ(engine、kind、鍵、core 秒)と、source がその鍵を返せなかった理由(鍵がない、結果を残していない、保存された結果を使えなかった)。
+- **比べないもの**
+  - calculation の artifact: ジョブの結果そのものなので、misses で見る。
+  - reason と reasons の文字列: 結論ではない(§4.4)。
+  - report.html の FileRef: run id を含む。
+  - manifest の created_at と run_id、壁時計。
+- **合格(`--strict`)**: 次をすべて満たすこと。
+  - 再生したすべての stage で misses 0。
+  - source でジョブを走らせた stage では hits > 0 で、その stage をすべて再生している。
+  - status と記録が同一。
+  - `--from hcn=paths` のような浅い再ステージは、minima stage を再生していないので不合格になる。ranking.csv だけを比べることはしない。
+- **振る舞いを変える wave**: `--allow-new a,b` で挙げた run は報告だけにし、ほかの run は strict で判定する。報告した run の新しいジョブと差分は、その wave が化学的な理由で説明する。
+- **BASE と CUR**
+  - BASE: `runs.json` の src。r7 の証拠の run で、読むだけである。
+  - CUR: `/home/user/hfauto_r9/CUR/<name>`。受け入れた最新の再生の複製への symlink で、wave を受け入れたら `ln -sfn /home/user/hfauto_r9/<wave>/replay/<name> /home/user/hfauto_r9/CUR/<name>` で張り替える。次の wave は `--src CUR` で再生する。
+- **対象**: VAL7 の全 run と、S6 の基準 2 本。
+  - `W3_s6`: −481.1i の TS に届いた W3 の run。
+  - `W5_s6`: 行 8 の修正のあとの S6。
+- **除外**(理由は runs.json にも書いてある)
+  - `hono_walltime`: Deadline は実時間で判定され、キャッシュの hit は瞬時に返るので、行 7 が発火するかどうかが再生の速さで変わる。
+  - `s9_*`: FeCl3·CH4。ジョブの前か、CREST だけで止まる。遷移金属の DFT は未検証と宣言している。
+  - `smoke`: run ではない。
+- **source の既知の差**
+  - 2c3c894 までの JobStore は、ladder の最後の失敗のうち旧 TERMINAL の 4 種以外(geometry_maxiter、scf_not_converged、nonzero_exit)を保存しなかった。該当は VAL7/s5 が 9 件(saddle の maxiter 3、xTB 5、CREST 1)、VAL7/s6 が 5、W3_s6 が 8(saddle 3)、W5_s6 が 6(saddle 1)で、ほかの run は 0 件。
+  - そのまま再生すると、これらは再実行される。NWChem の saddle は別の軌跡をたどる(NXTVAL)。実測では VAL7/s5 で saddle 2 本の再実行と新しい鍵の saddle 2 本(計 3,033 core 秒)が走り、`rxn_discovery_b3febc8052` が reassigned_step から unresolved_within_budget に変わった。これは HEAD の自己一致ではない。
+  - そこで `tools/backfill.py` で、この 4 本の複製(`/home/user/hfauto_r9/BASE_SRC/<name>`)に、source が実際に受け取った Failure を一度だけ保存した。最後の attempt を adapter 自身の parse で読み直し、鍵を刻印する。ladder が続けるはずの失敗と壁時計の失敗は拒否する。種類ごとの件数は 4 本とも source の run_state の failures_by_kind と一致した。
+  - VAL7/s6 は行 8 の修正(1bd2ff5)より前の run である。HEAD では FIND_PATH に進み、新しいジョブが出る。今のコードでの S6 の基準は W5_s6 である。
+- **限界**: 再生が保証するのは、同じ鍵に同じ結果が返る範囲の一致だけである。並列の NWChem と CREST はビット単位では再現しないので、新しいジョブが 1 本でも出ると、その下流は run 間の比較(結論の水準、§4.4)になる。
+- **時間**
+  - core 秒(duration × argv の `-np`。CREST は `-T`)、歩数、SCF 回数で比べる(`jobtime.py`)。
+  - 壁時計は参考値にとどめる。`runcase.sh` が開始と終了の load average を log に残す。
+  - CAP は SIGTERM で送り、60 s 後に SIGKILL にする(`timeout -k 60`)。
+- **runcase.sh の追加**
+  - `FRESH_ENGINES=<engine,...>`: SRC の複製から、指定した engine のジョブだけを消す。上流を共有したまま、その engine の軌跡を新しく走らせるため(A/B)。
+  - `SITE=`: site を差し替える。
+  - `RESUME=1`: 既存の run を `--from` なしで再開する(パネルの連鎖)。
+- **r9-PRE の結果**(作業ツリー = 2c3c894 + PRE-1。36 本、1 本ずつ)
+  - 道具の確認: hcn を 2 回続けて strict で再生し、2 回とも PASS。陰性対照 3 本はすべて FAIL になった。
+    - (a) paths の 1 ランク SP の job dir を 1 つ消す: `paths: 1 misses`、鍵 07c7bd7f が `key not in the source` として出る。
+    - (b) source の outcome を書き換える: `paths/hcn_to_hnc.payload.outcome` の差分が出る。
+    - (c) `--from hcn=paths`: `dft (minima) ran 4 jobs in the source but was not re-staged`。
+  - BASE(`/home/user/hfauto_r9/BASE/replay`、r7 の source と BASE_SRC から): 34 本が strict で PASS(misses 0、記録が同一)。報告にとどめた 2 本は次のとおり。
+    - VAL7/s6: 行 8 の修正で FIND_PATH に進み、新しいジョブ 10 本(4,649 core 秒。string 1、saddle 2、opt 2、freq 3、xTB freq 2)。結論は同じで、鞍点が −73.0i から −73.2i に、障壁の出所が screen から string に変わっただけ。
+    - W3_s6: W5 の整理(1bd2ff5)で PathProfile と DiscoveryResult から job_key を除いたので、W3 が保存した結果が検証を通らない(`extra_forbidden`)。ReaDuct 8、NEB 4、string 1 の計 13 本(1,839 core 秒)を再実行した。結論の差は、TS のファイルの attempt の番号と、W5 で除いた dzpe_act_kcal 欄だけで、−481.1i の TS を含む分岐はそのまま。
+    - パネルの 3 本は `RESUME=1` で再開した(上記)。
+  - 自己一致(`tools/replay.py PRE --src /home/user/hfauto_r9/BASE/replay --strict`): 36 本すべて PASS。再生した stage はすべて misses 0 で、hits は BASE の同じ stage のジョブ数と等しい(計 971)。failures_by_kind と記録も同一で、複製の中で走ったジョブは 0 件(jobtime)。壁時計は計 205 秒だった。
+  - CUR は `PRE/replay/<name>` を指す。以降の wave は `--src CUR` で再生する。
+- **実行例**(`cd /home/user/hfauto_r9`)
+  - `tools/replay.py PRE --src /home/user/hfauto_r9/BASE/replay --strict`: 準備した BASE から全体を再生する。
+  - `tools/replay.py M1 --src CUR --allow-new W3_s6`: 振る舞いを変える wave。
+  - `tools/replay.py PRE-c --runs hcn --from hcn=paths --strict`: 浅い再ステージが不合格になることの確認。
+  - 結果は `/home/user/hfauto_r9/<wave>/replay/summary.json` と `summary.txt` に出る。FAIL があれば終了コードは 1。

@@ -1,5 +1,5 @@
 """Tasks, adapters and the JobRunner: cache, attempt ladder, core semaphore and the rank share
-of concurrent items (design §7.1)."""
+of concurrent items (design §8)."""
 
 from __future__ import annotations
 

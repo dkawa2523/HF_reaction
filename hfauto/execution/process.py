@@ -1,4 +1,4 @@
-"""The only module that starts subprocesses (design §7.1).
+"""The only module that starts subprocesses (design §8).
 
 ``run_command`` streams stdout / stderr into files in the working directory, stops the
 whole process tree on timeout, and writes ``command_result.json`` next to the output.

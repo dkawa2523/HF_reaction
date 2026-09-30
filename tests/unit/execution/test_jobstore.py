@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from hfauto.core.evidence import Failure, FailureKind, FileRef
+from hfauto.core.evidence import Failure, FailureKind, FileRef, Geometry
 from hfauto.core.method import ExecutionSpec
 from hfauto.execution.jobs import Task
 from hfauto.execution.jobstore import JobStore
@@ -51,13 +51,31 @@ def test_restores_result_type_and_checks_file_shas(tmp_path):
     assert store.load(key, Out) is None
 
 
-def test_terminal_failures_are_remembered_unless_retried(tmp_path):
+def test_failures_are_remembered_unless_retried(tmp_path):
     store = JobStore(tmp_path / "jobs")
     key = store.key(_task())
-    store.save(key, Failure(kind=FailureKind.INPUT_INVALID, reason="autoz"))
-    assert store.load(key, Out).kind is FailureKind.INPUT_INVALID
-    assert JobStore(tmp_path / "jobs", retry_failed=["input_invalid"]).load(key, Out) is None
-    assert JobStore(tmp_path / "jobs", retry_failed=["timeout"]).load(key, Out) is not None
-    store.save(key, Failure(kind=FailureKind.TIMEOUT, reason="t"))  # not terminal: cleared
+    for kind in set(FailureKind) - {FailureKind.TIMEOUT, FailureKind.BUDGET_EXHAUSTED}:
+        store.save(key, Failure(kind=kind, reason="r"))
+        assert store.load(key, Out) == Failure(kind=kind, reason="r")
+    frame = store.attempt_dir(key, 2) / "last.xyz"  # a saddle search stopped at maxiter
+    frame.parent.mkdir(parents=True)
+    frame.write_text("1\n\nH 0 0 0\n")
+    final = Geometry(file=store.file_ref(frame), fingerprint="f", symbols=("H",))
+    maxiter = Failure(kind=FailureKind.GEOMETRY_MAXITER, reason="maxiter", final=final)
+    store.save(key, maxiter)
+    assert store.load(key, Out) == maxiter
+    assert JobStore(tmp_path / "jobs", retry_failed=["timeout"]).load(key, Out) == maxiter
+    assert JobStore(tmp_path / "jobs", retry_failed=["geometry_maxiter"]).load(key, Out) is None
+    frame.unlink()  # a deleted attempt directory
     assert store.load(key, Out) is None
+
+
+def test_wall_clock_failures_are_never_stored(tmp_path):
+    store = JobStore(tmp_path / "jobs")
+    key = store.key(_task())
+    for kind in (FailureKind.TIMEOUT, FailureKind.BUDGET_EXHAUSTED):
+        store.save(key, Failure(kind=FailureKind.INPUT_INVALID, reason="autoz"))
+        store.save(key, Failure(kind=kind, reason="wall clock"))  # clears the old record
+        assert store.load(key, Out) is None
+        assert not (store.job_dir(key) / "result.json").exists()
 

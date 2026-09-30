@@ -1218,7 +1218,7 @@
   - VAL7 の各 run を複製し、`--from dft`(または paths)で再ステージして、run_state.json の misses と reactions を比べるスクリプトを r7 の tools に置く。
   - 合格基準は「新しい misses 0、かつ記録が同一」。意図してジョブを減らす変更では、hits の減少を許す。
   - walltime に依存する run(hono_walltime など)は除く。Deadline は実時間で判定され、キャッシュの hit は瞬時に返るので、行 7 の発火が変わる。
-  - JobStore は Failure も保存する(execution/jobs.py:112-124)ので、同じ鍵に同じ結果が返る。
+  - JobStore は壁時計の失敗(timeout、budget_exhausted)以外の Failure も保存する(r9-PRE で変更。HEAD 2c3c894 では旧 TERMINAL の 4 種だけだった)ので、同じ鍵に同じ結果が返る。
   - 最初に HEAD 自身で自己一致を確かめる(未実施)。
 - **指標**: review §6.1 の表に SLOC(radon raw)と docstring の行数を併記する。概念ごとの実装数(QRC の変位、像の判定、極小のストア、構造の写像)を表にし、それぞれ 1 を目標にする。docstring の来歴の ID は design.md へ移す(物理行で数十行の効果)。
 - **再現性の定義**: 結論の水準(生成物の状態の集合、各段の区分、δG_eff が帯の中)で比べる。負の理由の件数は比べない。id ではなく構造の対応で比べる。
