@@ -1,4 +1,4 @@
-"""Reaction-case state and the pure decision table (design §7.3).
+"""Reaction-case state and the pure decision table (design §6.2).
 
 ``decide`` evaluates the 17 rows of ``ROWS`` from the top and returns the first decision.  The
 driver accumulates ``CaseState`` in memory; actions only change the state, never the table.
@@ -28,7 +28,7 @@ from hfauto.core.records import (
     SaddleClaim,
 )
 
-QRC_AMPLITUDES = 2  # QRC tries at most two amplitudes (§8.1)
+QRC_AMPLITUDES = 2  # QRC tries at most two amplitudes (design §6.2, CONNECT)
 STRING_CHUNKS = 3  # DFT string chunks (maxiter 20 each) per case
 
 
@@ -77,7 +77,7 @@ class Seed:
 class CaseState:
     """Snapshot accumulated by the driver (never replayed from the log).
 
-    ``minima`` (not in the §7.3 listing) holds the registry records of ``case.minima``, None when
+    ``minima`` (not in the §6.2 listing) holds the registry records of ``case.minima``, None when
     an endpoint has none: rows 1-3 need their tier, level, basin and energy, which a
     ReactionRecord does not carry. ``screen`` is the verdict of the latest DFT profile (SCREEN
     or string), which decides rows 6, 13 and 16 and goes into the record. ``neb_done``: the
@@ -93,7 +93,8 @@ class CaseState:
     last_saddle: Literal["converged", "failed"] | None = None
     ts_check: Literal["ok", "collapsed"] | None = None
     claim: SaddleClaim | None = None
-    connection: ConnectionLabel | Literal["same_basin"] | None = None  # the retried failure
+    # a rejected QRC: sides in one basin (retried wider) or in one case key but two basins
+    connection: ConnectionLabel | Literal["same_basin", "same_state"] | None = None
     connection_attempts: int = 0
     path_runs: int = 0  # DFT strings run, failed ones included
     intermediate: Literal["distinct", "same_as_endpoint", "relax_failed"] | None = None
@@ -181,8 +182,8 @@ def _r08_connection(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decisio
         return Decision(Action.CONNECT, "connection_retry")  # a wider displacement
     if _soft_ts_failed(s, p):
         return None  # validated as a collapsed saddle (row 11)
-    if s.connection == "same_basin" and _attempts_left(s, p):
-        return None  # a saddle of another process (both sides in one basin): search on (12-17)
+    if s.connection in ("same_basin", "same_state") and _attempts_left(s, p):
+        return None  # a saddle of another process (sides in one basin or key): search on (12-17)
     return _complete(CaseOutcome.UNRESOLVED, "connection_failed")
 
 

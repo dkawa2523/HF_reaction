@@ -68,7 +68,7 @@ FailureKind は executable_missing、input_invalid、timeout、nonzero_exit、sc
 | `is_minimum(freq, opt=)` | freq が opt の最終構造で同一 PES(numerics を含む。NWChem の freq は opt・saddle の収束 vectors から SCF を始めるので同じ電子状態に留まる)、\|E_freq − E_opt\| ≤ qrc_drop(外れたら `state_mismatch`)、tier が saddle でない(soft・noise は注記) |
 | `is_first_order_saddle(freq, saddle=)` | 同じ連結条件で、最低モード < −noise_cm1(なければ `no_imaginary_mode`)、2 本目 < −saddle_cm1 なら `higher_order`(2 本目が −saddle_cm1〜−noise_cm1 なら注記 `soft_secondary_mode`)。モードの大きさ・重なり・端点とのエネルギー比較は見ない |
 | `barrier_verdict` | 両端が DFT 極小のエネルギーであるプロファイルを分類する。山と井戸を同じ関数で resolution_kcal の深さから数え、井戸があれば intermediate、井戸がなく山があれば single、どちらもなければ barrierless、3 点未満は unavailable |
-| `connection` | QRC の両側が TS と同一 PES で E_TS − qrc_drop より下の極小に割り付くこと(途中の軌跡は見ない)。期待の組なら elementary、別の登録極小の組なら reassigned、縮退反応で両側が同じ basin かつラベル付きで別構造なら degenerate(結合が変わる縮退反応では両側の結合グラフの組が {bonds(R), bonds(P)} であること。違えば `bond_change_missing`)、それ以外で両側が同じ basin なら failed(`sides_same_basin`) |
+| `connection` | QRC の両側が TS と同一 PES で E_TS − qrc_drop より下の極小に割り付くこと(途中の軌跡は見ない)。組は case の判定の粒度のキー(§6.2)で比べる。期待の組なら elementary、別の登録極小の組なら reassigned、縮退反応で両側が同じ basin かつラベル付きで別構造なら degenerate(結合が変わる縮退反応では両側の結合グラフの組が {bonds(R), bonds(P)} であること。違えば `bond_change_missing`)、それ以外で両側が同じ basin なら failed(`sides_same_basin`) |
 | `discovery_verdict` | explore の採否: NT2 は検証済みの TS と IRC が要る。ΔE_rxn ≤ reaction_window_kcal(評価できなければ窓の外)、低レベルの障壁 ≤ 50 kcal/mol |
 | `rankable` | outcome が elementary / degenerate / reassigned / barrierless_at_resolution で、ReactionThermo に blocker がない |
 | `reaction_tier` | connected(ConnectionClaim)> saddle(SaddleClaim)> minima > screening |
@@ -138,10 +138,10 @@ CaseOutcome は elementary_step、degenerate_rearrangement、reassigned_step、m
 | 2 | 両端が同じ basin で縮退反応でない | SAME_BASIN(`same_basin`) |
 | 3 | ΔE_rxn > reaction_window_kcal | OUT_OF_WINDOW(`out_of_window`) |
 | 4 | 接続が elementary / degenerate / reassigned | 完了(`connection:<label>`) |
-| 5 | 中間体が両端と別の basin | MULTI_STEP(`intermediate_distinct`)。子反応 R→I、I→P に分ける(深さ `max_split_depth` まで) |
+| 5 | 中間体が両端と別(判定の粒度で) | MULTI_STEP(`intermediate_distinct`)。子反応 R→I、I→P に分ける(深さ `max_split_depth` まで) |
 | 6 | 最新の DFT プロファイル(SCREEN か string)が barrierless | BARRIERLESS(`screen:barrierless` / `string:barrierless`) |
 | 7 | 予算 `walltime_h` を使い切った(残りが 60 s 未満で、どのジョブも始められない) | UNRESOLVED(`walltime`) |
-| 8 | 接続を判定したが完了していない | 両側が同じ basin で 2 回未満なら CONNECT(振幅 × 2、`connection_retry`)。\|ν\| < saddle_cm1 の TS なら行 11 へ。2 回とも両側が同じ basin の TS は別の過程の鞍点なので、saddle の試行が残れば探索を続ける(行 12〜17。次の saddle 探索がその TS の主張を捨てる)。それ以外は UNRESOLVED(`connection_failed`) |
+| 8 | 接続を判定したが完了していない | 両側が同じ basin で 2 回未満なら CONNECT(振幅 × 2、`connection_retry`)。\|ν\| < saddle_cm1 の TS なら行 11 へ。2 回とも両側が同じ basin の TS と、両側が同じキーの別 basin の TS(`same_state`。振幅を広げても同じ状態に落ちるだけなので再試行しない)は、この case にとって別の過程の鞍点なので、saddle の試行が残れば探索を続ける(行 12〜17。次の saddle 探索がその TS の主張を捨てる)。それ以外は UNRESOLVED(`connection_failed`) |
 | 9 | 未接続の SaddleClaim がある | CONNECT(`ts_validated`) |
 | 10 | saddle が収束し未検証(`ts_calc` の case は最初から) | VALIDATE_TS(`saddle_converged`) |
 | 11 | TS 検証で崩壊した(最低モード ≥ −noise_cm1)か、柔らかい TS の QRC が失敗した | VALIDATE_INTERMEDIATE(`saddle_collapsed`) |
@@ -159,13 +159,19 @@ CaseOutcome は elementary_step、degenerate_rearrangement、reassigned_step、m
 - 発見: 仮説の両端は discovery 自身の `source_species` と `product_species` で、どちらかがなければ仮説にしない。source は、nt2 では trial を始めた screen の代表、relaxation では seed 自身の species(`hypotheses.seed_species_id`)、mode_follow では側 1 である。
 - case の端点は、basin の最適化構造を端点の species の添字と掌性に並べたもの(`identity.basin_coords`)である。species の構造が basin と同じ結合グラフ(状態ラベル)を持つときは、原子を同じ WL クラスの原子にだけ対応させるので、species の添字付きの結合が保たれる。basin から遠い構造(DFT の basin に入った xTB の生成物など)でも置換を誤らない。結合グラフが違う(basin への緩和で状態が変わった)ときは元素だけで対応させる。そのときの結合変化は化学的な結果で、添字の誤りではない。したがって R → I → P の添字は連続し、分割の子の結合変化に添字の置換は入らない([validation.md](validation.md) §11)。
 
+**判定の粒度**: case は、両端が異なる粒度で判定する(`drivers/reaction_case/connection.py` の `_key`)。
+- 両端の化学状態 (composition_id, state_label) が異なる case(結合が変わる case)は状態で判定する。thermo は状態の G を最小の G とする(§7.2、Curtin–Hammett)ので、それと同じ粒度である。端点と同じ状態の井戸は、basin が違っても中間体にしない。
+- 同じ状態の case(宣言したねじれ、配座変化、縮退転位)は basin で判定する。ただし端点と同じ状態の別の basin で、その端との \|ΔE\| < resolution_kcal、かつそれを運んだ経路(プロファイルの井戸なら端までのプロファイル、QRC の側なら TS)に resolution_kcal 以上の山がないものは、分解能では同じ端点とみなす。崩壊した saddle にはその経路がないので、別の basin は中間体になる。
+- 実際に結ばれた極小は `ConnectionClaim.minima` に残す。elementary の `ReactionRecord.minima` は仮説の両端のままで書き換えない(重複除去と reaction_id を保つ)。
+- 既知の制限: 状態ラベル(WL ハッシュ)は立体を区別しない。ジアステレオマー(SN2 の反転体と保持体など)は同じ状態になり、同じ端点とみなされうる(分析 G8-P6、未対応。今の検証系に不斉中心はない)。
+
 action:
 - **SCREEN**: 低レベル TS(explore か mode-follow)があれば xTB freq で確かめ、その構造の DFT SP と両端の DFT 極小の 3 点が single なら種にする(`discovery_ts`)。なければ DFT 極小の間の IDPP 11 点を初期経路に `pysis_neb`(xTB の CI-NEB、端は固定、未収束でも経路として使い、CI から TSOpt)で緩和し、内部 9 点の DFT SP と両端の DFT 極小のエネルギーを `barrier_verdict` で分ける。single の種は NEB の TS(`screen_ts`)か、山を放物線補間した構造(`screen_hei`)。NEB が失敗したら IDPP のまま分ける。経路の両端は常に DFT 極小なので、低レベルの PES に端点の極小は要らない。barrierless は最も高い内部点の両隣の区間の中点 2 点の DFT SP を加えて分類し直してから受け入れる(SP が失敗したら unavailable、`midpoint_single_point`)。FIND_PATH も同じ。
 - **REFINE_SADDLE**: 反応方向は 1 つの規則で決める。低レベル TS の種はその虚モード、高次 saddle を押した種はその反応モード、それ以外は経路の接線のうち反応中心(結合が変わる原子とその隣接原子)の成分。結合が変わらなければ宣言座標の勾配、なければ最も変わる二面角の勾配、それもなければ全原子の接線。初期 Hessian は、種が 0.5 Å 以内の検証済み TS freq を持てばそれ、なければ種の xTB freq で負モードのどれかと方向の重なりが 0.3 以上ならそれ、そうでなければ種の DFT freq。adapter はその Hessian を、方向と最も重なる固有ベクトルだけが負になるように整えて渡す(`vibrations.shape_hessian`)。saddle が maxiter で止まったら(柔らかい反応モードや押した種では、2 本目の負の固有値が十数歩残って停滞しやすい)、最終フレームを種(`saddle_restart`)にして新しい Hessian で 1 回だけやり直す。この再開は試行に数えず、上限に達していても通す(再開の再開はしない)。
 - **VALIDATE_TS**: 別ジョブの DFT freq → `is_first_order_saddle`。`ts_calc`(mode-follow の鞍点か親が検証した TS)はまずそれを検証し(freq は JobStore の再利用)、ゲートを通らなければ SCREEN へ。higher_order なら、方向と最も重なる負モード以外で最も負のモードに沿って片側に押した構造を種(`higher_order_retry`)にし、検証済みの freq をその Hessian にする。
 - **FIND_PATH**: ZTS を 1 チャンク(9 beads、maxiter 20)だけ走らせ、収束を問わず `barrier_verdict` で分ける。初期経路は最新の DFT プロファイルの経路、なければ IDPP。端点は DFT 極小にし、画像を隣へ逐次整列する。種は single のときだけ山の放物線補間(`path_hei`)。種が尽きれば行 16 がその経路から次のチャンクを続ける。
-- **CONNECT(QRC)**: TS の虚モードに沿って ± に変位し(振幅はエネルギー目標 max(3 × qrc_drop, 3e-4 Eh) と ν・質量から 0.05〜0.4 Å。再試行は 2 倍で 0.4 Å で切る)、TS の freq Hessian(§5 の正定値のモデル)で opt し、`Registry` に割り付け(未知なら収束した側の opt から `relax_to_minimum` で新しい basin)、`connection` で判定する。対称な TS では − の開始構造が + の厳密な像(`IMAGE_A` 以内)なので + 側だけを opt し、− 側はその像を運んだ構造で割り付ける(注記 `qrc<n>:minus_is_image`、`side_calcs` は (plus, plus)、ゲートは同じ)。それ以外は両側を同時に走らせる(§8)。reassigned のうち片側だけが端点の basin で他方が別の DFT basin(freq で確かめた極小)なら、その側の構造を中間体(上の原子の対応)にして行 5 で 2 つの子反応に分割し(注記 `qrc<n>:end<i>_to_new_basin`)、その 2 つを結ぶ子に TS を渡す(`ts_calc`。子は検証と QRC を JobStore から再生する)。中間体は他方の端点の配座でもよく、そのとき残りの子はねじれの case になる(case が 1 つ増える)。どちらの端点も含まない TS は reassigned のまま。多段の親は順位を持たず(outcome `multi_step`)、子反応がそれぞれ順位に載る。
-- **VALIDATE_INTERMEDIATE**: 崩壊した saddle か最新のプロファイルの最も低い井戸を `relax_to_minimum` にかける。両端と別の basin なら、緩和した構造を中間体にして行 5 で分割する。緩和が失敗したら結果とせず(端点扱いも barrierless もしない)、最も高い山を種にする。端点に落ちたら、内部の最大 − 高い方の端点 < resolution_kcal なら barrierless、そうでなければ最も高い山を種にする。
+- **CONNECT(QRC)**: TS の虚モードに沿って ± に変位し(振幅はエネルギー目標 max(3 × qrc_drop, 3e-4 Eh) と ν・質量から 0.05〜0.4 Å。再試行は 2 倍で 0.4 Å で切る)、TS の freq Hessian(§5 の正定値のモデル)で opt し、`Registry` に割り付け(未知なら収束した側の opt から `relax_to_minimum` で新しい basin)、`connection` で判定する。対称な TS では − の開始構造が + の厳密な像(`IMAGE_A` 以内)なので + 側だけを opt し、− 側はその像を運んだ構造で割り付ける(注記 `qrc<n>:minus_is_image`、`side_calcs` は (plus, plus)、ゲートは同じ)。それ以外は両側を同時に走らせる(§8)。両側のキーが端点のキーの組なら elementary、片側だけが端点のキーで他方が別のキーの DFT 極小(freq で確かめた極小)なら、その側の構造を中間体(上の原子の対応)にして行 5 で 2 つの子反応に分割し(注記 `qrc<n>:end<i>_to_new_basin`)、その 2 つを結ぶ子に TS を渡す(`ts_calc`。子は検証と QRC を JobStore から再生する)。結合変化の case の中間体は、端点と別の化学状態に限る。どちらも端点のキーでない TS は reassigned のまま。両側が同じキーなら、同じ basin は `same_basin`、別 basin は `same_state`(行 8)。多段の親は順位を持たず(outcome `multi_step`)、子反応がそれぞれ順位に載る。
+- **VALIDATE_INTERMEDIATE**: 崩壊した saddle か最新のプロファイルの最も低い井戸を `relax_to_minimum` にかける。端点と別のキー(上の分解能の規則で端点とみなす井戸を除く)なら、緩和した構造を中間体にして行 5 で分割する。緩和が失敗したら結果とせず(端点扱いも barrierless もしない)、最も高い山を種にする。端点に落ちたら、内部の最大 − 高い方の端点 < resolution_kcal なら barrierless、そうでなければ最も高い山を種にする。
 
 ## 7. 化学プロトコル
 

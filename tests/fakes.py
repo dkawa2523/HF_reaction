@@ -74,10 +74,10 @@ def harmonic() -> PES:
 
 
 def _wells(symbols: tuple[str, ...], crit: Sequence[float], height: float = 0.01,
-           ref: tuple[int, int] = (0, 1), names: Sequence[str] = ("reactant", "ts", "product")
-           ) -> PES:
-    """Collinear A–H–B; V'(x) ∝ Π(x − crit) with x the H position along A–B over _HALF, so
-    minima and maxima alternate; V(crit[ref[1]]) − V(crit[ref[0]]) = height."""
+           ref: tuple[int, int] = (0, 1), names: Sequence[str] = ("reactant", "ts", "product"),
+           r_ab: float = _R_AB) -> PES:
+    """Collinear A–H–B, A···B r_ab apart; V'(x) ∝ Π(x − crit) with x the H position along A–B
+    over _HALF, so minima and maxima alternate; V(crit[ref[1]]) − V(crit[ref[0]]) = height."""
     v = Polynomial.fromroots(crit).integ()
     v = v * (height / (v(crit[ref[1]]) - v(crit[ref[0]])))
 
@@ -85,22 +85,23 @@ def _wells(symbols: tuple[str, ...], crit: Sequence[float], height: float = 0.01
         a, h, b = np.asarray(x, dtype=float).reshape(3, 3)
         r, rel = float(np.linalg.norm(b - a)), h - 0.5 * (a + b)
         s = float(rel @ (b - a)) / r
-        return float(v(s / _HALF) + 0.5 * _K_AB * (r - _R_AB) ** 2
+        return float(v(s / _HALF) + 0.5 * _K_AB * (r - r_ab) ** 2
                      + 0.5 * _K_BEND * (rel @ rel - s * s))
 
-    points = {n: np.array([[-_R_AB / 2, 0, 0], [c * _HALF, 0, 0], [_R_AB / 2, 0, 0]])
+    points = {n: np.array([[-r_ab / 2, 0, 0], [c * _HALF, 0, 0], [r_ab / 2, 0, 0]])
               for n, c in zip(names, crit, strict=True)}
     return PES(symbols, energy, points)
 
 
 # ``height``: the barrier above the reactant (flat_uphill: the rise). double_well's reactant
 # (H at N) lies below its product; symmetric_double_well's minima are permutation images;
-# triple_well has an intermediate between "ts1" and "ts2"; flat_uphill's product sits
+# triple_well has an intermediate between "ts1" and "ts2" (H bonded to both N and O: a chemical
+# state of its own, as a well that splits a bond-changing case must be); flat_uphill's product sits
 # ~3e-6 Eh below a shoulder (barrierless at any practical resolution).
 double_well = partial(_wells, ("N", "H", "O"), (-1, 0.1, 1))
 symmetric_double_well = partial(_wells, ("F", "H", "F"), (-1, 0, 1))
 triple_well = partial(_wells, ("N", "H", "O"), (-1, -0.5, 0, 0.5, 1),
-                      names=("reactant", "ts1", "intermediate", "ts2", "product"))
+                      names=("reactant", "ts1", "intermediate", "ts2", "product"), r_ab=2.6)
 flat_uphill = partial(_wells, ("N", "H", "O"), (-1, 0.9, 1), ref=(0, 2))
 
 # NH3·HF with H3 pointing at F: the double H exchange (amine_pilot2, −1265i) is the source

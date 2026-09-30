@@ -10,6 +10,7 @@ import pytest
 from hfauto.backends.nwchem import output as nw
 from hfauto.chemistry.gates import Gate, connection, is_minimum
 from hfauto.chemistry.identity import assign
+from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.xyz import read_xyz
 from hfauto.core.evidence import Evidence, FileRef, Geometry, Level
 
@@ -49,13 +50,16 @@ def test_a_branch_is_judged_by_where_it_ends(golden, gid, reasons) -> None:
 
 
 def test_g12_hono_branches_start_above_the_ts_and_connect_trans_and_cis(golden) -> None:
+    """trans and cis HONO are one chemical state, so the case is judged by basin (X2-2)."""
     ts, sides, starts = branches(golden.text("pysisyphus/G12/pysis_irc.out"))
     assert all(start > ts.energy_hartree for start in starts)  # displaced 1-2 mEh up
     assert connection(ts, sides, ("trans", "cis"), frozenset({"trans", "cis"}),
                       degenerate=False) == (Gate(True), "elementary")
-    candidates = {n: (read_xyz(golden.path(f"nwchem/G03/hono_{n}_final.xyz")).coords, float(
-        re.findall(r"Total DFT energy =\s+(\S+)", golden.text(f"nwchem/G03/hono_{n}.out"))[-1]))
-        for n in ("trans", "cis")}
+    ends = {n: read_xyz(golden.path(f"nwchem/G03/hono_{n}_final.xyz")) for n in ("trans", "cis")}
+    assert len({state_label(x.symbols, x.coords) for x in ends.values()}) == 1
+    candidates = {n: (x.coords, float(re.findall(
+        r"Total DFT energy =\s+(\S+)", golden.text(f"nwchem/G03/hono_{n}.out"))[-1]))
+        for n, x in ends.items()}
     for branch, side, want in (("forward", sides[0], "trans"), ("backward", sides[1], "cis")):
         x = read_xyz(golden.path(f"pysisyphus/G12/{branch}_final.xyz"))  # 0.64 Å from the other
         assert assign(x.symbols, x.coords, side.energy_hartree, candidates) == want  # CH-04

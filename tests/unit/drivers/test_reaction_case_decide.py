@@ -86,6 +86,9 @@ ROW_CASES = [  # (row, id, case, state, rules, expected decision)
      Decision(A.CONNECT, "connection_retry")),
     (8, "failed", CASE, replace(S, claim=CLAIM, connection="failed", connection_attempts=1),
      RULES, Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)),
+    (8, "same_state_without_attempts", CASE, replace(S, claim=CLAIM, connection="same_state",
+                                                     connection_attempts=1, saddle_attempts=2),
+     RULES, Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)),
     (9, "claim", CASE, replace(S, claim=CLAIM, last_saddle="converged", ts_check="ok"), RULES,
      Decision(A.CONNECT, "ts_validated")),
     (10, "converged", CASE, replace(S, last_saddle="converged", saddle_attempts=1), RULES,
@@ -233,3 +236,15 @@ def test_a_hard_ts_whose_sides_join_one_basin_leaves_the_search_open():
     failed = replace(other, connection="failed")  # a side did not optimize: no new evidence
     assert decide(CASE, failed, RULES) == Decision(A.COMPLETE, "connection_failed",
                                                    C.UNRESOLVED)
+
+
+@pytest.mark.parametrize("claim", [CLAIM, SOFT])
+def test_a_ts_whose_sides_join_one_state_is_not_retried_and_the_search_goes_on(claim):
+    """X2-2: both QRC sides in one case key but two basins (one state of a bond-changing case):
+    a wider displacement cannot help, nor is a soft one a collapsed saddle (row 11); with a
+    saddle attempt left the search goes on, the next saddle search dropping the claim."""
+    other = replace(S, claim=claim, last_saddle="converged", ts_check="ok", saddle_attempts=1,
+                    connection="same_state", connection_attempts=1)
+    assert decide(CASE, other, RULES) == NO_PATH
+    seeded = replace(other, seeds=(SEED,))
+    assert decide(CASE, seeded, RULES) == Decision(A.REFINE_SADDLE, "seed:screen_ts")

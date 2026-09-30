@@ -169,7 +169,7 @@ QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ
 5. **鞍点探索の空回り**: 柔らかい H 引き抜き・ラジカル会合では string の前に saddle が maxiter で 2 回止まる(S5 で saddle 826 s)。
 6. **対称な鞍点の mode-follow**: ± の側は厳密な像なのに 2 本とも opt と freq を払う(S6 で 329 s、NH3 は 21 歩/側)。
 7. **近直線の錯体の熱化学**: S18 の H···H2 は、軸から 0.006 Å 外れた極小が非直線(振動 3 本、δG_eff 4.091)、正確に直線の極小が直線(4 本、6.360)と扱われる(`vibrations._EXTERNAL_RANK_TOL` = 1e-3、`/home/user/hfauto_r7/W2/superseded_k1neg/s18_h3_doublet`)。直線性を対称性で決める必要がある。
-8. **分割の深さ**: W3 の S6 の CH3OH + H 側は、ほぼ縮退した緩い錯体(ΔE_rxn ≤ 0.11)の分割で `max_split_depth` に達し、順位が付かない(VAL7 ではその 2 つの極小が 1 つの basin にまとまった)。
+8. **分割の深さ**: W3 の S6 の CH3OH + H 側は、ほぼ縮退した緩い錯体(ΔE_rxn ≤ 0.11)の分割で `max_split_depth` に達し、順位が付かない(VAL7 ではその 2 つの極小が 1 つの basin にまとまった)。M1 で偽の結合変化が、M2 で同じ状態の分割がなくなった(W3_s6 の再生、§11.3、§12.3)。
 9. **平らな PES の引き抜きの TS の再現性**: S6 の OH···CH4 → CH3···H2O は W3 だけが −481.1i の TS に届き、VAL7・W5 は OH···CH4 の向きを変える鞍点(−73.0i、−58.6i、両側が同じ basin)に収束して試行を使い切った。虚モードが仮説の結合変化を担わない鞍点を QRC の前に見分け、結合変化の方向に拘束して探す必要がある(その鞍点の QRC は 2 振幅 × 2 本)。
 10. **NWChem の AUTOZ の失敗**: VAL7/s10 の QRC の側の opt が 21 歩目で内部座標の再構築に失敗し、続きからの 2 回目の試行で収束した(+53 s)。VAL7 で 2 回目の試行はこの 1 件。
 
@@ -293,3 +293,53 @@ QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ
   - case の source は mode_follow で、宣言した反応ではない。
 - 実証していないこと: HEAD では、代表の添字が mf2 と同じ run で仮説が消えるはずだった(分析 G8-3 の推論)。HEAD でこの対は走らせていない。
 - 費用: DFT の mode-follow は対称な鞍点でも ± 両側を opt と freq にかける(freq 4 本で 69%)。QRC の像の規則は minima の mode-follow には入っていない。
+
+## 12. M2 判定の粒度(X2-2)
+
+分析の §3 X2-2 と §4.1 M2 にあたる(G8-P1、G5-P2 の簡素版)。規則は [design.md](design.md) §6.2 の「判定の粒度」。
+
+### 12.1 変えたこと
+
+- CONNECT と VALIDATE_INTERMEDIATE は、極小を case のキーで比べる。両端の (composition_id, state_label) が異なる case は状態、同じ状態の case は basin がキーである。`gates.connection` には、このキーをそのまま渡す(gates は変えていない)。
+- 両側が同じキーで別の basin の TS は `same_state` とし、この case の反応ではない鞍点として棄却する。行 8 は振幅を広げず、saddle の試行が残れば探索を続け、なければ `connection_failed` にする。振幅を広げる再試行は、同じ basin の場合だけに残した。
+- 同じ状態の case では、端点と同じ状態の別の basin を、次の 2 条件をともに満たすときだけ、その端点とみなす(G5-P2)。
+  - その端との \|ΔE\| < resolution_kcal。
+  - それを運んだ経路(プロファイルの井戸は端までのプロファイル、QRC の側は TS)に resolution_kcal 以上の山がない。
+- `ConnectionClaim.minima` は実際に結ばれた極小を持ち、elementary の `ReactionRecord.minima` は書き換えない。
+- 削除: 「中間体は他方の端点の配座でもよい」という扱い。結合変化の case では、端点と同じ状態の井戸は中間体にならない。
+
+### 12.2 期待値の訂正(QM なしの監査)
+
+CUR のうち paths を持つ 33 本の 41 case について、記録と case の log から QRC の側と中間体の状態を端点の状態と比べた(`/home/user/hfauto_r9/M2/audit/m2_audit.py`、出力は同じ場所の `audit.txt`)。結論が変わるのは、次の 4 本の 6 case だけである。ほかの case は、QRC の両側が端点の basin か 1 つの basin にあるか、QRC に進んでいないので、判定は変わらない。確定は再生(`tools/replay.py M2 --src CUR --allow-new W3_s6,W5_s6,s6_oh_ch4,s5_ch3_o2`)で行う。
+
+| run | case | 今まで | M2 の期待 | 化学的な理由 |
+|---|---|---|---|---|
+| W3_s6 | `rxn_discovery_f9bc3a1cd8` | multi_step(split1 elementary、split2 barrierless) | elementary(`connection.minima` = (p02, bfac))、子 case なし | QRC の側 bfac は、端点 05c1 と同じ CH3OH + H の状態(ΔE 0.10 kcal/mol の緩い錯体の別 basin)である。分析 X2 の検証 (a) |
+| W3_s6 | `rxn_discovery_460166732f` | reassigned_step | multi_step。CH4 + HO を経る 2 段 | −1347.6i の TS の側は、CH3OH + H(端点の状態)と CH4···HO(新しい状態、+14.13)である。TS を渡された子 CH4 + HO → CH3OH + H は再生、CH3 + H2O → CH4 + HO は新たに探索する。検証 (d) |
+| W5_s6、s6_oh_ch4 | `rxn_discovery_f9bc3a1cd8` | reassigned_step | multi_step。CH4 + HO を経る 2 段 | 同じ −1347.6i の TS と同じ側である。検証 (c)。子 split1 が 790468f505 の結果を再利用するのは G8-P7 で、M2 では新しく探索する |
+| s5_ch3_o2 | `rxn_discovery_b3febc8052` | reassigned_step | unresolved_within_budget(`connection_failed`) | −72.0i の鞍点は、CH3···O2 の 2 つの basin(0.00 と +0.40)を結ぶ。どちらも反応物と同じ CH3 + O2 の状態なので、会合の TS ではない。saddle の試行は使い切っている。検証 (e) |
+| s5_ch3_o2 | `rxn_discovery_b3e2f366b6` | reassigned_step | multi_step。CH2OOH を経る 2 段 | −1866.6i の 1,3-H 移動の TS は、CH3OO• の状態(反応物の状態)の別 basin(+22.48)と CH2OOH•(新しい状態、+15.54 の DFT 極小)を結ぶ。TS を渡された子 CH3OO• → CH2OOH• は再生、CH2OOH• → CH2O + OH は新たに探索する |
+
+- oxalic_two_step は変わらない(検証 (h))。cTc → tTt は同じ状態の case なので basin で判定する。中間体 tTc は TS(ΔE‡ 15.08)の向こうにあり、分解能の規則にはかからない。
+- 見かけの合格でないこと: 単体テストは、Registry が別々に登録した basin(手で統合していない)で、キー、`ConnectionClaim.minima`、分割の有無、次の決定(探索を続けるか、打ち切るか)を確かめる(`tests/unit/drivers/test_reaction_case_connection.py`)。`BASIN_A` と `_DE_HARTREE` は変えていない。
+- 既知の制限: WL の状態ラベルは立体を区別しないので、ジアステレオマーを同じ端点とみなしうる(G8-P6、未対応)。今の検証系に不斉中心はない。
+
+### 12.3 再生と実計算(r9-M2、`/home/user/hfauto_r9/M2/`)
+
+- strict(`tools/replay.py M2 --src CUR --strict`、上の 4 本を除く 32 本、壁時計 7 分): 32 本すべて PASS。misses 0、新しいジョブ 0、記録は同一である。oxalic_two_step は multi_step のまま(検証 (h))。hcn、hono、nh3_inversion、water_*、S1〜S4、S13〜S18 の δG_eff は変わらない(差 0)。
+- W3_s6(`--allow-new W3_s6`、壁時計 27 分。新しいジョブ 15 本、5,319 core 秒。すべて下の split1 の探索)
+  - `rxn_discovery_f9bc3a1cd8`: multi_step から elementary_step になった(−1417.9i、ΔE‡ 48.10)。`connection.minima` = (p02, bfac)で、`ReactionRecord.minima` は仮説の端 (p02, 05c1) のままである。`f9bc…_split*` の記録と中間体の species は消えた(検証 (a))。
+  - `rxn_discovery_460166732f`: reassigned_step から multi_step になり、CH4···HO(+14.13)を経る 2 段になった(検証 (d))。
+    - split2(CH4 + HO → CH3OH + H)は、親の −1347.6i を JobStore から再検証して elementary(δG_eff 41.25)。
+    - split1(CH3 + H2O → CH4 + HO)は新しい探索で、−485.8i の TS に届いた。QRC の側の一方は、端と同じ CH4 + HO の状態の別の basin(+13.40。端は +14.13)で、状態の単位で elementary(δG_eff 15.92)になった。
+  - 順位は 790468f505(1.48)、460166732f_split1(15.92)、460166732f_split2(41.25)、f9bc(48.48)の順。消えた f9bc の split2(barrierless、torsional)は順位から外れた。
+  - CUR/W3_s6 を `M2/replay/W3_s6` に張り替えた。
+- s5_ch3_o2(`--allow-new s5_ch3_o2`): CAP(3,600 s)で paths が止まり、paths の記録は残らなかった(新しいジョブ 32 本、11,279 core 秒)。case の log から分かることは次のとおり。
+  - `rxn_discovery_b3e2f366b6` は multi_step になった(`qrc1:end0_to_new_basin`、CH2OOH•)。split1(CH3OO• → CH2OOH•)は −1866.6i を再検証して elementary である。
+  - split2(CH2OOH• → CH2O + OH)の新しい TS は、CH2O + OH(端の状態)と HCO• + H2O(新しい状態。側の opt は maxiter 100 に達し、4,009 s かかった)を結ぶ H 引き抜きの鞍点だった。そのため split2 はさらに分割された。split2_split1(CH2OOH• → HCO• + H2O)の saddle 探索の途中で CAP に達した。
+  - この run の順番では b3febc8052 に進まなかった。そこで、paths を `reaction_ids: [rxn_discovery_b3febc8052]` に限った pipeline(`/home/user/hfauto_r9/pipelines/discover_b3febc.yaml`)で CUR の複製を paths から再ステージした(`M2/real/s5_b3febc`)。hits 25、misses 0、5 秒で終わった。注記は `qrc1:same_state:sides_same_basin` で、結果は unresolved_within_budget(`connection_failed`)である。reassigned_step にはならない(検証 (e))。
+  - CUR/s5_ch3_o2 は M1 のまま(再生が途中で止まったため)。
+- 実証していないこと
+  - W5_s6 と s6_oh_ch4 の f9bc(検証 (c))は再生していない。予算(壁時計 2 h、QM 1.5 h)を W3_s6 と s5 で使い切ったためである。W3_s6 の 460166732f は、同じ −1347.6i の TS、同じ両端 (p02, bfac)、同じ中間体の状態を持つので、判定の経路は同じである。ただし、子の新しい探索の結果は run ごとに違いうる。
+  - s5 の b3e2f366b6 の子の連鎖の完了。
+- 見えた課題(M2 の外): 行 5 の分割は、TS が端の状態と、それより低い別の状態を結ぶときにも中間体を作る。S5 の split2 では、CH2O + OH から 26.1 kcal/mol 下った HCO• + H2O(QRC の側の opt の最終エネルギーの差)を経る R → I → P になる。これは basin の単位の頃からの GEN-05 の規則で、M2 では変えていない。
