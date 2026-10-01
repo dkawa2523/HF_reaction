@@ -8,7 +8,7 @@
 - 外部ジョブの観測事実は型付きの `Evidence` で受け渡し、合否はゲート関数(`hfauto/chemistry/gates.py`)だけが決める。
 - バックエンドは能力 Protocol の実装で、subprocess を起動するのは `hfauto/execution/process.py` だけである。エンジン名の文字列は `hfauto/backends/` と `configs/` の外に書かない。
 - fail-closed: 互換層、ダミーエンジン、内部フォールバックは持たない。失敗は `FailureKind` 付きで最小の単位に閉じ込め、run は続ける(§8)。
-- 停留点(opt・saddle・string・freq)は大域混成か GGA に D3 を足した RKS / UKS で計算する(NWChem の解析 Hessian が使える範囲。RSH・meta-GGA では数値 Hessian になり 3〜4 倍かかる)。RSH と CCSD(T) は SP のエネルギー層だけで使う。気相専用で、溶媒和は持たない。
+- 停留点(opt・saddle・string・freq)は大域混成か GGA に D3 を足した RKS / UKS で計算する(NWChem の解析 Hessian が使える範囲。RSH・meta-GGA では数値 Hessian になり 3〜4 倍かかる)。meta-GGA 混成(M06-2X)、RSH と CCSD(T) は SP だけで使う(既定の順位のエネルギー層は M06-2X、§7.3)。気相専用で、溶媒和は持たない。
 
 ## 1. 層構造と import 契約
 
@@ -195,9 +195,9 @@ action:
 | minima(dft) | 選択 `window`: 反応する組成(宣言反応の端点、発見の出発点と生成物、それらの錯体の単量体 = `thermo.monomer_states`)だけを、組成 × 状態ラベルごとに `window_kcal` 以内の `per_state` 構造で DFT にかける(発見の出発点・生成物と relaxation の seed は必ず含む)。ほかの組成は diagnostics に `not_reacting`。その代償に、反応のない組成は DFT 極小も DFT の mode-follow の発見も持たない(VAL・FINAL・SC でそうした発見は 0 件)。`rerank_sp` は候補が `per_state` を超える組(組成 × 状態)だけ、上位 `rerank_top` 構造を DFT SP で並べ直してから同じ窓で切る。`all` は入力の化学種全部。opt は初期 Hessian なしなら `trust 0.1`、ありなら `trust 0.3`、maxiter 100。2 断片以上は `init_hessian` の xTB Hessian を使う(relaxation の seed を除く) |
 | 仮説 | 優先順は宣言反応 → explore の生成物(低レベル TS を優先)→ mode-follow の TS 候補。宣言反応は必ず評価する。それ以外は同じレベルの DFT 極小の対(または 1 つの basin)で、ΔE_rxn ≤ reaction_window_kcal、端点の間で結合が変わるものだけ(組成あたり 6 件まで)。未宣言のねじれ・配座変化・鏡像化は仮説にしない(Curtin–Hammett)。発見の仮説の両端はその発見の `source_species` と `product_species`(§6.2 の原子の対応)で、両端が同じ basin の発見は、結合の相手が入れ替わるときだけ縮退反応にする。DFT 段の mode-follow の鞍点は `ts_calc` として同じ basin の対(宣言反応を含む)に貸す。縮退・結合変化・ねじれは basin の最適化構造を端点の原子順と掌性に並べた構造で判定する。explore の陰性結果は仮説を棄却しない(GFN2 で障壁がなく発見にならない反応も、宣言すれば評価する) |
 | reaction-paths | saddle は `trust 0.1`、`sadstp 0.1`、maxiter 50、`inhess 2`、`moddir 1`(整えた Hessian の負のモード)。maxiter は継続せず、最終フレームを持つ `Failure` を返す。ZTS は `nbeads 9`、`stepsize 0.05`、`interpol 3`、`freeze1` / `freezeN`、maxiter 20 のチャンクで、NWChem の収束判定は使わない。`pysis_neb` は IDPP を初期経路とする Cartesian の CI-NEB(`opt: lbfgs`、max_cycles 100)と rsprfo の TSOpt。QRC の振幅の上限 0.4 Å は初期 Hessian を受け付ける距離 0.5 Å 以下にする |
-| sp | `methods` の各 LOT で、順位に使う点だけを計算する: 順位を付けられる outcome の反応の TS、その反応物・生成物と同じ状態の DFT 極小すべて、組成の単量体の状態の DFT 極小。freq の最終構造で計算し、parents に対象(minimum_id か TS の freq calc)を書く。thermo と手法パネルはこの parents だけで SP と停留点を対応付ける。CCSD(T) は閉殻が RHF の ccsd モジュール、開殻が ROHF 参照の TCE(`2eorb 2emet 13`)。`freeze atomic` は ECP 原子の軌道を凍結しない |
+| sp | 既定の pipeline(discover、known_endpoints)は paths の後に M06-2X-D3(0)/def2-TZVPD の 1 つ(§7.3)。`methods` の各 LOT で、順位に使う点だけを計算する: 順位を付けられる outcome の反応の TS、その反応物・生成物と同じ状態の DFT 極小すべて、組成の単量体の状態の DFT 極小。freq の最終構造で計算し、parents に対象(minimum_id か TS の freq calc)を書く。thermo と手法パネルはこの parents だけで SP と停留点を対応付ける。CCSD(T) は閉殻が RHF の ccsd モジュール、開殻が ROHF 参照の TCE(`2eorb 2emet 13`)。`freeze atomic` は ECP 原子の軌道を凍結しない |
 | thermo | GoodVibes 4.3.0 に自前の振動数を渡す。H は RRHO、S は Grimme の qRRHO(`qs`、`cutoff_cm1` 100)。σ・m・直線性は、下の「対称性」の点群 1 つから決める。振動数は freq の Hessian を点群の対称化した構造で射影し直したもの(直線なら 3N − 5 本)で、回転定数も同じ構造から求める。スケール因子は `vib_scale` の 1 つ(既定 1.0、振動数と ZPE の両方)。負モードは固定の規則: 極小は全モードを \|ν\| に、TS は最低モードを除いて \|ν\| にする。m = 2 の極小と TS の G に −RT ln 2 を加える(鏡像は同じ basin なので、鏡像対を 1 つとして数える)。σ の比は対称数で入る。種の値は 1 atm で、反応は `standard_states` ごとに換算する。状態の G は、その状態の極小のうち錯体(または基準)と同じ LOT で spin_contaminated でないものの最小の G で、反応物・生成物と会合量の単量体で同じ定義(LOT 判定は `same_pes(state=False)`)。感度の幅は qs × cutoff 50/100/150。G がなければ `thermo_unavailable`、LOT の不一致は `mixed_level_of_theory`。トンネル補正はない |
-| report | rankable な反応を δG_eff で並べ、感度の幅が重なれば同順位。(T, 標準状態) は report の `T_K`・`standard_state`、なければ thermo の最初の組。ranking.csv の列は rank、reaction_id、outcome、tier、rankable、T_K、standard_state、energy_level、dG_eff_kcal、band_low_kcal、band_high_kcal、dG_act_kcal、dG_rxn_kcal、dG_act_vs_separated_kcal、torsional(結合変化のない段)、blockers、notes。エネルギーが 2 つ以上の LOT にあれば `dE_act_panel_min_kcal`・`dE_act_panel_max_kcal` を足す(手法の幅は列で示し、順位は止めない)。coverage.csv は機構別の試行・生成物・陰性理由・FailureKind |
+| report | rankable な反応を δG_eff で並べ、感度の幅が重なれば同順位。(T, 標準状態) は report の `T_K`・`standard_state`、なければ thermo の最初の組。ranking.csv の列は rank、reaction_id、outcome、tier、rankable、T_K、standard_state、energy_level、dG_eff_kcal、band_low_kcal、band_high_kcal、dG_act_kcal、dG_rxn_kcal、dG_act_vs_separated_kcal、torsional(結合変化のない段)、blockers、notes。エネルギーが 2 つ以上の LOT にあれば `dE_act_panel_min_kcal`・`dE_act_panel_max_kcal` を足す(既定の pipeline では停留点レベルとエネルギー層の 2 つ。手法の幅は列で示し、順位は止めない)。coverage.csv は機構別の試行・生成物・陰性理由・FailureKind |
 
 結合と状態(`hfauto/chemistry/topology.py`): 結合は r < r_thr = r_cov,i + r_cov,j + 0.4 Å(Cordero の共有結合半径)で 1 つの構造だけから決め、`bond_changes` は結合集合の差で向きに対称である。状態ラベルは断片の組成式と WL ハッシュ。FHF⁻ と I3⁻ は 1 断片、ハロゲン結合(I···N 2.8 Å)は非結合。イオン–双極子錯体は許容値の内側なら 1 断片になり、GFN2 の強い H 結合錯体は閾値の近くでラベルが分かれうる(DFT 極小には影響しない)。分解能のある結合変化(`resolved_bond_changes`)は、r − r_thr が一方の構造で ≥ +`RESOLVED_A`、他方で ≤ −`RESOLVED_A`(0.1 Å、モジュール定数)の対だけである。1 つの basin の中をしきい値が横切るだけのラベルの違いは変化としない(根拠は S19 の N···H で、GFN2 と PBE0 の差が 0.15 Å)。今これを使うのは explore の失われた状態の判定だけである。
 
@@ -224,17 +224,30 @@ action:
 
 ### 7.3 エネルギー層と手法パネル
 
-既定の順位は停留点レベル(PBE0-D3BJ/def2-SVPD)の G で付ける。エネルギー層(composite G = E_SP + (G_GV − E_GV))は、既存の run に `method_panel` を `--run-dir` で追記して使う: panel_sp → panel_thermo(`energy_method` = 参照手法)→ panel_report。thermo の結果の id は stage id を含まないので、追記した層が同じ (T, 標準状態) の元の thermo の値を置き換え、ranking.csv の `energy_level` 列に並べた層が出る。元の値を残したいときは run ディレクトリを複製してから追記する(`cp -a`)。SP の対象は単量体を含むので ΔG_assoc も同じ層で出る。エネルギー層の SP がない対象は `energy_layer_missing`(G = None)で、その SP にも `spin_ok` をかける。
+既定の順位は M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD である。discover と known_endpoints は paths の後の sp stage で、順位に使う点(§7.1 の sp)を M06-2X-D3(0)/def2-TZVPD(grid fine、`convergence energy` 1e-7)で計算し、thermo の `energy_method` でその SP をエネルギー層にする: composite G = E_SP + (G_GV − E_GV)。構造と振動・回転の項は PBE0-D3BJ/def2-SVPD の freq のままである。層の定義は thermo の `energy_method` の 1 つだけで、ranking.csv の `energy_level` 列に `m06-2x-d3zero/def2-tzvpd` と出る。SP の対象は単量体を含むので、会合と分離反応物基準の値も同じ層で出る。
 
-- ωB97X-D3/def2-TZVPD は閉殻 4 系中 3 系で CCSD(T) に近い(平均絶対誤差 2.1 → 1.3 kcal/mol)が、17 原子の SP が 1 点 29 分かかるので既定の pipeline には入れない。
-- CCSD(T)/def2-TZVPD は重原子約 4 個までの分子で `methods` に足して `energy_method` にする(5 個では (T) が 1,200 MB/rank で配列を確保できない)。多参照性のゲートはない。
+- **正直な停止**: 層の SP がない対象(SP の失敗を含む)は `energy_layer_missing`(G = None)で、その反応は `thermo_unavailable` で順位から外れる。PBE0 のエネルギーで代用しない(層の混ざった δG_eff は序数の意味を失う)。層の SP にも `spin_ok` をかけ、不合格は `spin_contaminated` である。
+- **層の選び方**(分析 [2026-09-30_remaining_issues_analysis.md](reviews/2026-09-30_remaining_issues_analysis.md) §2.6、§3 X7): PBE0 は非局在化誤差で電子の広がった TS を過安定化する(障壁の平均符号付き誤差は H 移動 −4.2、重原子移動 −6.6、求核置換 −1.9 kcal/mol。Zhao & Truhlar, J. Phys. Chem. A 109, 2012 (2005))。誤差の主因は汎関数で、SVPD → TZVPD の変化は ≤ 1.1 kcal/mol だった。4 反応の ΔE‡ の CCSD(T)/def2-TZVPD との平均絶対誤差は PBE0/SVPD 2.68、PBE0/TZVPD 2.36、ωB97X-D3/TZVPD 1.56、M06-2X/TZVPD 1.03 kcal/mol(§7.4 の表)。TMA·(HF)₂(17 原子、327 基底関数、4 rank)の 1 点は M06-2X 255 s、PBE0/TZVPD 312 s、ωB97X-D3 1,689 s。M06-2X の grid は fine と xfine で障壁の差が ≤ 0.01 kcal/mol。
+- **手法パネル**(`method_panel`): 既存の run に `--run-dir` で追記し、panel_sp(PBE0/def2-TZVPD、ωB97X-D3/def2-TZVPD)→ panel_report。表示だけで順位は変えない: method_panel.csv に LOT ごとの ΔE_rxn・ΔE‡、ranking.csv に ΔE‡ の最小・最大が出る。層の定義を 2 つにしないため、パネルは thermo を持たない。
+- CCSD(T)/def2-TZVPD は校正用で、パネルの `methods` に足す(5 重原子では (T) が site の 1,200 MB/rank で配列を確保できない。手法ではなくメモリ設定の制約である)。多参照性のゲートはない。
 
 ### 7.4 結果の読み方
 
+- **順位の主張**: M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD の qRRHO δG_eff の序数として読む。CCSD(T)/def2-TZVPD(同じ PBE0/SVPD の停留点での SP)との実測の差は、障壁で平均 0.8、最大 1.8 kcal/mol(5 反応、下表)。ΔE_rxn は層で良くならない(平均 1.2、最大 2.3。PBE0/SVPD は 1.0、2.3)ので、障壁のない反応(δG_eff = max(ΔG_rxn, 0))の順位は停留点レベルと同程度の精度である。δG_eff は CCSD(T) の composite と比べ SN2 +0.46、HCN −1.79、CH3O• −0.72、HONO +0.09(validation.md §19.5)。参照そのものも CBS から約 0.5 ずれる。HTBH38/NHTBH38 の文献の MUE は約 1.2(Zhao & Truhlar, Theor. Chem. Acc. 120, 215 (2008))。1 kcal/mol 未満の差は序数を保証しない。遷移金属・溶媒・多参照性の強い系は未検証である。
+
+  | kcal/mol(括弧は CCSD(T) との差) | ΔE‡ CCSD(T) | ΔE‡ PBE0/SVPD | ΔE‡ M06-2X | ΔE_rxn CCSD(T) | ΔE_rxn M06-2X |
+  |---|---|---|---|---|---|
+  | HCN → HNC | 47.81 | 46.62(−1.19) | 46.02(−1.79) | 15.22 | 12.92(−2.30) |
+  | CH3O• → CH2OH• | 33.37 | 33.01(−0.36) | 32.66(−0.71) | −7.80 | −8.41(−0.61) |
+  | HONO trans → cis | 11.65 | 13.67(+2.02) | 11.64(−0.01) | 0.47 | −0.04(−0.50) |
+  | Cl⁻ + CH3Cl(錯体基準。ΔE_rxn は分離 → 錯体) | 13.44 | 10.45(−2.99) | 13.90(+0.46) | −10.60 | −11.27(−0.67) |
+  | OH + CH4(分離基準) | 6.96 | 0.79(−6.17) | 5.82(−1.14) | −12.77 | −14.54(−1.77) |
+
+- **PES の形は PBE0 のまま**: 鞍点の有無と位置、PES の平らさ、SCREEN・FIND_PATH・会合のスキャン・行 6 の barrierless の判定は PBE0-D3BJ/def2-SVPD の PES で決まり、層では確かめない。PBE0 に鞍点がない(山が解像度未満の)反応の障壁は層では取り戻せない(H + C2H4: PBE0 の山 +0.60、参照 1.72 kcal/mol。validation.md §18.4)。PBE0 の非局在化誤差は障壁の値だけでなく PES の形も変え、H 引き抜きの TS を早く平らにしうる(推論。S6 の平らな PES、G1)。停留点の汎関数は変えない: M06-2X と RSH では NWChem が解析 Hessian を使わず freq が高くつき、SP//PBE0 の構造の誤差は S6 で +0.31 kcal/mol(PBE0 の QRC の軌跡上の CCSD(T) の最大と PBE0 の TS の差)と、汎関数の誤差より 1 桁小さい。
+- **発見の段の窓は層より前のエネルギーで切る**: minima(dft) の `window_kcal` 6.0 は GFN2(`rerank_sp` なら PBE0/SVPD の SP)、仮説・行 3 の `reaction_window_kcal` 40 は PBE0/SVPD の ΔE_rxn(explore は GFN2)で決まる。窓で落ちた構造と仮説は層に届かず、層で順位に戻らないので、窓は停留点レベルの誤差より広くとる。PBE0/SVPD の CCSD(T)/def2-TZVPD との差は障壁で最大 −6.2(OH + CH4)、S6 の分離基準の ΔE_rxn で −2.2 kcal/mol(PBE0 −15.02、W3 の freq のエネルギー)で、40 はその数倍ある。6.0 は同じ状態(同じ結合)の配座の差に効くので、結合の組み替えに伴う非局在化誤差は主に入らない(推論。配座のエネルギー差の誤差は GFN2 でも PBE0 でも測っていない)。
+- 低スピン結合の組成のスキャンは、長距離側が BS の UKS のエネルギーのまま(AP なし)なので、障壁の有無の定性的な判定として読む。
+- 電荷系では PBE0 の非局在化誤差で電荷の広がった TS・錯体が低く出やすく(SN2 の ΔE‡ −2.99)、D3 は電荷に依らない。層はこの値を直すが(+0.46)、PES の形は PBE0 のままである。
 - 停留点レベルを def2-SVPD にしたのは、FHF⁻ の De が拡散関数のない SVP では 21.7 kcal/mol 過大になるが SVPD では実験値の誤差内に入るからである。
-- PBE0 の障壁の系統誤差は反応クラスで違う(平均符号付き誤差: H 移動 −4.2、重原子移動 −6.6、求核置換 −1.9 kcal/mol。Zhao & Truhlar, J. Phys. Chem. A 109, 2012 (2005))。CCSD(T)/def2-TZVPD(SVPD 構造での SP)との差の実測は HCN −1.2、HONO +2.0、SN2 −3.0 kcal/mol。OH + CH4 の H 引き抜きは分離反応物基準の ΔE‡ が 0.79 で、文献の約 5 を大きく下回る。順位は δG_eff の序数として読み、反応クラスが混ざるときは数 kcal/mol 未満の差の順序は入れ替わり得る。
-- SCREEN・FIND_PATH・会合のスキャンの barrierless は停留点レベルの PES 上の判定で、エネルギー層では確かめない。低スピン結合の組成のスキャンは、長距離側が BS の UKS のエネルギーのまま(AP なし)なので、障壁の有無の定性的な判定として読む。
-- 電荷系では PBE0 の非局在化誤差で電荷の広がった TS・錯体が低く出やすく、D3 は電荷に依らない。電荷系の障壁と ΔG_assoc はエネルギー層で確かめる。
 - ΔG_assoc は BSSE を補正しない値で、結合を過大に見積もることがある。qRRHO の扱いによる幅は 298 K で約 1.2 kcal/mol(TMA·(HF)₂)。
 - 電子分配関数は g = 2S+1 だけで、開殻原子と ²Π ラジカルの軌道縮重とスピン軌道補正は含めない。原子の SMILES は高スピン仮定なので、基底状態と違うことがある([C] は五重項になる)。
 
@@ -254,7 +267,7 @@ action:
 | 層 | 置き場所 | キー |
 |---|---|---|
 | site | `configs/sites/` | `site`、`scratch_root`、`cores`、`engines.<registry 名>`: `version`(版数の pin)、`executables`、`execution`(`ranks`、`threads`、`memory_mb_per_rank`、`timeout_s`、`env`)、`python`(worker)、`scratch_dir`。絶対パスはこの層だけに書く |
-| method | `configs/methods/` | `id`(ファイル名と同じ)、`kind`(dft / xtb / wft)、`functional`、`wft_method`(ccsd(t))、`basis`、`dispersion`(d3zero / d3bj)、`gfn`、`electronic_temperature_K`、`grid`、`scf_energy_tol`。gfn2(低レベル)、pbe0-d3bj_def2-svpd(停留点)、pbe0-d3bj_def2-tzvpd と wb97x-d3_def2-tzvpd(手法パネル)、ccsd-t_def2-tzvpd(opt-in) |
+| method | `configs/methods/` | `id`(ファイル名と同じ)、`kind`(dft / xtb / wft)、`functional`、`wft_method`(ccsd(t))、`basis`、`dispersion`(d3zero / d3bj)、`gfn`、`electronic_temperature_K`、`grid`、`scf_energy_tol`。gfn2(低レベル)、pbe0-d3bj_def2-svpd(停留点)、m06-2x-d3_def2-tzvpd(順位のエネルギー層)、pbe0-d3bj_def2-tzvpd と wb97x-d3_def2-tzvpd(手法パネル)、ccsd-t_def2-tzvpd(opt-in) |
 | system | `configs/systems/`(xyz は `configs/systems/xyz/`) | `system_id`、`species`(`id`、`xyz` か `smiles`、`charge`、`multiplicity`、`role`: monomer / endpoint)、`compositions`(`id`、`components`、`multiplicity`)、`reactions`(`id`、`reactant`、`product`、`coordinate`、`torsional`) |
 | pipeline | `configs/pipelines/` | `pipeline_id`、`gates`(knob)、`stages`(`id`、`stage` と下の stage 表の設定キー) |
 

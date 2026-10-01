@@ -1,5 +1,7 @@
 """configs/pipelines/*.yaml end to end on fake engines (design §4.3, §7.4, §10.1; CH-05): the
-double_well declared N–H–O reaction plus one composition, (HF)2, on 0.92 Å pair springs."""
+double_well declared N–H–O reaction plus one composition, (HF)2, on 0.92 Å pair springs. A fake
+sp returns the PES energy at any method, so these tests check where the ranking's energies come
+from (the M06-2X sp, not the PBE0 freq), not their values (tests/golden G30)."""
 
 from pathlib import Path
 
@@ -14,6 +16,7 @@ from hfauto.backends import engines
 from hfauto.backends.protocols import Capability as Cap
 from hfauto.backends.protocols import ConformerEnsemble, DiscoveryResult
 from hfauto.chemistry import thermo
+from hfauto.chemistry.gates import same_pes
 from hfauto.cli.main import app
 from hfauto.core import records as R
 from hfauto.core.evidence import Evidence
@@ -27,6 +30,7 @@ from hfauto.stages import catalog
 pytestmark = pytest.mark.integration
 REPO = Path(__file__).resolve().parents[2]
 T, PIPELINES = R.ArtifactType, REPO / "configs" / "pipelines"
+LAYER = "m06-2x-d3zero/def2-tzvpd"  # the energy_level of M06-2X-D3(0)/def2-TZVPD
 
 
 @pytest.fixture
@@ -83,20 +87,34 @@ def pipeline(tmp_path, tmp_run, monkeypatch):
     return run
 
 
+def ranked_on_the_layer(view) -> list[str]:
+    """Ids of the rankable rows, all on the M06-2X layer; every species G is an sp on another
+    PES than its freq (the PBE0 energy is never the layer) or none (energy_layer_missing)."""
+    (report,) = view.records(T.REPORT, R.ReportRecord)
+    rankable = [row for row in report.rows if row.rankable]
+    assert rankable and {row.energy_level for row in rankable} == {LAYER}
+    for st in view.records(T.SPECIES_THERMO, R.SpeciesThermo):
+        if st.energy_calc is None:
+            assert st.G_hartree is None and "energy_layer_missing" in st.notes, st.subject
+            continue
+        sp, freq = view.evidence(st.energy_calc), view.evidence(st.freq_calc)
+        assert sp.task == "sp" and "pes_mismatch:method" in same_pes(sp.level, freq.level).reasons
+    return [row.reaction_id for row in rankable]
+
+
 def test_known_endpoints_then_method_panel_appended_to_the_run(pipeline):
     view = pipeline("known_endpoints").view()  # manifests read back from disk, typed (CH-05)
     rx = next(r for r in view.records(T.REACTION, R.ReactionRecord) if r.reaction_id == "rx")
     assert rx.source == "declared" and rx.outcome is R.CaseOutcome.ELEMENTARY_STEP
-    (report,) = view.records(T.REPORT, R.ReportRecord)
-    assert [row.reaction_id for row in report.rows if row.rankable] == ["rx"]
+    assert ranked_on_the_layer(view) == ["rx"]
     layout = pipeline("method_panel")
     view = layout.view("panel_report")  # includes the known_endpoints stages
-    panel = {e.level.basis for e in view.records(T.CALCULATION, Evidence) if e.task == "sp"}
-    assert panel >= {"def2-tzvpd"} and "def2-svp" not in panel
+    panel = {e.level.method for e in view.records(T.CALCULATION, Evidence) if e.task == "sp"}
+    assert panel == {"m06-2x", "pbe0", "wb97x-d3"}  # the run's layer and the two panel methods
     report = load_manifest(layout.manifest_path("panel_report")).records(T.REPORT, R.ReportRecord)
     assert [row.reaction_id for row in report[0].rows] == ["rx"]  # the paths stage's reaction
-    [row] = report[0].rows  # ranked on panel_thermo's layer (no conditions copied)
-    assert row.rankable and (row.T_K, row.energy_level) == (298.15, "wb97x-d3/def2-tzvpd")
+    [row] = report[0].rows  # the panel is shown, the ranking stays on the run's one layer
+    assert row.rankable and (row.T_K, row.energy_level) == (298.15, LAYER)
     with pytest.raises(ValueError, match="already belongs"):
         pipeline("discover")  # structures, dft, ... are known_endpoints stage ids
 
@@ -110,8 +128,7 @@ def test_discover_flows_from_discovery_to_report(pipeline):
     assert {m.composition_id for m in dft} == {"HNO_q0_m1", "F2H2_q0_m1", "FH_q0_m1"}
     steps = {r.reaction_id for r in view.records(T.REACTION, R.ReactionRecord)
              if r.outcome is R.CaseOutcome.ELEMENTARY_STEP}
-    (report,) = view.records(T.REPORT, R.ReportRecord)  # rankable: thermo and report ran
-    assert steps & {row.reaction_id for row in report.rows if row.rankable}
+    assert steps & set(ranked_on_the_layer(view))  # rankable: sp, thermo and report ran
 
 
 def test_a_run_whose_inputs_all_fail_still_writes_the_report(pipeline, tmp_path, tmp_run,
@@ -129,5 +146,5 @@ def test_a_run_whose_inputs_all_fail_still_writes_the_report(pipeline, tmp_path,
     states = {s.stage_id: s for s in RunLayout(tmp_run).read_state()}
     assert (states["structures"].n_ok, states["structures"].n_failed) == (0, 3)
     assert all((states[s].status, states[s].n_ok, states[s].n_failed) == ("done", 0, 0)
-               for s in ("dft", "paths", "thermo"))
+               for s in ("dft", "paths", "sp", "thermo"))
     assert (tmp_run / "report" / "report.html").is_file()

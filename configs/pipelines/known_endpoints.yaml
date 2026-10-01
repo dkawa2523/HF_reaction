@@ -1,5 +1,7 @@
 # Declared reactions between known endpoints: DFT minima of every input species, then the
-# reaction paths (the barrier screen relaxes the IDPP between the DFT minima by an xTB NEB).
+# reaction paths (the barrier screen relaxes the IDPP between the DFT minima by an xTB NEB),
+# the energy layer (M06-2X single points), thermochemistry and the report. The ranking is
+# M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD.
 pipeline_id: known_endpoints
 stages:
   - {id: structures, stage: structures}
@@ -8,5 +10,6 @@ stages:
   - {id: paths, stage: reaction-paths, method: pbe0-d3bj_def2-svpd,
      engines: {qm: nwchem, saddle: nwchem_saddle, path: nwchem_string},
      screen: {method: gfn2, qm: xtb, path: pysis_neb}}
-  - {id: thermo, stage: thermo}
+  - {id: sp, stage: sp, engine: nwchem, methods: [m06-2x-d3_def2-tzvpd]}
+  - {id: thermo, stage: thermo, energy_method: m06-2x-d3_def2-tzvpd}
   - {id: report, stage: report}

@@ -1,15 +1,16 @@
-"""NWChem parser on real outputs (design §10.2: G01, G03-G05, G07, G10, G13, G21-G29)."""
+"""NWChem parser on real outputs (design §10.2: G01, G03-G05, G07, G10, G13, G21-G30)."""
 
 import json
 import re
 import shutil
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from hfauto.backends.nwchem import output as nw
 from hfauto.backends.nwchem.engine import NWChemEngine
-from hfauto.chemistry.gates import spin_ok
+from hfauto.chemistry.gates import same_pes, spin_ok
 from hfauto.chemistry.vibrations import external_basis, projected_frequencies
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
 from hfauto.core.constants import BOHR_TO_ANGSTROM, HARTREE_TO_KCAL_MOL
@@ -19,8 +20,10 @@ from hfauto.core.method import EngineSite, MethodSpec, level_mismatches
 from hfauto.execution.jobs import JobRunner, Task
 from hfauto.execution.jobstore import JobStore
 from hfauto.execution.process import STDOUT_NAME, CommandResult
+from hfauto.pipeline.config import load_method
 
 pytestmark = pytest.mark.golden
+METHODS = Path(__file__).resolve().parents[2] / "configs" / "methods"
 XFINE = MethodSpec(id="m", kind="dft", functional="pbe0", basis="def2-svpd",
                    dispersion="d3zero", grid="xfine", scf_energy_tol=1e-8)
 SVPD = MethodSpec(id="pbe0-d3bj_def2-svpd", kind="dft", functional="pbe0", basis="def2-svpd",
@@ -182,3 +185,22 @@ def test_ccsd_t_level_and_energy_rhf_ccsd_module_and_rohf_tce(golden, stem, mult
     assert level_mismatches(CCSD_T, level, version_pin="7.2.3") == []
     assert (level.charge, level.multiplicity) == (0, multiplicity)
     assert nw.total_energy(text) == pytest.approx(energy, abs=1e-9) and nw.s2(text) is None
+
+
+def test_g30_energy_layer_matches_its_method_file_with_m06_2x_d3_on_another_pes(golden):
+    """The default energy layer as NWChem 7.2.3 ran it (S6 TS, doublet): the observed Level
+    matches configs/methods, the D3 term is M06-2X's zero damping, and the layer is not the
+    PBE0 freq's PES (G25: PBE0-D3BJ/def2-SVPD freq of the same charge and multiplicity)."""
+    text = golden.text("nwchem/G30/m062x_ts.out")
+    level = nw.observe_level(text)
+    layer = load_method(METHODS / "m06-2x-d3_def2-tzvpd.yaml")
+    assert level_mismatches(layer, level, version_pin="7.2.3") == []
+    assert (level.method, level.dispersion, level.basis, level.grid, level.scf_tol) == (
+        "m06-2x", "d3zero", "def2-tzvpd", "fine", 1e-7)
+    assert re.search(r"s6 scale factor\s+:\s+1\.0+\s+s8 scale factor\s+:\s+0\.0+\s+"
+                     r"sr6 scale factor\s+:\s+1\.619", text)
+    assert nw.total_energy(text) == pytest.approx(-116.224696434258, abs=1e-9)
+    assert (level.charge, level.multiplicity, nw.s2(text)) == (0, 2, pytest.approx(0.7587))
+    freq = nw.observe_level(golden.text("nwchem/G25/oh_freq.out"))
+    assert same_pes(level, freq).reasons == (
+        "pes_mismatch:method", "pes_mismatch:basis", "pes_mismatch:dispersion")

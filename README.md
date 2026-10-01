@@ -16,10 +16,10 @@
 
 ## 処理の流れ
 
-8 種の stage を pipeline YAML でつなぐ。`minima` は xTB(screen)と DFT(dft)の 2 回使い、`sp` は `method_panel` の追記で使う。
+8 種の stage を pipeline YAML でつなぐ。`minima` は xTB(screen)と DFT(dft)の 2 回使い、`sp` は既定の pipeline のエネルギー層(M06-2X)と `method_panel` の追記で使う。
 
 ```text
-structures → conformers → minima(screen) → explore → minima(dft) → reaction-paths → thermo → report
+structures → conformers → minima(screen) → explore → minima(dft) → reaction-paths → sp → thermo → report
 ```
 
 | stage | 役割 |
@@ -35,14 +35,14 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 
 | pipeline | stage の並び | 用途 |
 |---|---|---|
-| `discover` | structures → conformers → screen → explore → dft → paths → thermo → report | 単量体と組成から反応を探す |
-| `known_endpoints` | structures → dft → paths → thermo → report | 宣言した反応の端点から経路と熱化学を求める |
-| `method_panel` | panel_sp → panel_thermo → panel_report | 既存の run に `--run-dir` で追記し、PBE0/def2-TZVPD と ωB97X-D3/def2-TZVPD で比べ、ωB97X-D3 のエネルギー層で並べ直す |
+| `discover` | structures → conformers → screen → explore → dft → paths → sp → thermo → report | 単量体と組成から反応を探す |
+| `known_endpoints` | structures → dft → paths → sp → thermo → report | 宣言した反応の端点から経路と熱化学を求める |
+| `method_panel` | panel_sp → panel_report | 既存の run に `--run-dir` で追記し、PBE0/def2-TZVPD と ωB97X-D3/def2-TZVPD の ΔE を並べて示す(順位は run のエネルギー層のまま) |
 
 ## 結果の読み方
 
 - 順位の量は δG_eff = max(G_TS, G_R, G_P) − G_R(kcal/mol)。G_R・G_P は反応物・生成物と同じ状態の DFT 極小の最小 G。障壁なし(`barrierless_at_resolution`)と ZPE で沈む障壁(注記 `submerged_barrier`)は max(ΔG_rxn, 0) で同じ表に並ぶ。qRRHO の扱いによる感度の幅が重なる反応は同順位。
-- 既定の順位は PBE0-D3BJ/def2-SVPD の値の序数として読む。PBE0 の障壁の誤差は反応クラスで違うので、クラスが混ざるとき数 kcal/mol 未満の差の順序は入れ替わり得る。精度が要るときは `method_panel` を追記する(ranking.csv の `energy_level` 列に並べた層が出て、手法ごとの ΔE‡ の最小・最大が列に付く)。
+- 既定の順位は M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD の G の序数として読む(ranking.csv の `energy_level` は `m06-2x-d3zero/def2-tzvpd`)。CCSD(T)/def2-TZVPD との差は障壁で平均 0.8、最大 1.8 kcal/mol(5 反応)、ΔE_rxn では平均 1.2、最大 2.3 で停留点レベルより良くない。1 kcal/mol 未満の差は序数を保証しない。鞍点の有無と PES の形は PBE0 で決まる。層の SP がない反応は `energy_layer_missing` で順位から外れ、PBE0 で代用しない。遷移金属・溶媒・多参照性の強い系は未検証。詳しくは [docs/design.md](docs/design.md) §7.3・§7.4。
 - 順位を付けない反応も outcome と blockers 付きで ranking.csv に載る。多段反応(`multi_step`)の親は順位を持たず、分割した子反応(`<id>_split<n>`)がそれぞれ並ぶ。判断の経過は `hfauto case` で見る。
 
 ## インストール
@@ -75,13 +75,13 @@ hfauto report $HOME/hfauto_runs/hcn
 
 ## 基準値
 
-WSL(4 vCPU / 11 GB)、PBE0-D3BJ/def2-SVPD、298.15 K・1 atm。全体と所要時間は [docs/validation.md](docs/validation.md) にある。
+WSL(4 vCPU / 11 GB)、M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD、298.15 K・1 atm。全体と所要時間は [docs/validation.md](docs/validation.md) にある。
 
 | 系(system) | pipeline | outcome | δG_eff(kcal/mol) |
 |---|---|---|---|
-| HCN → HNC(`hcn`) | known_endpoints | elementary_step | 42.18 |
-| HONO trans → cis(`hono`) | known_endpoints | elementary_step | 11.82(TS がキラルで m = 2) |
-| NH3 の反転(`nh3_inversion`) | known_endpoints | degenerate_rearrangement | 3.84 |
+| HCN → HNC(`hcn`) | known_endpoints | elementary_step | 41.57 |
+| HONO trans → cis(`hono`) | known_endpoints | elementary_step | 9.88(TS がキラルで m = 2) |
+| NH3 の反転(`nh3_inversion`) | known_endpoints | degenerate_rearrangement | 4.38 |
 | 水(`water_same_basin`) | known_endpoints | same_basin | — |
 | TMA·(HF)₂(`tma_hf2`) | discover | same_basin(プロトン移動の TS はない。全体で約 65 分、うち screen で失われた seed の DFT opt が約 34 分) | — |
 

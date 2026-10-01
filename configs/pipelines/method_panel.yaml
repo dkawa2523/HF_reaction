@@ -1,15 +1,13 @@
-# Appends to an existing run (hfauto run method_panel ... --run-dir <run>): single points of
-# the stationary points at every panel method, the composite thermochemistry on the reference
-# method (its values replace the earlier thermo of the same (T, standard state); ranking.csv names
-# the energy_level), then the panel report. panel_thermo takes temperatures_K / standard_states
-# like any thermo stage.
-# For small molecules (up to about four heavy atoms) add ccsd-t_def2-tzvpd to methods and make
-# it the energy_method (HCN / HONO take seconds to minutes per point; with five heavy atoms the
-# (T) step cannot allocate its arrays at 1,200 MB per rank; CH3O. ROHF-CCSD(T) takes about
-# 1 min per point on 4 ranks).
+# Appends to an existing discover / known_endpoints run (hfauto run method_panel ...
+# --run-dir <run>): single points of the stationary points at every panel method, then the
+# panel report. The panel is shown, not ranked on: method_panel.csv gives dE_rxn and dE_act at
+# every level, ranking.csv their dE_act min / max, and the ranking stays on the run's one
+# energy layer (thermo energy_method, M06-2X-D3(0)/def2-TZVPD).
+# Calibration of small molecules: add ccsd-t_def2-tzvpd to methods (HCN / HONO take seconds
+# to minutes per point, CH3O. ROHF-CCSD(T) about 1 min on 4 ranks; with five heavy atoms the
+# (T) step cannot allocate its arrays at the site's 1,200 MB per rank).
 pipeline_id: method_panel
 stages:
   - {id: panel_sp, stage: sp, engine: nwchem,
      methods: [pbe0-d3bj_def2-tzvpd, wb97x-d3_def2-tzvpd]}
-  - {id: panel_thermo, stage: thermo, energy_method: wb97x-d3_def2-tzvpd}
   - {id: panel_report, stage: report}

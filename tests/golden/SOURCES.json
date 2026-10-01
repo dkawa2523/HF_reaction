@@ -638,5 +638,21 @@
    "review-2026-09-27 §6.2",
    "U8-P7"
   ]
+ },
+ {
+  "id": "G30",
+  "files": [
+   {
+    "golden": "nwchem/G30/m062x_ts.out.gz",
+    "source": "/home/user/hfauto_r8_probe/G6-1_s6_layer/m062x_ts/out.txt",
+    "source_sha256": "742e46ae0677f54725cedf1da427efa4cda4dd12a399e75010153d0c5ecb7916",
+    "method": "copy"
+   }
+  ],
+  "expect": "OH···CH4 → CH3···H2O の TS(W3 の PBE0-D3BJ/def2-SVPD 鞍点、二重項)の M06-2X-D3(0)/def2-TZVPD SP。デッキは hfauto の render_energy で configs/methods/m06-2x-d3_def2-tzvpd.yaml と同じ MethodSpec から生成。Level は m06-2x・d3zero・def2-tzvpd・grid fine・scf_tol 1e-7 で要求と一致し、D3 は M06-2X のゼロ減衰の値(s6 1、sr6 1.619、s8 0)。E −116.224696434258、⟨S²⟩ 0.7587。同じプローブの CH4 −40.500223849821 と OH −75.733742705830 で、分離基準の ΔE‡ 5.82 kcal/mol(CCSD(T)/def2-TZVPD 6.96、PBE0/SVPD 0.79)",
+  "refs": [
+   "remaining-issues-2026-09-30 §2.6",
+   "G6-P1"
+  ]
  }
 ]

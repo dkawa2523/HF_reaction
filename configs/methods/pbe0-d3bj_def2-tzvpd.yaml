@@ -1,5 +1,5 @@
-# Method panel: PBE0 at def2-TZVPD; also the energy layer of a user-written composite
-# pipeline (sp -> thermo energy_method -> report).
+# Method panel: PBE0 at def2-TZVPD (the basis-set part of the stationary-level error; the
+# ranking's energy layer is m06-2x-d3_def2-tzvpd).
 id: pbe0-d3bj_def2-tzvpd
 kind: dft
 functional: pbe0

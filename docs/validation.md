@@ -163,7 +163,7 @@ QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ
 ## 9. 残る課題
 
 1. **実計算で通っていない分岐**: 行 1、2 回目の SCREEN、ケースの例外の閉じ込め、DFT の soft_minimum。行 6 の中点による高密度化は対称な経路でしか通っておらず、隠れた障壁を見つけた例はない。round 7 で未到達だった行 11 は M5 で削除した(§15)。行 16(今の行 15、`next_chunk`)は M4 の S5 split2 で通った(SCREEN の SP が未収束で種がなく、string の種を χ で拒否した後)。
-2. **既定の順位の精度**: PBE0/SVPD は CCSD(T) から最大 3 kcal/mol ずれ(SN2 −3.0、HONO +2.0)、H 引き抜きは分離基準の ΔE‡ 0.79 と文献 約 5 を大きく下回る。反応クラスが混ざる順位は method_panel を追記して読む。
+2. **既定の順位の精度**: PBE0/SVPD は CCSD(T) から最大 3 kcal/mol ずれ(SN2 −3.0、HONO +2.0)、H 引き抜きは分離基準の ΔE‡ 0.79 と文献 約 5 を大きく下回る(round 8 のプローブの CCSD(T)/def2-TZVPD は 6.96 で、差は −6.2)。M9 で、既定の順位を M06-2X-D3(0)/def2-TZVPD のエネルギー層にした(§19)。実 run の 5 反応で障壁の誤差は平均 0.83、最大 1.79 kcal/mol。ΔE_rxn は改善しない(平均 1.17、最大 2.30。HCN)。
 3. **開殻の会合**: S5 の UKS CH3···O2 は ⟨S²⟩ 1.71 で、障壁なしかどうかを判定できない。多参照かスピン射影の扱いが要る。M8 で、会合を分離した単量体からの緩和スキャンで問うようにし、S5 の会合は障壁なし(UKS、AP なし)で順位が付いた(§18.4)。結論が出なかった主因は多参照性ではなく問いの形だった。
 4. **失われた seed の費用**: S19 の seed は DFT の 1 歩目で状態を離れたのに、既知の basin に入るまで 44 歩(約 33 分)払った。M6 で、この seed のラベルの違いはしきい値の帯の中(0.006 Å)なので、失われた状態にしなくなった(§16)。本物の R6 の seed の opt(Hessian なし)の費用は残る(G4-P2、should)。
 5. **鞍点探索の空回り**: 柔らかい H 引き抜き・ラジカル会合では string の前に saddle が maxiter で 2 回止まる(S5 で saddle 826 s)。
@@ -666,3 +666,63 @@ S5(`M8/real/s5_ch3_o2`、CUR の写しを paths から、CAP 2,700 s。壁時計
 - s5_ch3_o2 を除く 35 本を CUR から strict: 35 本すべて PASS(misses 0、記録の差 0。ch3n_spin の理由の文字列は比較の対象外)。M8 の WP のコードでの先行の再生(`M8/replay`)も 35/35 PASS。
 - s5_ch3_o2 を M8 の実 run から strict: PASS(新しいジョブ 0、記録の差 0)。CUR は 36 本とも `M8F/replay` を指す。
 - 再生ツールは、元の記録にない欄が空の既定値(`monomers: []`)で現れる差を、結論の差として数えないようにした(`tools/replay.py` の `diff`、`test_tools.py`)。
+
+## 19. M9 既定の順位のエネルギー層(X7-1 / G6-P1)
+
+分析の §2.6 G6、§3 X7、§4.1 M9 にあたる。規則は [design.md](design.md) §7.3・§7.4。
+
+### 19.1 変えたこと
+
+- `configs/methods/m06-2x-d3_def2-tzvpd.yaml` を足した(m06-2x、def2-tzvpd、d3zero、grid fine、scf_energy_tol 1e-7)。NWChem 7.2.3 は M06-2X のゼロ減衰の D3(s6 1、sr6 1.619、s8 0)をかける(golden G30)。
+- discover と known_endpoints: paths の後に `{id: sp, stage: sp, engine: nwchem, methods: [m06-2x-d3_def2-tzvpd]}` を置き、thermo に `energy_method: m06-2x-d3_def2-tzvpd` を付けた。コードは変えていない(sp stage と `energy_method` は既存)。
+- method_panel から panel_thermo を削除した(panel_sp → panel_report)。順位の層の定義は既定の pipeline の thermo の 1 つだけで、パネルは表示だけになる。
+- しきい値、窓、予算は変えていない。
+
+### 19.2 根拠(プローブ `/home/user/hfauto_r8_probe/G6-1_*`、構造は hfauto の PBE0/SVPD の停留点)
+
+- 4 反応の ΔE‡ と CCSD(T)/def2-TZVPD との差は [design.md](design.md) §7.4 の表。平均絶対誤差は PBE0/SVPD 2.68、M06-2X/TZVPD 1.03 kcal/mol。
+- S6 の分離基準の ΔE_rxn: CCSD(T) −12.77、M06-2X −14.54(−1.8)、PBE0/SVPD −15.02(−2.2。W3 の freq のエネルギー)。
+- M06-2X の grid: fine と xfine で、S6 の障壁は 5.817 と 5.813 kcal/mol(`G6-1_m062x_grid`)。
+- golden G30(`tests/golden/test_nwchem_output.py`): S6 の TS の M06-2X の SP の出力は、method ファイルと Level が一致し(m06-2x、d3zero、def2-tzvpd、fine、1e-7)、PBE0/SVPD の freq の Level とは `same_pes` で method・basis・dispersion が違う。
+
+### 19.3 合格条件(統合の実計算)
+
+- VAL7 の全系を新しい既定で流し、rankable な行の `energy_level` がすべて `m06-2x-d3zero/def2-tzvpd` になること。`energy_layer_missing` で順位から外れた反応は、SP の失敗の種類とともに記録する。
+- 再生: paths までの stage は misses 0 で記録が同一。新しいジョブは sp の M06-2X の SP だけで、変わる記録は sp・thermo・report だけ。ほかの engine や kind のジョブが出たら不合格。
+- S6(CUR の s6_oh_ch4、W5_s6)の分離基準の ΔE‡ が 5〜7 kcal/mol(プローブ 5.82、CCSD(T) 6.96)。
+- SN2(Cl⁻ + CH3Cl)の δG_eff が、CCSD(T) の SP を `energy_method` にした composite から ±1 kcal/mol 以内。
+- HONO の M06-2X を測り、ΔE‡ と ΔE_rxn を CCSD(T) と比べる。
+- R1〜R4 の回帰で順位が変わった箇所は、化学的な理由(PBE0 の非局在化誤差が大きい反応クラスほど δG_eff が上がる)で説明できるものだけを受け入れる。
+
+### 19.4 見かけの合格の見分け方
+
+- `energy_level` の列名だけを見ていないか。各 `SpeciesThermo` の `energy_calc` が M06-2X の sp を指し、その Level が freq の Level と `same_pes` で method が違うこと(`tests/integration/test_pipelines_e2e.py`)。
+- モックのエネルギーのテストだけで通していないか。fake の sp は method に依らず PES のエネルギーを返すので、値は golden G30 と実計算で確かめる。
+- PBE0 の値を層として再利用していないか。SP がない対象は G = None(`energy_layer_missing`)で、freq のエネルギーで代用しない。
+- 窓や resolution を層に合わせて変えていないか。
+
+### 19.5 結果(統合、`/home/user/hfauto_r9/M9/`)
+
+- **再生**(`tools/replay.py M9 --src CUR --allow-new`、36 本、壁時計 54 分): paths までの全 stage で misses 0、記録の差は sp・thermo・report(パネルは panel_*)だけ。新しいジョブは 105 件すべて sp の nwchem `energy`(M06-2X)で、計 11,860 core 秒(多くは 1 点 10〜60 s、シュウ酸 8 原子 約 140 s、acac 15 原子 337 基底関数 約 600 s)。SP の失敗は 0 件で、`energy_layer_missing` で順位から外れた反応はない。rankable な行(29 本で 38 行)の `energy_level` はすべて `m06-2x-d3zero/def2-tzvpd`、各 `SpeciesThermo` の `energy_calc` は M06-2X の sp で、freq と `same_pes` の method が違う(QM なしの照合)。順位の行がない run(水、H2Te、TMA·(HF)₂ の same_basin)は SP の対象がなく、same_basin の行の blockers に `thermo_unavailable` が足される(順位には元々ない)。パネルの pipeline は R9 の写し(`/home/user/hfauto_r9/pipelines/`、panel_thermo なし。S20 SN2 の 400 K・1 M の report は M06-2X 層のまま検証用の thermo で出し、report.html と ranking.csv は 14.89 で一致)。
+- **自己一致**: CUR を M9 の再生に向け直し、`tools/replay.py M9S --src CUR --strict` で 36/36 PASS(新しいジョブ 0、記録の差 0)。
+- **精度**(CCSD(T)/def2-TZVPD との差、kcal/mol。S6 は W5_s6 と s6_oh_ch4、パネルは `s20_*` と HONO の写し `M9/real/hono_panel`):
+
+  | | ΔE‡ M06-2X | ΔE‡ PBE0/SVPD | ΔE_rxn M06-2X | ΔE_rxn PBE0/SVPD |
+  |---|---|---|---|---|
+  | HCN → HNC | 46.02(−1.79) | 46.62(−1.19) | 12.92(−2.30) | 13.18(−2.04) |
+  | CH3O• → CH2OH• | 32.66(−0.71) | 33.01(−0.36) | −8.41(−0.61) | −7.75(+0.05) |
+  | HONO trans → cis | 11.64(−0.01) | 13.67(+2.02) | −0.04(−0.50) | 0.13(−0.34) |
+  | Cl⁻ + CH3Cl(錯体基準、ΔE_rxn は分離 → 錯体) | 13.90(+0.46) | 10.45(−2.99) | −11.27(−0.67) | −11.18(−0.58) |
+  | OH + CH4(分離基準) | 5.73〜5.81(−1.2) | 0.75〜0.80(−6.2) | −14.54(−1.77) | −15.02(−2.25) |
+
+  障壁は M06-2X で平均 0.83、最大 1.79(PBE0/SVPD は 2.55、6.2)。ΔE_rxn は M06-2X で平均 1.17、最大 2.30 で、PBE0/SVPD(1.05、2.25)より良くない。HONO の trans/cis の順は M06-2X で逆になる(差 0.04、CCSD(T) は trans が 0.47 低い)。
+- **SN2 の δG_eff**: M06-2X 層 14.53、CCSD(T) 層の composite(同じ run の写しに `energy_method: ccsd-t_def2-tzvpd` の thermo を足したもの、`M9/real/s20_sn2_panel_ccsdt`)14.07 で、差 +0.46(合格条件 ±1)。同じ比べ方で HCN −1.79、CH3O• −0.72、HONO +0.09。
+- **S6**: 分離基準の ΔE‡ は 5.73〜5.81(合格条件 5〜7)。δG_eff は 790468f505 が 0.85 → 5.51、f9bc の split1 が 16.0 → 20.5、split2 が 40.6 → 44.8(W3_s6 も同じ幅で上がる)。
+- **順位と値の変化**: run の中の順位は 36 本とも変わらない。R1〜R4 は 1 反応ずつなので順位は 1 のまま、値は R1 42.18 → 41.57(1,2-H 移動。M06-2X の ΔE‡ は PBE0 より 0.6 低く、CCSD(T) からは −1.79 と PBE0 の −1.19 より離れる)、R2 11.82 → 9.88(PBE0 のねじれの障壁の過大 +2.0 が消える)、R3 3.84 → 4.38(ΔE‡ 4.26 → 4.80。実験の反転障壁 約 5.8 にどちらも届かない)、R4 same_basin。ほかに δG_eff が大きく上がったのは H 移動と求核置換で、PBE0 の非局在化誤差(H 移動 −4.2、求核置換 −1.9 の系統誤差)の向きと合う: H + H2 6.37 → 12.71(ΔE‡ 4.56 → 10.91。参照値 9.6、HTBH38)、Cl⁻ SN2 11.08 → 14.53、I⁻ SN2 6.88 → 9.61、二重 H 交換(S10)32.29 → 36.64、マロンアルデヒドの PT 0.00 → 0.93(ΔE‡ 2.01 → 2.69)、HONO → HNO2 52.02 → 56.83(ΔE_rxn 1.94 → 8.03)。ねじれ・配座(DME +0.17、H2O2 +0.11、シュウ酸 −1.0)と (HF)₂ の交換(−0.59)は 1 kcal/mol 前後である。R2 の δG_eff(9.88)が ΔG‡(9.79)より大きいのは、cis と trans が同じ状態で、層では cis が 0.09 低くなり G_R がその最小になるからである。
+- **電子状態の違う SP**: S5 の CH3···O2 錯体(PBE0 の freq は BS、⟨S²⟩ 1.71)の M06-2X の SP は ⟨S²⟩ 0.759 の別の解に収束し、分離した単量体より 46 kcal/mol 高い。この極小は `spin_contaminated` で状態の G から外れ、会合の反応物側は単量体なので順位には入らない(ΔE_rxn は分離基準 −37.18、PBE0 −36.50)。層の SP の電子状態を freq と照合するゲートはない(§19.6)。
+
+### 19.6 実証していないこと
+
+- 遷移金属・Te を含む系の M06-2X の SP(H2Te は順位の行がなく SP の対象がない)。I は SN2 で通したが CCSD(T) の参照はない。
+- 層の SP が freq と違う電子状態に収束したことの検出。spin_ok は ⟨S²⟩ の汚染だけを見るので、BS の freq 点で純粋な二重項に落ちた SP を止めない(S5 では順位に影響しなかった)。
+- PBE0 に鞍点がない(山が解像度未満の)反応の障壁。層では取り戻せない([design.md](design.md) §7.4)。

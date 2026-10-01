@@ -40,6 +40,37 @@ def test_sites_and_methods_validate():
     assert all(config.load_method(p) for p in files("methods"))
 
 
+def pipeline(name):
+    path = CONFIGS / "pipelines" / f"{name}.yaml"
+    return config.PipelineConfig.model_validate(yaml.safe_load(path.read_text("utf-8")))
+
+
+def method(method_id):
+    return config.load_method(CONFIGS / "methods" / f"{method_id}.yaml")
+
+
+@pytest.mark.parametrize("name", ["discover", "known_endpoints"])
+def test_default_ranking_is_m06_2x_single_points_on_the_pbe0_stationary_points(name):
+    """One energy layer after the paths: the sp method is thermo's energy_method, on the
+    stationary points' numerics but another functional, basis and D3 (not PBE0 reused)."""
+    cfg = pipeline(name)
+    assert [e.id for e in cfg.stages][-4:] == ["paths", "sp", "thermo", "report"]
+    sp, thermo = (cfg.entry(i).settings() for i in ("sp", "thermo"))
+    assert sp["methods"] == [thermo["energy_method"]] == ["m06-2x-d3_def2-tzvpd"]
+    layer, stationary = method(thermo["energy_method"]), method(
+        cfg.entry("paths").settings()["method"])
+    assert (layer.kind, layer.functional, layer.basis, layer.dispersion) == (
+        "dft", "m06-2x", "def2-tzvpd", "d3zero")
+    assert (layer.grid, layer.scf_energy_tol) == (stationary.grid, stationary.scf_energy_tol)
+    assert (stationary.functional, stationary.basis, stationary.dispersion) == (
+        "pbe0", "def2-svpd", "d3bj")
+
+
+def test_method_panel_shows_levels_and_defines_no_second_energy_layer():
+    assert [(e.id, e.stage) for e in pipeline("method_panel").stages] == [
+        ("panel_sp", "sp"), ("panel_report", "report")]
+
+
 @pytest.mark.parametrize("path", files("systems"), ids=lambda p: p.stem)
 def test_system_loads_and_its_xyz_fit_the_state_and_the_reaction_atom_order(path):
     system = load_system(path)
