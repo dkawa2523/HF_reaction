@@ -1055,3 +1055,77 @@ audit_ends(S2 の再生): 19 件を監査し、不一致 0、別経路の TS 3(�
 - **四重項の CH3·O2**(合格条件 3、`S4/real/ch3_o2_quartet`、CAP 1800 s): DFT 極小の段で CAP に達した(rc 124)。paths に届かず case がないので、AP がかからないことは実証していない。
 - **S5 の split2**(CH2OOH → CH2O + OH、合格条件 6): SCREEN の内部 9 点が端の vectors からすべて収束した(CUR で scf_not_converged だったフレーム 7 は −26.55 kcal/mol、⟨S²⟩ 0.759)。プロファイルは 0、+1.75、+0.44、−2.39、−2.01、−2.96、−17.35、−26.55、−28.73、−30.89、−32.68 で single(山はフレーム 1)。screen_hei の鞍点と、その後の string(SCREEN の経路から始まるので CUR と別のジョブ。intermediate)の path_hei の鞍点は、χ 0.271 と 0.287(−306.4i、−317.4i)で `not_reaction_mode` に棄却され、試行を使い切って unresolved_within_budget になった(CUR: string で barrierless_at_resolution)。O–O 開裂の TS はまだ見つからない。REACTION_MODE_MIN 0.3 は変えていない。split2 が順位に入らなくなったので、CH2O·OH の極小はエネルギー層の SP の対象から外れ、b3e2f366b6(multi_step)と split2 の反応の熱化学は `thermo_unavailable`・`mixed_level_of_theory`、順位表から split2 の行(dG_rxn −36.4)が消えた。
 - G2-1v のプローブは 23.2。S4b が古い規則で始めた実行(`S4/S4b/s5_ch3_o2`)は使っていない。
+
+## 24. S5 trial の番号付けの不変性と未宣言の縮退転位(G5-P4、G3-P8)
+
+G5-P4 は分析の §4.2(G5、should)にあたる。explore の結論が原子の番号付けに依らず、構造だけで決まるようにする。規則は [design.md](design.md) §7.1 の explore の行。
+
+### 24.1 G5-P4 で変えたこと(`chemistry/trials.py`)
+
+- 類の鍵は前と同じ(形成と切断の結合の WL クラスの対、形成距離 0.1 Å)。類の代表は値が最小の drive で、同値は正準の順位(原子の WL クラスと、クラスごとに並べた距離)で選ぶ。値は r/Σr_cov で、移動は次に a–b–c 角(直線に近い順)、リレーは遠い接触→近い接触、切断は最も伸びた結合から。
+- 類は代表の値と類の記述の順に並べ、テンプレートを T1 → T4 の順に巡回する。`max_trials_per_source` の境界で同じ値に分かれる類はまとめて落とす(上限は超えない。上限より少なくなりうる)。
+- trial_id は source、種類、類の記述の hash。
+- 削除: 添字の対による順序と同値の分け方(`steps`、リレー、形成、切断の添字順の sort)、先着の代表(共有の `seen`)、添字の対の hash の trial_id。単連結の距離のクラスタリングは入れていない(不採用)。
+- 残したこと: 3 原子以上の直線分子の `perturb_linear` は、原子ごとの乱数と SVD の軸の向きを通して番号付けに依る。trial は曲げる前の構造で作るので trial の集合は変わらず、VAL7、W3 にこの開始点はない。NT2 の開始構造だけが番号付けに依る。
+
+### 24.2 G5-P4 の QM なしの確認(r9 `tools/trialperm.py`、`S5/int/trialperm_*.txt`)
+
+各 explore の開始点(screen の最適化構造)の原子を無作為に 20 回並べ替え、cap 10 と cap なしで `generate` を回す。trial_id の列を比べ、各 trial の結合を置換で元の番号に戻して比べる。並べ替えた構造の添字そのものも、NT2 の結果や理由の件数も比べない。
+- VAL7 + W3 の 32 開始点: PASS(drive 7,440 件がすべて同じ。同等なだけのもの 0、違うもの 0、id の違い 0)。CUR の 8 run(W5_s6 を含む)の 19 開始点: PASS(4,180 件が同じ)。
+- 旧コードで同じ試験をすると、56 の開始点×cap で FAIL した。構造だけを比べても、旧コードの cap 10 の集合は s8、s10、s19 の TMA・NMe3・SO2·NMe3 で 20 回中 6〜16 回、番号付けで変わった。原因は、遠い接触を共有するリレーの同値を添字で分けていたことである。
+- cap の境界で同じ値に分かれる類は、実際の開始点には 1 つもない。まとめて落とす規則で落ちる trial は 0 件である。
+
+### 24.3 G5-P4 の再生ゲート(`S5/replay`、src CUR = S4/replay、4.5 分)
+
+- explore のない 29 run と `sn2_cl_d3h`(G3-P8 の run を runs.json に足した)は strict に PASS した(新しいジョブ 0、記録の差 0)。
+- explore のある 8 run(s7、s8、s10、s19、s5、s6、W3_s6、W5_s6)は --allow-new で報告した。trial_id が変わるので、discovery、生成物の species、その極小、discovery の仮説の id がすべて変わる。新しいジョブは予想どおり ReaDuct の NT2 3 本(各 6 core 秒。s10 は s8 と同じ鍵)で、どれも代表の変わったリレーである: s8 と s10 の NMe3/TMA は ((1,10),(3,4)) から ((1,10),(3,9))、s19 の TMA は ((1,12),(3,4)) から ((1,12),(3,7))。どれも negative(旧 dE_act 90.0、新 125.9 kcal/mol)。
+- 結論の水準(`S5/int/concl.py`、`concl.txt`): 旧 trial を同じ source、種類、結合の新 trial と組み、id の hash を付け替えると(discovery の仮説は端で組む)、上の 3 本を除いて explore から report までの全記録が一致した。ranking.csv、method_panel.csv、coverage.csv も一致した。生成物の状態の集合と低レベルの障壁(s10 FH+H3N 33.01、s5 CH3O2 36.49、S6 の CH4O+H 31.62/37.78 kcal/mol)は変わらない。
+- CUR を S5/replay の 38 run に進めた。
+
+### 24.4 G5-P4: S8 の explore を新しい run で 2 回(`S5/real/s8_explore_a`、`_b`、`--to explore`、各 1 分、ジョブの再利用 0/28)
+
+- 2 回とも CREST の配座は同じ組(複合体 c00 のみ。2 回の差は置換不変 RMSD 8.7e-4 Å、CUR との差は 4.6e-4 Å)で、source の id も同じだった。
+- 3 つの source(NMe3 8 件、SO2 1 件、SO2·NMe3 10 件)すべてで、記録の trial_id は `generate` の結果と一致し、2 回の trial_id の列と正準の類(source 名を固定した id)の列が一致した。CUR(S5/replay)とも一致した。生成物は 2 回とも 0(`S5/int/s8_twice.txt`、`S5/int/s8cmp.py`)。NT2 の否定の理由の件数は比べていない。
+
+### 24.5 G3-P8: 未宣言の縮退転位
+
+G3-P8 は分析の §2.3 G3(根本原因 9)と §4.2 にあたり、コードは変えない。未宣言の縮退転位の経路(mode-follow → `_auto` の縮退の仮説 → `ts_calc` の直接の検証 → QRC の `minus_is_image` → degenerate)を、宣言も端点もない入力で実計算に通す。
+
+### 24.6 G3-P8 の入力
+
+- `configs/systems/sn2_cl_d3h.yaml`(known_endpoints)。species は Cl⁻ + CH3Cl の恒等 SN2 の D3h の鞍点 1 つだけ(電荷 −1)で、反応も組成も宣言しない。
+- 構造は VAL7/s1 の TS の freq 構造(−393.6i)を D3h に対称化したもの(C–H 1.0811、C–Cl 2.3212 Å。元の構造から最大 9e-6 Å)。
+- ± の側は C3v のイオン双極子錯体で、Cl を入れ替えた互いの像である。C–Cl の結合が入れ替わるので、宣言がなくても仮説になる。NH3 の反転は結合が変わらず `_auto` が捨てるので、この分岐を通らない。
+
+### 24.7 G3-P8 の期待するログ
+
+- dft の diagnostics: `sn2_d3h` が `saddle`、`opt`、`freq:saddle`、`follow1:ts_candidate`、`joined:<側の basin>`。2 つの側は 1 つの basin に入る。
+- 仮説は 1 件。source は `mode_follow`、degenerate、端は 2 つの側の species、`ts_calc` は鞍点の opt。
+- case log: `ts_calc:<calc>` → `validate_and_connect`(`saddle_converged`)→ `qrc1:minus_is_image` → `degenerate_rearrangement`(`connection:degenerate`)。
+- paths に saddle と string のジョブがない。TS と錯体は S1 と同じ停留点なので、ΔG‡ は CUR の S1(14.531 kcal/mol)と 0.01 以内。
+
+### 24.8 G3-P8 の見かけの合格の見分け方
+
+- 反応を宣言する。端点の species(S1 の rc、pc)を足す。
+- C3v の錯体から始めて、explore の NT2 で鞍点を見つける。
+- mode_follow やゲートを動かして分岐に入れる。
+
+### 24.9 G3-P8 の結果(`/home/user/hfauto_r9/S5/real/sn2_cl_d3h`、作業ツリー 74f6e4b-dirty、rc 0、壁時計 5:28)
+
+期待どおりで、合格。
+- diagnostics: `sn2_d3h` は saddle、opt、freq:saddle、follow1:ts_candidate、joined:basin_sn2_d3h_mf1_de668d94。basin の members は mf1、mf2、sn2_d3h(注記 `endpoint_was_saddle`)。
+- 鞍点の opt は 1 歩で D3h のまま止まった(−393.6i。E は VAL7/s1 の TS と 9e-10 Eh 差)。側は C3v の錯体(C–Cl 1.821 Å、Cl···C 3.129 Å。2 つの側の E の差は 5.7e-9 Eh)。
+- 仮説は `rxn_mode_follow_44700b282b`(mode_follow、degenerate、torsional でない)。端は (sn2_d3h_mf1, sn2_d3h_mf2)、ts_calc は `calc_e164f2ff1e5bc5ce`。
+- case log: `ts_calc:calc_e164f2ff1e5bc5ce` → validate_and_connect(saddle_converged)→ `qrc1:minus_is_image` → degenerate_rearrangement(`connection:degenerate`)。
+- paths の新しいジョブは 0 件(hits 2)。TS の検証の freq は minima の freq と同じ鍵で、QRC の + 側の opt は mode-follow の側 1 の opt と同じ鍵である。SCREEN、saddle、string はない。
+- 数値(M06-2X//PBE0): dE_act 13.900、dG_act = dG_eff 14.531 kcal/mol、rankable。CUR の S1(宣言した反応、SCREEN から saddle)との差は 1e-4 kcal/mol 以内。単量体を宣言していないので、分離基準の ΔG は出ない。
+- 費用: 9 ジョブ、1,288 core 秒(DFT の opt 3 本 599、freq 3 本 575、M06-2X の SP 2 本 114)。像である 2 つ目の側の opt と freq(127 s、QM 時間の 39%)も走る。§11.4 と同じで、QRC の像の規則は minima の mode-follow に入っていない。
+- 第 2 候補のギ酸二量体(D2h)は流していない。
+- 統合で同じ入力を新しい run でもう一度流した(`S5/int/sn2_cl_d3h`、rc 0、壁時計 5:05、orphan 0)。diagnostics、仮説(`rxn_mode_follow_44700b282b`、mode_follow、degenerate)、case log の 4 行、paths のジョブ(misses 0、hits 2。calculation は freq 1、opt 2 で saddle と string はない)、dE_act 13.900、dG_eff 14.531 kcal/mol は上と同じだった。分析の期待の `ts_validated` は、S2 で検証と接続を 1 つの action にしたので(§21.1)、`validate_and_connect`(`saddle_converged`)の 1 行になる。この run は runs.json に `sn2_cl_d3h` として足し、S5 の再生で strict に PASS した。
+
+### 24.10 実証していないこと
+
+- cap の境界で同じ値に分かれる類を落とす規則は、単体試験だけで確かめた。実際の開始点に該当はない。
+- S8 の 2 回の run では CREST が同じ配座を返したので、配座の番号が入れ替わる場合(source の id の付け替え)は実計算で起きていない。比較の道具(`s8cmp.py`)は source を RMSD で組めるようにしてある。
+- 3 原子以上の直線分子の NT2 の開始構造は、まだ番号付けに依る(24.1)。
+- G3-P8 の第 2 候補(ギ酸二量体 D2h)は流していない。像である側の opt と freq を省く(minima の mode-follow に QRC の像の規則を使う)のは、後の波の候補として残した。

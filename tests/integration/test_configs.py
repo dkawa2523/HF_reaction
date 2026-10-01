@@ -88,6 +88,7 @@ _C3 = np.array([[-0.5, -np.sqrt(0.75), 0.0], [np.sqrt(0.75), -0.5, 0.0], [0.0, 0
 SADDLE_SEEDS = {  # a seed off its symmetry by more than noise would relax to a minimum instead
     "nh3_planar_seed/d3h.xyz": (np.diag([1.0, 1.0, -1.0]), _C3),
     "dme_c2v_seed/c2v_eclipsed.xyz": (np.diag([-1.0, 1.0, 1.0]), np.diag([1.0, 1.0, -1.0])),
+    "sn2_cl_d3h.xyz": (np.diag([1.0, 1.0, -1.0]), _C3),
 }
 
 

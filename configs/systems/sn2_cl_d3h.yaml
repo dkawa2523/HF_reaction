@@ -1,0 +1,12 @@
+# r9 G3-P8: an undeclared degenerate rearrangement found from a symmetric saddle. The only species
+# is the Cl- + CH3Cl identity SN2 saddle, exactly D3h (the VAL7 S1 TS freq geometry, -393.6i,
+# symmetrized; 9e-6 A from it). No reaction is declared; run with known_endpoints.
+# Expected: the saddle's history follow1:ts_candidate; its two sides, the C3v ion-dipole complexes
+# with the C-Cl bonds exchanged, are one basin as images; one hypothesis, source mode_follow,
+# degenerate; the case log ts_calc -> validate_and_connect (saddle_converged) ->
+# qrc1:minus_is_image -> connection:degenerate, with no saddle or string job; dG_act as S1.
+# Fake-pass checks: a declared reaction; a start at the C3v complex that finds the saddle through
+# explore.
+system_id: sn2_cl_d3h
+species:
+  - {id: sn2_d3h, xyz: xyz/sn2_cl_d3h.xyz, charge: -1}

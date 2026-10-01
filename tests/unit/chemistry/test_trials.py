@@ -1,7 +1,9 @@
 """Reaction trials (design §8.2 explore): the four bond-change templates, the valence rule,
-drive equivalence classes and the linear perturbation."""
+drive equivalence classes, their independence of the atom numbering (G5-P4), the cap and the
+linear perturbation."""
 
 import numpy as np
+import pytest
 
 from hfauto.chemistry import trials
 from hfauto.chemistry.vibrations import external_basis
@@ -34,15 +36,27 @@ MALONALDEHYDE = (["O", "C", "C", "C", "O", "H", "H", "H", "H"],  # enol, O0–H5
 NH3_HF = (["N", "H", "H", "H", "H", "F"],  # H3N ··· H–F, CREST seed of amine_pilot2 (F···H 3.0 Å)
           np.array([[-1.3137, 0, 0], [-1.6606, -0.1372, 0.9409], [-1.6644, 0.8821, -0.3518],
                     [-1.6609, -0.7473, -0.588], [0.2409, 0.0054, -0.0015], [1.2203, 0, 0]]))
+WATER_HF_HCL = (["O", "H", "H", "H", "F", "H", "Cl"],  # HF and HCl donate to O, both at 2 Å
+                np.array([[0, 0, 0], [0.76, 0, -0.59], [-0.76, 0, -0.59], [0, 0, 2.0],
+                          [0, 0, 2.92], [0, 2.0, 0], [0, 3.28, 0]]))
 NH3_2HF = (["N", "H", "H", "H", "H", "F", "H", "F"],  # two HF donate to N at 1.70 and 2.40 Å
            np.array([[0, 0, 0], [0.94, 0, -0.38], [-0.47, 0.814, -0.38], [-0.47, -0.814, -0.38],
                      [0, 0, 1.7], [0, 0, 2.62], [1.039, 1.8, 1.2], [1.438, 2.49, 1.66]]))
 
 
-def _drives(system, charge=0, multiplicity=1):
-    _, ts = trials.generate("m", *system, charge=charge, multiplicity=multiplicity,
-                            max_trials=100)
-    return [(t.kind, set(t.associations), set(t.dissociations)) for t in ts]
+def _drives(system, charge=0, multiplicity=1, max_trials=100, order=None):
+    """(kind, formed, broken) of each trial in the source's own numbering; ``order`` numbers
+    the atoms of the generated source (new index k is atom order[k])."""
+    symbols, x = system
+    order = np.arange(len(symbols)) if order is None else order
+    _, ts = trials.generate("m", [symbols[i] for i in order], x[order], charge=charge,
+                            multiplicity=multiplicity, max_trials=max_trials)
+    return [(t.kind, *({tuple(sorted(int(order[i]) for i in p)) for p in bonds}
+                       for bonds in (t.associations, t.dissociations))) for t in ts]
+
+
+def _ids(system, max_trials=100, **kw):
+    return [t.trial_id for t in trials.generate("m", *system, max_trials=max_trials, **kw)[1]]
 
 
 def test_backside_sn2_first_and_no_halogen_h_shift():
@@ -99,6 +113,38 @@ def test_equivalent_drives_are_one_trial_and_distinct_sites_stay():
     n_to_h = [form for kind, form, _ in _drives(NH3_2HF) if kind == "transfer"
               and {NH3_2HF[0][i] for p in form for i in p} == {"N", "H"}]
     assert n_to_h == [{(0, 4)}, {(0, 6)}]  # same atom classes, N···H 1.70 vs 2.40 Å
+
+
+@pytest.mark.parametrize(("system", "charge", "multiplicity", "mirror"), [
+    (TMA_HF2, 0, 1, False), (MALONALDEHYDE, 0, 1, False), (NH3_2HF, 0, 1, False),
+    (SN2, -1, 1, True), (CH3O, 0, 2, True), (WATER_HF_HCL, 0, 1, True)])
+@pytest.mark.parametrize("max_trials", [10, 100])
+def test_trials_depend_on_the_structure_not_on_the_atom_numbering(
+        system, charge, multiplicity, mirror, max_trials):
+    """G5-P4: under atom permutations the trial ids (class description and source) come in the
+    same order and, carried back, the bonds are the same (up to a mirror image of the source:
+    which of two mirror atoms a trial names is not a structural fact)."""
+    symbols, x = system
+    kw = {"charge": charge, "multiplicity": multiplicity, "max_trials": max_trials}
+    ids, drives = _ids(system, **kw), _drives(system, **kw)
+    for seed in range(5):
+        order = np.random.default_rng(seed).permutation(len(symbols))
+        assert _ids(([symbols[i] for i in order], x[order]), **kw) == ids
+        assert mirror or _drives(system, order=order, **kw) == drives
+
+
+def test_classes_tied_at_the_cap_are_all_in_or_all_out():
+    """HF and HCl donate to O at exactly 2 Å, both linear: their two O–H transfers tie in value,
+    so a cap between them takes neither (which comes first is only their class description)."""
+    full = trials.generate("m", *WATER_HF_HCL, max_trials=100)[1]
+    tied = {t.trial_id for t in full
+            if t.kind == "transfer" and {(0, 3), (0, 5)} & set(t.associations)}
+    assert len(tied) == 2 and len(full) == 5
+    for cap in range(len(full) + 1):
+        kept = _ids(WATER_HF_HCL, max_trials=cap)
+        assert len(kept) <= cap and kept == [t.trial_id for t in full if t.trial_id in kept]
+        assert len(tied & set(kept)) in (0, 2)
+    assert [kind for kind, _, _ in _drives(WATER_HF_HCL, max_trials=2)] == ["relay"]
 
 
 def test_linear_hcn_is_bent_and_gets_the_12_shift():
