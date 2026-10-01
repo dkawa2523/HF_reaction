@@ -37,6 +37,7 @@ from hfauto.core.method import Deadline
 from hfauto.core.records import (
     BarrierVerdict,
     ConnectionClaim,
+    CoordinateTerm,
     MinimumRecord,
     ReactionRecord,
     SaddleClaim,
@@ -47,9 +48,6 @@ from hfauto.drivers.reaction_case.state import CaseRules, CaseState, Decision, S
 
 if TYPE_CHECKING:
     from hfauto.drivers.reaction_case.driver import CaseRuntime
-
-_MIN_OVERLAP = 0.3  # an xTB Hessian is used when a negative mode lies along the direction
-_MODE_SEEDS = frozenset({"screen_ts", "discovery_ts", "higher_order_retry"})  # tangent: TS mode
 
 
 class Profile(NamedTuple):
@@ -162,20 +160,24 @@ class Ctx:
         self.note(f"{source}_midpoints:{verdict.verdict}")
         return verdict
 
-    def direction(self, x: np.ndarray, seed: Seed | None = None) -> np.ndarray:
-        """Reaction direction at a seed (design §7.3): a TS's own imaginary mode, else the path
-        tangent (the endpoint chord off a path) on the reaction centre; with no bond change,
-        the gradient of the declared coordinate, else of the most changed dihedral."""
-        if seed is not None and seed.tangent is not None and seed.source in _MODE_SEEDS:
-            return np.asarray(seed.tangent)
+    def direction(self, x: np.ndarray, seed: Seed | None = None) -> tuple[str, np.ndarray]:
+        """(kind, 3N vector) of the reaction direction at ``x`` (design §7.3): a TS seed's own
+        imaginary mode; else ρ = ∇(Σ_broken r − Σ_formed r), the hypothesis's bond change
+        between the labelled case ends; with none, the gradient of the declared coordinate,
+        else of the most changed dihedral, else the chord between the ends aligned onto x."""
+        if seed is not None and seed.mode is not None:
+            return "mode", np.asarray(seed.mode)
+        formed, broken = topology.bond_changes(self.symbols, *self.ends)
+        if formed or broken:
+            rho = [CoordinateTerm(kind="distance", atoms=bond,
+                                  coefficient=1.0 if bond in broken else -1.0)
+                   for bond in sorted(formed | broken)]
+            return "rho", declared_coordinate_gradient(rho, x)
         a, b = (align_mapped(x, end) for end in self.ends)
-        centre, bonded = topology.reaction_centre(self.symbols, a, b)
-        if not centre and (terms := self.case.coordinate or most_changed_dihedral(bonded, a, b)):
-            return declared_coordinate_gradient(terms, x)
-        t = np.reshape(b - a if seed is None or seed.tangent is None else seed.tangent, (-1, 3))
-        rows, v = sorted(centre) or list(range(len(t))), np.zeros_like(t)
-        v[rows] = t[rows]
-        return v.ravel() / np.linalg.norm(v)
+        if terms := self.case.coordinate or most_changed_dihedral(
+                topology.bonds(self.symbols, a), a, b):
+            return "coordinate", declared_coordinate_gradient(terms, x)
+        return "chord", (b - a).ravel()
 
     def record(self, basin_id: str) -> MinimumRecord:
         return next(r for r, _ in self.rt.minima.values() if r.basin_id == basin_id)
@@ -187,38 +189,27 @@ def peak_seed(ctx: Ctx, name: str, source: Literal["screen_hei", "path_hei"]) ->
     peaks = () if path is None else profile.interior_maxima(path.energies, ctx.resolution)
     if path is None or not peaks:
         return None
-    k, _, x = profile.hei(path.frames, path.energies, max(peaks, key=path.energies.__getitem__))
-    tangent = tuple(profile.tangent(path.frames, round(k)).ravel())
-    return Seed(ctx.geometry(name, x), source, tangent)
+    _, _, x = profile.hei(path.frames, path.energies, max(peaks, key=path.energies.__getitem__))
+    return Seed(ctx.geometry(name, x), source)
 
 
-def xtb_modes(ctx: Ctx, coords: np.ndarray, below_cm1: float
-              ) -> tuple[Evidence | None, list[np.ndarray]]:
-    """The xTB freq at ``coords`` (None when unavailable) and its modes below -below_cm1."""
+def xtb_freq(ctx: Ctx, coords: np.ndarray) -> Evidence | None:
+    """The xTB freq at ``coords``; None without a low-level engine or when it fails."""
     rt = ctx.rt
     if rt.screen_qm is None or rt.screen_method is None:
-        return None, []
+        return None
     freq = rt.screen_qm.frequencies(ctx.mol(coords), rt.screen_method, deadline=ctx.deadline)
-    if isinstance(freq, Failure):
-        return None, []
-    nus = sorted(freq.frequencies_cm1 or ())
-    return freq, [np.asarray(m) for m, nu in zip(freq.imaginary_modes, nus, strict=False)
-                  if nu < -below_cm1]
+    return None if isinstance(freq, Failure) else freq
 
 
-def _seed_hessian(ctx: Ctx, seed: Seed, x: np.ndarray, direction: np.ndarray
-                  ) -> Evidence | Failure:
-    """The seed's own TS freq, else xTB when one of its negative modes lies along the
-    direction (chem 20), else DFT at the seed."""
+def _seed_hessian(ctx: Ctx, seed: Seed, x: np.ndarray) -> tuple[str, Evidence | Failure]:
+    """The seed's own TS freq, else the xTB freq at the seed whenever there is one (the model
+    keeps only its curvatures off the direction), else the DFT freq."""
     if seed.hessian is not None:
-        ctx.note("saddle_hessian:ts_freq")
-        return seed.hessian
-    xtb, modes = xtb_modes(ctx, x, ctx.rules.gates.noise_cm1)
-    score = max((overlap(m, direction) for m in modes), default=0.0)
-    use_xtb = xtb is not None and score >= _MIN_OVERLAP
-    ctx.note(f"saddle_hessian:{'xtb' if use_xtb else 'dft'}:overlap:{score:.2f}")
-    return xtb if xtb is not None and use_xtb else ctx.rt.qm.frequencies(
-        ctx.mol(x), ctx.rt.method, deadline=ctx.deadline)
+        return "ts_freq", seed.hessian
+    if (xtb := xtb_freq(ctx, x)) is not None:
+        return "xtb", xtb
+    return "dft", ctx.rt.qm.frequencies(ctx.mol(x), ctx.rt.method, deadline=ctx.deadline)
 
 
 def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
@@ -232,19 +223,19 @@ def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     state = replace(state, seeds=state.seeds[1:], saddle_attempts=state.saddle_attempts + counted,
                     last_saddle="failed", ts_check=None, claim=None, connection=None)
     x = ctx.coords(seed.geometry)
-    direction = ctx.direction(x, seed)
-    hessian = _seed_hessian(ctx, seed, x, direction)
+    kind, direction = ctx.direction(x, seed)
+    source, hessian = _seed_hessian(ctx, seed, x)
     if isinstance(hessian, Failure):
         ctx.note(f"saddle_hessian:{hessian.kind.value}")
         return state
+    ctx.note(f"saddle_hessian:{source}:{kind}")
     result = rt.saddle.refine(ctx.mol(x), rt.method, hessian=hessian, mode=tuple(direction),
                               deadline=ctx.deadline)
     if isinstance(result, Failure):
         ctx.note(f"saddle:{result.kind.value}:{result.reason}")
         if result.final is None or seed.source == "saddle_restart":
             return state
-        restart = Seed(result.final, "saddle_restart", tuple(direction))
-        return replace(state, seeds=(restart, *state.seeds))
+        return replace(state, seeds=(Seed(result.final, "saddle_restart"), *state.seeds))
     ctx.work.saddle = result
     return replace(state, last_saddle="converged")
 
@@ -258,8 +249,9 @@ def mode_amplitude(ctx: Ctx, freq: Evidence, index: int) -> float:
 
 def _pushed(ctx: Ctx, freq: Evidence, x: np.ndarray, name: str) -> Seed:
     """A higher-order saddle pushed once along its most negative mode other than the reaction
-    mode (the one along the direction); its verified freq is the new seed's Hessian."""
-    direction = ctx.direction(x)
+    mode (the imaginary mode of maximal overlap with ρ); its verified freq is the new seed's
+    Hessian and its reaction mode the seed's mode."""
+    _, direction = ctx.direction(x)
     r = max(range(len(freq.imaginary_modes)),
             key=lambda i: overlap(np.asarray(freq.imaginary_modes[i]), direction))
     other = 1 if r == 0 else 0  # imaginary modes are ordered by frequency

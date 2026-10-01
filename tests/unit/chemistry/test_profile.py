@@ -1,4 +1,4 @@
-"""Path class, peak interpolation and tangents (design §5.5, CH-08)."""
+"""Path class and peak interpolation (design §5.5, CH-08)."""
 
 import numpy as np
 import pytest
@@ -35,9 +35,3 @@ def test_hei_interpolates_parabola_and_coordinates_at_the_given_peak():
     assert prof.hei(frames[:5], two, 1)[0] == pytest.approx(1.1)  # toward the higher side
     with pytest.raises(ValueError, match="interior"):
         prof.hei(frames, energies, 0)
-
-
-def test_tangent():
-    frames = [np.array([[x, 0.0, 0.0]]) for x in (0.0, 0.1, 0.5)]
-    assert prof.tangent(frames, 1) == pytest.approx(np.array([[1.0, 0.0, 0.0]]))
-    assert prof.tangent(frames, 0) == pytest.approx(np.array([[1.0, 0.0, 0.0]]))

@@ -1,4 +1,4 @@
-"""Path profiles: class, peak interpolation and tangents (§5.5).
+"""Path profiles: class and peak interpolation (§5.5).
 
 A path is classified as it stands, converged or not: its maximum between two minima bounds the
 saddle from above, and its peak is only a seed (CH-08).
@@ -78,15 +78,3 @@ def hei(
     neighbour = k + 1 if offset >= 0 else k - 1
     coords = frames[k] + abs(offset) * (frames[neighbour] - frames[k])
     return k + offset, float(energy), coords
-
-
-def tangent(coords_list: Sequence[np.ndarray], index: int) -> np.ndarray:
-    """Unit (N, 3) tangent: central difference inside the path, one-sided at its ends."""
-
-    frames = _frames(coords_list)
-    lo, hi = max(index - 1, 0), min(index + 1, len(frames) - 1)
-    step = frames[hi] - frames[lo]
-    norm = float(np.linalg.norm(step))
-    if norm == 0.0:
-        raise ValueError("coincident neighbouring images have no tangent")
-    return step / norm

@@ -409,3 +409,89 @@ CUR のうち paths を持つ 33 本の 41 case について、記録と case �
 - S6 の OH + CH4 → CH3 + H2O(790468f505)は、どの run でも unresolved のままである。引き抜きの TS には分割の子(split1、逆向き)から届いた。仮説そのものからの到達は G1-P1(M4)で扱う。
 - S5 の CH2OOH• → CH2O + OH(split2)の TS は見つからなかった。
 - 最も近い拒否(split2 の 0.221 と 0.257)と 0.3 の差は 0.04〜0.08 である。仮説と同じ結合を一部動かす鞍点が増えたら、分布を測り直す。
+
+## 14. M4 ρ による初期 Hessian(X1 / G1-P1)
+
+分析の §2.1 G1-P1、§3 X1 と §4.1 M4 にあたる。規則は [design.md](design.md) §6.2 の REFINE_SADDLE。
+
+### 14.1 変えたこと
+
+- `vibrations.shape_hessian(H, x, direction=None)`: 方向がなければ H₊(剛体運動を除き、固有値を max(\|λ\|, 1e-3) にしたもの)。方向 d があれば P·H₊·P − κd̂d̂ᵀ(d̂ は d の内部運動の成分を正規化したもの、P = I − d̂d̂ᵀ、κ = max(d̂ᵀH₊d̂, `KAPPA_MIN` = 0.05 Eh/bohr²))。「方向と最も平行な固有ベクトル」を選ぶ処理は削除した。
+- `Ctx.direction`: TS の種は自分の虚モード、それ以外は ρ = ∇(Σ_切れる r − Σ_できる r)(ラベル付きの両端の `topology.bond_changes` を距離の `CoordinateTerm` にし、`declared_coordinate_gradient` で評価する)。結合変化がなければ宣言座標、最も変わる二面角、両端の差の順。
+- 削除したもの: `_MIN_OVERLAP` と overlap テスト、接線を反応中心の行に制限する分岐、`profile.tangent`、`topology.reaction_centre`、`Seed.tangent`(TS の種だけが `Seed.mode` を持つ)。
+- `_seed_hessian`: TS freq、なければ xTB freq(あれば常に)、なければ DFT freq。注記は `saddle_hessian:<ts_freq|xtb|dft>:<mode|rho|coordinate|chord>`。
+- `NWChemSaddle` のジョブ鍵に `hessian_model: negative_along_mode` を足した。NWChem の saddle の入力(trust 0.1、sadstp 0.1、inhess 2、moddir 1)は変えていない。
+  - 書く Hessian が変わるのに鍵が同じだと、TS の種(方向が以前と同じ)で古いモデルの saddle が JobStore から再生されてしまう。
+  - そのため M4 以降の再生では、SADDLE を走らせるすべての case で新しい saddle ジョブが出る。`--strict` ではなく `--allow-new` で比べる。
+
+### 14.2 QM なしの確認
+
+- VAL7 の S6 の screen_hei の種(`rxn_discovery_790468f505`、ラベル付きの結合変化は +H2–O5 −C0–H2)と、その種の xTB Hessian(VAL7 の JobStore)を使った。
+  - 新しい `shape_hessian` の出力は、プローブ `/home/user/hfauto_r8_probe/G1/rhoonly` の入力 Hessian と最大 1.4e-10 で一致した(最大要素 0.51)。
+  - 負の固有値は 1 本で、−0.2187(κ = ρ̂ᵀH₊ρ̂ > 0.05)、その固有ベクトルと ρ の cos は 1.000000 だった。
+  - VAL7 で使ったモデルは、負の固有値が −0.0028 で、その固有ベクトルと ρ の cos は 0.345 だった。
+  - このプローブは 14 歩で引き抜きの TS の領域(C–H 1.184、O–H 1.382 Å)に着いた。着いた点は −490.0i / −81.9i の二次の鞍点だった(§2.1 の `G1/rhofreq`)ので、higher_order_retry を 1 回経ることが見込まれる。
+- 単体テスト
+  - 負の固有値はちょうど 1 本で、d̂ に沿って −κ(κ ≥ 0.05)。ほぼ縮退した 2 本の間の方向でも同じ。残りは P·H₊·P に一致し、剛体運動は零空間に入る。
+  - 方向なしのモデルは正定値。
+  - アセチルアセトンのプロトン移動では、ρ が 2 本の伸縮ベクトルの差(∇r(O2–H10) − ∇r(O6–H10))に 1e-6 で一致し、メチル回転子の成分は 0 だった。両端の差(以前の接線の代わり)は、メチル回転子の成分との cos が 0.96 である。
+- golden G08(4 本の虚モード): 形を整えた Hessian の質量加重の虚モードと、指定したモードとの重なりは 0.979 と 0.991 だった。以前の 0.99 は固有ベクトルを反転する方式での値である。新しい方式が保証するのは、質量加重しない Hessian で負の方向が d̂ に一致することである。Cartesian のモードには質量加重しない剛体運動の成分が含まれる(G08 の 2 本では、モードとその内部運動の成分の cos が 0.91 と 0.96)。そのため試験はこちらを確かめる形に改めた。
+
+### 14.3 実計算 S6(統合、`/home/user/hfauto_r9/M4/real/`、1 本ずつ、CAP 5,400 s)
+
+- 種は 3 通りで、それぞれ rank 4 と rank 2(`/home/user/hfauto_r9/sites/wsl_local_r2.yaml`)で流した。
+  - (a) CUR/s6_oh_ch4(VAL7 系)の複製を paths から再ステージ。
+  - (b) CUR/W5_s6 の複製を paths から再ステージ。
+  - (c) 新しい discover の run。
+- 引き抜き `rxn_discovery_790468f505`(OH + CH4 → CH3 + H2O)の経過は 6 本とも同じだった。
+  - screen_hei の種で `saddle_hessian:xtb:rho`。14 歩で二次の鞍点(−489.2i / −76.6i、χ 0.688)に着いた。G1 のプローブの予想どおりである。
+  - その鞍点から higher_order_retry を 1 回(`saddle_hessian:ts_freq:mode`、22〜31 歩)行い、一次の TS を得て QRC で elementary になった。
+  - 回転子の鞍点(−73i 前後、χ ≤ 0.023)には一度も着かず、それに QRC をかけることもなかった。
+
+| run | 壁時計 | 最終 TS ν1 | ν2 | χ | E(Eh) | paths の core 秒 |
+|---|---|---|---|---|---|---|
+| (a) rank 4 | 30.2 分 | −486.4i | −37.5 | 0.682 | −116.031274 | 6,125 |
+| (a) rank 2 | 69.5 分 | −489.5i | +24.1 | 0.681 | −116.031314 | 13,445(下記の束縛の不具合を含む) |
+| (b) rank 4 | 27.7 分 | −486.0i | −38.1 | 0.682 | −116.031274 | 5,905 |
+| (b) rank 2 | 38.5 分 | −495.4i | +17.9 | 0.683 | −116.031302 | 5,552 |
+| (c) rank 4 | 62.0 分 | **−522.4i** | −34.6 | 0.691 | −116.031250 | 8,975(run 全体 13,559) |
+| (c) rank 2 | 73.2 分 | **−515.2i** | −15.9 | 0.686 | −116.031284 | run 全体 10,259 |
+
+- 合否
+  - 6 本とも elementary、注記は `saddle_hessian:xtb:rho`、higher_order_retry は 1 回、χ ≥ 0.5、ν2 は −50i より上(TS の freq で確認)。
+  - 虚振動の窓 −480〜−505i は (a)(b) の 4 本が満たし、(c) の 2 本(−522.4i、−515.2i)は外れた。窓は変えていない。
+  - 6 つの TS は同じ鞍点である。C–H 1.183〜1.187 Å、O–H 1.376〜1.385 Å、C–H–O 174〜176°、E の幅は 6.4e-5 Eh(0.04 kcal/mol)。W3 の −481.1i(−116.031295)との差も 0.03 kcal/mol 以内である。ν1 の幅は、この平らな領域での収束点の違いによる。
+  - 見かけの合格でないこと: W3 の TS を ts_calc として貸していない(6 本の TS は各 run の saddle ジョブの結果)。歩数だけでなく、各 TS の freq の ν2 と χ を見た。
+  - ν2 が小さな虚数(−15.9〜−38.1i)の TS が 4 本ある。ゲート(saddle_cm1 = 50)の定義では一次の鞍点だが、メチル回転子の曲率はノイズの水準である。ν2 が正の 2 本のほうが 0.01〜0.04 kcal/mol 低い。停留性の判定(G5、should)の対象として記録する。
+- 費用(rank 4 の (a)): 790468f505 の saddle 2 本で 41 歩 602 core 秒、TS の freq 2 本 506、QRC の opt 2 本 889。VAL7 と W5 では、この case は回転子の鞍点で unresolved だった(W5 は QRC に 1,346 s)。
+- 分割の子 split1(CH3 + H2O → CH4 + OH)も `xtb:rho` で elementary(−476.7〜−491.7i、χ 0.673〜0.684)。
+- W5 の path_hei の種(`string0_hei.xyz`)は、paths からの再ステージでは使われない。SCREEN がキャッシュから同じ screen_hei の種を返し、最初の試行で解けるからである。そこで同じ種から直接試した(`M4/probe_pathhei/`、NWChemSaddle と同じ入力)。
+  - 種の xTB Hessian には虚振動がない(最低 138 cm⁻¹)。以前の overlap 検査では DFT Hessian に回り(W5 の `dft:overlap:0.00`)、maxiter のあと −58.6i の回転子の鞍点に着いていた。
+  - ρ のモデル(固有値 −0.249 が 1 本、ρ との cos 1.000000)では 18 歩で収束し、C–H 1.183、O–H 1.385 Å、E −116.031245 Eh になった。NWChem の freq は −480.4i / −47.2i で、一次の鞍点である(ν2 は −50i の近く)。
+  - 最初の試行は 3 歩目の勾配で NWChem が非零で終了した。同じ入力のやり直しで収束した(hfauto では nonzero_exit として ladder が扱う)。
+- 不具合の修正(rank 2 で見つけた): ranks 2 の site(4 コア)では、QRC の両側が全 rank の 2 ジョブとして同時に走る。以前は「site の ranks より少ないときだけ `--bind-to none`」だったので、2 ジョブとも束縛されてコア 0–1 を取り合った。(a) rank 2 の QRC の opt は 1 歩あたり約 30 s(rank 4 では 6 s)、opt の合計は 11,026 core 秒だった。
+  - NWChem は常に `--bind-to none` で走らせるようにした(`engine._argv`。単体テスト `test_nwchem_runs_unbound_at_any_rank_count`)。rank はジョブの鍵に入らないので、結果と再生は変わらない。4 rank の単独ジョブの速さへの影響は測っていない。
+  - 修正は (b) rank 4 の開始後に入れた。(b) rank 2 以降は修正後のコードで、(b) rank 2 の opt は 3,110 core 秒(歩数は (a) rank 2 とほぼ同じ 208 歩)だった。
+
+### 14.4 回帰と再生(`/home/user/hfauto_r9/M4/replay/`、`summary.txt`)
+
+- strict(saddle ジョブのない 10 本: ch3n_spin、h2o_hf_inversion、nh3_planar_seed、s19_tma_hf2、s3_h2te、s5_undeclared、s7_nh3_icl、s8_so2_nme3、water_dimer_as、water_same_basin。structures から): 10 本すべて PASS(misses 0、記録が同一)。
+- 報告(`--allow-new`、paths から再ステージ、24 本): saddle の鍵がモデル名を含むので、すべての saddle ジョブとその下流(TS の freq、QRC)が新しくなる。TS の比較は `M4/ts_compare.py`(記録ごとの outcome、ν1、E)、歩数は `M4/saddle_steps.py`。
+  - 同じ TS(\|ΔE\| ≤ 1e-5 Eh、outcome も同じ): hcn、hono、s15、s4、s1、s2、s14、s16、s18、nh3_inversion、oxalic_two_step(子 2 つ)、s10、dme_c2v_seed、hcn_noscreen、hf_dimer_swap_noscreen、s12、s13、s17、s20 の 3 本。\|ΔE\| は最大 5.7e-7 Eh(s17)。
+  - formaldehyde(hydroxymethylene_to_formaldehyde): ΔE = −2.5e-5 Eh(−2084.2i → −2084.8i)。M3 の TS は 0.8° ほど非平面の点で、収束判定の内側(Gmax 1.4e-4)で止まっていた。新しい TS は平面(Gmax 3e-5)で、0.016 kcal/mol 低い。同じ鞍点を、よりよく収束させたものである。
+  - 歩数(TS のモードの種): 多くは同じか +1〜3 歩。oxalic の子は 7 → 12 と 14 → 23 歩に増えた。モードの種では、負の方向が xTB の Cartesian のモードそのものになり、H の固有ベクトル(cos 0.98 程度)ではなくなったためである。acac の新しいジョブは 7,806 core 秒(saddle、freq、QRC の再計算)。
+  - s5_ch3_o2
+    - split1(CH3OO• → CH2OOH•)は同じ TS(−1866.7i)。
+    - split2(CH2OOH• → CH2O + OH): ρ の種からの鞍点は −314.1i、χ 0.281 で拒否された(M3 では 0.257 と 0.221)。そのあと string が barrierless と分類し、`barrierless_at_resolution` になった(M3 は attempts_exhausted)。SCREEN の SP が 1 点 SCF 未収束で unavailable になったのは、親の TS が新しい saddle ジョブになり、QRC の中間体の構造が少し変わった下流の差である。
+    - b3febc8052(CH3 + O2 の会合): ρ の saddle 4 本がすべて maxiter で、unresolved のまま。会合の扱いは M8。
+  - W3_s6
+    - 460166732f_split1(引き抜きの逆向き)は同じ鞍点で ΔE = −4.8e-5 Eh(0.03 kcal/mol)、−485.8i → −487.0i、χ 0.680。
+    - **790468f505 は elementary(W3 の −481.1i)から unresolved_within_budget に変わった。** screen_hei の ρ で −489.6i / −77.1i、retry で −499.0i / −54.8i。2 本とも higher_order で、試行を使い切った。2 本目の ν2 −54.8i はメチル回転子で、−50i のゲートのすぐ外である。上限とゲートは変えていない。
+- CUR の 36 本は M4 の結果に張り替えた(strict と報告の 34 本は `M4/replay/<name>`、s6_oh_ch4 と W5_s6 は `M4/real/s6_val7_r4` と `M4/real/s6_w5_r4`)。W3 の −481.1i の記録は `M3/replay/W3_s6` に残る。
+
+### 14.5 実証していないこと
+
+- (c) の 2 本の最終 TS の虚振動(−522.4i、−515.2i)は、窓 −480〜−505i の外である(同じ鞍点であることは構造とエネルギーで確かめた)。
+- W3_s6 の再生では、790468f505 が retry のあとも二次の鞍点(ν2 −54.8i)で、未解決になった。7 つの文脈のうち 6 つで解けた。
+- 回転子の曲率がノイズの水準の TS(ν2 −15.9〜−47.2i)を一次と数えているのはゲートの定義による。停留性の判定は G5(should)。
+- S5 の O–O 開裂の TS は今回も見つからなかった。拒否された鞍点の χ(0.281)は 0.3 に近づいている。

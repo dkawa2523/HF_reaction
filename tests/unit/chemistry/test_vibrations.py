@@ -59,29 +59,45 @@ def _four_atoms() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return x, q[:, :6], q[:, 6:]
 
 
-@pytest.mark.parametrize("reaction", [0, 1, 4])
-def test_shape_hessian_leaves_only_the_reaction_mode_negative(reaction):
+def _model_input() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Two negative modes, a nearly degenerate soft pair (a rotor) and a rigid-motion leak."""
     x, rigid, internal = _four_atoms()
-    curvature = np.array([-0.2, -0.1, 1e-6, 0.4, 0.5, 0.6])  # two negative modes, one soft
+    curvature = np.array([-0.2, -0.1, 2.8e-3, 2.9e-3, 0.4, 0.6])
     h = internal @ np.diag(curvature) @ internal.T - 0.3 * np.outer(rigid[:, 5], rigid[:, 5])
-    mode = internal[:, reaction] + 0.2 * internal[:, 3] + 0.5 * rigid[:, 0]  # mixed
-    values, vectors = np.linalg.eigh(vib.shape_hessian(h, x, mode))
-    assert np.count_nonzero(values < -1e-8) == 1  # inertia: one negative eigenvalue
-    assert abs(vectors[:, 0] @ internal[:, reaction]) == pytest.approx(1.0)  # mode chosen
-    expected = np.maximum(np.abs(curvature), 1e-3)  # |λ| with the floor, rigid motions at 0
-    expected[reaction] *= -1.0
-    assert values == pytest.approx(sorted([*expected, 0, 0, 0, 0, 0, 0]), abs=1e-10)
+    positive = internal @ np.diag(np.abs(curvature)) @ internal.T  # |λ| above the 1e-3 floor
+    return x, rigid, internal, h, positive
 
 
-def test_without_a_reaction_mode_the_model_is_positive_definite_on_the_same_modes():
-    x, rigid, internal = _four_atoms()
-    curvature = np.array([-0.2, -0.1, 1e-6, 0.4, 0.5, 0.6])
-    h = internal @ np.diag(curvature) @ internal.T - 0.3 * np.outer(rigid[:, 5], rigid[:, 5])
-    model = vib.shape_hessian(h, x, None)
-    expected = np.maximum(np.abs(curvature), 1e-3)  # |λ| with the floor, no sign flip
-    assert model == pytest.approx(internal @ np.diag(expected) @ internal.T, abs=1e-10)
+@pytest.mark.parametrize("mix", [(1.0, 0, 0, 0, 0.2, 0),  # κ = d̂ᵀH₊d̂ = 0.21
+                                 (0, 0, 1.0, 1.0, 0, 0),  # the rotor pair: κ = KAPPA_MIN
+                                 (0, 0.5, 0.3, 0, 0, 1.0)])
+def test_shape_hessian_puts_the_only_negative_curvature_along_the_direction(mix):
+    """G1-P1: exactly one negative eigenvalue, −κ along d̂ (the direction's internal part), even
+    for a direction between two nearly degenerate modes; the rest is P·H₊·P."""
+    x, rigid, internal, h, positive = _model_input()
+    direction = internal @ np.array(mix) + 0.5 * rigid[:, 0]
+    d = internal @ np.array(mix) / np.linalg.norm(mix)
+    model = vib.shape_hessian(h, x, direction)
+    values, vectors = np.linalg.eigh(model)
+    kappa = max(d @ positive @ d, vib.KAPPA_MIN)
+    assert np.count_nonzero(values < -1e-8) == 1 and kappa >= 0.05
+    assert values[0] == pytest.approx(-kappa) and abs(vectors[:, 0] @ d) == pytest.approx(1.0)
+    p = np.eye(12) - np.outer(d, d)
+    assert model + kappa * np.outer(d, d) == pytest.approx(p @ positive @ p, abs=1e-10)
+    assert np.abs(model @ rigid).max() < 1e-10
+    with pytest.raises(ValueError, match="no internal component"):
+        vib.shape_hessian(h, x, rigid[:, 2])
+
+
+def test_without_a_direction_the_model_is_positive_definite_on_the_same_modes():
+    x, rigid, internal, h, positive = _model_input()
+    model = vib.shape_hessian(h, x)
+    assert model == pytest.approx(positive, abs=1e-10)  # |λ|, no sign flip
     assert np.abs(model @ rigid).max() < 1e-10  # rigid motions projected out
-    assert np.linalg.eigvalsh(internal.T @ model @ internal).min() >= 1e-3 - 1e-12
+    assert np.linalg.eigvalsh(internal.T @ model @ internal).min() >= 2.8e-3 - 1e-12
+    soft = internal @ np.diag([-0.2, -0.1, 1e-6, 0.4, 0.5, 0.6]) @ internal.T
+    assert np.linalg.eigvalsh(internal.T @ vib.shape_hessian(soft, x) @ internal).min() == (
+        pytest.approx(1e-3))  # the floor
 
 
 def test_canonical_npy(tmp_path):

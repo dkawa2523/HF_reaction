@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from hfauto.chemistry.modes import overlap
-from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian
+from hfauto.chemistry.vibrations import external_basis, projected_frequencies, shape_hessian
 from hfauto.chemistry.xyz import read_xyz
 
 pytestmark = pytest.mark.golden
@@ -40,7 +40,10 @@ def test_g08_four_imaginary_modes_and_the_shaped_saddle_hessian(golden):
     hessian = _hess(golden.text("nwchem/G08/hfauto_job.hess"), len(symbols))
     freqs, modes, _ = projected_frequencies(hessian, symbols, coords)
     assert np.count_nonzero(freqs < 0) == 4
-    for mode in modes[:2]:  # -1296 or -1214 cm-1 becomes the only imaginary mode (U6-P1)
-        shaped, (first, *_), _ = projected_frequencies(
-            shape_hessian(hessian, coords, mode), symbols, coords)
-        assert np.count_nonzero(shaped < 0) == 1 and overlap(first, mode) > 0.99
+    rigid = external_basis(["H"] * len(symbols), coords)  # unweighted rigid motions
+    for mode in modes[:2]:  # -1296 or -1214 cm-1 becomes the only negative curvature (X1)
+        model = shape_hessian(hessian, coords, mode)
+        shaped, _, _ = projected_frequencies(model, symbols, coords)
+        values, vectors = np.linalg.eigh(model)
+        assert np.count_nonzero(shaped < 0) == 1 == np.count_nonzero(values < -1e-8)
+        assert overlap(vectors[:, 0], mode - rigid @ (rigid.T @ mode)) == pytest.approx(1.0)

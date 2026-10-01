@@ -47,14 +47,16 @@ def test_create_checks_the_capability_protocol(tmp_run, monkeypatch) -> None:
     assert create(C.PATH, "nwchem_string") is path
 
 
-def test_nwchem_with_fewer_ranks_than_the_site_runs_unbound() -> None:
+def test_nwchem_runs_unbound_at_any_rank_count() -> None:
+    # A site with ranks 2 on 4 cores runs two full-rank jobs at once: bound, both took
+    # cores 0-1 (M4 S6 rank-2 run: QRC opt steps 5x slower than at the rank share).
     exe = {"nwchem": "hfauto-no-nwchem", "mpirun": "hfauto-no-mpirun"}
-    site = EngineSite(version="7.2.3", executables=exe, execution=ExecutionSpec(ranks=4))
+    site = EngineSite(version="7.2.3", executables=exe, execution=ExecutionSpec(ranks=2))
     qm = engines.create(C.QM, "nwchem", jobs=None, site=site)
 
     def argv(ranks):
         return qm._argv(Task("nwchem", "7.2.3", "energy", {}, ExecutionSpec(ranks=ranks)))
 
-    assert argv(4) == ("hfauto-no-mpirun", "-np", "4", "hfauto-no-nwchem", "job.nw")
-    assert argv(2) == ("hfauto-no-mpirun", "-np", "2", "--bind-to", "none",
-                       "hfauto-no-nwchem", "job.nw")
+    for ranks in (1, 2):
+        assert argv(ranks) == ("hfauto-no-mpirun", "-np", str(ranks), "--bind-to", "none",
+                               "hfauto-no-nwchem", "job.nw")

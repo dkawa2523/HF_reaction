@@ -19,9 +19,9 @@ CASE = r.ReactionRecord(reaction_id="rxn", reactants=(TERM,), products=(TERM,), 
                         endpoints=("sa", "sb"), source="declared")
 DEGENERATE = CASE.model_copy(update={"minima": ("ma", "ma"), "degenerate": True})
 GEO = Geometry(file=FileRef(path="seed.xyz", sha256="0" * 64), fingerprint="f", symbols=("H",))
-SEED = st.Seed(geometry=GEO, source="screen_ts", tangent=None)
-HIGHER = st.Seed(geometry=GEO, source="higher_order_retry", tangent=None)
-RESTART = st.Seed(geometry=GEO, source="saddle_restart", tangent=None)
+SEED = st.Seed(geometry=GEO, source="screen_ts")
+HIGHER = st.Seed(geometry=GEO, source="higher_order_retry")
+RESTART = st.Seed(geometry=GEO, source="saddle_restart")
 CLAIM = r.SaddleClaim(saddle_calc="s", freq_calc="f", imag_cm1=-1131.0, energy_hartree=-93.0)
 SOFT = CLAIM.model_copy(update={"imag_cm1": -30.0})  # |nu| < saddle_cm1 = 50
 RULES = st.CaseRules()

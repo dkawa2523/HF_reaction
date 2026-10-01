@@ -66,11 +66,14 @@ class CaseRules:
 
 @dataclass(frozen=True)
 class Seed:
+    """A saddle search's start. Only a TS seed (screen_ts, discovery_ts, higher_order_retry)
+    carries its own imaginary ``mode``; ``hessian`` is a verified TS freq within HESSIAN_NEAR_A."""
+
     geometry: Geometry
     source: Literal["discovery_ts", "screen_ts", "screen_hei", "path_hei", "higher_order_retry",
                     "saddle_restart"]
-    tangent: tuple[float, ...] | None  # a TS mode, the path tangent or the last direction
-    hessian: Evidence | None = None  # a verified TS freq within HESSIAN_NEAR_A of the seed
+    mode: tuple[float, ...] | None = None
+    hessian: Evidence | None = None
 
 
 @dataclass(frozen=True)

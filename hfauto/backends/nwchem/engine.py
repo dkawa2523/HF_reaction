@@ -158,8 +158,10 @@ class _NWChem:
             shutil.copyfile(source, workdir / Path(source).name)
         if task.inputs.get("hessian") is not None:
             h = np.load(task.inputs["hessian"])
-            if task.kind == "saddle" or task.inputs.get("hessian_model") == "positive":
-                h = shape_hessian(h, task.inputs["mol"].xyz.coords, task.inputs.get("mode"))
+            if task.kind == "saddle":
+                h = shape_hessian(h, task.inputs["mol"].xyz.coords, task.inputs["mode"])
+            elif task.inputs.get("hessian_model") == "positive":
+                h = shape_hessian(h, task.inputs["mol"].xyz.coords)
             (workdir / f"{NAME}.hess").write_text(nw_in.hess_text(h), encoding="ascii")
         if task.inputs.get("initial_path") is not None:
             shutil.copyfile(task.inputs["initial_path"], workdir / nw_in.INITIAL_PATH)
@@ -225,17 +227,17 @@ class _NWChem:
         )
 
     def _argv(self, task: Task) -> tuple[str, ...]:
-        """nwchem <deck>, under ``mpirun -np <ranks>`` only when the site names mpirun. A job
-        given fewer ranks than the site's (one of several run at once, jobs.thread_map) is not
-        bound: every mpirun binds its ranks from core 0, so concurrent jobs would share cores."""
+        """nwchem <deck>, under ``mpirun -np <ranks> --bind-to none`` only when the site names
+        mpirun. Never bound: every mpirun binds its ranks from core 0, so jobs run at once (a
+        rank share of jobs.thread_map, or full-rank jobs of a site with ranks < cores) would
+        share cores."""
         exe = self._site.executables
         nwchem = resolve_executable("nwchem", exe.get("nwchem")) or exe.get("nwchem", "nwchem")
         if "mpirun" not in exe:
             return (nwchem, f"{NAME}.nw")
         mpirun = resolve_executable("mpirun", exe["mpirun"]) or exe["mpirun"]
-        ranks = task.execution.ranks
-        unbound = ("--bind-to", "none") if ranks < self._site.execution.ranks else ()
-        return (mpirun, "-np", str(ranks), *unbound, nwchem, f"{NAME}.nw")
+        return (mpirun, "-np", str(task.execution.ranks), "--bind-to", "none", nwchem,
+                f"{NAME}.nw")
 
     def _observed(self, task: Task, text: str) -> Level | Failure:
         level = nw_out.observe_level(text)
@@ -365,8 +367,9 @@ class NWChemEngine(_NWChem):
 
 class NWChemSaddle(_NWChem):
     """SADDLE: eigenvector following from a freq Hessian (any Level) computed at the seed or
-    within HESSIAN_NEAR_A of it, shaped so that ``mode`` (the reaction direction, 3N) is its
-    only negative curvature. A search stopped at maxiter fails with its last frame."""
+    within HESSIAN_NEAR_A of it, written as its model with ``mode`` (the reaction direction,
+    3N) its only negative curvature (vibrations.shape_hessian; the job key names the model). A
+    search stopped at maxiter fails with its last frame."""
 
     name: ClassVar[str] = "nwchem_saddle"
 
@@ -379,7 +382,7 @@ class NWChemSaddle(_NWChem):
             return path
         unit = np.ravel(mode) / np.linalg.norm(mode)
         payload = {"molecule": seed.fingerprint(), "hessian": hessian.hessian and
-                   hessian.hessian.sha256,
+                   hessian.hessian.sha256, "hessian_model": "negative_along_mode",
                    "mode": sha256_text(json.dumps((np.round(unit, 6) + 0.0).tolist()))}
         inputs = {"mol": seed, "start": seed, "method": method, "hessian": path, "mode": unit}
         return self._run("saddle", payload, inputs, deadline)

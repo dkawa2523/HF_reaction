@@ -13,7 +13,7 @@ from hfauto.chemistry.interpolation import align_sequential, idpp, resample
 from hfauto.core.evidence import Failure, FileRef, Geometry
 from hfauto.core.records import BarrierVerdict
 from hfauto.drivers.reaction_case import state as case_state
-from hfauto.drivers.reaction_case.actions import Ctx, peak_seed, xtb_modes
+from hfauto.drivers.reaction_case.actions import Ctx, peak_seed, xtb_freq
 from hfauto.drivers.reaction_case.state import CaseState, Decision, Seed
 
 SCREEN_IMAGES = 11  # SCREEN's NEB images including both ends
@@ -26,8 +26,10 @@ def _unavailable(reason: str) -> BarrierVerdict:
 
 def _xtb_ts_mode(ctx: Ctx, coords: np.ndarray) -> tuple[float, ...] | None:
     """A low-level TS's imaginary mode: its xTB freq has exactly one mode below -saddle_cm1."""
-    _, modes = xtb_modes(ctx, coords, ctx.rules.gates.saddle_cm1)
-    return tuple(modes[0]) if len(modes) == 1 else None
+    freq, below = xtb_freq(ctx, coords), -ctx.rules.gates.saddle_cm1
+    if freq is None or sum(nu < below for nu in freq.frequencies_cm1 or ()) != 1:
+        return None
+    return tuple(freq.imaginary_modes[0])  # ordered by frequency
 
 
 def _shortcut(ctx: Ctx, geometry: Geometry) -> tuple[BarrierVerdict, Seed | None] | None:

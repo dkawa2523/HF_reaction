@@ -24,6 +24,8 @@ _CM1_PER_SQRT_EIGENVALUE = 1.0 / (math.sqrt(AMU_TO_ME) * CM1_TO_HARTREE)
 _PLANCK_J_S = 6.62607015e-34  # CODATA 2018, exact
 _AMU_KG = 1.66053906660e-27  # CODATA 2018
 _GHZ_AMU_A2 = _PLANCK_J_S / (8.0 * math.pi**2 * _AMU_KG * 1.0e-20) / 1.0e9
+_CURVATURE_FLOOR = 1.0e-3  # Eh/bohr², the least curvature of a shaped Hessian's internal mode
+KAPPA_MIN = 0.05  # Eh/bohr², the least negative curvature along a saddle search's direction
 
 
 def _centered(symbols: Sequence[str], coords: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -84,21 +86,30 @@ def projected_frequencies(
 
 
 def shape_hessian(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray,
-                  reaction_mode: np.ndarray | None, floor: float = 1.0e-3) -> np.ndarray:
-    """Initial driver Hessian: P·H·P (P projects out the unweighted rigid motions) on its own
-    eigenvectors with max(|λ_i|, floor) Eh/bohr², rigid motions at 0. ``reaction_mode`` turns
-    its most parallel eigenvector negative, the only negative curvature: eigenvector following
-    climbs it (moddir 1) and descends all others (Baker 1986). Without it the model is positive
-    definite (a minimization from a TS's side). The inertia survives the internal-coordinate
-    transformation (Sylvester)."""
+                  direction: np.ndarray | None = None) -> np.ndarray:
+    """Initial driver Hessian. H₊ = P_r·H·P_r (P_r projects out the unweighted rigid
+    motions) on its eigenvectors with max(|λ|, _CURVATURE_FLOOR), rigid motions at 0: positive
+    definite on the internal motions (a minimization from a TS's side). With a ``direction`` d
+    (3N; d̂ its internal part, normalized): P·H₊·P − κ·d̂d̂ᵀ with P = I − d̂d̂ᵀ and
+    κ = max(d̂ᵀH₊d̂, KAPPA_MIN), so d̂ is the only negative curvature, whatever the eigenvectors
+    of H near it: eigenvector following climbs it (moddir 1) and descends all others (Baker
+    1986). The inertia survives the internal-coordinate transformation (Sylvester)."""
     n = np.size(coords_A) // 3
     u, k, _ = _external_svd(["H"] * n, coords_A)  # equal masses: unweighted, about the centroid
-    values, vectors = np.linalg.eigh(u[:, k:].T @ _square_hessian(hessian_eh_bohr2, n) @ u[:, k:])
-    modes = u[:, k:] @ vectors
-    curvature = np.maximum(np.abs(values), floor)
-    if reaction_mode is not None:
-        curvature[np.argmax(np.abs(modes.T @ np.ravel(reaction_mode)))] *= -1.0
-    return (modes * curvature) @ modes.T
+    internal = u[:, k:]
+    values, vectors = np.linalg.eigh(internal.T @ _square_hessian(hessian_eh_bohr2, n) @ internal)
+    modes = internal @ vectors
+    positive = (modes * np.maximum(np.abs(values), _CURVATURE_FLOOR)) @ modes.T
+    if direction is None:
+        return positive
+    d = internal @ (internal.T @ np.ravel(direction))
+    norm = float(np.linalg.norm(d))
+    if norm <= 1.0e-8 * float(np.linalg.norm(direction)):
+        raise ValueError("the direction has no internal component")
+    d /= norm
+    kappa = max(float(d @ positive @ d), KAPPA_MIN)
+    p = np.eye(d.size) - np.outer(d, d)
+    return p @ positive @ p - kappa * np.outer(d, d)
 
 
 def rotational_constants_ghz(symbols: Sequence[str], coords: np.ndarray) -> tuple[float, ...]:

@@ -3,6 +3,7 @@ G07 (HCN TS: level lines, vibrational block and .hess), G01 (two blocks), G13 (s
 G29 (OH. ROHF-CCSD(T)). A driver job with STUB_MAXITER in its environment stops at
 maxiter."""
 
+import json
 import shutil
 import sys
 
@@ -12,10 +13,10 @@ import pytest
 from hfauto.backends.nwchem.engine import NWChemEngine, NWChemSaddle, NWChemString
 from hfauto.backends.nwchem.input import hess_text
 from hfauto.backends.nwchem.output import geometry_block, read_hess
-from hfauto.chemistry.vibrations import shape_hessian
+from hfauto.chemistry.vibrations import KAPPA_MIN, external_basis, shape_hessian
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz, write_xyz_trajectory
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, PathProfile
-from hfauto.core.hashing import sha256_file
+from hfauto.core.hashing import sha256_file, sha256_text
 from hfauto.core.method import EngineSite, MethodSpec
 from hfauto.execution.jobs import JobRunner, Task
 from hfauto.execution.jobstore import JobStore
@@ -135,7 +136,7 @@ def test_a_first_order_saddle_hessian_starts_a_minimization_as_its_positive_defi
     raw = np.load(jobs.store.resolve(ts.hessian))
     higher = ts.model_copy(update={"frequencies_cm1": (-120.0, *ts.frequencies_cm1)})
     decks = []
-    for freq, written, reshaped in ((ts, shape_hessian(raw, side.xyz.coords, None), True),
+    for freq, written, reshaped in ((ts, shape_hessian(raw, side.xyz.coords), True),
                                     (higher, raw, False)):
         opt = engine.optimize(side, FINE, init_hessian=freq)
         assert isinstance(opt, Evidence) and opt.task == "opt"
@@ -242,7 +243,17 @@ def test_saddle_shapes_the_hessian_along_the_mode_and_always_follows_mode_1(nwch
     raw = np.load(jobs.store.run_dir / freq.hessian.path)
     shaped = read_hess(first / "job.hess", 3)
     assert np.allclose(shaped, shape_hessian(raw, mol.xyz.coords, mode), rtol=1e-8, atol=1e-12)
-    assert np.count_nonzero(np.linalg.eigvalsh(shaped) < -1e-8) == 1
+    values, vectors = np.linalg.eigh(shaped)  # G1-P1: -κ along the mode's internal part only
+    rigid = external_basis(["H"] * 3, mol.xyz.coords)  # unweighted rigid motions
+    internal = mode - rigid @ (rigid.T @ mode)
+    assert np.count_nonzero(values < -1e-8) == 1 and values[0] <= -KAPPA_MIN
+    assert abs(vectors[:, 0] @ internal) / np.linalg.norm(internal) == pytest.approx(1.0)
+    payload = {"method": FINE.signature(), "molecule": mol.fingerprint(),
+               "hessian": freq.hessian.sha256, "mode": sha256_text(json.dumps(mode.tolist()))}
+    keys = [jobs.store.key(Task(engine="nwchem_saddle", version_pin="7.2.3", kind="saddle",
+                                key_payload=p, execution=site.execution))
+            for p in (payload, {**payload, "hessian_model": "negative_along_mode"})]
+    assert keys[1] == ts.job_key != keys[0]  # the model is in the key: no older model reused
     deck = (resumed / "job.nw").read_text()  # timeout: the latest frame and driver Hessian
     assert "  moddir 1" in deck and "inhess" not in deck and not (resumed / "job.hess").exists()
     other = saddle.refine(mol, FINE, hessian=freq, mode=freq.imaginary_modes[0])
