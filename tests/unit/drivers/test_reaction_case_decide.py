@@ -1,4 +1,4 @@
-"""decide(): the 17 rows of design §7.3 (ports tests/test_reaction_classification.py cases)."""
+"""decide(): the 16 rows of design §7.3 (ports tests/test_reaction_classification.py cases)."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ EXHAUSTED = Decision(A.COMPLETE, "attempts_exhausted", C.UNRESOLVED)
 ELEMENTARY = Decision(A.COMPLETE, "connection:elementary", C.ELEMENTARY_STEP)
 DISTINCT = Decision(A.COMPLETE, "intermediate_distinct", C.MULTI_STEP)
 WALLTIME = Decision(A.COMPLETE, "walltime", C.UNRESOLVED)
-COLLAPSED = Decision(A.VALIDATE_INTERMEDIATE, "saddle_collapsed")
+FAILED = Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)
 
 
 ROW_CASES = [  # (row, id, case, state, rules, expected decision)
@@ -85,70 +85,62 @@ ROW_CASES = [  # (row, id, case, state, rules, expected decision)
                                           connection_attempts=1), RULES,
      Decision(A.CONNECT, "connection_retry")),
     (8, "failed", CASE, replace(S, claim=CLAIM, connection="failed", connection_attempts=1),
-     RULES, Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)),
+     RULES, FAILED),
     (8, "same_state_without_attempts", CASE, replace(S, claim=CLAIM, connection="same_state",
                                                      connection_attempts=1, saddle_attempts=2),
-     RULES, Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)),
+     RULES, FAILED),
     (9, "claim", CASE, replace(S, claim=CLAIM, last_saddle="converged", ts_check="ok"), RULES,
      Decision(A.CONNECT, "ts_validated")),
     (10, "converged", CASE, replace(S, last_saddle="converged", saddle_attempts=1), RULES,
      Decision(A.VALIDATE_TS, "saddle_converged")),
     (10, "given_ts_calc", CASE.model_copy(update={"ts_calc": "calc_ts"}),
      replace(BASE, last_saddle="converged"), RULES, Decision(A.VALIDATE_TS, "saddle_converged")),
-    (11, "collapsed", CASE, replace(S, last_saddle="converged", ts_check="collapsed",
-                                    seeds=(SEED,)), RULES, COLLAPSED),
-    (11, "after_an_endpoint_well", CASE, replace(S, last_saddle="converged", ts_check="collapsed",
-                                                 intermediate="same_as_endpoint"), RULES,
-     COLLAPSED),
-    (11, "soft_ts_qrc_failed", CASE, replace(S, claim=SOFT, last_saddle="converged",
-                                             ts_check="ok", connection="failed",
-                                             connection_attempts=1), RULES, COLLAPSED),
-    (12, "screen", CASE, BASE, RULES, Decision(A.SCREEN, "screen")),
-    (12, "degenerate_goes_on", DEGENERATE, replace(BASE, minima=(MA, MA)), RULES,
+    (11, "screen", CASE, BASE, RULES, Decision(A.SCREEN, "screen")),
+    (11, "degenerate_goes_on", DEGENERATE, replace(BASE, minima=(MA, MA)), RULES,
      Decision(A.SCREEN, "screen")),
-    (12, "after_the_shortcut_seed", CASE, SHORTCUT, RULES, Decision(A.SCREEN, "screen")),
-    (12, "a_given_ts_failed", CASE, replace(BASE, last_saddle="failed"), RULES,
+    (11, "after_the_shortcut_seed", CASE, SHORTCUT, RULES, Decision(A.SCREEN, "screen")),
+    (11, "a_given_ts_failed", CASE, replace(BASE, last_saddle="failed"), RULES,
      Decision(A.SCREEN, "screen")),
-    (13, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
+    (12, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
                                        seeds=(SEED,)), RULES,
      Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")),
-    (14, "seed", CASE, replace(S, seeds=(SEED,)), RULES,
+    (13, "seed", CASE, replace(S, seeds=(SEED,)), RULES,
      Decision(A.REFINE_SADDLE, "seed:screen_ts")),
-    (14, "higher_order_retry", CASE, replace(S, seeds=(HIGHER,), last_saddle="failed",
+    (13, "higher_order_retry", CASE, replace(S, seeds=(HIGHER,), last_saddle="failed",
                                              saddle_attempts=1), RULES,
      Decision(A.REFINE_SADDLE, "seed:higher_order_retry")),
-    (14, "restart_at_the_limit", CASE, replace(S, seeds=(RESTART,), last_saddle="failed",
+    (13, "restart_at_the_limit", CASE, replace(S, seeds=(RESTART,), last_saddle="failed",
                                                saddle_attempts=2), RULES,
      Decision(A.REFINE_SADDLE, "seed:saddle_restart")),
-    (15, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), RULES, NO_PATH),
-    (15, "screen_off", CASE, BASE, replace(RULES, screen=False), NO_PATH),
-    (15, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
+    (14, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), RULES, NO_PATH),
+    (14, "screen_off", CASE, BASE, replace(RULES, screen=False), NO_PATH),
+    (14, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
      RULES, NO_PATH),
-    (15, "after_the_screen_path", CASE, replace(SHORTCUT, neb_done=True), RULES, NO_PATH),
-    (16, "seeds_failed", CASE, replace(S, screen=BV(verdict="single", source="string"),
+    (14, "after_the_screen_path", CASE, replace(SHORTCUT, neb_done=True), RULES, NO_PATH),
+    (15, "seeds_failed", CASE, replace(S, screen=BV(verdict="single", source="string"),
                                        path_runs=1, saddle_attempts=1, last_saddle="failed"),
      RULES, NEXT_CHUNK),
-    (16, "after_an_endpoint_well", CASE, replace(S, screen=BV(verdict="intermediate",
+    (15, "after_an_endpoint_well", CASE, replace(S, screen=BV(verdict="intermediate",
                                                               source="string"),
                                                  intermediate="same_as_endpoint", path_runs=2,
                                                  saddle_attempts=1), RULES, NEXT_CHUNK),
-    (17, "exhausted", CASE, replace(S, path_runs=1, seeds=(SEED,), saddle_attempts=2,
+    (16, "exhausted", CASE, replace(S, path_runs=1, seeds=(SEED,), saddle_attempts=2,
                                     last_saddle="failed"), RULES, EXHAUSTED),
-    (17, "chunks_used", CASE, replace(S, screen=BV(verdict="single", source="string"),
+    (16, "chunks_used", CASE, replace(S, screen=BV(verdict="single", source="string"),
                                       path_runs=3, saddle_attempts=1), RULES, EXHAUSTED),
-    (17, "string_failed", CASE, replace(S, path_runs=1, saddle_attempts=1), RULES, EXHAUSTED),
+    (16, "string_failed", CASE, replace(S, path_runs=1, saddle_attempts=1), RULES, EXHAUSTED),
     # R3: no string whose peak seed could never be refined
-    (17, "no_string_without_attempts", CASE, replace(S, saddle_attempts=2, last_saddle="failed"),
+    (16, "no_string_without_attempts", CASE, replace(S, saddle_attempts=2, last_saddle="failed"),
      RULES, EXHAUSTED),
-    (17, "no_chunk_without_attempts", CASE, replace(S, screen=BV(verdict="single", source="string"),
+    (16, "no_chunk_without_attempts", CASE, replace(S, screen=BV(verdict="single", source="string"),
                                                     path_runs=1, saddle_attempts=2), RULES,
      EXHAUSTED),
 ]
 
 
-def test_table_has_17_rows_and_every_row_is_covered():
-    assert len(st.ROWS) == 17
-    assert {row for row, *_ in ROW_CASES} == set(range(1, 18))
+def test_table_has_16_rows_and_every_row_is_covered():
+    assert len(st.ROWS) == 16
+    assert {row for row, *_ in ROW_CASES} == set(range(1, 17))
 
 
 @pytest.mark.parametrize(("row", "case", "state", "rules", "expected"),
@@ -176,8 +168,8 @@ def test_a_peak_seeds_only_a_single_step_profile():
 
 
 def test_a_new_profile_reopens_the_checks_of_an_earlier_saddle():
-    """A string after a collapsed saddle: its own well is validated, not the old saddle."""
-    old = replace(S, saddle_attempts=2, last_saddle="converged", ts_check="collapsed",
+    """A string after a validated saddle and an earlier well: its own well is validated."""
+    old = replace(S, saddle_attempts=2, last_saddle="converged", ts_check="ok",
                   intermediate="same_as_endpoint")
     state = record_profile(old, BV(verdict="intermediate", source="string"))
     assert (state.last_saddle, state.ts_check, state.intermediate) == (None, None, None)
@@ -207,42 +199,30 @@ def test_the_screen_path_runs_once_after_a_failed_shortcut_seed():
     assert decide(CASE, SHORTCUT, screen_off) == NO_PATH
 
 
-def test_a_soft_ts_whose_qrc_failed_is_validated_as_a_collapsed_saddle():
-    """U6-P5: a TS with |nu| < saddle_cm1 is a TS, but once its QRC fails for good (the one
-    same-basin retry included) it joins row 11, whose action withdraws the claim."""
-    failed = replace(S, claim=SOFT, last_saddle="converged", ts_check="ok", connection="same_basin",
-                     connection_attempts=1)
-    assert decide(CASE, failed, RULES) == Decision(A.CONNECT, "connection_retry")
-    failed = replace(failed, connection_attempts=2)
-    assert decide(CASE, failed, RULES) == COLLAPSED
-    validated = replace(failed, claim=None, connection=None, ts_check=None, last_saddle=None)
-    assert decide(CASE, replace(validated, intermediate="distinct"), RULES) == DISTINCT
-    assert decide(CASE, replace(validated, intermediate="same_as_endpoint"), RULES) == NO_PATH
-    unresolved = Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)
-    hard = replace(failed, claim=CLAIM, saddle_attempts=2)  # a hard TS, no saddle attempt left
-    assert decide(CASE, hard, RULES) == unresolved
-
-
-def test_a_hard_ts_whose_sides_join_one_basin_leaves_the_search_open():
+@pytest.mark.parametrize("claim", [CLAIM, SOFT])
+def test_a_ts_whose_sides_join_one_basin_leaves_the_search_open(claim):
     """VAL7/s6_oh_ch4: a -73i reorientation saddle of the OH...CH4 complex (both QRC sides in
     its basin at both amplitudes) is not the abstraction TS; with a saddle attempt left the case
-    goes on to the string (the W3 run found the -481i TS there) instead of stopping."""
-    other = replace(S, claim=CLAIM, last_saddle="converged", ts_check="ok", saddle_attempts=1,
-                    connection="same_basin", connection_attempts=2)
+    goes on to the string (the W3 run found the -481i TS there) instead of stopping. G3-P1: a
+    soft TS (|nu| < saddle_cm1) is a TS like any other; its failed QRC splits no well."""
+    other = replace(S, claim=claim, last_saddle="converged", ts_check="ok", saddle_attempts=1,
+                    connection="same_basin", connection_attempts=1)
+    assert decide(CASE, other, RULES) == Decision(A.CONNECT, "connection_retry")
+    other = replace(other, connection_attempts=2)
     assert decide(CASE, other, RULES) == NO_PATH
     seeded = replace(other, seeds=(SEED,))
     assert decide(CASE, seeded, RULES) == Decision(A.REFINE_SADDLE, "seed:screen_ts")
     assert decide(CASE, replace(other, path_runs=1), RULES) == EXHAUSTED
+    assert decide(CASE, replace(other, saddle_attempts=2), RULES) == FAILED
     failed = replace(other, connection="failed")  # a side did not optimize: no new evidence
-    assert decide(CASE, failed, RULES) == Decision(A.COMPLETE, "connection_failed",
-                                                   C.UNRESOLVED)
+    assert decide(CASE, failed, RULES) == FAILED
 
 
 @pytest.mark.parametrize("claim", [CLAIM, SOFT])
 def test_a_ts_whose_sides_join_one_state_is_not_retried_and_the_search_goes_on(claim):
     """X2-2: both QRC sides in one case key but two basins (one state of a bond-changing case):
-    a wider displacement cannot help, nor is a soft one a collapsed saddle (row 11); with a
-    saddle attempt left the search goes on, the next saddle search dropping the claim."""
+    a wider displacement cannot help; with a saddle attempt left the search goes on, the next
+    saddle search dropping the claim."""
     other = replace(S, claim=claim, last_saddle="converged", ts_check="ok", saddle_attempts=1,
                     connection="same_state", connection_attempts=1)
     assert decide(CASE, other, RULES) == NO_PATH

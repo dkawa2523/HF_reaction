@@ -57,7 +57,6 @@ class MinimumRecord(BaseModel):
     energy_hartree: float
     state_label: str
     members: tuple[str, ...] = ()  # species that fell into this basin (collapsed seeds included)
-    chiral: bool = False  # the mirror image is a distinct structure of this basin (m = 2)
     notes: tuple[str, ...] = ()  # *_imaginary_mode, spin_contaminated, endpoint_was_saddle
 
 

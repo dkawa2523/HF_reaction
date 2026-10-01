@@ -256,33 +256,24 @@ def _past_the_well(ctx: Ctx, state: CaseState, path: Profile, name: str) -> Case
 
 
 def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """relax_to_minimum → Registry on the collapsed saddle (or soft TS whose QRC failed: its
-    claim is withdrawn) or on the latest profile's lowest well; consumes its trigger. The well
+    """relax_to_minimum → Registry on the latest profile's lowest well (row 12); the claim of a
+    TS of another process (row 8 searched on) is dropped with its connection verdict. The well
     is an end when it has an end's case key, or (G5-P2) lies within a resolution of an end with
-    no hill of a resolution between them on its profile; a collapsed saddle has no profile to
-    show that. A failed relaxation is no chemical result: a well's profile goes on from its
-    highest peak."""
-    path = ctx.work.path if decision.reason == "path_intermediate" else None
-    state = replace(state, ts_check=None, last_saddle=None, claim=None, connection=None)
-    legs: tuple[Sequence[float], ...] = ()  # the profile from the well to end 0 and to end 1
-    if path is not None:
-        e = path.energies
-        w = min(profile.interior_maxima([-v for v in e], ctx.resolution), key=e.__getitem__)
-        x, legs = path.frames[w], (e[:w + 1], e[w:])
-    elif ctx.work.saddle is not None:
-        x = ctx.coords(ctx.work.saddle.final)
-    else:
-        return replace(state, intermediate="same_as_endpoint")
+    no hill of a resolution between them on the profile. A failed relaxation is no chemical
+    result: the profile goes on from its highest peak."""
+    path, state = ctx.work.path, replace(state, claim=None, connection=None)
+    if path is None:  # row 12 follows a DFT profile (CaseState.screen)
+        return replace(state, intermediate="relax_failed")
+    e = path.energies
+    w = min(profile.interior_maxima([-v for v in e], ctx.resolution), key=e.__getitem__)
     name = f"int{state.saddle_attempts}_{state.path_runs}"
-    well = _register(ctx, x, name, "intermediate")
+    well = _register(ctx, path.frames[w], name, "intermediate")
     if well is None:
         ctx.note("int:relax_failed")
-        state = replace(state, intermediate="relax_failed")
-        return state if path is None else _with_peak(ctx, state, name)
-    ends = _end_records(ctx)
-    if _key(ctx, well.record) in {_key(ctx, e) for e in ends} or any(
-            _as_end(ctx, well.record, e, leg) for e, leg in zip(ends, legs, strict=False)):
-        state = replace(state, intermediate="same_as_endpoint")
-        return state if path is None else _past_the_well(ctx, state, path, name)
+        return _with_peak(ctx, replace(state, intermediate="relax_failed"), name)
+    ends, legs = _end_records(ctx), (e[:w + 1], e[w:])  # the profile from the well to each end
+    if _key(ctx, well.record) in {_key(ctx, end) for end in ends} or any(
+            _as_end(ctx, well.record, end, leg) for end, leg in zip(ends, legs, strict=True)):
+        return _past_the_well(ctx, replace(state, intermediate="same_as_endpoint"), path, name)
     ctx.work.intermediate = _member(ctx, well)
     return replace(state, intermediate="distinct")

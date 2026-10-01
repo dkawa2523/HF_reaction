@@ -1,10 +1,11 @@
-"""Additive bond rule, fragments, bond changes, WL atom classes and state labels (design §5.5,
-review §6.3)."""
+"""Additive bond rule, fragments, bond changes and resolved ones (analysis X3), WL atom classes
+and state labels (design §5.5, review §6.3)."""
 
 import numpy as np
 import pytest
 
 from hfauto.chemistry import topology as top
+from hfauto.chemistry.elements import covalent_radius
 
 NH3_HF = ["N", "H", "H", "H", "H", "F"]
 _NH3 = [[0.0, 0.0, 0.0], [0.94, 0.0, -0.38], [-0.47, 0.814, -0.38], [-0.47, -0.814, -0.38]]
@@ -48,6 +49,28 @@ def test_proton_transfer_changes():
     formed, broken = top.bond_changes(NH3_HF, NEUTRAL, ION_PAIR)
     assert formed == {(0, 4)} and broken == {(4, 5)}
     assert top.bond_changes(NH3_HF, NEUTRAL, NEUTRAL) == (frozenset(), frozenset())
+
+
+def _nh3_hf(nh: float) -> np.ndarray:
+    """NH3·HF with N···H at r_thr + nh (Å) and H–F 0.95 Å."""
+    r = covalent_radius("N") + covalent_radius("H") + top.BOND_TOLERANCE_A + nh
+    return np.array(_NH3 + [[0.0, 0.0, r], [0.0, 0.0, r + 0.95]])
+
+
+def test_resolved_bond_changes_clear_the_band_on_both_sides():
+    """A threshold crossing inside one basin (S19's N···H, ±0.006 Å about r_thr) is a bond change
+    but not a resolved one; S6's H–O (+2.00 / −0.35 Å) is both; one side inside ±RESOLVED_A is
+    not resolved."""
+    noise = _nh3_hf(+0.006), _nh3_hf(-0.006)
+    assert top.bond_changes(NH3_HF, *noise) == ({(0, 4)}, set())
+    assert top.resolved_bond_changes(NH3_HF, *noise) == (set(), set())
+    assert top.resolved_bond_changes(NH3_HF, _nh3_hf(+2.0), _nh3_hf(-0.35)) == ({(0, 4)}, set())
+    assert top.resolved_bond_changes(NH3_HF, _nh3_hf(-0.35), _nh3_hf(+2.0)) == (set(), {(0, 4)})
+    edge = _nh3_hf(top.RESOLVED_A - 0.01), _nh3_hf(-0.35)
+    assert top.bond_changes(NH3_HF, *edge) == ({(0, 4)}, set())
+    assert top.resolved_bond_changes(NH3_HF, *edge) == (set(), set())
+    assert top.resolved_bond_changes(NH3_HF, NEUTRAL, ION_PAIR) == top.bond_changes(
+        NH3_HF, NEUTRAL, ION_PAIR)
 
 
 def test_state_label_is_permutation_invariant():

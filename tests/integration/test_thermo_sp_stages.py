@@ -2,15 +2,17 @@
 band, association, mixed LOT, m = 2, the state G (lowest spin-clean minimum) and dG_eff
 (submerged barrier, barrierless)."""
 
+import dataclasses
 import math
 from pathlib import Path
 
 import numpy as np
 import pytest
-from fakes import PES, FakeQM, double_well, fake_species_thermo, write_geometry
+from fakes import PES, FakeQM, double_well, fake_species_thermo, write_geometry, write_hessian
 
 from hfauto.backends.protocols import Capability
-from hfauto.chemistry import thermo
+from hfauto.chemistry import symmetry, thermo
+from hfauto.chemistry.vibrations import projected_frequencies
 from hfauto.core import records as R
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
 from hfauto.core.manifest import Artifact, Manifest
@@ -46,11 +48,16 @@ def _setup(fake_runtime, tmp_run, states=NEUTRAL):
           for p in ("reactant", "product", "ts")}
     medium = ev["product"].level.model_copy(update={"grid": "medium"})
     ev["p2"] = ev["product"].model_copy(update={"job_key": "p2", "level": medium})  # other LOT
-    for tag, symbols, nu, external in (("nh", ["N", "H"], (3000.0,), 5), ("o", ["O"], (), 3)):
-        geom = write_geometry(tmp_run, f"{tag}.xyz", symbols, np.eye(3)[: len(symbols)])
+    stretch = 0.25 * np.outer([-1, 1, 0], [-1, 1, 0])  # N-H along (H - N), 0.5 Eh/bohr²
+    hessians = {"nh": np.kron([[1, -1], [-1, 1]], stretch), "o": np.zeros((3, 3))}
+    for tag, symbols, external in (("nh", ["N", "H"], 5), ("o", ["O"], 3)):
+        x = np.eye(3)[: len(symbols)]
+        geom = write_geometry(tmp_run, f"{tag}.xyz", symbols, x)
+        nu = tuple(map(float, projected_frequencies(hessians[tag], symbols, x)[0]))
         ev[tag] = _state(ev["reactant"], *states[tag]).model_copy(update={
             "start": geom, "final": geom, "job_key": tag, "frequencies_cm1": nu,
-            "n_external": external, "energy_hartree": part})
+            "n_external": external, "energy_hartree": part,
+            "hessian": write_hessian(tmp_run, f"{tag}_hessian.npy", hessians[tag])})
     ev["o2"] = ev["o"].model_copy(update={"job_key": "o2"})
     arts = [Artifact(artifact_id=calc_id(e), type=T.CALCULATION, payload=e) for e in ev.values()]
     arts += [Artifact(artifact_id=t, type=T.SPECIES, payload=R.SpeciesRecord(
@@ -202,17 +209,22 @@ def test_a_submerged_barrier_and_a_barrierless_step_rank_by_max_dg_rxn_0(fake_ru
     assert sunk["down_298.15K_1atm"].dG_act_kcal < 0
 
 
-def test_chiral_minimum_and_ts_gain_minus_rt_ln2(fake_runtime, tmp_run):
+def test_chiral_minimum_and_ts_gain_minus_rt_ln2(fake_runtime, tmp_run, monkeypatch):
+    """The point group's m = 2 adds -RT ln 2 to G; nothing else of the group moves G here."""
     inputs, rt, ev = _setup(fake_runtime, tmp_run)
     plain = _thermo(inputs, rt)
-    chfclbr = [[0.0, 0.0, 0.0], [0.63, 0.63, 0.63], [-0.8, -0.8, 0.8], [-1.0, 1.0, -1.0],
-               [1.1, -1.1, -1.1]]
-    ts = write_geometry(tmp_run, "chiral_ts.xyz", ["C", "H", "F", "Cl", "Br"], np.array(chfclbr))
-    updates = {calc_id(ev["ts"]): {"final": ts},  # a C1 TS geometry; its thermo is unchanged
-               "m_product": {"chiral": True}}
-    chiral = _thermo(_relabel(inputs, updates), rt)
+    mirrored = [rt.load_xyz(ev[k].final).coords for k in ("ts", "product")]  # p2: the product's
+    analyze = symmetry.analyze
+
+    def chiral_group(symbols, coords, hessian):  # the TS and the product as if their group
+        sym = analyze(symbols, coords, hessian)  # had no improper operation
+        return dataclasses.replace(sym, m=2) if any(
+            np.array_equal(coords, x) for x in mirrored) else sym
+
+    monkeypatch.setattr(symmetry, "analyze", chiral_group)
+    chiral = _thermo(inputs, rt)
     m = -R_KCAL_MOL_K * 298.15 * math.log(2)  # -0.4107 kcal/mol
-    for name, shift in (("rx1_298.15K_1atm", (m, m)), ("rx2_298.15K_1atm", (m, 0.0))):
-        before, after = plain[name], chiral[name]  # rx2 ends at m_p2, which is achiral
+    for name, shift in (("rx1_298.15K_1atm", (m, m)), ("rx2_298.15K_1atm", (m, m))):
+        before, after = plain[name], chiral[name]
         assert after.dG_act_kcal - before.dG_act_kcal == pytest.approx(shift[0], abs=1e-9)
         assert after.dG_rxn_kcal - before.dG_rxn_kcal == pytest.approx(shift[1], abs=1e-9)

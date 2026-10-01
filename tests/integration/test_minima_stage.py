@@ -166,7 +166,7 @@ def test_enantiomers_fall_into_one_chiral_basin(fake_runtime, tmp_run):
     screen = run("screen", [species(tmp_run, pes, "r", "r"), species(tmp_run, pes, "s", "s")],
                  **SCREEN)
     (low,) = screen.records(T.MINIMUM, MinimumRecord)
-    assert low.chiral and low.members == ("r", "s")
+    assert low.members == ("r", "s")
     assert xtb.calls == ["optimize", "frequencies", "optimize"]  # s is known: no freq job
 
 

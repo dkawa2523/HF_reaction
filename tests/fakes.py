@@ -18,7 +18,7 @@ from scipy.spatial.distance import pdist
 
 from hfauto.backends import protocols as bp
 from hfauto.chemistry.profile import hei
-from hfauto.chemistry.thermo import Thermal, thermo_frequencies
+from hfauto.chemistry.thermo import Thermal
 from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian, to_canonical_npy
 from hfauto.chemistry.xyz import (
     XYZ,
@@ -114,6 +114,11 @@ NH3_HF_EXCHANGED = NH3_HF[[0, 1, 2, 4, 3, 5]]
 
 def _ref(root: Path, path: Path) -> FileRef:
     return FileRef(path=path.relative_to(root).as_posix(), sha256=sha256_file(path))
+
+
+def write_hessian(root: Path, path: str | Path, hessian: np.ndarray) -> FileRef:
+    """Write a canonical Hessian .npy (``path`` relative to root) and return its FileRef."""
+    return _ref(Path(root), to_canonical_npy(hessian, Path(root) / path))
 
 
 def write_geometry(root: Path, path: str | Path, symbols: Sequence[str], coords: np.ndarray
@@ -338,10 +343,8 @@ class FakeDiscovery(_Scripted):
         return self._next(source, trial, method, settings)
 
 
-def fake_species_thermo(xyz, frequencies_cm1, *, saddle, multiplicity, settings, T
-                        ) -> Thermal:
+def fake_species_thermo(symbols, sym, modes_cm1, *, multiplicity, settings, T) -> Thermal:
     """chemistry.thermo.species_thermo without GoodVibes (monkeypatch it in): H = ZPE and
     G = ZPE - 1e-6 Eh x cutoff x n_modes, so the cutoff variants spread the band."""
-    modes = thermo_frequencies(frequencies_cm1, saddle=saddle)
-    zpe = 0.5 * settings.vib_scale * sum(modes) * CM1_TO_HARTREE
-    return Thermal(G=zpe - 1e-6 * settings.cutoff_cm1 * len(modes), H=zpe, zpe=zpe)
+    zpe = 0.5 * settings.vib_scale * sum(modes_cm1) * CM1_TO_HARTREE
+    return Thermal(G=zpe - 1e-6 * settings.cutoff_cm1 * len(modes_cm1), H=zpe, zpe=zpe)

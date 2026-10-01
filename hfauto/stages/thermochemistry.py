@@ -3,14 +3,15 @@
 thermochemistry and the ranking quantity dG_eff.
 
 Subjects: every dft minimum (monomers included) and SaddleClaim freq calc, at the main
-settings and the qs x cutoff variants and at every configured temperature. Modes follow
-chemistry.thermo.thermo_frequencies (a TS drops its reaction coordinate). Species values are
-1 atm; reactions get one record per standard state. G is the energy layer plus the thermal
-terms of the freq: with energy_method the sp whose parents name the subject (the later one
-in the view wins; without it G = None, energy_layer_missing), else the freq itself. The
-energy layer passes spin_ok like the freq. A chiral subject (MinimumRecord.chiral, or a
-chiral TS geometry) gets -RT ln 2 in G: its mirror image is the same basin or saddle, counted
-once with m = 2. The blockers of a ReactionThermo are the only source of thermo_unavailable,
+settings and the qs x cutoff variants and at every configured temperature. Each subject's
+point group (chemistry.symmetry, from the freq geometry and Hessian) gives sigma, linearity,
+the structure the modes (chemistry.thermo.thermal_modes: a TS drops its reaction coordinate)
+and moments are evaluated at, and m: with m = 2 G gains -RT ln 2, as the mirror image is the
+same basin or saddle, counted once. Species values are 1 atm; reactions get one record per
+standard state. G is the energy layer plus the thermal terms of the freq: with energy_method
+the sp whose parents name the subject (the later one in the view wins; without it G = None,
+energy_layer_missing), else the freq itself. The energy layer passes spin_ok like the freq.
+The blockers of a ReactionThermo are the only source of thermo_unavailable,
 mixed_level_of_theory and spin_contaminated.
 
 A state is a composition and a topology.state_label. Its G (_state_G) is the lowest G of its
@@ -22,16 +23,18 @@ its forward or reverse dE0 = dE + dZPE is <= 0.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar, cast
 
+import numpy as np
+
+from hfauto.chemistry import symmetry
 from hfauto.chemistry import thermo as th
-from hfauto.chemistry.gates import Policy, same_pes, spin_ok
-from hfauto.chemistry.identity import is_chiral
-from hfauto.chemistry.xyz import XYZ, hill_formula
+from hfauto.chemistry.gates import same_pes, spin_ok
+from hfauto.chemistry.xyz import hill_formula
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
-from hfauto.core.evidence import Evidence, Geometry, Level
+from hfauto.core.evidence import Evidence, Level
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec, ThermoSettings, level_mismatches
 from hfauto.core.records import (
@@ -64,7 +67,6 @@ class _Subject:
     id: str  # minimum_id or SaddleClaim.freq_calc
     freq_calc: str
     freq: Evidence
-    xyz: XYZ  # the freq geometry
     energy_calc: str | None  # the sp at energy_method whose parents name this subject
     energy: Evidence  # that sp, else the freq itself
     state: State | None  # None for a TS
@@ -72,7 +74,8 @@ class _Subject:
     formula: tuple[str, int]  # (Hill formula, charge): finds a complex's monomers
     contaminated: bool  # spin_contaminated in notes, or the energy layer fails spin_ok
     layer_missing: bool  # energy_method set but no such sp
-    chiral: bool  # the mirror image is the same basin or saddle: -RT ln 2 in G
+    sym: symmetry.Symmetry  # of the freq geometry
+    modes: tuple[float, ...]  # th.thermal_modes
 
 
 def _variants(settings: ThermoSettings) -> list[ThermoSettings]:
@@ -81,8 +84,8 @@ def _variants(settings: ThermoSettings) -> list[ThermoSettings]:
     return list({th.settings_sha(s): s for s in grid}.values())  # main first, no repeats
 
 
-def _subjects(inputs: Manifest, method: MethodSpec | None, load: Callable[[Geometry], XYZ],
-              policy: Policy) -> dict[str, _Subject]:
+def _subjects(inputs: Manifest, method: MethodSpec | None, rt: StageRuntime
+              ) -> dict[str, _Subject]:
     layer = {} if method is None else {  # subject -> the sp at method naming it
         parent: (a.artifact_id, a.payload)
         for a in inputs.of(ArtifactType.CALCULATION)
@@ -91,29 +94,31 @@ def _subjects(inputs: Manifest, method: MethodSpec | None, load: Callable[[Geome
         for parent in a.parents
     }
 
-    def make(sid: str, calc: str, state: State | None, notes: tuple[str, ...],
-             chiral: bool | None) -> _Subject:  # chiral None: judged from the geometry (a TS)
+    def make(sid: str, calc: str, state: State | None, notes: tuple[str, ...]) -> _Subject:
         freq = inputs.evidence(calc)
-        xyz = load(freq.final)
+        if freq.hessian is None:
+            raise ValueError(f"{calc}: a freq without a Hessian")
+        xyz, hessian = rt.load_xyz(freq.final), np.load(rt.resolve(freq.hessian))
+        sym = symmetry.analyze(xyz.symbols, xyz.coords, hessian)
         sp_calc, sp = layer.get(sid, (None, freq))
-        return _Subject(sid, calc, freq, xyz, sp_calc, sp, state, notes,
+        return _Subject(sid, calc, freq, sp_calc, sp, state, notes,
                         (hill_formula(freq.final.symbols), freq.level.charge),
-                        contaminated="spin_contaminated" in notes or not spin_ok(sp, policy),
-                        layer_missing=method is not None and sp_calc is None,
-                        chiral=is_chiral(xyz.symbols, xyz.coords) if chiral is None else chiral)
+                        contaminated="spin_contaminated" in notes or not spin_ok(sp, rt.policy),
+                        layer_missing=method is not None and sp_calc is None, sym=sym,
+                        modes=th.thermal_modes(xyz.symbols, sym, hessian, saddle=state is None))
 
     out = {m.minimum_id: make(m.minimum_id, m.freq_calc, (m.composition_id, m.state_label),
-                              m.notes, m.chiral)
+                              m.notes)
            for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord) if m.tier == "dft"}
     for r in inputs.records(ArtifactType.REACTION, ReactionRecord):
         if r.saddle is not None:
             calc = r.saddle.freq_calc
-            out[calc] = make(calc, calc, None, r.saddle.notes, None)
+            out[calc] = make(calc, calc, None, r.saddle.notes)
     return out
 
 
 def _species(sub: _Subject, settings: ThermoSettings, T: float) -> SpeciesThermo:
-    """G = energy layer + thermal terms of the freq (- RT ln 2 if chiral)."""
+    """G = energy layer + thermal terms of the freq (- RT ln 2 if m = 2)."""
     row = SpeciesThermo(
         subject=sub.id, freq_calc=sub.freq_calc, energy_calc=sub.energy_calc, T_K=T,
         G_hartree=None, H_hartree=None, zpe_hartree=None, settings_sha=th.settings_sha(settings),
@@ -121,9 +126,9 @@ def _species(sub: _Subject, settings: ThermoSettings, T: float) -> SpeciesThermo
     if sub.layer_missing:
         return row.model_copy(update={
             "notes": (*sub.notes, "thermo_unavailable", "energy_layer_missing")})
-    c = th.species_thermo(sub.xyz, sub.freq.frequencies_cm1 or (), saddle=sub.state is None,
+    c = th.species_thermo(sub.freq.final.symbols, sub.sym, sub.modes,
                           multiplicity=sub.freq.level.multiplicity, settings=settings, T=T)
-    E, mirror = sub.energy.energy_hartree, th.chiral_G(T) if sub.chiral else 0.0
+    E, mirror = sub.energy.energy_hartree, th.chiral_G(T) if sub.sym.m == 2 else 0.0
     return row.model_copy(update={
         "G_hartree": E + c.G + mirror, "H_hartree": E + c.H, "zpe_hartree": c.zpe})
 
@@ -247,7 +252,7 @@ class ThermoStage:
     def run(self, inputs: Manifest, config: StageConfig, rt: StageRuntime) -> list[Artifact]:
         cfg = cast(ThermoConfig, config)
         method = None if cfg.energy_method is None else rt.method(cfg.energy_method)
-        subjects = _subjects(inputs, method, rt.load_xyz, rt.policy)
+        subjects = _subjects(inputs, method, rt)
         variants = _variants(cfg.settings)  # index 0 = main settings
         monomers = th.monomer_states(inputs.records(ArtifactType.SPECIES, SpeciesRecord),
                                      rt.system.compositions)

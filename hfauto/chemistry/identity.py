@@ -2,10 +2,11 @@
 
 Same-element atoms are matched with scipy's Hungarian solver, alternating with a proper Kabsch
 fit from several starting orientations (the alternation only finds a local optimum). A basin
-(``assign``) admits proper and improper rotations: mirror images are one minimum, a chiral one
-with m = 2 (``is_chiral``). Labelled comparisons (``mapped_rmsd``, ``same_as_labelled``) stay
-proper, so that a degenerate rearrangement such as the NH3 inversion differs from the identity.
-``carry`` moves a structure along the relabelling, mirror and rotation that match two others.
+(``assign``) admits proper and improper rotations: mirror images are one minimum, and
+``basin_coords`` keeps the handedness of a chiral one (``is_chiral``). Labelled comparisons
+(``mapped_rmsd``, ``same_as_labelled``) stay proper, so that a degenerate rearrangement such as
+the NH3 inversion differs from the identity. ``carry`` moves a structure along the relabelling,
+mirror and rotation that match two others.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from hfauto.chemistry.geometry import kabsch
 
 IMAGE_A = 0.005  # an exact image: QRC ± starts at a symmetric TS <= 0.0009 A, others >= 0.025 A
 BASIN_A = 0.05  # one basin: permutation-invariant RMSD (mirror image included) ...
-_DE_HARTREE = 5.0e-5  # ... and |dE|, with the best match clearly ahead of the runner-up
+BASIN_DE_HARTREE = 5.0e-5  # ... and |dE|, with the best match clearly ahead of the runner-up
 _RUNNER_UP_RATIO, _RUNNER_UP_GAP_A = 3.0, 0.1
 _MAX_REFINE = 5
 _DEGENERATE_REL = 0.05  # principal moments this close (relative) count as degenerate
@@ -154,12 +155,11 @@ def same_as_labelled(xa: np.ndarray, xb: np.ndarray, ea: float, eb: float) -> bo
     rotations) <= 0.05 A. The two structures of a degenerate rearrangement (the NH3 inversion,
     an enantiomerization) are one basin but two structures as labelled."""
 
-    return abs(ea - eb) <= _DE_HARTREE and mapped_rmsd(xa, xb) <= BASIN_A
+    return abs(ea - eb) <= BASIN_DE_HARTREE and mapped_rmsd(xa, xb) <= BASIN_A
 
 
 def is_chiral(symbols: Sequence[str], x: np.ndarray) -> bool:
-    """True when x and its mirror image are distinct under proper rotations and relabelling
-    (optical isomer number m = 2)."""
+    """True when x and its mirror image are distinct under proper rotations and relabelling."""
 
     return permutation_invariant_rmsd(symbols, x, _mirror(x))[0] > BASIN_A
 
@@ -176,7 +176,7 @@ def assign(
     within 0.05 A and clearly ahead of the runner-up."""
 
     scored = sorted((_basin_match(symbols, coords, xyz)[0], key)
-                    for key, (xyz, e) in candidates.items() if abs(energy - e) <= _DE_HARTREE)
+                    for key, (xyz, e) in candidates.items() if abs(energy - e) <= BASIN_DE_HARTREE)
     if not scored or scored[0][0] > BASIN_A:
         return None
     if len(scored) > 1:

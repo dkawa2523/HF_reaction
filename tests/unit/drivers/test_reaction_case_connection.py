@@ -232,14 +232,16 @@ def by_qrc(ctx, state, monkeypatch):
     return qrc(ctx, state, monkeypatch, ("reactant", "bridged"))
 
 
-def by_relaxation(ctx, state, monkeypatch):
-    """A saddle search that collapsed into the H3O chain."""
-    ctx.work.saddle = ctx.rt.qm.energy(ctx.mol(POINTS["bridged"]), DFT)
-    decision = Decision(Action.VALIDATE_INTERMEDIATE, "saddle_collapsed")
+def by_profile(ctx, state, monkeypatch):
+    """A string whose lowest well is the H3O chain."""
+    names = ("reactant", "apart", "bridged", "apart", "product")
+    ctx.work.path = Profile([POINTS[n] for n in names], tuple(e * K for e in (0, 3, -1, 3, 0)))
+    state = record_profile(state, BarrierVerdict(verdict="intermediate", source="string"))
+    decision = Decision(Action.VALIDATE_INTERMEDIATE, "path_intermediate")
     return connection.validate_intermediate(ctx, state, decision)
 
 
-@pytest.mark.parametrize("reach", [by_qrc, by_relaxation])
+@pytest.mark.parametrize("reach", [by_qrc, by_profile])
 def test_an_intermediate_in_a_known_basin_continues_the_case_labelling(tmp_path, monkeypatch,
                                                                        reach):
     """G8-P2: the well joins the known basin as the side's own structure, a member without a
@@ -276,7 +278,7 @@ def test_an_intermediate_in_a_known_basin_continues_the_case_labelling(tmp_path,
     assert len(formed | broken) == 3
 
 
-@pytest.mark.parametrize("reach,name", [(by_qrc, "qrc1_1"), (by_relaxation, "int0_0")])
+@pytest.mark.parametrize("reach,name", [(by_qrc, "qrc1_1"), (by_profile, "int0_1")])
 def test_an_intermediate_in_a_new_basin_is_the_cases_own_species(tmp_path, monkeypatch, reach,
                                                                  name):
     ctx, state = case_ctx(tmp_path)

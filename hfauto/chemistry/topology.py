@@ -1,8 +1,10 @@
 """Covalent bond graph, fragments, bond changes, WL atom classes and state labels (§5.5).
 
-A pair is bonded when r < r_cov,i + r_cov,j + 0.4 Å (additive tolerance, Meng & Lewis 1991;
-SCINE BondDetector, OpenBabel). The rule sees one structure only, so ``bond_changes`` is
+A pair is bonded when r < r_thr = r_cov,i + r_cov,j + 0.4 Å (additive tolerance, Meng & Lewis
+1991; SCINE BondDetector, OpenBabel). The rule sees one structure only, so ``bond_changes`` is
 symmetric: FHF⁻ (1.14 Å) and I3⁻ (2.92 Å) are bonded, a halogen bond I···N at 2.8 Å is not.
+``resolved_bond_changes`` keeps only the changes that clear a band of ±RESOLVED_A around r_thr
+on both sides, so a contact the threshold cuts within one basin is no change.
 """
 
 from __future__ import annotations
@@ -20,17 +22,30 @@ from hfauto.chemistry.xyz import hill_formula
 
 Bond = tuple[int, int]  # (i, j) with i < j
 BOND_TOLERANCE_A = 0.4
+# Half-width of the band around r_thr that resolves a bond change: the GFN2 and PBE0 N···H of
+# the S19 amine·HF basin differ by 0.15 Å, so a crossing within 0.1 Å of r_thr is method noise.
+RESOLVED_A = 0.1
 _WL_ITERATIONS = 3
 
 
-def bonds(symbols: Sequence[str], coords: np.ndarray) -> frozenset[Bond]:
+def _excess(symbols: Sequence[str], coords: np.ndarray) -> np.ndarray:
+    """r − r_thr (Å) per atom pair: negative where bonded."""
+
     x = np.asarray(coords, dtype=float).reshape(-1, 3)
     if len(x) != len(symbols):
         raise ValueError("symbols and coordinates differ in atom count")
     radii = np.array([covalent_radius(s) for s in symbols])
     r = np.linalg.norm(x[:, None] - x[None], axis=-1)
-    i, j = np.nonzero(np.triu(r < np.add.outer(radii, radii) + BOND_TOLERANCE_A, 1))
+    return r - (np.add.outer(radii, radii) + BOND_TOLERANCE_A)
+
+
+def _pairs(mask: np.ndarray) -> frozenset[Bond]:
+    i, j = np.nonzero(np.triu(mask, 1))
     return frozenset(zip(i.tolist(), j.tolist(), strict=True))
+
+
+def bonds(symbols: Sequence[str], coords: np.ndarray) -> frozenset[Bond]:
+    return _pairs(_excess(symbols, coords) < 0)
 
 
 def _components(n_atoms: int, bonded: Collection[Bond]) -> tuple[tuple[int, ...], ...]:
@@ -63,6 +78,17 @@ def bond_changes(
 
     before, after = bonds(symbols, a), bonds(symbols, b)
     return after - before, before - after
+
+
+def resolved_bond_changes(
+    symbols: Sequence[str], x: np.ndarray, y: np.ndarray
+) -> tuple[frozenset[Bond], frozenset[Bond]]:
+    """(formed, broken) going from x to y, only the pairs whose r − r_thr is ≥ +RESOLVED_A in
+    one structure and ≤ −RESOLVED_A in the other (both in one atom order)."""
+
+    ex, ey = _excess(symbols, x), _excess(symbols, y)
+    return (_pairs((ex >= RESOLVED_A) & (ey <= -RESOLVED_A)),
+            _pairs((ex <= -RESOLVED_A) & (ey >= RESOLVED_A)))
 
 
 def _wl_rounds(symbols: Sequence[str], bonded: Collection[Bond]) -> list[list[str]]:

@@ -3,9 +3,12 @@
 import importlib.metadata
 import math
 
+import numpy as np
 import pytest
 
 from hfauto.chemistry import thermo as th
+from hfauto.chemistry.symmetry import Symmetry
+from hfauto.chemistry.vibrations import external_basis
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL as H2K
 from hfauto.core.constants import R_KCAL_MOL_K
 
@@ -51,6 +54,22 @@ def test_saddle_drops_the_lowest_mode_and_flips_the_others():  # incl. an unanno
 def test_positive_or_empty_modes_pass_unchanged():
     assert th.thermo_frequencies((900.0, 300.0), saddle=False) == (300.0, 900.0)
     assert th.thermo_frequencies((), saddle=False) == th.thermo_frequencies((), saddle=True) == ()
+
+
+def test_thermal_modes_follow_the_point_group_not_the_rank():
+    """S18: H...H2 0.006 Å off the axis has rank 6 (3 modes, 2.27 kcal/mol in G); as C∞v at its
+    symmetrized structure it has 3N - 5 = 4 modes, a saddle 3."""
+    x = np.array([[0.0, 0.0, -1.8], [0.0, 0.006, 0.0], [0.0, 0.0, 0.74]])
+    line = x * [0.0, 0.0, 1.0]
+    h = 0.3 * np.eye(9)
+    assert external_basis(["H"] * 3, x).shape[1] == 6
+    linear, bent = (Symmetry(g, 1, lin, 1, c) for g, lin, c in (("Cinfv", True, line),
+                                                                  ("C1", False, x)))
+    assert len(th.thermal_modes(["H"] * 3, linear, h, saddle=False)) == 4
+    assert len(th.thermal_modes(["H"] * 3, linear, h, saddle=True)) == 3
+    assert len(th.thermal_modes(["H"] * 3, bent, h, saddle=False)) == 3
+    assert th.thermal_modes(["H"], Symmetry("Kh", 1, False, 1, np.zeros((1, 3))),
+                            np.zeros((3, 3)), saddle=False) == ()
 
 
 def test_pymsym_is_the_pinned_version():  # R14: another libmsym build may find another sigma

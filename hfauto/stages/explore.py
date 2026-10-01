@@ -8,13 +8,14 @@ joins a known basin (a screen minimum or an earlier product of its composition) 
 labelled: the same atom-indexed bonds and permutation-invariant RMSD (ReaDuct's and the screen's
 xTB energies are not compared); else it becomes a species. So a discovery's ends keep the
 labelling it followed, and a degenerate product never joins its source (analysis X2). A lost
-seed state becomes one ``relaxation`` product, from the seed refined as its own species.
+seed state (a resolved bond change from the basin it collapsed into) becomes one ``relaxation``
+product, from the seed refined as its own species.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import ClassVar, cast
 
@@ -82,20 +83,36 @@ def _sources(minima: list[MinimumRecord], per_state: int) -> list[MinimumRecord]
     return [m for group in groups.values() for m in group[:per_state]]
 
 
-def _relaxations(species: Mapping[str, SpeciesRecord],
-                 minima: Sequence[MinimumRecord]) -> list[DiscoveryRecord]:
-    """One ``relaxation`` product per seed state the screen lost (no screen minimum of the
-    composition keeps its label): the seed of lowest low-level energy (then species id),
-    unrelaxed, from the basin it collapsed into, for the DFT tier to ask once. It has no
-    low-level stationary step, so discovery_verdict does not apply."""
+def _left_state(seed: XYZ, basin: XYZ) -> bool:
+    """True when a resolved bond change (topology.resolved_bond_changes) separates the seed from
+    its basin's structure carried into the seed's labelling (identity.basin_coords)."""
+    symbols = seed.symbols
+    formed, broken = topology.resolved_bond_changes(
+        symbols, seed.coords, identity.basin_coords(symbols, basin.coords, seed.coords))
+    return bool(formed or broken)
+
+
+def _relaxations(species: Mapping[str, SpeciesRecord], minima: Sequence[MinimumRecord],
+                 final: Mapping[str, XYZ], load: Callable[[Geometry], XYZ]
+                 ) -> list[DiscoveryRecord]:
+    """One ``relaxation`` product per seed state the screen lost: no screen minimum of the
+    composition keeps its label, and a resolved bond change separates a seed of that label from
+    the basin it collapsed into (``final``: screen-optimized structures by minimum id). A
+    threshold crossing inside one basin loses no state (S19: N···H 1.426 Å in the c01 seed,
+    1.414 Å in its basin, r_thr 1.42 Å); one resolved change suffices (S6: H2–O5 +2.00 / −0.35 Å
+    about r_thr). The product is the lost seed of lowest low-level energy (then species id),
+    unrelaxed, from its basin, for the DFT tier to ask once. It has no low-level stationary
+    step, so discovery_verdict does not apply."""
     kept = {(m.composition_id, m.state_label) for m in minima}
     seeds = [(species[sid], m) for m in minima
              for sid in dict.fromkeys((m.species_id, *m.members)) if sid in species]
     lost: dict[tuple[str, str], tuple[SpeciesRecord, MinimumRecord]] = {}
     for seed, m in sorted(seeds, key=lambda p: (p[0].energy_hartree is None,
                                                 p[0].energy_hartree or 0.0, p[0].species_id)):
-        if (m.composition_id, seed.state_label) not in kept:
-            lost.setdefault((m.composition_id, seed.state_label), (seed, m))
+        state = (m.composition_id, seed.state_label)
+        if state not in kept and state not in lost and _left_state(
+                load(seed.geometry), final[m.minimum_id]):
+            lost[state] = (seed, m)
     found = [DiscoveryRecord(discovery_id=f"relax_{seed.species_id}", source_minimum=m.minimum_id,
                              mechanism="relaxation", outcome="product",
                              product_species=seed.species_id)
@@ -195,7 +212,7 @@ class ExploreStage:
 
         out = [Artifact(artifact_id=d.discovery_id, type=ArtifactType.DISCOVERY,
                         parents=(d.source_minimum,), payload=d)
-               for d in _relaxations(species, screen)]
+               for d in _relaxations(species, screen, final, rt.load_xyz)]
         recorder = _Recorder(rt, known)
         for unit, result in zip(units, rt.thread_map(attempt, units), strict=True):
             out += recorder.record(unit, result)

@@ -352,23 +352,22 @@ def test_a_failed_shortcut_seed_goes_on_to_the_screen_path_once(tmp_path) -> Non
     assert decide(ctx.case, state, ctx.rules) == EXHAUSTED
 
 
-def test_a_collapsed_saddle_or_a_failed_soft_ts_is_validated_once(tmp_path) -> None:
-    """U6-P6: VALIDATE_INTERMEDIATE consumes its trigger, so row 11 fires only for a new saddle
-    (also after an earlier well was an endpoint)."""
+@pytest.mark.parametrize("screen,seeds,action", [
+    (True, 0, Action.SCREEN), (False, 0, Action.FIND_PATH), (False, 1, Action.REFINE_SADDLE)])
+def test_a_saddle_without_an_imaginary_mode_is_a_failed_attempt(tmp_path, screen, seeds, action):
+    """G3-P1: a saddle search that converged onto a minimum (the reactant) is rejected like any
+    other saddle: no well is relaxed from it, and SCREEN, a string or the next seed goes on."""
     ctx, state = case_ctx(tmp_path, fakes.double_well())
-    state = replace(act(ctx, state, Action.FIND_PATH), seeds=(), saddle_attempts=1)
-    ctx.work.saddle = ctx.rt.qm.energy(ctx.mol(ctx.ends[0]), DFT)  # fell into the reactant
-    soft = R.SaddleClaim(saddle_calc="s", freq_calc="f", imag_cm1=-30.0, energy_hartree=0.0)
-    collapsed = Decision(Action.VALIDATE_INTERMEDIATE, "saddle_collapsed")
-    for trigger in ({"ts_check": "collapsed"},
-                    {"ts_check": "ok", "claim": soft, "connection": "failed",
-                     "connection_attempts": 2}):
-        s = replace(state, last_saddle="converged", intermediate="same_as_endpoint", **trigger)
-        assert decide(ctx.case, s, ctx.rules) == collapsed
-        s = act(ctx, s, Action.VALIDATE_INTERMEDIATE, "saddle_collapsed")
-        assert (s.intermediate, s.ts_check, s.last_saddle, s.claim, s.connection) == (
-            "same_as_endpoint", None, None, None, None)
-        assert decide(ctx.case, s, ctx.rules) == Decision(Action.FIND_PATH, "next_chunk")
+    ctx.rules, ctx.log = CaseRules(screen=screen), (logged := []).append
+    ctx.work.saddle = ctx.rt.qm.optimize(ctx.mol(ctx.ends[0]), DFT)
+    seed = Seed(ctx.work.saddle.final, "path_hei")
+    state = replace(state, seeds=(seed,) * seeds, saddle_attempts=1, last_saddle="converged")
+    jobs = len(ctx.rt.qm.calls)
+    state = act(ctx, state, Action.VALIDATE_TS)
+    assert logged == [{"note": "ts_rejected:no_imaginary_mode"}]
+    assert ctx.rt.qm.calls[jobs:] == ["frequencies"] and state.claim is None
+    assert (state.last_saddle, state.ts_check, state.saddle_attempts) == ("failed", None, 1)
+    assert decide(ctx.case, state, ctx.rules).action is action
 
 
 def test_reaction_direction_is_a_ts_mode_rho_or_a_coordinate(tmp_path):

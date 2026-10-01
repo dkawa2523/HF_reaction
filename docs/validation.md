@@ -162,13 +162,13 @@ QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ
 
 ## 9. 残る課題
 
-1. **実計算で通っていない分岐**: 行 1・11・16、2 回目の SCREEN、ケースの例外の閉じ込め、DFT の soft_minimum。行 6 の中点による高密度化は対称な経路でしか通っておらず、隠れた障壁を見つけた例はない。
+1. **実計算で通っていない分岐**: 行 1、2 回目の SCREEN、ケースの例外の閉じ込め、DFT の soft_minimum。行 6 の中点による高密度化は対称な経路でしか通っておらず、隠れた障壁を見つけた例はない。round 7 で未到達だった行 11 は M5 で削除した(§15)。行 16(今の行 15、`next_chunk`)は M4 の S5 split2 で通った(SCREEN の SP が未収束で種がなく、string の種を χ で拒否した後)。
 2. **既定の順位の精度**: PBE0/SVPD は CCSD(T) から最大 3 kcal/mol ずれ(SN2 −3.0、HONO +2.0)、H 引き抜きは分離基準の ΔE‡ 0.79 と文献 約 5 を大きく下回る。反応クラスが混ざる順位は method_panel を追記して読む。
 3. **開殻の会合**: S5 の UKS CH3···O2 は ⟨S²⟩ 1.71 で、障壁なしかどうかを判定できない。多参照かスピン射影の扱いが要る。
-4. **失われた seed の費用**: S19 の seed は DFT の 1 歩目で状態を離れたのに、既知の basin に入るまで 44 歩(約 33 分)払った。
+4. **失われた seed の費用**: S19 の seed は DFT の 1 歩目で状態を離れたのに、既知の basin に入るまで 44 歩(約 33 分)払った。M6 で、この seed のラベルの違いはしきい値の帯の中(0.006 Å)なので、失われた状態にしなくなった(§16)。本物の R6 の seed の opt(Hessian なし)の費用は残る(G4-P2、should)。
 5. **鞍点探索の空回り**: 柔らかい H 引き抜き・ラジカル会合では string の前に saddle が maxiter で 2 回止まる(S5 で saddle 826 s)。
 6. **対称な鞍点の mode-follow**: ± の側は厳密な像なのに 2 本とも opt と freq を払う(S6 で 329 s、NH3 は 21 歩/側)。
-7. **近直線の錯体の熱化学**: S18 の H···H2 は、軸から 0.006 Å 外れた極小が非直線(振動 3 本、δG_eff 4.091)、正確に直線の極小が直線(4 本、6.360)と扱われる(`vibrations._EXTERNAL_RANK_TOL` = 1e-3、`/home/user/hfauto_r7/W2/superseded_k1neg/s18_h3_doublet`)。直線性を対称性で決める必要がある。
+7. **近直線の錯体の熱化学**: S18 の H···H2 は、軸から 0.006 Å 外れた極小が非直線(振動 3 本、δG_eff 4.091)、正確に直線の極小が直線(4 本、6.360)と扱われる(`vibrations._EXTERNAL_RANK_TOL` = 1e-3、`/home/user/hfauto_r7/W2/superseded_k1neg/s18_h3_doublet`)。直線性を対称性で決める必要がある。M7 で、点群 1 つから直線性を決めるようにした。2 つの run の差は 2.27 から 0.006 kcal/mol になった(§17)。
 8. **分割の深さ**: W3 の S6 の CH3OH + H 側は、ほぼ縮退した緩い錯体(ΔE_rxn ≤ 0.11)の分割で `max_split_depth` に達し、順位が付かない(VAL7 ではその 2 つの極小が 1 つの basin にまとまった)。M1 で偽の結合変化が、M2 で同じ状態の分割がなくなった(W3_s6 の再生、§11.3、§12.3)。
 9. **平らな PES の引き抜きの TS の再現性**: S6 の OH···CH4 → CH3···H2O は W3 だけが −481.1i の TS に届き、VAL7・W5 は OH···CH4 の向きを変える鞍点(−73.0i、−58.6i、両側が同じ basin)に収束して試行を使い切った。虚モードが仮説の結合変化を担わない鞍点を QRC の前に見分け、結合変化の方向に拘束して探す必要がある(その鞍点の QRC は 2 振幅 × 2 本)。
 10. **NWChem の AUTOZ の失敗**: VAL7/s10 の QRC の側の opt が 21 歩目で内部座標の再構築に失敗し、続きからの 2 回目の試行で収束した(+53 s)。VAL7 で 2 回目の試行はこの 1 件。
@@ -495,3 +495,94 @@ CUR のうち paths を持つ 33 本の 41 case について、記録と case �
 - W3_s6 の再生では、790468f505 が retry のあとも二次の鞍点(ν2 −54.8i)で、未解決になった。7 つの文脈のうち 6 つで解けた。
 - 回転子の曲率がノイズの水準の TS(ν2 −15.9〜−47.2i)を一次と数えているのはゲートの定義による。停留性の判定は G5(should)。
 - S5 の O–O 開裂の TS は今回も見つからなかった。拒否された鞍点の χ(0.281)は 0.3 に近づいている。
+
+## 15. M5 行 11 の削除(X5 / G3-P1)
+
+分析の §2.3 G3-P1、§3 X3-4 と X5、§4.1 M5 にあたる。規則は [design.md](design.md) §3 の `is_first_order_saddle` と §6.2 の決定表。
+
+### 15.1 変えたこと
+
+- 行 11(崩壊した saddle と、QRC が失敗した柔らかい TS を VALIDATE_INTERMEDIATE にかける `saddle_collapsed`)、`_soft_ts_failed`、`ts_check` の `collapsed` を削除した。決定表は 16 行になり、旧行 12〜17 は 11〜16 になった。§4 などの前の節の行番号は、当時の番号のままである。
+- 虚モードのない点(`ts_rejected:no_imaginary_mode`)は、ほかの拒否と同じく失敗した試行になる。試行には数えたままで、QRC はしない。
+- 柔らかい TS(最低モードが −saddle_cm1〜−noise_cm1)は TS として受理する。QRC が失敗したときは、ほかの TS と同じく行 8 で扱う。両側が同じ basin か同じキー(`same_state`)で試行が残っていれば探索を続け、残っていなければ `connection_failed` にする。`same_state` は振幅を広げない(M2 のまま)。
+- VALIDATE_INTERMEDIATE は、プロファイルの井戸(行 12、`path_intermediate`)だけを扱う。中間体を出すのは、行 12 と QRC の側(GEN-05)だけである。
+- ゲートのしきい値(noise_cm1、saddle_cm1)は変えていない。
+
+### 15.2 到達性と検証
+
+- 消した分岐は、実計算では一度も発火していない。分析では r5〜r7 のすべての log で `ts_rejected:no_imaginary_mode` が 0 件、検証済みの TS で \|ν\| < 50 cm⁻¹ のものも 0 件だった。CUR(M4 の 51 case の log と 34 の SaddleClaim)でも、`saddle_collapsed` と `no_imaginary_mode` はともに 0 件、ν1 > −50 cm⁻¹ の SaddleClaim も 0 件だった(`/home/user/hfauto_r9/M5/audit/row11_reach.sh`)。したがって、VAL7 の記録は変わらないはずである。
+- 単体テスト: 虚モードのない saddle は QRC も緩和もせず、SCREEN(行 11)、FIND_PATH(行 14)、次の種(行 13)に進む。柔らかい TS は、硬い TS と同じ行 8 の判断になる(`test_reaction_case_actions.py`、`test_reaction_case_decide.py`)。中間体の原子の対応の試験は、崩壊した saddle の代わりにプロファイルの井戸で行う(`test_reaction_case_connection.py`)。
+- 再生(`tools/replay.py M5M7 --src CUR`、36 本を最初の stage から、壁時計 4.5 分、`/home/user/hfauto_r9/M5M7/replay/`): 全 run で misses 0(hits 956)。paths の記録の差は、削除した `chiral` 欄(§17.4)のほかに 0 件で、case log の理由と行動の列も W3_s6、W5_s6、s6_oh_ch4、s5_ch3_o2、oxalic_two_step で CUR と同一だった。GEN-05(`end*_to_new_basin`)は W3_s6(3 件)、oxalic(1)、s5_ch3_o2(1)、s6_oh_ch4 と W5_s6(各 1)で前と同じく発火し、行 12(`path_intermediate`)は s5_ch3_o2 の 1 件で発火した。W3_s6 の f9bc の split2 での行 12 は M4 の再生ですでに消えていて(CUR でも 0 件)、この波の差ではない。
+
+## 16. M6 失われた状態の分解能(X3-1 / G4-P1)
+
+分析の §2.4 G4-P1、§3 X3-1、§4.1 M6 にあたる。規則は [design.md](design.md) §7.1 の explore と「結合と状態」。
+
+### 16.1 変えたこと
+
+- `topology.resolved_bond_changes(symbols, x, y)` を足した。r − r_thr が一方の構造で ≥ +0.1 Å、他方で ≤ −0.1 Å の対だけを、形成と切断に分けて返す。`RESOLVED_A` = 0.1 Å はモジュール定数で、根拠は S19 の N···H の GFN2 と PBE0 の差(0.15 Å)である。
+- explore の R6(`_relaxations`)は、ラベルが screen 極小に残らない seed のうち、seed と落ちた basin の構造(`identity.basin_coords` で seed の添字に並べたもの)の間に resolved な変化が 1 つでもあるものだけを、失われた状態とする。すべての変化が resolved であることは求めない。
+- `bond_changes` と状態ラベルは変えていない(帯を広く使う G8-P5 は could)。
+
+### 16.2 QM なしの確認(CUR の explore の入力に、作業ツリーの `_relaxations` をかけた。`/home/user/hfauto_r9/M6/audit/r6_lost.py`)
+
+| run | seed → 落ちた basin | ラベルの違う結合 | r − r_thr(seed / basin、Å) | 判定 |
+|---|---|---|---|---|
+| s19_tma_hf2 | c01、c02(C3H9N+FH+FH)→ neutral(C3H10FN+FH) | N1–H13 | c01 +0.006 / −0.006、c02 +0.043 / −0.006 | 帯の中。`relax_tma_hf2_c01` は作られない |
+| s5_ch3_o2 | p00(CH3+O2)→ CH3O2 | C0–O5 | +2.096 / −0.409 | 残る |
+| s6_oh_ch4、W3_s6、W5_s6 | p02、p05(CH4+HO)→ CH3+H2O | H2–O5 と C0–H2(p05 は H4 で同じ形) | +2.004 / −0.350、−0.376 / +0.104 | 残る(代表は p02) |
+
+- s5_undeclared、s7、s8、s10 には失われた状態がない(変わらない)。
+- 見かけの合格でないこと: S6 の seed を残しているのは H2–O5 の変化(帯の端から 0.25 Å 以上)である。帯のすぐ外の C0–H2(+0.104)だけで残っているのではない。δ は分析の値のままで、run を見て調整していない。
+
+### 16.3 S19 の再生
+
+- 期待される差は次のとおり。explore の `relax_tma_hf2_c01` と、dft の species `spc_relax_tma_hf2_c01` がなくなり、`min_neutral_ff60c312` の members から seed が外れる。DFT の seed の opt 1 本が走らなくなる(VAL7 では 45 歩、2,351.6 s × 4 rank = 9,406 core 秒で、既知の basin に落ちて freq なし)。dft の hits は 8 から 7 になる。宣言反応(same_basin)と ΔG_assoc(−11.53)は変わらない。S5 と S6 の R6 の仮説は残る。
+- 結果(同じ再生): s19 の差は期待どおりの 3 件だけである。explore の `relax_tma_hf2_c01` と dft の `species_spc_relax_tma_hf2_c01` がなくなり、`min_neutral_ff60c312` の members から seed が外れた。dft の hits は 8 から 7 になり、misses は 0。CUR でもこの seed は既知の basin に落ちて仮説を作っていなかったので、paths の反応の集合、ΔE‡ と ΔE_rxn は変わらない(ΔG_assoc −11.53 は 1e-9 kcal/mol 内)。s5_ch3_o2 の `relax_ch3_o2_p00`、s6_oh_ch4・W3_s6・W5_s6 の `relax_oh_ch4_p02` は残り、それらの記録とジョブは CUR と同一(misses 0)。
+
+## 17. M7 対称性の判定を 1 つに(X3-2 / G5-P3)
+
+分析の §2.5 G5-P3、§3 X3-2、§4.1 M7 にあたる。規則は [design.md](design.md) §7.1 の thermo と「対称性」。
+
+### 17.1 変えたこと
+
+- `chemistry/symmetry.py` の `analyze(symbols, coords, hessian)` を足した。thermo は、σ、m、直線性、振動と慣性モーメントを評価する構造を、すべてここから取る。
+- 削除したもの: `thermo.symmetry_number`(libmsym の equivalence 2e-3。例外なら σ = 1)、熱化学での `identity.is_chiral` の利用、`MinimumRecord.chiral`、回転定数の床による直線の判定。以前は 4 つの検出器(外部自由度の階数、回転定数の床、libmsym、is_chiral)が別々のしきい値で判定していた。S18 の H···H2 では、libmsym が C∞v、前の 2 つが非直線と食い違っていた。
+- `_EXTERNAL_RANK_TOL` は、点群のない場面(エンジンが自分の freq を解析するとき、試行の方向、整えた Hessian)だけに残した。
+- 受理の基準は identity の basin の基準(5e-5 Eh、0.05 Å)のままで、系ごとの ε はない。分析が退けた受理のしきい値 1e-6 Eh は使っていない(acac のエノールは Cs、m = 1)。
+- libmsym の緩い 2 つの設定は、7 つのしきい値をすべて同じ値にする。zero と orthogonalization を既定のまま残した途中の版では、1e-3 Å の揺らぎで 12 subject の点群が部分群か C1 に落ちた(NH3 と SN2 の D3h の TS、シュウ酸の C2h、CH3 の D3h、H3 の D∞h の TS など)。libmsym が 3 つの設定すべてで部分群を返すか、`no primary axis for reorientation` で例外になったためである。
+
+### 17.2 symcheck(QM なし、`/home/user/hfauto_r9/tools/symcheck.py`、CUR の 110 subject。出力は `/home/user/hfauto_r9/M7/symcheck_cur.txt`)
+
+- (a) 揺らぎ: 原子あたり RMS 1e-3 Å の正規乱数を 20 回加えても、110 subject すべてで(点群、σ、直線、m)が変わらない。
+- (b) 既知の点群: NH3 C3v(σ 3)、H2O2 gauche C2(m 2)、HCN と HNC C∞v、H···H2 C∞v、TMA C3v、acac のエノール Cs(m 1)の 6 つとも一致した。VAL7 の run(`symcheck_val7.txt`、92 subject)でも (a)(b) は同じく通る。
+- 旧検出器からの点群の移り(`/home/user/hfauto_r9/M7/thermo/groupmoves.txt`。run と subject の組で 109 件)
+  - libmsym が例外を出して σ = 1 だった 37 件は、C1 12 件、Cs 21 件、C3v 4 件になった。σ・m・直線性が変わったのは C3v の 4 件だけである。C1 の 12 件は、旧 `is_chiral` でもキラル(m = 2)だった。
+  - C3 と判定されていた 2 件は C3v になった。σ は 3 のままで、m も 1 のまま(旧 `MinimumRecord.chiral` は False)である。C3 のままなら m = 2 になるはずで、判定が食い違っていた。
+  - σ・m・直線性が変わった subject は、合わせて 6 件である(下の表の原因)。ほかは、点群も 3 つの量も変わらない。
+
+### 17.3 δG_eff の変化(QM なし)
+
+作業ツリーの thermo stage を、CUR の各 thermo stage の入力 view にかけ直した(ジョブなし、run には何も書かない。`/home/user/hfauto_r9/M7/thermo/thermo_recompute.py`、出力は同じ場所の `thermo_cur.txt`)。値は kcal/mol で、ここに挙げたもの以外の δG_eff は 1e-4 kcal/mol 以内で変わらない。
+
+| run | 反応 | δG_eff(CUR → M7) | 原因の subject と点群 |
+|---|---|---|---|
+| s18_h3_doublet | h_exchange | 4.0911 → 6.3656 | 極小 H···H2(軸から 0.006 Å): C∞v なのに非直線(振動 3 本)として扱っていた → 直線(4 本)。G −2.27 |
+| s17_hf_dimer_swap | hf_dimer_swap | 0.9848 → 1.3954 | TS: Cs(σ 1)→ C2h(σ 2)。G +0.41 |
+| s6_oh_ch4、W5_s6 | 790468f505(OH + CH4 → CH3 + H2O) | 1.4993 → 0.8483、1.5041 → 0.8531 | 反応物の CH4···HO 錯体(OH の H が CH4 の面を向く): libmsym の例外で σ 1 → C3v(σ 3)。G +0.651 = RT ln 3。ΔG_assoc も +0.651 |
+| s6_oh_ch4、W5_s6 | f9bc3a1cd8_split2 | 41.2498 → 40.5987 | 同じ錯体が反応物 |
+| W3_s6 | 460166732f_split2 | 41.2498 → 40.5987 | 同じ錯体(W3_s6 では C3v の basin が 2 つ) |
+| W3_s6 | f9bc3a1cd8 | 48.48002 → 48.48015 | TS: 例外(σ 1)→ Cs。σ と m は同じで、対称化した構造で振動を評価した差(G +2.1e-7 Eh) |
+
+- δG_eff を持たない量の変化: W3_s6 の 790468f505(未解決)の ΔG_rxn −0.651 と ΔG_assoc +0.651、460166732f_split1 の ΔG_rxn +0.651(生成物が同じ錯体)。
+- ほかの species の G の変化は、対称化した構造で振動を評価した分だけで、最大 2.1e-7 Eh である。
+- S17 は M4 で生じた差を戻すものである。VAL7 と M3 の TS は旧検出器でも C2h(1.3919)だったが、M4 の再生で saddle を取り直した TS(\|ΔE\| 5.7e-7 Eh)を、libmsym の 2e-3 が Cs と判定していた。§14.4 ではこの δG_eff の変化を記録していなかった。M7 では、どちらの TS も C2h になる。
+- S18 の一致(検証 (c)): 正確に直線の極小を持つ `/home/user/hfauto_r7/W2/superseded_k1neg/s18_h3_doublet` は、M7 でも 6.3596(変化 1e-4 未満、`thermo_w2_s18.txt`)である。CUR(VAL7 の run)の 6.3656 との差は、M7 の前の 2.27 から 0.006 になった。
+- 見かけの合格でないこと: S18 だけを見ていない(全 subject の揺らぎ、既知の点群、全反応の δG_eff の変化)。受理の基準は系ごとに変えていない。
+
+### 17.4 再生
+
+- `MinimumRecord.chiral` を削除したので、再生ではすべての minimum の記録にこの欄の差が出る(結論の値ではない)。r9-M7 より前の run は、途中の stage からは再開できない([design.md](design.md) §8)。
+- 結果(`/home/user/hfauto_r9/M5M7/replay/`、分類は `/home/user/hfauto_r9/M5M7/audit/classify.py`、出力 `classify.txt`): 36 本すべてで misses 0。差 732 件はすべて次のどれかで、説明のつかない差は 0 件である。(1) `chiral` 欄の削除 108 件。(2) §17.3 の表に挙げた変化 33 件。17.3 の再計算の値と 1e-9 の相対誤差で一致し、表のすべての変化が再生でも起きた(S18 6.3656、S17 1.3954、S6 0.8483 / 0.8531、split2 40.5987 など)。同じ記録の H・ZPE・帯の変化が 53 件。(3) 対称化した構造で振動を評価した分の差 352 件(1e-4 kcal/mol 以内か、species で 2.1e-7 Eh 以内。最大は S6 の Cs の TS の H と ZPE の 1.2e-7 Eh)。(4) report の行と表の sha256 が thermo の差を写したもの 183 件。(5) §16.3 の S19 の 3 件。thermo と report のほかの stage(structures〜paths)の差は (1) と (5) だけである。
+- S18 の検証 (c): W2 の run(`superseded_k1neg`)の写しを最初の stage から再生すると、今のジョブ鍵では極小の opt をやり直すことになり(新しいジョブ 16 本、97 core 秒)、VAL7 と同じく軸から外れた極小(H の軸からの距離 0.0097 Å)に収束した。そのため 2 つの再生の δG_eff は 6.365608 と 6.365609 で一致するが、これは構造の違いを試していない。正確に直線の W2 の構造そのものに作業ツリーの thermo をかけると 6.3596 のまま(`/home/user/hfauto_r9/M5M7/audit/thermo_w2_s18.json`、変化なし)で、CUR の再生の 6.3656 との差は 0.006 kcal/mol(M7 の前は 2.27)である。
+- symcheck を再生した 36 本にかけ直した(`/home/user/hfauto_r9/M5M7/audit/symcheck.txt`): (a) 110/110 が不変、(b) 6 つの既知の点群がすべて一致。

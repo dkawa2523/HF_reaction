@@ -151,7 +151,7 @@ def test_registry_known_new_joined_and_init_hessian(tmp_run) -> None:
     far = replace(a, opt=a.opt.model_copy(update={"energy_hartree": energy + 6e-5}))
     assert add(registry, far, "d").basin_id not in (ra.basin_id, rb.basin_id)
     rebuilt = Registry([(rb, b.opt.final)], load)  # (record, geometry)
-    assert rebuilt.find(b.opt) == rb.basin_id and not rb.chiral
+    assert rebuilt.find(b.opt) == rb.basin_id
 
 
 def test_mirror_images_share_one_chiral_basin_of_one_spin_state(tmp_run) -> None:
@@ -160,6 +160,6 @@ def test_mirror_images_share_one_chiral_basin_of_one_spin_state(tmp_run) -> None
     qm, registry = fakes.FakeQM(tmp_run, pes), Registry([], fakes.xyz_loader(tmp_run))
     r = add(registry, relax(tmp_run, pes, "r", qm), "r")
     s = relax_to_minimum(pes.molecule("s"), M, qm, known=registry)
-    assert r.chiral and s.status == "known" and s.known_basin == r.basin_id
+    assert s.status == "known" and s.known_basin == r.basin_id
     triplet = relax_to_minimum(pes.molecule("s", multiplicity=3), M, qm, known=registry)
     assert triplet.status == "minimum"  # never known in the singlet basin (U3-I4)

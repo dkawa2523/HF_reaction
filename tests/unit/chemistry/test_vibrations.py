@@ -40,13 +40,26 @@ def test_projection_removes_rotational_contamination():
 
 
 @pytest.mark.parametrize(("angle", "k"), [(180.0, 5), (179.99, 5), (179.0, 6)])
-def test_linearity_from_svd_rank(angle, k):
+def test_linearity_from_svd_rank(angle, k):  # without a point group: engines, trials
     assert vib.external_basis(["C", "N", "H"], _hcn(angle)).shape[1] == k
 
 
+@pytest.mark.parametrize(("angle", "linear"), [(179.99, False), (179.0, True), (180.0, True)])
+def test_a_point_groups_linearity_sets_the_external_count(angle, linear):
+    """G5-2: with ``linear`` given, k is 5 or 6 by definition, whatever the numerical rank."""
+    x = _hcn(angle)
+    h = np.diag(np.linspace(0.1, 0.9, 9))
+    freqs, modes, k = vib.projected_frequencies(h, ["C", "N", "H"], x, linear=linear)
+    assert k == (5 if linear else 6) and len(freqs) == len(modes) == 9 - k
+    assert vib.projected_frequencies(np.zeros((3, 3)), ["Ar"], np.zeros((1, 3)), linear=False
+                                     )[2] == 3  # an atom: no mode
+
+
 def test_rotational_constants_of_linear_hcn():
-    a, b, c = vib.rotational_constants_ghz(["C", "N", "H"], _hcn(180.0))
+    a, b, c = vib.rotational_constants_ghz(["C", "N", "H"], _hcn(180.0), linear=True)
     assert a == 0.0 and b == pytest.approx(c) and b == pytest.approx(44.5, abs=0.2)
+    bent = vib.rotational_constants_ghz(["C", "N", "H"], _hcn(170.0), linear=False)
+    assert bent[0] > 1000.0 and bent[1] > bent[2] > 0.0
 
 
 def _four_atoms() -> tuple[np.ndarray, np.ndarray, np.ndarray]:

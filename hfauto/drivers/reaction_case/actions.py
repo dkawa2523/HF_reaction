@@ -271,7 +271,9 @@ def _reaction_mode(ctx: Ctx, freq: Evidence, x: np.ndarray) -> Gate:
 
 def validate_ts(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """Separate DFT freq on the saddle → is_first_order_saddle, reaction_mode_character (a
-    rejected saddle stays a counted attempt and gets no QRC) and spin_ok."""
+    rejected saddle, one without an imaginary mode included, stays a counted attempt and gets no
+    QRC) and spin_ok. A stationary point with -saddle_cm1 < ν < -noise_cm1 is accepted as a TS:
+    χ and QRC decide whether it is a TS of this case."""
     rt, saddle, gates = ctx.rt, ctx.work.saddle, ctx.rules.gates
     if saddle is None:
         return replace(state, last_saddle="failed")
@@ -295,6 +297,4 @@ def validate_ts(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     if "higher_order" in gate.reasons:
         seed = _pushed(ctx, freq, x, f"retry{state.saddle_attempts}")
         return replace(state, last_saddle="failed", seeds=(seed, *state.seeds))
-    if "no_imaginary_mode" in gate.reasons:
-        return replace(state, ts_check="collapsed")
     return replace(state, last_saddle="failed")

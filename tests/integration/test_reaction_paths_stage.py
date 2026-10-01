@@ -168,7 +168,10 @@ def test_split_children_run_on_the_rest_of_their_hypothesis_walltime(tmp_run,
     assert [(c.outcome, c.reasons) for c in children] == [(O.UNRESOLVED, ("walltime",))] * 2
 
 
-def test_collapsed_saddle_is_validated_as_an_intermediate(tmp_run, fake_runtime) -> None:
+def test_a_saddle_search_that_falls_into_a_well_goes_on_to_the_screen_path(tmp_run,
+                                                                          fake_runtime) -> None:
+    """G3-P1: a saddle without an imaginary mode is a failed attempt like any rejected saddle;
+    the intermediate comes from the screen profile's well (row 12), not from the saddle."""
     pes = fakes.triple_well()
     view, source = dft_view(tmp_run, pes)
     ts = fakes.write_geometry(tmp_run, "ts1.xyz", pes.symbols, pes.points["ts1"])
@@ -178,7 +181,9 @@ def test_collapsed_saddle_is_validated_as_an_intermediate(tmp_run, fake_runtime)
     reactions, _, _ = run_stage(fake_runtime, tmp_run, pes, view,  # seeded by the shortcut
                                 saddle=CollapsingSaddle(tmp_run, pes), max_split_depth=0)
     assert reactions["rx"].outcome is O.MULTI_STEP and "rx_split1" not in reactions
-    assert '"saddle_collapsed"' in (tmp_run / "stage" / reactions["rx"].log).read_text()
+    log = (tmp_run / "stage" / reactions["rx"].log).read_text()
+    assert '"ts_rejected:no_imaginary_mode"' in log and '"reason": "path_intermediate"' in log
+    assert '"saddle_collapsed"' not in log
 
 
 def test_a_ts_joining_an_endpoint_to_a_new_basin_splits_and_its_child_replays_it(

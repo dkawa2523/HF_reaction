@@ -1,6 +1,6 @@
-"""Thermochemistry (design §8.2 thermo): GoodVibes in this process, the frequencies it gets,
-the optical isomer term, standard states, association, reaction deltas and the ranking
-quantity dG_eff.
+"""Thermochemistry (design §8.2 thermo): GoodVibes in this process, the modes it gets at the
+point group's structure (chemistry.symmetry), the optical isomer term, standard states,
+association, reaction deltas and the ranking quantity dG_eff.
 
 Energies are in Hartree unless a name ends in ``_kcal``; free energies of single species are
 gas-phase 1 atm values (GoodVibes' default reference) and are moved to other standard states
@@ -13,9 +13,12 @@ import math
 from collections.abc import Iterable, Mapping, Sequence
 from typing import NamedTuple
 
+import numpy as np
+
 from hfauto.chemistry.elements import atomic_number, mass
-from hfauto.chemistry.vibrations import rotational_constants_ghz
-from hfauto.chemistry.xyz import XYZ, hill_formula
+from hfauto.chemistry.symmetry import Symmetry
+from hfauto.chemistry.vibrations import projected_frequencies, rotational_constants_ghz
+from hfauto.chemistry.xyz import hill_formula
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
 from hfauto.core.hashing import fingerprint_dict
 from hfauto.core.method import ThermoSettings
@@ -35,30 +38,6 @@ GOODVIBES_VERSION = "4.3.0"  # species_thermo is validated against it (tests/gol
 _K_PER_GHZ = 0.0479924307  # h / k_B in K per GHz (CODATA 2018)
 _L_ATM_PER_MOL_K = 0.082057366080960  # gas constant in L atm / (mol K), CODATA 2018
 _ATM_PER_BAR = 1.0 / 1.01325
-# libmsym's relative equivalence threshold. Its default 5e-4 split the C3v I-...CH3I complex into
-# Cs when an optimisation left the I- 0.03 deg off the axis (sigma 3 -> 1, dG 0.65 kcal/mol run to
-# run); 2e-3 gives the same point group as the default for every other validation structure.
-_SYMMETRY_EQUIVALENCE = 2.0e-3
-
-
-def symmetry_number(symbols: Sequence[str], coords: Sequence[Sequence[float]]) -> int:
-    """External rotational symmetry number of the point group libmsym finds (pymsym, the
-    detector GoodVibes uses) with ``_SYMMETRY_EQUIVALENCE``; 1 for an atom or when libmsym finds
-    no consistent group (pymsym returns C1 then as well)."""
-    import pymsym
-    from pymsym.high_level import SYMMNO_BY_POINT_GROUP
-
-    if len(symbols) == 1:
-        return 1
-    elements = [pymsym.Element(name=s, coordinates=[float(v) for v in c])
-                for s, c in zip(symbols, coords, strict=True)]
-    try:
-        with pymsym.Context(elements=elements) as ctx:
-            ctx.set_thresholds(equivalence=_SYMMETRY_EQUIVALENCE)
-            group = ctx.find_symmetry()
-    except Exception:  # libmsym raises when no group fits
-        return 1
-    return SYMMNO_BY_POINT_GROUP[{"D0h": "Dinfh", "C0v": "Cinfv"}.get(group, group)]
 
 
 def thermo_frequencies(freqs_cm1: Sequence[float], *, saddle: bool) -> tuple[float, ...]:
@@ -66,6 +45,14 @@ def thermo_frequencies(freqs_cm1: Sequence[float], *, saddle: bool) -> tuple[flo
     drops its lowest mode (the reaction coordinate) and keeps the others as |nu|."""
     modes = sorted(freqs_cm1)[1:] if saddle else freqs_cm1
     return tuple(sorted(abs(nu) for nu in modes))
+
+
+def thermal_modes(symbols: Sequence[str], sym: Symmetry, hessian: np.ndarray, *, saddle: bool
+                  ) -> tuple[float, ...]:
+    """thermo_frequencies of the freq Hessian projected at the symmetrized structure with the
+    point group's external count: 3N - 5 modes if linear, else 3N - 6 (an atom: none)."""
+    freqs, _, _ = projected_frequencies(hessian, symbols, sym.coords, linear=sym.linear)
+    return thermo_frequencies(freqs.tolist(), saddle=saddle)
 
 
 class Thermal(NamedTuple):
@@ -76,31 +63,30 @@ class Thermal(NamedTuple):
     zpe: float
 
 
-def species_thermo(xyz: XYZ, frequencies_cm1: Sequence[float], *, saddle: bool,
+def species_thermo(symbols: Sequence[str], sym: Symmetry, modes_cm1: Sequence[float], *,
                    multiplicity: int, settings: ThermoSettings, T: float) -> Thermal:
     """GoodVibes (``compute_thermo``) in this process for an ideal gas at 1 atm: QH=False (H is
     RRHO), the vibrational entropy of ``settings.qs`` with ``settings.cutoff_cm1``, vib_scale
-    on the modes and the ZPE, sigma from ``symmetry_number`` and S_el = R ln(2S+1).
+    on the modes and the ZPE, sigma and linearity of the point group and S_el = R ln(2S+1).
 
-    The modes are ``thermo_frequencies``; the mass and the rotational temperatures come from
-    the geometry, and a vanishing moment of inertia marks a linear molecule. calc_bbe reads
-    ``zero_point_corr`` only as a gate (None: nothing computed) and as the monatomic test
-    (== 0.0), and computes nothing from an empty rotemp, so an atom gets 0.0 and a dummy [0.0].
-    ``file`` stays "" (no such path), so calc_bbe never parses a file.
+    The modes are ``thermal_modes``; the rotational temperatures come from the symmetrized
+    structure. calc_bbe reads ``zero_point_corr`` only as a gate (None: nothing computed) and as
+    the monatomic test (== 0.0), and computes nothing from an empty rotemp, so an atom gets 0.0
+    and a dummy [0.0]. ``file`` stays "" (no such path), so calc_bbe never parses a file.
     """
     from goodvibes.api import compute_thermo
     from goodvibes.io import QCData
 
-    symbols = list(xyz.symbols)
-    constants = [b for b in rotational_constants_ghz(symbols, xyz.coords) if b > 0.0]
+    symbols = list(symbols)
+    atom = len(symbols) == 1
+    constants = () if atom else rotational_constants_ghz(symbols, sym.coords, sym.linear)
     qcdata = QCData(
         scf_energy=0.0, multiplicity=multiplicity, atom_types=symbols,
-        atom_nums=[atomic_number(s) for s in symbols], cartesians=xyz.coords.tolist(),
-        frequency_wn=list(thermo_frequencies(frequencies_cm1, saddle=saddle)),
-        linear_mol=len(constants) == 2, molecular_mass=sum(mass(s) for s in symbols),
-        rotemp=[b * _K_PER_GHZ for b in constants] or [0.0],
-        zero_point_corr=0.0 if len(symbols) == 1 else 1.0,
-        symmno=symmetry_number(symbols, xyz.coords.tolist()),
+        atom_nums=[atomic_number(s) for s in symbols], cartesians=sym.coords.tolist(),
+        frequency_wn=list(modes_cm1), linear_mol=sym.linear,
+        molecular_mass=sum(mass(s) for s in symbols),
+        rotemp=[b * _K_PER_GHZ for b in constants if b > 0.0] or [0.0],
+        zero_point_corr=0.0 if atom else 1.0, symmno=sym.sigma,
     )
     r = compute_thermo(qcdata=qcdata, QS=settings.qs, s_freq_cutoff=settings.cutoff_cm1,
                        temperature=T, freq_scale_factor=settings.vib_scale,
@@ -137,8 +123,9 @@ def standard_state_shift(dn: float, T: float, to: StandardState) -> float:
 
 
 def chiral_G(T: float) -> float:
-    """-RT ln 2 (Hartree): the G term of a chiral structure, whose mirror image is the same
-    basin (optical isomer number m = 2; Fernandez-Ramos et al., Theor. Chem. Acc. 118, 813)."""
+    """-RT ln 2 (Hartree): the G term of a chiral structure (Symmetry.m = 2: its point group has
+    no improper operation), whose mirror image is the same basin (Fernandez-Ramos et al.,
+    Theor. Chem. Acc. 118, 813)."""
     if not (math.isfinite(T) and T > 0.0):
         raise ValueError("temperature must be finite and positive")
     return -R_KCAL_MOL_K * T * math.log(2.0) / HARTREE_TO_KCAL_MOL

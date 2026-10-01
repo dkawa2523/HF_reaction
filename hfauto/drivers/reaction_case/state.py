@@ -1,9 +1,11 @@
 """Reaction-case state and the pure decision table (design §7.3).
 
-``decide`` evaluates the 17 rows of ``ROWS`` from the top and returns the first decision.  The
+``decide`` evaluates the 16 rows of ``ROWS`` from the top and returns the first decision.  The
 driver accumulates ``CaseState`` in memory; actions only change the state, never the table.
 Rows 4-6 complete a case from evidence already in hand and so come before the walltime (row 7);
-every row after it starts a computation or gives up.
+every row after it starts a computation or gives up. A saddle without an imaginary mode is a
+failed attempt like any rejected saddle: an intermediate comes only from a profile's well
+(row 12) or a QRC side (GEN-05).
 """
 
 from __future__ import annotations
@@ -83,8 +85,8 @@ class CaseState:
     ``minima`` (not in the §7.3 listing) holds the registry records of ``case.minima``, None when
     an endpoint has none: rows 1-3 need their tier, level, basin and energy, which a
     ReactionRecord does not carry. ``screen`` is the verdict of the latest DFT profile (SCREEN
-    or string), which decides rows 6, 13 and 16 and goes into the record. ``neb_done``: the
-    low-level path of SCREEN ran (after a shortcut, row 12 runs it once its seed has failed).
+    or string), which decides rows 6, 12 and 15 and goes into the record. ``neb_done``: the
+    low-level path of SCREEN ran (after a shortcut, row 11 runs it once its seed has failed).
     """
 
     minima: tuple[MinimumRecord | None, MinimumRecord | None] = (None, None)
@@ -94,7 +96,7 @@ class CaseState:
     seeds: tuple[Seed, ...] = ()  # unused seeds, consumed from the front
     saddle_attempts: int = 0
     last_saddle: Literal["converged", "failed"] | None = None
-    ts_check: Literal["ok", "collapsed"] | None = None
+    ts_check: Literal["ok"] | None = None
     claim: SaddleClaim | None = None
     # a rejected QRC: sides in one basin (retried wider) or in one case key but two basins
     connection: ConnectionLabel | Literal["same_basin", "same_state"] | None = None
@@ -172,21 +174,13 @@ def _r07_walltime(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision 
     return _complete(CaseOutcome.UNRESOLVED, "walltime") if s.expired else None
 
 
-def _soft_ts_failed(s: CaseState, p: CaseRules) -> bool:
-    """A TS softer than saddle_cm1 whose QRC failed counts as a collapsed saddle (row 11)."""
-    return (s.connection in ("failed", "same_basin") and s.claim is not None
-            and s.claim.imag_cm1 > -p.gates.saddle_cm1)
-
-
 def _r08_connection(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     if s.connection is None:
         return None
     if s.connection == "same_basin" and s.connection_attempts < QRC_AMPLITUDES:
         return Decision(Action.CONNECT, "connection_retry")  # a wider displacement
-    if _soft_ts_failed(s, p):
-        return None  # validated as a collapsed saddle (row 11)
     if s.connection in ("same_basin", "same_state") and _attempts_left(s, p):
-        return None  # a saddle of another process (sides in one basin or key): search on (12-17)
+        return None  # a saddle of another process (sides in one basin or key): search on (11-16)
     return _complete(CaseOutcome.UNRESOLVED, "connection_failed")
 
 
@@ -201,20 +195,13 @@ def _r10_saddle(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | 
     return None
 
 
-def _r11_collapsed(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
-    # VALIDATE_INTERMEDIATE consumes the trigger (ts_check, or the soft TS's claim).
-    if s.ts_check == "collapsed" or _soft_ts_failed(s, p):
-        return Decision(Action.VALIDATE_INTERMEDIATE, "saddle_collapsed")
-    return None
-
-
-def _r12_screen(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r11_screen(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     # the cheap low-level path comes before any string, also once a shortcut's seed has failed
     fire = p.screen and not s.neb_done and (s.screen is None or not s.seeds)
     return Decision(Action.SCREEN, "screen") if fire else None
 
 
-def _r13_intermediate(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r12_intermediate(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     if s.screen is not None and s.screen.verdict == "intermediate" and s.intermediate is None:
         return Decision(Action.VALIDATE_INTERMEDIATE, "path_intermediate")  # the lowest well
     return None
@@ -224,7 +211,7 @@ def _attempts_left(s: CaseState, p: CaseRules) -> bool:
     return s.saddle_attempts < p.budget.max_saddle_attempts
 
 
-def _r14_seed(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r13_seed(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     # a stalled search's restart (never itself restarted) is not counted
     if s.seeds and (s.seeds[0].source == "saddle_restart" or _attempts_left(s, p)):
         return Decision(Action.REFINE_SADDLE, f"seed:{s.seeds[0].source}")
@@ -232,12 +219,12 @@ def _r14_seed(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | No
 
 
 # A string runs only while its peak seed can still be refined.
-def _r15_no_path(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r14_no_path(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     fire = not s.path_runs and _attempts_left(s, p)
     return Decision(Action.FIND_PATH, "no_dft_path") if fire else None
 
 
-def _r16_next_chunk(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r15_next_chunk(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     # The seeds of the latest string failed: its next chunk starts where it stopped.
     v = s.screen
     if (v is not None and v.source == "string" and v.verdict in ("single", "intermediate")
@@ -246,17 +233,17 @@ def _r16_next_chunk(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decisio
     return None
 
 
-def _r17_exhausted(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r16_exhausted(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     return _complete(CaseOutcome.UNRESOLVED, "attempts_exhausted")
 
 
 ROWS: tuple[Row, ...] = (
     _r01_one_pes, _r02_same_basin, _r03_window, _r04_connected, _r05_distinct,
-    _r06_barrierless, _r07_walltime, _r08_connection, _r09_claim, _r10_saddle, _r11_collapsed,
-    _r12_screen, _r13_intermediate, _r14_seed, _r15_no_path, _r16_next_chunk, _r17_exhausted,
+    _r06_barrierless, _r07_walltime, _r08_connection, _r09_claim, _r10_saddle, _r11_screen,
+    _r12_intermediate, _r13_seed, _r14_no_path, _r15_next_chunk, _r16_exhausted,
 )
 
 
 def decide(case: ReactionRecord, state: CaseState, rules: CaseRules) -> Decision:
-    """First matching row of the table (pure, no IO); row 17 always matches."""
+    """First matching row of the table (pure, no IO); row 16 always matches."""
     return next(d for row in ROWS if (d := row(case, state, rules)) is not None)

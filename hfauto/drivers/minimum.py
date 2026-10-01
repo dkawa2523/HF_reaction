@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from hfauto.chemistry.gates import Policy, imaginary_tier, is_minimum, spin_ok
-from hfauto.chemistry.identity import assign, is_chiral, same_as_labelled
+from hfauto.chemistry.identity import assign, same_as_labelled
 from hfauto.chemistry.modes import BOUNDS_A, amplitude, classify_mode_follow
 from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.xyz import XYZ, Molecule, composition_key
@@ -290,5 +290,5 @@ def _new_record(opt: Evidence, freq: Evidence, notes: tuple[str, ...], species: 
         composition_id=species.composition_id, species_id=species.species_id, tier=tier,
         level_key=level_key, opt_calc=calc_id(opt), freq_calc=calc_id(freq),
         energy_hartree=opt.energy_hartree, state_label=state_label(xyz.symbols, xyz.coords),
-        members=(species.species_id,), chiral=is_chiral(xyz.symbols, xyz.coords), notes=notes,
+        members=(species.species_id,), notes=notes,
     )

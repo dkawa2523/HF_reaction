@@ -1,17 +1,25 @@
 """explore stage with FakeDiscovery (§8.2): one NT2 attempt per unit, the kcal/mol window,
 failed attempts, one species per product basin as labelled (a relabelled product, degenerate
 ones included, kept apart), each discovery's source species (X2), one relaxation product per
-lost seed state (R6), two lowest sources per state, the screen-optimized start structure and the
-source's charge and multiplicity (HCN⁺•: dissociations are trials), and parallel units recorded
-as serial ones."""
+lost seed state (R6: a resolved bond change from its basin, X3), two lowest sources per state,
+the screen-optimized start structure and the source's charge and multiplicity (HCN⁺•:
+dissociations are trials), and parallel units recorded as serial ones."""
 
 import dataclasses
 
 import numpy as np
-from fakes import NH3_HF, NH3_HF_EXCHANGED, NH3_HF_SYMBOLS, FakeDiscovery, write_geometry
+from fakes import (
+    NH3_HF,
+    NH3_HF_EXCHANGED,
+    NH3_HF_SYMBOLS,
+    FakeDiscovery,
+    write_geometry,
+    xyz_loader,
+)
 
 from hfauto.backends.protocols import Capability, DiscoveryResult
-from hfauto.chemistry.topology import state_label
+from hfauto.chemistry.elements import covalent_radius
+from hfauto.chemistry.topology import BOND_TOLERANCE_A, state_label
 from hfauto.chemistry.trials import perturb_linear
 from hfauto.chemistry.xyz import XYZ
 from hfauto.core.evidence import Evidence, Failure, FailureKind, Level
@@ -37,13 +45,13 @@ def _optimized(i):  # the screen-optimized HCN of m{i}: the input displaced by 0
 def _inputs(root):
     """Three HCN⁺• screen minima of one state (each with its opt calculation); m0 also holds a
     seed that relaxed from HNC. m3 is an Ar atom: never a source."""
-    geo, ar = (write_geometry(root, f"in/{n}.xyz", s, x) for n, s, x in (
-        ("hcn", SYMBOLS, HCN), ("ar", ["Ar"], np.zeros((1, 3)))))
+    geo, hnc, ar = (write_geometry(root, f"in/{n}.xyz", s, x) for n, s, x in (
+        ("hcn", SYMBOLS, HCN), ("hnc", SYMBOLS, HNC), ("ar", ["Ar"], np.zeros((1, 3)))))
     out = [Artifact(artifact_id=sid, type=SPECIES, payload=SpeciesRecord(
         species_id=sid, composition_id=comp, charge=q, multiplicity=q + 1, geometry=g,
         source="conformer", state_label=state_label(g.symbols, x)))
         for sid, comp, q, g, x in (
-            ("seed", CATION, 1, geo, HNC), ("s0", CATION, 1, geo, HCN), ("s1", CATION, 1, geo, HCN),
+            ("seed", CATION, 1, hnc, HNC), ("s0", CATION, 1, geo, HCN), ("s1", CATION, 1, geo, HCN),
             ("s2", CATION, 1, geo, HCN), ("s3", "Ar_q0_m1", 0, ar, np.zeros((1, 3))))]
     for i in range(4):
         final = ar if i == 3 else write_geometry(root, f"opt/m{i}.xyz", SYMBOLS, _optimized(i))
@@ -128,23 +136,37 @@ def test_parallel_units_are_recorded_as_serial_ones(fake_runtime, tmp_run):
         repr((m.fingerprint(), t)) for m, t, *_ in fake.calls)
 
 
+def _nh3_hf(nh):
+    """C3v NH3·HF with N···H at r_thr + nh (Å) and H–F 0.95 Å."""
+    r = covalent_radius("N") + covalent_radius("H") + BOND_TOLERANCE_A + nh
+    return np.array([[0.0, 0.0, 0.0], [0.94, 0.0, -0.38], [-0.47, 0.814, -0.38],
+                     [-0.47, -0.814, -0.38], [0.0, 0.0, r], [0.0, 0.0, r + 0.95]])
+
+
 def test_one_relaxation_product_per_lost_seed_state(tmp_run):
-    """R6: seeds of state Y collapsed into two basins give one product, the seed of lowest
-    low-level energy from its own basin; state Z has a screen minimum (not lost), X never left."""
-    geo = write_geometry(tmp_run, "in/hcn.xyz", SYMBOLS, HCN)
-    species = {sid: SpeciesRecord(species_id=sid, composition_id=CATION, charge=1, multiplicity=2,
-                                  geometry=geo, source="conformer", state_label=label,
-                                  energy_hartree=energy)
-               for sid, label, energy in (("a", "X", None), ("b", "Y", None), ("c", "Y", -2.0),
-                                          ("d", "Y", -1.0), ("e", "Z", None), ("f", "Z", None))}
+    """R6 (X3): NH3 + HF seeds collapsed into N–H-bonded basins; no screen minimum keeps their
+    state. It is lost through the seed of lowest low-level energy that a resolved bond change
+    separates from its basin: 'near' (lowest) crosses the threshold by ±0.006 Å as S19's c01
+    did, 'far' (+2.00 / −0.35 Å, S6's H–O) leaves from its own basin m1, 'late' has no energy;
+    'deep' holds the kept state. Without m1 nothing is lost."""
+    symbols = list(NH3_HF_SYMBOLS)
+    final = {"m0": XYZ(symbols, _nh3_hf(-0.006)), "m1": XYZ(symbols, _nh3_hf(-0.35))}
+    species = {sid: SpeciesRecord(
+        species_id=sid, composition_id="FH4N_q0_m1", charge=0, multiplicity=1,
+        geometry=write_geometry(tmp_run, f"in/{sid}.xyz", symbols, _nh3_hf(nh)),
+        source="conformer", state_label=state_label(symbols, _nh3_hf(nh)),
+        energy_hartree=energy)
+        for sid, nh, energy in (("near", 0.006, -2.0), ("far", 2.0, -1.0), ("late", 2.0, None),
+                                ("deep", -0.35, None))}
     minima = [MinimumRecord(minimum_id=mid, basin_id=mid, species_id=members[0], tier="screen",
-                            composition_id=CATION, level_key="k", opt_calc="o", freq_calc="f",
-                            energy_hartree=0.0, state_label=label, members=members)
-              for mid, label, members in (("m0", "X", ("a", "b", "d", "e")), ("m1", "X", ("c",)),
-                                          ("m2", "Z", ("f",)))]
-    [record] = _relaxations(species, minima)
-    assert (record.source_minimum, record.product_species) == ("m1", "c")
+                            composition_id="FH4N_q0_m1", level_key="k", opt_calc="o",
+                            freq_calc="f", energy_hartree=0.0,
+                            state_label=state_label(symbols, final[mid].coords), members=members)
+              for mid, members in (("m0", ("deep", "near")), ("m1", ("far", "late")))]
+    [record] = _relaxations(species, minima, final, xyz_loader(tmp_run))
+    assert (record.source_minimum, record.product_species) == ("m1", "far")
     assert (record.mechanism, record.outcome) == ("relaxation", "product")
+    assert _relaxations(species, minima[:1], final, xyz_loader(tmp_run)) == []
 
 
 def test_a_product_joins_a_known_basin_only_as_labelled():

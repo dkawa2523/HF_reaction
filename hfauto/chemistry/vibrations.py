@@ -16,8 +16,9 @@ import numpy as np
 from hfauto.chemistry.elements import mass
 from hfauto.core.constants import AMU_TO_ME, CM1_TO_HARTREE
 
-# A singular value of the translation/rotation block counts when it exceeds this fraction
-# of the largest one: 1e-4 Å noise on an optimized linear chain stays linear, 179° does not.
+# Without a point group (an engine reading its own freq, trial directions, shaped Hessians), a
+# singular value of the translation/rotation block counts when it exceeds this fraction of the
+# largest one: 1e-4 Å noise on an optimized linear chain stays linear, 179° does not.
 _EXTERNAL_RANK_TOL = 1.0e-3
 # sqrt(Eh / (bohr² amu)) -> cm⁻¹ (CODATA 2018 through hfauto.core.constants).
 _CM1_PER_SQRT_EIGENVALUE = 1.0 / (math.sqrt(AMU_TO_ME) * CM1_TO_HARTREE)
@@ -43,8 +44,10 @@ def _square_hessian(hessian: np.ndarray, n_atoms: int) -> np.ndarray:
     return 0.5 * (h + h.T)
 
 
-def _external_svd(symbols: Sequence[str], coords: np.ndarray) -> tuple[np.ndarray, int, np.ndarray]:
-    """Full left singular basis of the mass-weighted translations/rotations and their rank k."""
+def _external_svd(symbols: Sequence[str], coords: np.ndarray, linear: bool | None = None
+                  ) -> tuple[np.ndarray, int, np.ndarray]:
+    """Full left singular basis of the mass-weighted translations/rotations and their count k:
+    3 for an atom, else 5 if ``linear`` and 6 if not; without ``linear``, the numerical rank."""
 
     x, masses = _centered(symbols, coords)
     root = np.sqrt(masses)[:, None]
@@ -52,8 +55,9 @@ def _external_svd(symbols: Sequence[str], coords: np.ndarray) -> tuple[np.ndarra
     vectors = [(root * axis).ravel() for axis in axes]
     vectors += [(root * np.cross(axis, x)).ravel() for axis in axes]
     u, singular, _ = np.linalg.svd(np.array(vectors).T, full_matrices=True)
-    k = int(np.count_nonzero(singular > _EXTERNAL_RANK_TOL * singular.max()))
-    return u, k, masses
+    if linear is None:
+        return u, int(np.count_nonzero(singular > _EXTERNAL_RANK_TOL * singular.max())), masses
+    return u, 3 if len(masses) == 1 else 5 if linear else 6, masses
 
 
 def external_basis(symbols: Sequence[str], coords: np.ndarray) -> np.ndarray:
@@ -64,15 +68,17 @@ def external_basis(symbols: Sequence[str], coords: np.ndarray) -> np.ndarray:
 
 
 def projected_frequencies(
-    hessian_eh_bohr2: np.ndarray, symbols: Sequence[str], coords_A: np.ndarray
+    hessian_eh_bohr2: np.ndarray, symbols: Sequence[str], coords_A: np.ndarray,
+    linear: bool | None = None,
 ) -> tuple[np.ndarray, np.ndarray, int]:
-    """Diagonalize Bᵀ H_mw B in the (3N − k)-dim complement of the external space.
+    """Diagonalize Bᵀ H_mw B in the (3N − k)-dim complement of the external space, k from
+    ``linear`` (a point group's verdict, chemistry.symmetry) or else the numerical rank.
 
     Returns ascending signed frequencies (cm⁻¹), Cartesian modes as unit rows (3N − k, 3N)
     with the mass weighting removed, and n_external = k.
     """
 
-    u, k, masses = _external_svd(symbols, coords_A)
+    u, k, masses = _external_svd(symbols, coords_A, linear)
     h = _square_hessian(hessian_eh_bohr2, len(masses))
     inv_root = np.repeat(1.0 / np.sqrt(masses), 3)
     complement = u[:, k:]
@@ -112,18 +118,17 @@ def shape_hessian(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray,
     return p @ positive @ p - kappa * np.outer(d, d)
 
 
-def rotational_constants_ghz(symbols: Sequence[str], coords: np.ndarray) -> tuple[float, ...]:
-    """(A, B, C) in GHz from ascending principal moments; 0.0 marks a vanishing moment.
-
-    A moment vanishes by the same criterion that makes external_basis drop a rotation,
-    so a linear molecule gives (0.0, B, B) as GoodVibes expects.
-    """
+def rotational_constants_ghz(symbols: Sequence[str], coords: np.ndarray, linear: bool
+                             ) -> tuple[float, ...]:
+    """(A, B, C) in GHz from the ascending principal moments of a structure of two or more
+    atoms (a point group's symmetrized structure); a linear one gives (0.0, B, B) as GoodVibes
+    expects."""
 
     x, masses = _centered(symbols, coords)
     inertia = np.einsum("i,ij,ik->jk", masses, x, x)
     moments = np.linalg.eigvalsh(np.trace(inertia) * np.eye(3) - inertia)
-    floor = _EXTERNAL_RANK_TOL**2 * max(masses.sum(), float(moments.max()))
-    return tuple(0.0 if m <= floor else _GHZ_AMU_A2 / float(m) for m in moments)
+    return tuple(0.0 if linear and i == 0 else _GHZ_AMU_A2 / float(m)
+                 for i, m in enumerate(moments))
 
 
 def to_canonical_npy(hessian: np.ndarray, path: str | Path) -> Path:
