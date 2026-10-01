@@ -169,8 +169,6 @@ class ConformerEngine(Engine, Protocol):
         mol: Molecule,
         method: MethodSpec,
         settings: ConformerSettings,
-        *,
-        deadline: Deadline | None = None,
     ) -> ConformerEnsemble | Failure: ...
 
 
@@ -182,6 +180,4 @@ class DiscoveryEngine(Engine, Protocol):
         trial: ReactionTrial,
         method: MethodSpec,
         settings: DiscoverySettings,
-        *,
-        deadline: Deadline | None = None,
     ) -> DiscoveryResult | Failure: ...

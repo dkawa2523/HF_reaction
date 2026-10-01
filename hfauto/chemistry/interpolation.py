@@ -1,4 +1,4 @@
-"""Mapped alignment of endpoints and paths, and IDPP initial paths (§5.5, CH-09).
+"""Mapped alignment of endpoints and paths, and IDPP initial paths (design §5.5).
 
 IDPP (Smidstrup et al., JCP 140, 214106 (2014)): every image is pulled toward the linearly
 interpolated interatomic distances, S = Σ_{i<j} d⁻⁴ (d_target − d)², with nudged-elastic-band

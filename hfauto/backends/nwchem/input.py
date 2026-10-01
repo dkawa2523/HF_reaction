@@ -109,7 +109,7 @@ def frozen_core(symbols: Sequence[str]) -> int:
     """Frozen orbitals: per atom, NWChem's ``freeze atomic`` core (the noble gas before its
     row, src/geom/geom_numcore.F) less its def2-ECP electrons (NWChem's library def2-ecp: 28
     for Rb-Xe, 46 for Cs-La, 60 for Hf-Rn), never below zero. ``freeze atomic`` itself
-    freezes nothing on an ECP atom (G27: I keeps 4s4p correlated)."""
+    freezes nothing on an ECP atom (golden G27: I keeps 4s4p correlated)."""
     total = 0
     for z in map(atomic_number, symbols):
         core = max((g for g in _NOBLE_GAS_Z if g < z), default=0)

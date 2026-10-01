@@ -22,7 +22,7 @@ from hfauto.drivers.reaction_case.state import CaseState, Decision, Seed
 
 SCREEN_IMAGES = 11  # SCREEN's NEB images including both ends
 STRING_BEADS = 9  # DFT string beads including both ends
-# An association's scan (design X4): its longest point lies SCAN_REACH_A beyond the adduct's
+# An association's scan: its longest point lies SCAN_REACH_A beyond the adduct's
 # bond, outside the Coulson-Fischer region (~2.2 A for C-O), and the SCAN_POINTS - 1 constrained
 # points step evenly to the adduct minimum, the last point.
 SCAN_REACH_A = 1.5
@@ -108,7 +108,7 @@ def _moved(x: np.ndarray, bond: tuple[int, int], fragment: Collection[int], r: f
 
 
 def _scan(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]]:
-    """An association (design X4): the separated monomers → the adduct along a relaxed scan of
+    """An association: the separated monomers → the adduct along a relaxed scan of
     the formed bond (i, j), from r_P + SCAN_REACH_A inwards (r_P: the adduct's). The first point
     is the adduct with the fragment holding j moved out along i→j, each next one the previous
     optimum moved in; each is optimized with r_ij fixed, its SCF started from the previous
@@ -151,7 +151,7 @@ def projected(e_bs: float, s2_bs: float, e_hs: float, s2_hs: float, spin: float)
 
 
 def _projected(ctx: Ctx, frames: list[np.ndarray], points: list[Evidence]) -> list[float]:
-    """The scan points' energies (G2-P3): those of a low-spin-coupled pair (CH3· + O2 as a
+    """The scan points' energies: those of a low-spin-coupled pair (CH3· + O2 as a
     doublet, electronic_state.low_spin_coupled), broken-symmetry where the monomers separate,
     are spin-projected (``projected``) with an SP of the high-spin coupling Σ(m_i − 1) + 1 at
     each point's structure. A point whose high-spin SP fails or is itself contaminated (spin_ok)
@@ -179,7 +179,7 @@ def _projected(ctx: Ctx, frames: list[np.ndarray], points: list[Evidence]) -> li
 
 
 def screen(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """Barrier pre-check (chem 16): an association's scan; else first the shortcut from the
+    """Barrier pre-check (design §7.3): an association's scan; else first the shortcut from the
     low-level TSs, the low-level path when none gives a single step or once their seeds have
     failed (a second SCREEN)."""
     found = None if ctx.case.monomers or state.screen is not None else _shortcut(ctx)

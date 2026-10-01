@@ -24,7 +24,8 @@ from hfauto.chemistry.xyz import hill_formula
 Bond = tuple[int, int]  # (i, j) with i < j
 BOND_TOLERANCE_A = 0.4
 # Half-width of the band around r_thr that resolves a bond change: the GFN2 and PBE0 N···H of
-# the S19 amine·HF basin differ by 0.15 Å, so a crossing within 0.1 Å of r_thr is method noise.
+# the TMA·(HF)2 amine·HF basin differ by 0.15 Å, so a crossing within 0.1 Å of r_thr is
+# method noise.
 RESOLVED_A = 0.1
 _WL_ITERATIONS = 3
 

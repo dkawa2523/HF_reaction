@@ -231,7 +231,10 @@ def test_an_exact_image_joins_a_minimum_with_no_job_and_settles_after_a_saddle(f
 
 def test_only_reacting_compositions_and_their_monomers_are_refined(fake_runtime, tmp_run):
     tetra = np.array([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) * 0.34
-    springs = lambda x: float(np.sum((pdist(np.reshape(x, (-1, 3))) - 0.92) ** 2))
+
+    def springs(x):
+        return float(np.sum((pdist(np.reshape(x, (-1, 3))) - 0.92) ** 2))
+
     pes = fakes.PES(("H", "F"), springs, {})  # every pair at 0.92 A: HF, H2 and tetrahedra
     system = SystemConfig(system_id="t", species=[{"id": "hf", "xyz": "hf.xyz"},
                                                   {"id": "h2", "xyz": "h2.xyz"}],

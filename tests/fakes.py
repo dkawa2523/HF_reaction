@@ -365,13 +365,12 @@ class _Scripted(_Fake):  # replays the results in order, or calls a callable scr
 
 
 class FakeConformers(_Scripted):
-    def search(self, mol, method, settings, *, deadline=None) -> bp.ConformerEnsemble | Failure:
+    def search(self, mol, method, settings) -> bp.ConformerEnsemble | Failure:
         return self._next(mol, method, settings)
 
 
 class FakeDiscovery(_Scripted):
-    def explore(self, source, trial, method, settings, *, deadline=None
-                ) -> bp.DiscoveryResult | Failure:
+    def explore(self, source, trial, method, settings) -> bp.DiscoveryResult | Failure:
         return self._next(source, trial, method, settings)
 
 

@@ -90,6 +90,8 @@ def species_thermo(symbols: Sequence[str], sym: Symmetry, modes_cm1: Sequence[fl
     r = compute_thermo(qcdata=qcdata, QS=settings.qs, s_freq_cutoff=settings.cutoff_cm1,
                        temperature=T, freq_scale_factor=settings.vib_scale,
                        zpe_scale_factor=settings.vib_scale, symm=False)
+    if r.qh_gibbs_free_energy is None or r.enthalpy is None or r.zpe is None:
+        raise ValueError("GoodVibes computed no thermal terms")
     return Thermal(G=r.qh_gibbs_free_energy, H=r.enthalpy, zpe=r.zpe)
 
 

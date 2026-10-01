@@ -28,16 +28,23 @@ def test_models_are_frozen_and_forbid_extra_fields():
         FileRef(path="a", sha256="b", size=1)  # type: ignore[call-arg]
 
 
-@pytest.mark.parametrize(("freqs", "modes", "valid"), [
-    ((-900.0, 1000.0, 3000.0), 1, True), ((1000.0, 3000.0), 0, False),  # 3N - 6 = 3 for HCN
-    ((-900.0, 1000.0, 3000.0), 0, False), (None, 0, False)])
-def test_a_freq_evidence_holds_3n_minus_external_modes_and_its_imaginary_ones(freqs, modes, valid):
+@pytest.mark.parametrize(("freqs", "modes", "hessian", "valid"), [
+    ((-900.0, 1000.0, 3000.0), 1, True, True), ((1000.0, 3000.0), 0, True, False),  # 3N - 6 = 3
+    ((-900.0, 1000.0, 3000.0), 0, True, False), (None, 0, True, False),
+    ((-900.0, 1000.0, 3000.0), 1, False, False)])
+def test_a_freq_evidence_holds_3n_minus_external_modes_and_its_imaginary_ones(freqs, modes,
+                                                                              hessian, valid):
+    """Guarantee (3): the 3N - 6 frequencies of HCN, one imaginary mode per negative one and
+    the Hessian they come from."""
     ref = FileRef(path="a", sha256="0")
     geo = Geometry(file=ref, fingerprint="f", symbols=("H", "C", "N"))
-    make = lambda task: Evidence(
-        engine="nwchem", task=task, level=LEVEL, start=geo, final=geo, energy_hartree=-93.0,
-        frequencies_cm1=freqs, n_external=6, imaginary_modes=((0.1,) * 9,) * modes, output=ref,
-        job_key="k")
+
+    def make(task):
+        return Evidence(
+            engine="nwchem", task=task, level=LEVEL, start=geo, final=geo, energy_hartree=-93.0,
+            frequencies_cm1=freqs, n_external=6, imaginary_modes=((0.1,) * 9,) * modes,
+            output=ref, hessian=ref if hessian else None, job_key="k")
+
     stored = make("sp").model_dump(mode="json")  # only a freq is checked
     del stored["gradient"]  # a JobStore record written before Evidence.gradient
     assert Evidence.model_validate(stored).gradient is None

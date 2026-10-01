@@ -8,11 +8,11 @@
 |---|---|---|
 | 元素 | Z=1〜57、72〜86。Z>36 は def2 系の基底だけで、def2-ECP を元素ごとに自動で書く。計算できる範囲で、遷移金属は未検証 | Ce〜Lu、Z>86、Z>36 に def2 以外の基底(入口で拒否) |
 | 電荷 | 任意の整数(陰イオンは SVPD の拡散関数で扱う) | 気相の多価陰イオンは基底に依存しうる |
-| スピン | 閉殻一重項(RKS)と高スピン(UKS、⟨S²⟩ を検査)。低スピン結合の組成(CH3·O2 の二重項など)も UKS で受け付け、その会合は分離した単量体からの緩和スキャンで判定する。多重度は利用者が宣言し、未宣言なら SMILES は不対電子数 + 1、xyz は 1、組成はスピン結合で 1 つに決まるときだけその値。d ブロック元素を含む化学種は宣言が必須 | 開殻一重項(ビラジカル、ラジカル対。`low_spin_singlet_unsupported`)、MECP・スピン交差(`spin_crossing_reaction_unsupported`)、2 本以上の結合が同時にできる会合、会合の速度定数(VRC-TST)、スピン軌道補正(原子で Cl 0.84、Br 3.5、I 7.3 kcal/mol がそのまま誤差になる) |
+| スピン | 閉殻一重項(RKS)と高スピン(UKS、⟨S²⟩ を検査)。低スピン結合の組成(CH3·O2 の二重項など)も UKS で受け付け、その会合は分離した単量体からの緩和スキャンで判定する。多重度は利用者が宣言し、未宣言なら SMILES は不対電子数 + 1、xyz は 1、組成はスピン結合で 1 つに決まるときだけその値。d ブロック元素を含む化学種は宣言が必須 | 開殻一重項(ラジカル対の一重項は `low_spin_singlet_unsupported` で止める。1 分子のビラジカルは RKS で計算され、不安定性を検出しない)、MECP・スピン交差(`spin_crossing_reaction_unsupported`)、2 本以上の結合が同時にできる会合、会合の速度定数(VRC-TST)、スピン軌道補正(原子で Cl 0.84、Br 3.5、I 7.3 kcal/mol がそのまま誤差になる) |
 | 反応型 | 異性化、H・プロトン移動(リレーを含む)、SN2 型置換、H 引き抜き、付加・会合、開殻・電荷系の結合切断、縮退転位、宣言したねじれ。単原子も通常の経路を通る | 溶液相、速度論(マスター方程式、トンネル補正) |
 | 系のサイズ | 4 コア・def2-SVPD で約 35 原子まで(解析 freq が N·nbf^2.8 に比例し、15 原子で約 11 分、40 原子で約 6 h) | freq の途中継続(ないので timeout 4 h で全損する。大きな系は ranks を増やす) |
 
-状態は組成と結合グラフ(r < r_cov,i + r_cov,j + 0.4 Å)の状態ラベルで区別する。化学の規則と精度の目安は [docs/design.md](docs/design.md) §7。
+状態は組成と結合グラフ(r < r_cov,i + r_cov,j + 0.4 Å)の状態ラベルで区別する。化学の規則と精度の目安は [docs/design.md](docs/design.md) §7、範囲外(多参照、トンネル、溶媒、ビット単位の再現性など)と既知の制限は同 §10。
 
 ## 処理の流れ
 
@@ -43,7 +43,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 
 - 順位の量は δG_eff = max(G_TS, G_R, G_P) − G_R(kcal/mol)。G_R・G_P は反応物・生成物と同じ状態の DFT 極小の最小 G。障壁なし(`barrierless_at_resolution`)と ZPE で沈む障壁(注記 `submerged_barrier`)は max(ΔG_rxn, 0) で同じ表に並ぶ。qRRHO の扱いによる感度の幅が重なる反応は同順位。
 - 既定の順位は M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD の G の序数として読む(ranking.csv の `energy_level` は `m06-2x-d3zero/def2-tzvpd`)。CCSD(T)/def2-TZVPD との差は障壁で平均 0.8、最大 1.8 kcal/mol(5 反応)、ΔE_rxn では平均 1.2、最大 2.3 で停留点レベルより良くない。1 kcal/mol 未満の差は序数を保証しない。鞍点の有無と PES の形は PBE0 で決まる。層の SP がない反応は `energy_layer_missing` で順位から外れ、PBE0 で代用しない。遷移金属・溶媒・多参照性の強い系は未検証。詳しくは [docs/design.md](docs/design.md) §7.3・§7.4。
-- 順位を付けない反応も outcome と blockers 付きで ranking.csv に載る。多段反応(`multi_step`)の親は順位を持たず、分割した子反応(`<id>_split<n>`)がそれぞれ並ぶ。判断の経過は `hfauto case` で見る。
+- 順位を付けない反応も outcome と blockers 付きで ranking.csv に載る。多段反応(`multi_step`)の親は順位を持たず、分割した子反応(`<id>_split<n>`)がそれぞれ並ぶ。判断の経過は `hfauto case` で見る。駆動しなかった子(同じ問いの結論を写した `same_as:<id>` と、分割の深さの上限の `split_depth`)は log を持たないので、`hfauto case` は `no case log` で終わる。
 
 ## インストール
 
@@ -71,7 +71,7 @@ hfauto status $HOME/hfauto_runs/hcn
 hfauto report $HOME/hfauto_runs/hcn
 ```
 
-リポジトリの直下で実行する。`--run-dir` を省くと `runs/<system_id>_<pipeline_id>` になるので、本番の run は ext4 上を明示する。4 vCPU の WSL で約 1 分かかる。round 7 より前の run dir は記録の型が違うので再開できない。
+リポジトリの直下で実行する。`--run-dir` を省くと `runs/<system_id>_<pipeline_id>` になるので、本番の run は ext4 上を明示する。4 vCPU の WSL で約 1 分 10 秒かかる(QM 242 core 秒。うち M06-2X の層の SP 3 点が 35 core 秒)。記録の型が変わる前の run dir は途中から再開できない(design.md §8)。
 
 ## 基準値
 
@@ -83,11 +83,11 @@ WSL(4 vCPU / 11 GB)、M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD、298.15 K�
 | HONO trans → cis(`hono`) | known_endpoints | elementary_step | 9.88(TS がキラルで m = 2) |
 | NH3 の反転(`nh3_inversion`) | known_endpoints | degenerate_rearrangement | 4.38 |
 | 水(`water_same_basin`) | known_endpoints | same_basin | — |
-| TMA·(HF)₂(`tma_hf2`) | discover | same_basin(プロトン移動の TS はない。全体で約 65 分、うち screen で失われた seed の DFT opt が約 34 分) | — |
+| TMA·(HF)₂(`tma_hf2`) | discover | same_basin(プロトン移動の TS はない) | — |
 
 ## 文書
 
-- [docs/design.md](docs/design.md): 設計(層と import 契約、処理区分の責務、Evidence とゲート、判断表、化学プロトコル、順位の量、実行基盤、設定)
-- [docs/environment.md](docs/environment.md): 版数、インストール、WSL の資源、テスト
-- [docs/validation.md](docs/validation.md): WSL の実計算による検証の記録
-- [docs/reviews/](docs/reviews/): 設計の根拠になったレビューと改良の結果報告(最新は [2026-09-30_round7_result.md](docs/reviews/2026-09-30_round7_result.md))
+- [docs/design.md](docs/design.md): 設計(層と import 契約、処理区分の責務、Evidence とゲート、判断表、化学プロトコル、順位の量、実行基盤、設定、範囲外)
+- [docs/environment.md](docs/environment.md): 版数、インストール、WSL の資源、テストと品質ゲート
+- [docs/validation.md](docs/validation.md): WSL の実計算による全体の再検証(VAL9)、期待値とその変更の理由、到達表
+- [docs/reviews/](docs/reviews/): 設計の根拠になったレビューと改良の結果報告(最新は [2026-10-02_round9_result.md](docs/reviews/2026-10-02_round9_result.md)、その根拠の分析は [2026-09-30_remaining_issues_analysis.md](docs/reviews/2026-09-30_remaining_issues_analysis.md))

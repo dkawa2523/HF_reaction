@@ -1,7 +1,7 @@
 """Path profiles: class and peak interpolation (§5.5).
 
 A path is classified as it stands, converged or not: its maximum between two minima bounds the
-saddle from above, and its peak is only a seed (CH-08).
+saddle from above, and its peak is only a seed.
 """
 
 from __future__ import annotations

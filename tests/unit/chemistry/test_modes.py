@@ -51,9 +51,9 @@ def test_amplitude_is_clipped_and_mass_weighted():
     assert modes.amplitude(-3000.0, mode, ["H", "H"]) == 0.05  # stiff
     assert modes.amplitude(-5.0, mode, ["H", "H"]) == 0.4  # flat
     assert modes.amplitude(0.0, mode, ["H", "H"]) == 0.4
-    light = modes.amplitude(-300.0, mode, ["H", "H"], bounds_A=(0.0, 9.0))
-    heavy = modes.amplitude(-300.0, mode, ["I", "H"], bounds_A=(0.0, 9.0))
-    assert light / heavy == pytest.approx(np.sqrt(126.904 / 1.008), rel=1e-3)
+    light = modes.amplitude(-300.0, mode, ["H", "H"])  # κ = ω²m: one κ, one amplitude
+    heavy = modes.amplitude(-300.0 / np.sqrt(126.904 / 1.008), mode, ["I", "H"])
+    assert 0.05 < light < 0.4 and light == pytest.approx(heavy, rel=1e-3)
 
 
 def test_qrc_step_is_one_mode_at_the_qrc_target_capped():

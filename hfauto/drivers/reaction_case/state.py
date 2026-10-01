@@ -5,7 +5,7 @@ driver accumulates ``CaseState`` in memory; actions only change the state, never
 Rows 4-6 complete a case from evidence already in hand and so come before the walltime (row 7);
 every row after it starts a computation or gives up. A saddle without an imaginary mode is a
 failed attempt like any rejected saddle: an intermediate comes only from a profile's well
-(row 11) or a QRC side (GEN-05). An association (``ReactionRecord.monomers``) is asked from its
+(row 11) or a QRC side (row 5). An association (``ReactionRecord.monomers``) is asked from its
 separated monomers: SCREEN runs its relaxed scan, with or without a low-level engine (row 10),
 and no string runs (row 13: a string joins two minima, and the monomers' end is none).
 """
@@ -115,7 +115,7 @@ class Decision:
 def record_profile(state: CaseState, verdict: BarrierVerdict, seeds: tuple[Seed, ...] = ()
                    ) -> CaseState:
     """A new DFT profile becomes the latest verdict; its seeds (its peak, or the low-level TSs
-    of SCREEN's shortcut) join only for a single-step profile (eng P0-4), and the checks of an
+    of SCREEN's shortcut) join only for a single-step profile (design §7.3), and the checks of an
     earlier saddle no longer apply."""
     seeds = (*state.seeds, *seeds) if verdict.verdict == "single" else state.seeds
     return replace(state, screen=verdict, seeds=seeds, last_saddle=None, intermediate=None,

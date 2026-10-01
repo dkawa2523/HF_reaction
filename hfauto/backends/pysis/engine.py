@@ -1,6 +1,6 @@
 """``pysis_neb``: xTB climbing-image NEB between fixed ends with pysisyphus (design §6.3).
 
-xTB only, never DFT (CH-01, CH-02). The caller's initial path (hfauto's IDPP between the DFT
+xTB only, never DFT. The caller's initial path (hfauto's IDPP between the DFT
 minima) is relaxed in Cartesian coordinates by a climbing-image NEB whose end images stay
 fixed (the COS default), with LBFGS for at most ``NEB_MAX_CYCLES``; an unconverged NEB is still
 a path. The same input then optimizes the TS from the climbing image (rsprfo on the xTB

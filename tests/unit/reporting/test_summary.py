@@ -26,7 +26,8 @@ def calc(cid, fp, energy, grid, *subjects, s2=None):  # an sp names its subjects
     level = Level(program="nwchem", version="7.2.3", method="pbe0", basis="def2-svpd",
                   charge=0, multiplicity=1 if s2 is None else 2, grid=grid)
     g = Geometry(file=FileRef(path=f"{fp}.xyz", sha256="0"), fingerprint=fp, symbols=("H",))
-    freq = {} if subjects else {"frequencies_cm1": (), "n_external": 3}  # an atom: no mode
+    freq = {} if subjects else {  # an atom: no mode
+        "frequencies_cm1": (), "n_external": 3, "hessian": g.file}
     payload = Evidence(engine="nwchem", task="freq" if not subjects else "sp", level=level,
                        start=g, final=g, energy_hartree=energy, output=g.file, job_key=cid,
                        s2=s2, **freq)

@@ -5,10 +5,9 @@ separated reactant side (chemistry.hypotheses). Engines have no defaults here; t
 names them (``engines`` and ``screen``). A hypothesis has ``policy.walltime_h`` in all: its split
 children run right after it, on its deadline, and see its calculations (a TS it validated for a
 child). A split child is not driven when a case of its case key (hypotheses.pair_key), run or
-queued, concludes: it takes that conclusion, ``same_as:<reaction_id>`` (G8-P7); a case that ends
-UNRESOLVED gives none, and the child is driven (with its own budget, as before G8-P7). Nor is a
-child deeper than ``max_split_depth``: UNRESOLVED ``split_depth`` (G8-P3). Neither has a job or a
-log.
+queued, concludes: it takes that conclusion, ``same_as:<reaction_id>``; a case that ends
+UNRESOLVED gives none, and the child is driven with its own budget. Nor is a child deeper than
+``max_split_depth``: UNRESOLVED ``split_depth``. Neither has a job or a log.
 """
 
 from __future__ import annotations
@@ -98,9 +97,9 @@ Item = tuple[ReactionRecord, int, Deadline | None]  # a case, its split depth, i
 @dataclass
 class _Book:
     """The cases of the stage and what they emit (a job shared by cases is emitted once). A
-    split child whose case key a case has takes that case's conclusion (G8-P7), waiting for a
-    queued one; a failure to conclude (UNRESOLVED) is no result to share, so the child is then
-    driven, as a child of a new key is, up to ``max_depth`` (deeper: UNRESOLVED, G8-P3)."""
+    split child whose case key a case has takes that case's conclusion, waiting for a queued
+    one; a failure to conclude (UNRESOLVED) is no result to share, so the child is then driven,
+    as a child of a new key is, up to ``max_depth`` (deeper: UNRESOLVED)."""
 
     rt: CaseRuntime
     max_depth: int

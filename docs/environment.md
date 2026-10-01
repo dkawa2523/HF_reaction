@@ -38,7 +38,7 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 | `.wslconfig` | `C:\Users\user\.wslconfig` に `processors=4`、`memory=12GB`、`swap=2GB`(WSL から 4 vCPU・約 11.9 GB)。site は `cores: 4` |
 | scratch | ext4 上の `/home/user/hfauto_scratch`(NWChem は `/home/user/hfauto_scratch/nwchem`)。`/mnt/<ドライブ>` 上の scratch は preflight が拒否する。`/tmp` も使わない |
 | run ディレクトリ | `--run-dir` で ext4 上に置く(例 `/home/user/hfauto_runs/<run>`)。省略するとリポジトリ内の `runs/<system_id>_<pipeline_id>` になる |
-| NWChem | 4 rank × `memory_mb_per_rank` 2,000 MB、`timeout_s` 14,400。ranks × メモリの合計は MemTotal の 0.8 倍以下にする(4 × 2,000 MB = 8 GB)。`OMP_NUM_THREADS=1`(MPI rank で並列化)。反応ケースの中で同時に走る SP・QRC の側は rank を分け合い(cores // 同時の数)、timeout を同じ倍率で延ばし、mpirun に `--bind-to none` を付ける |
+| NWChem | 4 rank × `memory_mb_per_rank` 2,000 MB、`timeout_s` 14,400。ranks × メモリの合計は MemTotal の 0.8 倍以下にする(4 × 2,000 MB = 8 GB)。`OMP_NUM_THREADS=1`(MPI rank で並列化)。反応ケースの中で同時に走る SP・QRC の側は rank を分け合い(cores // 同時の数)、timeout を同じ倍率で延ばす。mpirun には常に `--bind-to none` を付ける。CCSD(T) の deck は GA の global にメモリの 70%(4 × 1,400 MB = 5.6 GB)を置き、これは `/dev/shm`(WSL で 5.9 GB)に載るので、それより大きな WFT のジョブは `/dev/shm` で先に止まりうる |
 | xTB・CREST・ReaDuct | `OMP_NUM_THREADS=<threads>,1`、`OMP_STACKSIZE=4G`(アダプタが設定する)。CREST の `-T` は site の `engines.crest.execution.threads`(4)から決まる |
 | コア数 | 実行中のジョブの ranks × threads の合計を `cores` 以下に保つ(`JobRunner` のセマフォ)。極小の stage は全 rank で直列 |
 | 系のサイズ | 4 コア・def2-SVPD では解析 freq が約 35 原子でジョブの timeout(4 h)に達し、途中継続がないので全損する。大きな系は ranks を増やす |
@@ -47,23 +47,19 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 
 `.wslconfig` を 16 vCPU / 48 GB に広げたときの site の値(cores 16、NWChem 16 rank × 2,000 MB、CREST threads 4)は `configs/sites/wsl_local.yaml` のコメントにある。
 
-## 4. テスト
+## 4. テストと品質ゲート
+
+品質ゲートの合否は WSL の prod venv(dev extra を入れたもの、§2)の結果だけを正とする(Windows のアプリケーション制御は範囲外)。ゲートは、pytest が通ること、ruff の指摘 0、import-linter の 5 契約、pyrefly の指摘 0、`radon cc -n D hfauto` が何も出さないこと(CC 21 以上がない)、`hfauto/` と `tests/` に 500 行を超える `.py` がないことの 6 つである。
 
 既定の `pytest` は `-m 'not real'` で、unit、golden(実出力の抜粋)、integration(fake エンジンで stage をつなぐ)だけが動く。GoodVibes の golden は GoodVibes がなければ、SMILES のテストは rdkit がなければ飛ばされる。
 
-- 品質ゲートは WSL の本番 venv の結果だけを正とする(Windows のアプリケーション制御は範囲外)。Windows の `.venv-win-qa`(dev と chem extra)には GoodVibes(pymsym)が入らず、この PC ではアプリケーション制御が RDKit の DLL を止めるので、RDKit を使うテストが失敗する。
-- 静的検査(ruff、lint-imports、pyrefly、radon)は Windows の venv で実行できる(結果はプラットフォームに依らない)。
-
 ```bash
 # WSL(Git Bash から呼ぶときは、/home で始まる引数を書き換えられないように MSYS_NO_PATHCONV=1 を付ける)
-MSYS_NO_PATHCONV=1 wsl -e bash -lc 'cd /mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline && /home/user/.venvs/hfauto-prod/bin/python -m pytest -q -p no:cacheprovider'
-
-# Windows
-.venv-win-qa/Scripts/ruff check .
-.venv-win-qa/Scripts/lint-imports
-.venv-win-qa/Scripts/pyrefly check
-.venv-win-qa/Scripts/radon cc -s -n C hfauto
+MSYS_NO_PATHCONV=1 wsl -e bash -lc 'cd /mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline && P=/home/user/.venvs/hfauto-prod/bin && $P/python -m pytest -q -p no:cacheprovider && $P/ruff check . && $P/lint-imports && $P/pyrefly check --python-interpreter-path $P/python && $P/radon cc -n D hfauto'
 ```
+
+- pyrefly の設定(`pyproject.toml` の `python-interpreter-path`)は Windows の venv を指すので、WSL では prod venv を渡す。Linux では production extra(GoodVibes、pymsym、SCINE)の型も読むので、Windows の venv では出ない指摘が出うる。Windows 専用の `ctypes` の呼び出しは `if sys.platform == "win32":` のブロックに置く。
+- Windows の `.venv-win-qa`(dev と chem extra)は編集中の手早い確認用で、合否には使わない。GoodVibes(pymsym)が入らず、この PC ではアプリケーション制御が RDKit の DLL を止め、`pyrefly.exe` を止めたこともある。
 
 ### 実エンジンの smoke(`pytest -m real`、WSL)
 

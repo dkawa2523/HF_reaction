@@ -101,8 +101,7 @@ def _subjects(inputs: Manifest, method: MethodSpec | None, rt: StageRuntime
 
     def make(sid: str, calc: str, state: State | None, notes: tuple[str, ...]) -> _Subject:
         freq = inputs.evidence(calc)
-        if freq.hessian is None:
-            raise ValueError(f"{calc}: a freq without a Hessian")
+        assert freq.hessian is not None  # Evidence guarantee (3) of a freq
         xyz, hessian = rt.load_xyz(freq.final), np.load(rt.resolve(freq.hessian))
         sym = symmetry.analyze(xyz.symbols, xyz.coords, hessian)
         sp_calc, sp = layer.get(sid, (None, freq))

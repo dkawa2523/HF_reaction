@@ -56,9 +56,8 @@ def amplitude(
     mode: np.ndarray,
     symbols: Sequence[str],
     target_hartree: float = TARGET_HARTREE,
-    bounds_A: tuple[float, float] = BOUNDS_A,
 ) -> float:
-    """Largest atomic displacement s (Å) with ½κs² = target along ``mode``, clipped to bounds_A.
+    """Largest atomic displacement s (Å) with ½κs² = target along ``mode``, clipped to BOUNDS_A.
 
     κ = ω²·Σ m_i|u_i|² for the mode u scaled to a 1 Å largest atomic displacement: the harmonic
     energy E = ½ω²Q², equal to uᵀHu for an exact normal mode (QRC, Goodman & Silva 2003).
@@ -70,7 +69,7 @@ def amplitude(
         raise ValueError("mode and symbols differ in atom count")
     omega2 = (nu_cm1 * CM1_TO_HARTREE / BOHR_TO_ANGSTROM) ** 2 * AMU_TO_ME  # Eh/(amu Å²)
     curvature = omega2 * float(masses @ (u * u).sum(axis=1))
-    low, high = bounds_A
+    low, high = BOUNDS_A
     if curvature == 0.0:
         return high
     return float(np.clip(np.sqrt(2.0 * target_hartree / curvature), low, high))

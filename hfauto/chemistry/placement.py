@@ -1,4 +1,4 @@
-"""Placement seeds for complexes (design §8.2 conformers, chem 10, CH-19).
+"""Placement seeds for complexes (design §8.2 conformers).
 
 With a polar H (bonded to N/O/F/S/P or a halogen) on one side and an acceptor (N/P/O/S or a
 halogen with a lone pair left) on the other, the H sits on the acceptor's lone-pair cone,

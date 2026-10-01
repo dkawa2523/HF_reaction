@@ -1,5 +1,5 @@
 """The point group of a stationary structure, one judgement for the thermochemistry (design §8.2
-thermo; analysis 2026-09-30 §3 X3-2).
+thermo).
 
 libmsym (pymsym 0.3.5, the detector GoodVibes uses) proposes a group at three threshold
 settings; an exception is no proposal. A linear proposal is symmetrized here: projected onto
@@ -82,6 +82,8 @@ def _proposals(symbols: Sequence[str], x: np.ndarray) -> dict[str, Proposal]:
                 order = len(ctx.symmetry_operations)
                 y = np.array([e.coordinates for e in ctx.symmetrize_elements()], dtype=float)
         except Exception:  # libmsym raises when no group fits
+            continue
+        if group is None:
             continue
         found = _linear(symbols, x) if group in ("C0v", "D0h") else {
             group: ((False, order), 1 if types & _IMPROPER else 2, y)}

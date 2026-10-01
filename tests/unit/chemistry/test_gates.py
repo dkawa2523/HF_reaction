@@ -29,7 +29,7 @@ def ev(task: Task = "freq", freqs: tuple[float, ...] = modes(), *, fp: str = "g0
        energy: float = E_TS, level: Level = LEVEL, s2: float | None = None) -> Evidence:
     geo = Geometry(file=REF, fingerprint=fp, symbols=("N", "H", "H", "H"))
     vibrations = {} if task != "freq" else {
-        "frequencies_cm1": freqs, "n_external": 6,
+        "frequencies_cm1": freqs, "n_external": 6, "hessian": REF,
         "imaginary_modes": tuple((0.0,) * 12 for f in freqs if f < 0)}
     return Evidence(engine="fake", task=task, level=level, start=geo, final=geo,
                     energy_hartree=energy, s2=s2, output=REF, job_key="k", **vibrations)

@@ -76,9 +76,9 @@ def finalize(
 def undriven(case: ReactionRecord, reason: str, like: ReactionRecord | None = None
              ) -> ReactionRecord:
     """A split child recorded without a drive, so without a job or a log: with ``like``, a
-    driven case of its case key (G8-P7, ``same_as:<its id>``), that case's outcome and claims,
-    a reassigned one adopting the minima its TS connects (``finalize``); else UNRESOLVED
-    (G8-P3, ``split_depth``)."""
+    driven case of its case key (``same_as:<its id>``), that case's outcome and claims, a
+    reassigned one adopting the minima its TS connects (``finalize``); else UNRESOLVED
+    (``split_depth``)."""
     if like is None or like.outcome is None:
         return finalize(case, _Undriven(CaseOutcome.UNRESOLVED, reason), barrier=None,
                         claim=None, connection=None)

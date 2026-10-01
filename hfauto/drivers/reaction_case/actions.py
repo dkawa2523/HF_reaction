@@ -71,7 +71,7 @@ class Work:
     depth: int = 0  # the saddle's continuation depth (Seed.depth of the search that found it)
     connection: ConnectionClaim | None = None
     intermediate: tuple[MinimumRecord, SpeciesRecord] | None = None  # basin, structure reached
-    split_ts: tuple[int, str] | None = None  # (split child, saddle calc) it validates (GEN-05)
+    split_ts: tuple[int, str] | None = None  # (split child, saddle calc) it validates
     calcs: dict[str, Evidence] = field(default_factory=dict)
     species: dict[str, SpeciesRecord] = field(default_factory=dict)
     minima: dict[str, MinimumRecord] = field(default_factory=dict)
@@ -129,12 +129,12 @@ class Ctx:
         return found
 
     def _guesses(self, x: np.ndarray) -> list[tuple[Evidence | None, np.ndarray]]:
-        """(scf_guess, structure) of each SP at ``x`` (G2-P1): a closed shell's from scratch; an
-        open shell's from the opt of the nearer DFT minimum, or of both when they differ in spin
-        coupling (``_ends_apart``). From scratch S5's middle frames fell onto another branch up
-        to 28.9 kcal/mol high; an end's vectors passed directly reproduce the frame-by-frame
-        continuation within 5e-8 Eh, and the lower of the two ends' is continuous (probe
-        G2-1v). NWChem reads the vectors as stored, so x, aligned onto that end, goes into the
+        """(scf_guess, structure) of each SP at ``x``: a closed shell's from scratch; an open
+        shell's from the opt of the nearer DFT minimum, or of both when they differ in spin
+        coupling (``_ends_apart``). From scratch the middle frames of CH3· + O2 fell onto another
+        branch up to 28.9 kcal/mol high; an end's vectors passed directly reproduce the
+        frame-by-frame continuation within 5e-8 Eh, and the lower of the two ends' is
+        continuous. NWChem reads the vectors as stored, so x, aligned onto that end, goes into the
         opt's atom order and frame as the end is carried onto it (identity.carry; ends[1] is
         rotated onto ends[0]); energy and ⟨S²⟩ do not change."""
         if self.multiplicity == 1:
@@ -162,7 +162,7 @@ class Ctx:
 
     def _ends_apart(self) -> bool:
         """Whether the DFT minima differ in spin coupling: their ⟨S²⟩ more than spin_tol apart
-        (S5's broken-symmetry complex 1.71, its adduct 0.754)."""
+        (the broken-symmetry CH3···O2 complex 1.71, its adduct 0.754)."""
         a, b = self._end_s2()
         return a is not None and b is not None and abs(a - b) > self.rules.gates.spin_tol
 
@@ -185,8 +185,9 @@ class Ctx:
         interior DFT energies, ``s2`` their ⟨S²⟩; a string's beads have none), kept as the
         latest profile; its maximum bounds the saddle from above. A barrierless class is
         accepted only after densifying: DFT SPs at the midpoints of the two segments beside the
-        highest interior node, where a barrier the nodes step over would rise (nodes lie ~0.2 A
-        apart, so the midpoints stay near the path)."""
+        highest interior node (nodes lie 0.04-0.30 Å apart, measured). A harmonic top hidden
+        between nodes h apart rises at most h²|E''|/8 above the higher one, and it lies beside
+        the highest node only on a unimodal profile: a hill hidden elsewhere is not looked for."""
         energies, spins = [self.energies[0], *inner, self.energies[1]], list(s2)
         self.work.path = Profile(frames, tuple(energies), source)
         verdict = self.classify(energies, spins, source)
@@ -213,11 +214,11 @@ class Ctx:
     def classify(self, energies: Sequence[float], s2: Sequence[float | None],
                  source: Literal["screen", "string"]) -> BarrierVerdict:
         """barrier_verdict of a profile from DFT minimum to DFT minimum (``s2``: its interior
-        points' ⟨S²⟩, none for a string's beads), unless the profile leaves its SCF branch
-        (G2-P1): a ``branch_jump`` against the minima's opts' ⟨S²⟩ and spin_tol, on every
-        open-shell profile with ⟨S²⟩ (SCREEN's, densified or not, and the shortcut's three
-        points) whatever the minima's spin coupling (VAL7 S5's minima were both broken-symmetry,
-        1.7114 and 1.7637)."""
+        points' ⟨S²⟩, none for a string's beads), unless the profile leaves its SCF branch: a
+        ``branch_jump`` against the minima's opts' ⟨S²⟩ and spin_tol, on every open-shell
+        profile with ⟨S²⟩ (SCREEN's, densified or not, and the shortcut's three points)
+        whatever the minima's spin coupling (both CH3·O2 minima of one run were
+        broken-symmetry, 1.7114 and 1.7637)."""
         first, last = self._end_s2()
         spins = [first, *(s2 or [None] * (len(energies) - 2)), last]
         if branch_jump(energies, spins, self.rules.gates.spin_tol):
@@ -249,11 +250,11 @@ def branch_jump(energies: Sequence[float], s2: Sequence[float | None], tol: floa
     """Whether a profile's highest interior point lies on another SCF branch than its
     neighbours: its ⟨S²⟩ outside theirs and more than ``tol`` (Policy.spin_tol) from one of
     them. At a genuine radical TS the UKS contamination peaks smoothly, at most 0.022 above a
-    neighbour (S18 H + H2 0.7674 beside 0.7565 and 0.7570, S6's shortcut 0.7722 beside 0.7544
-    and 0.7500), and through the Coulson–Fischer region it changes monotonically (S5 CH3 + O2
-    1.7115 → 0.7545, its 0.80 kcal/mol hill at 1.5438 between 1.6261 and 1.4145); an SCF branch
-    jump moves it 0.77–0.95 (VAL7 S5 0.7604 beside 1.7114; probe G2-1v's atomic guess 0.7591
-    beside 1.7115, its mixed guesses 0.7697 beside 1.5438). An unobserved ⟨S²⟩ is no evidence."""
+    neighbour (H + H2 0.7674 beside 0.7565 and 0.7570, the OH + CH4 shortcut 0.7722 beside
+    0.7544 and 0.7500), and through the Coulson–Fischer region it changes monotonically (CH3 +
+    O2 1.7115 → 0.7545, its 0.80 kcal/mol hill at 1.5438 between 1.6261 and 1.4145); an SCF
+    branch jump moves it 0.77–0.95 (CH3 + O2 0.7604 beside 1.7114; from an atomic guess 0.7591
+    beside 1.7115, from mixed guesses 0.7697 beside 1.5438). An unobserved ⟨S²⟩ is no evidence."""
     k = 1 + int(np.argmax(energies[1:-1]))
     before, at, after = s2[k - 1:k + 2]
     if before is None or at is None or after is None:
@@ -312,7 +313,7 @@ def _search(ctx: Ctx, seed: Seed) -> Evidence | Failure:
 def _restart(ctx: Ctx, seed: Seed, stalled: Failure) -> Seed | None:
     """A search stalled at maxiter goes on from its last frame with a fresh Hessian, one
     continuation deeper (up to MAX_DEPTH) and before the walltime, unless that frame lies more
-    than a resolution above the latest DFT profile's maximum (G1-P3): a continuous path bounds
+    than a resolution above the latest DFT profile's maximum: a continuous path bounds
     the saddle from above, so the search has climbed past the barrier it was to find. A stalled
     search stored without its energy is not bounded."""
     path, energy = ctx.work.path, stalled.energy_hartree
@@ -344,7 +345,7 @@ def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
 def _newton_start(ctx: Ctx, saddle: Evidence, freq: Evidence, x: np.ndarray) -> np.ndarray | None:
     """The signed Newton step (minimum.newton_push) from a saddle that is not stationary by a
     minimum's criterion, when a freq there has at most one mode below -saddle_cm1: its second
-    imaginary mode came from the missing stationarity (S6 790468f505: ν2 −54.8i and −77.1i
+    imaginary mode came from the missing stationarity (OH + CH4: ν2 −54.8i and −77.1i
     turned real one step away), noted higher_order:not_stationary. None otherwise: a saddle
     with no gradient, a stationary one, or a second mode that persists at the step."""
     rt = ctx.rt

@@ -38,24 +38,26 @@ def pid_alive(pid: object) -> bool:
     return True
 
 
-def _windows_pid_alive(pid: int) -> bool:
-    import ctypes
-    from ctypes import wintypes
+if sys.platform == "win32":  # a block, so type checkers off Windows skip the ctypes calls
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-    kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
-    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-    if not handle:
-        return ctypes.get_last_error() == 5  # ERROR_ACCESS_DENIED: exists, not ours
-    try:
-        code = wintypes.DWORD()
-        ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-        return bool(ok) and code.value == 259  # STILL_ACTIVE
-    finally:
-        kernel32.CloseHandle(handle)
+    def _windows_pid_alive(pid: int) -> bool:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.get_last_error() == 5  # ERROR_ACCESS_DENIED: exists, not ours
+        try:
+            code = wintypes.DWORD()
+            ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            return bool(ok) and code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
 
 
 def holder_alive(holder: Mapping[str, Any]) -> bool:

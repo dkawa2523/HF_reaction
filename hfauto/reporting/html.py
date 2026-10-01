@@ -3,7 +3,7 @@
 One self-contained page per view: a summary row per reaction (δG_eff, ΔE‡, ΔG‡, ν_imag,
 connection, outcome, blockers, the association quantities and the energy level), an inline-SVG
 energy diagram per reaction and the TS imaginary mode animated by 3Dmol.js. The module does not
-know the run layout (eng P0-1): geometries are reached only through ``load_xyz``. Standard
+know the run layout: geometries are reached only through ``load_xyz``. Standard
 library, numpy and hfauto.core only; no plotting or templating package.
 """
 

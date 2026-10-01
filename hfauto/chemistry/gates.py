@@ -257,7 +257,7 @@ def discovery_verdict(
     dE_rxn_kcal: float | None,
     policy: Policy = _DEFAULT,
 ) -> str | None:
-    """None when a low-level NT2 product is kept, else the negative reason (CH-28). It needs its
+    """None when a low-level NT2 product is kept, else the negative reason. It needs its
     validated TS and IRC; the reaction window is the DFT one (a narrower low-level sieve
     only adds false negatives) and an unevaluated reaction energy lies outside it."""
     if not ts_validated:

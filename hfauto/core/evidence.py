@@ -66,7 +66,7 @@ Task = Literal["sp", "opt", "freq", "saddle"]
 class Evidence(BaseModel):
     """Observed facts of one normally terminated external job. Its existence guarantees:
     (1) normal termination and SCF convergence  (2) geometry convergence for opt / saddle
-    (3) 3N - n_external frequencies for freq  (4) preserved atom order
+    (3) 3N - n_external frequencies and the Hessian for freq  (4) preserved atom order
     (5) preserved input frame (echoed start geometry within 1e-4 A of the input)
     (6) observed Level matches the requested MethodSpec and the site's version pin
     (7) a gradient, when given, is the one at final.
@@ -91,12 +91,12 @@ class Evidence(BaseModel):
 
     @model_validator(mode="after")
     def _freq_modes(self) -> Evidence:
-        """Guarantee (3), checked once here: 3N - n_external frequencies and one imaginary
-        mode per negative frequency."""
+        """Guarantee (3), checked once here: 3N - n_external frequencies, one imaginary mode
+        per negative frequency, and the Hessian they come from."""
         if self.task != "freq":
             return self
-        if self.frequencies_cm1 is None or self.n_external is None:
-            raise ValueError("a freq Evidence needs frequencies_cm1 and n_external")
+        if self.frequencies_cm1 is None or self.n_external is None or self.hessian is None:
+            raise ValueError("a freq Evidence needs frequencies_cm1, n_external and hessian")
         expected = 3 * len(self.final.symbols) - self.n_external
         if len(self.frequencies_cm1) != expected:
             raise ValueError(f"frequency_count:{len(self.frequencies_cm1)}!={expected}")

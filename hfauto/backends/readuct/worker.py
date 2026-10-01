@@ -11,9 +11,9 @@ the other is the product. Bond sets are compared atom by atom in the source's at
 relabelled image of the source (a degenerate rearrangement such as a double H exchange) is a
 product and a conformer or stereoisomer is not; the product keeps the source's atom order, also
 from an end that is the source relabelled (``irc_product``). The IRC and minimum optimizations
-take up to 500 iterations (C13). An SCC failure reruns the attempt once at the retry electronic
+take up to 500 iterations. An SCC failure reruns the attempt once at the retry electronic
 temperature; the energies of the source, TS and product are then recomputed at the base
-temperature (chem 11).
+temperature.
 """
 
 from __future__ import annotations
@@ -119,7 +119,8 @@ class _Scine:
         import scine_utilities
         import scine_xtb_wrapper  # noqa: F401  (registers the XTB calculator)
 
-        self.readuct, self.utils = scine_readuct, scine_utilities
+        self.readuct = scine_readuct
+        self.utils: Any = scine_utilities  # its type stub lacks the core module
         self.job, self.workdir, self.T = job, workdir, temperature_K
         self.symbols: list[str] = list(job["symbols"])
         self.systems: dict[str, Any] = {}

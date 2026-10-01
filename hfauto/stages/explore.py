@@ -7,7 +7,7 @@ source species (the source's representative, in whose atom order the trial ran).
 joins a known basin (a screen minimum or an earlier product of its composition) only as
 labelled: the same atom-indexed bonds and permutation-invariant RMSD (ReaDuct's and the screen's
 xTB energies are not compared); else it becomes a species. So a discovery's ends keep the
-labelling it followed, and a degenerate product never joins its source (analysis X2). A lost
+labelling it followed, and a degenerate product never joins its source. A lost
 seed state (a bond change from the basin it collapsed into) becomes one ``relaxation`` product,
 from the seed refined as its own species.
 """
@@ -97,9 +97,9 @@ def _relaxations(species: Mapping[str, SpeciesRecord], minima: Sequence[MinimumR
     """One ``relaxation`` product per seed state the screen lost: no screen minimum of the
     composition keeps its label, and a bond change separates a seed of that label from
     the basin it collapsed into (``final``: screen-optimized structures by minimum id). A
-    threshold crossing inside one basin loses no state (S19: N···H 1.426 Å in the c01 seed,
-    1.414 Å in its basin, r_thr 1.42 Å); one resolved change suffices (S6: H2–O5 +2.00 / −0.35 Å
-    about r_thr). The product is the lost seed of lowest low-level energy (then species id),
+    threshold crossing inside one basin loses no state (TMA·(HF)2: N···H 1.426 Å in a seed,
+    1.414 Å in its basin, r_thr 1.42 Å); one resolved change suffices (OH + CH4: H2–O5 +2.00 /
+    −0.35 Å about r_thr). The product is the lost seed of lowest low-level energy (then species id),
     unrelaxed, from its basin, for the DFT tier to ask once. It has no low-level stationary
     step, so discovery_verdict does not apply."""
     kept = {(m.composition_id, m.state_label) for m in minima}

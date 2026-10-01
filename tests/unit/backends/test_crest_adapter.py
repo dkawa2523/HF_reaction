@@ -32,7 +32,7 @@ def test_search_runs_on_site_threads(tmp_path, monkeypatch):
     crest = engines.create(Capability.CONFORMERS, "crest", site=site,
                            jobs=JobRunner(JobStore(tmp_path / "jobs"), cores=4))
     tasks = []
-    monkeypatch.setattr(crest.jobs, "run", lambda task, adapter, deadline=None: tasks.append(task))
+    monkeypatch.setattr(crest.jobs, "run", lambda task, adapter: tasks.append(task))
     for nci in (False, True):
         crest.search(ION, GFN2, CS(nci=nci))
     assert all(set(t.key_payload) == {"molecule", "method", "settings"} for t in tasks)

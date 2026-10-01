@@ -3,7 +3,7 @@ method panel.
 
 Imports only hfauto.core, hfauto.chemistry.gates and the standard library. Everything is a
 pure function over typed records except ``write_tables``. No confidence score is produced
-(AR-27): a reaction is either rankable by ``gates.rankable`` or listed with its blockers; the
+(design §5.4): a reaction is either rankable by ``gates.rankable`` or listed with its blockers; the
 method panel's dE_act spread is shown as columns, never as a blocker. A panel energy that fails
 ``gates.spin_ok`` stays in its row, noted, and out of the spread (the thermo stage keeps such an
 energy out of the ranking).
@@ -47,7 +47,7 @@ class PanelRow:
     except the values named in ``notes``."""
 
     reaction_id: str
-    level_key: str  # Level.full_key(): grid and scf_tol are part of the key (CH-25)
+    level_key: str  # Level.full_key(): grid and scf_tol are part of the key
     level: str
     dE_rxn_kcal: float
     dE_act_kcal: float | None
@@ -177,7 +177,7 @@ def method_panel(
     policy: Policy,
 ) -> list[PanelRow]:
     """dE_rxn and dE_act of each reaction at every level with energies at its stationary
-    points, keyed by ``Level.full_key`` (CH-25).
+    points, keyed by ``Level.full_key``.
 
     A stationary point is a subject of the sp stage (a minimum_id, or SaddleClaim.freq_calc
     for the TS): its reference energy comes from its freq calculation, the other levels from

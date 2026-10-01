@@ -201,7 +201,7 @@ def basin_coords(symbols: Sequence[str], basin: np.ndarray, own: np.ndarray) -> 
     """The basin's structure in the atom order of ``own`` (a structure of that basin), mirrored
     when the basin is chiral and ``own`` has the other handedness. When ``own`` has the basin's
     bond graph, an atom maps only onto one of its WL class, so the relabelling keeps own's
-    atom-indexed bonds however far own lies from the basin (an xTB product of a DFT basin, S6);
+    atom-indexed bonds however far own lies from the basin (an xTB product of a DFT basin);
     else (own changed state in the basin's relaxation) same elements match."""
 
     x = np.asarray(basin, dtype=float).reshape(-1, 3)

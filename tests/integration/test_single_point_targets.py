@@ -15,7 +15,7 @@ from hfauto.core.system import CompositionInput, SpeciesInput, SystemConfig
 from hfauto.drivers.minimum import calc_id
 from hfauto.stages.single_point import SinglePointConfig, SinglePointStage
 
-T, O = R.ArtifactType, R.CaseOutcome
+T, Out = R.ArtifactType, R.CaseOutcome
 DFT, BIG = (MethodSpec(id=b, kind="dft", functional="xfake", basis=b) for b in ("svp", "tzvp"))
 # minimum -> (symbols, composition_id, state_label, tier). The double well HNO is composition
 # c = NH + O of the system; c2 = NH + F (Hill FHN) is another one. r2 is a second conformer of
@@ -37,7 +37,7 @@ class SpQM(FakeQM):
                         final=start, energy_hartree=0.0, output=start.file, job_key=key)
 
 
-def _inputs(tmp_run: Path, outcome: O | None) -> tuple[Manifest, dict[str, Evidence], str]:
+def _inputs(tmp_run: Path, outcome: Out | None) -> tuple[Manifest, dict[str, Evidence], str]:
     """One reaction with ``outcome`` (degenerate: r -> r; barrierless: no saddle claim)."""
     qm = FakeQM(tmp_run, pes := double_well())
     point = {"r": "reactant", "p": "product"}
@@ -65,20 +65,20 @@ def _inputs(tmp_run: Path, outcome: O | None) -> tuple[Manifest, dict[str, Evide
                            energy_hartree=0.0)
     rx = R.ReactionRecord(
         reaction_id="rx", reactants=term, products=term, endpoints=("a", "b"), source="declared",
-        minima=("m_r", "m_r") if outcome is O.DEGENERATE else ("m_r", "m_p"),
-        outcome=outcome, saddle=None if outcome is O.BARRIERLESS else saddle)
+        minima=("m_r", "m_r") if outcome is Out.DEGENERATE else ("m_r", "m_p"),
+        outcome=outcome, saddle=None if outcome is Out.BARRIERLESS else saddle)
     arts.append(Artifact(artifact_id="rx", type=T.REACTION, payload=rx))
     return (Manifest(run_id="r", stage_id="v", created_at="t", artifacts=arts),
             {f"m_{k}": e for k, e in freq.items()} | {calc_id(ts): ts}, calc_id(ts))
 
 
 @pytest.mark.parametrize(("outcome", "expected"), [
-    (O.ELEMENTARY_STEP, REFERENCE | {"m_p", "TS"}),
-    (O.REASSIGNED, REFERENCE | {"m_p", "TS"}),
-    (O.DEGENERATE, REFERENCE | {"TS"}),
-    (O.BARRIERLESS, REFERENCE | {"m_p"}),
-    *((o, set()) for o in (O.MULTI_STEP, O.SAME_BASIN, O.OUT_OF_WINDOW, O.UNRESOLVED,
-                           O.BLOCKED, None)),
+    (Out.ELEMENTARY_STEP, REFERENCE | {"m_p", "TS"}),
+    (Out.REASSIGNED, REFERENCE | {"m_p", "TS"}),
+    (Out.DEGENERATE, REFERENCE | {"TS"}),
+    (Out.BARRIERLESS, REFERENCE | {"m_p"}),
+    *((o, set()) for o in (Out.MULTI_STEP, Out.SAME_BASIN, Out.OUT_OF_WINDOW, Out.UNRESOLVED,
+                           Out.BLOCKED, None)),
 ])
 def test_sp_computes_only_the_points_the_ranking_reads(fake_runtime, tmp_run, outcome, expected):
     inputs, freq, ts = _inputs(tmp_run, outcome)

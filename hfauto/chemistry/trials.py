@@ -24,7 +24,7 @@ then their description; the templates take turns T1 → T2 → T3 → T4 up to t
 of one template and value that the cap would split are all left out. A trial's id is its class
 description and its source. So the trials depend on the structure, not on the atom numbering.
 Linear molecules are bent by 10° and displaced by 0.05 Å per atom (seeded), so that NT2 does
-not start on a symmetry line (CH-30). A torsion is studied only when declared (``hypotheses``).
+not start on a symmetry line. A torsion is studied only when declared (``hypotheses``).
 """
 
 from __future__ import annotations
@@ -163,7 +163,7 @@ def is_linear(symbols: Sequence[str], coords: np.ndarray) -> bool:
     return len(symbols) >= 3 and external_basis(symbols, coords).shape[1] == 5
 
 
-def perturb_linear(coords: np.ndarray, *, seed: int = RNG_SEED) -> np.ndarray:
+def perturb_linear(coords: np.ndarray) -> np.ndarray:
     """Bend the atoms on one side of the middle atom by 10°, then displace every atom 0.05 Å."""
     x = np.asarray(coords, dtype=float).reshape(-1, 3)
     axis = np.linalg.svd(x - x.mean(axis=0))[2][0]
@@ -174,7 +174,7 @@ def perturb_linear(coords: np.ndarray, *, seed: int = RNG_SEED) -> np.ndarray:
     bent = x.copy()
     side = along < along[pivot]
     bent[side] = (x[side] - x[pivot]) @ rotation.T + x[pivot]
-    step = np.random.default_rng(seed).normal(size=x.shape)
+    step = np.random.default_rng(RNG_SEED).normal(size=x.shape)
     return bent + PERTURB_A * step / np.linalg.norm(step, axis=1, keepdims=True)
 
 

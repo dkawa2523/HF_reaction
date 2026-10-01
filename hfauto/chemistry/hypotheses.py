@@ -6,22 +6,22 @@ them. A hypothesis stands for its case key (``pair_key``): a pair that differs i
 by its two states, else by its two minima. An undeclared pair whose key a hypothesis already has
 makes none; every hypothesis of a key holds each distinct low-level TS of that key (its own
 first, then in priority order), the seeds its case tries in turn, and the first verified DFT
-saddle (G8-P7). An undeclared pair joins two DFT minima of one level inside the window, or one basin, and
-changes bonds between its ends (CH-07): a conformer change, torsion or enantiomerization is studied
+saddle. An undeclared pair joins two DFT minima of one level inside the window, or one basin,
+and changes bonds between its ends: a conformer change, torsion or enantiomerization is studied
 only when declared (Curtin-Hammett), so one basin gives a degenerate rearrangement that exchanges
-bonded partners (S10). Bonds and degeneracy are judged on the basins' optimized structures in the
+bonded partners. Bonds and degeneracy are judged on the basins' optimized structures in the
 endpoints' atom order and handedness (``identity.member_coords``), never on input coordinates.
 A discovery's ends are its own ``source_species`` and ``product_species``, labelled along the
 structures it followed, so a basin representative's arbitrary labelling never makes or hides a
-bond change (analysis X2); a discovery without both ends gives no hypothesis.
+bond change; a discovery without both ends gives no hypothesis.
 A mode-follow saddle of the DFT tier is a verified saddle (``ts_calc``); any other discovery TS
-is a low-level TS. Negative discoveries never veto a hypothesis (review X1). A relaxation product
-(a seed state lost at screen, R6) runs from the DFT basin of the seed's own job, while it keeps
-the seed's state, to the DFT basin of its collapse basin; it offers no TS.
+is a low-level TS. Negative discoveries never veto a hypothesis. A relaxation product (a seed
+state lost at screen) runs from the DFT basin of the seed's own job, while it keeps the seed's
+state, to the DFT basin of its collapse basin; it offers no TS.
 
 A hypothesis that forms exactly one bond, between two fragments of its reactant, and breaks
 none, in a composition with monomer states (``thermo.monomer_states``) whose DFT minima lie on
-its level, is an association (design X4): its reactant side is the separated monomers
+its level, is an association: its reactant side is the separated monomers
 (``ReactionRecord.monomers``), each the lowest DFT minimum of its state on the complex's level
 (charge and multiplicity aside), as a barrierless association has an asymptote, not a minimum,
 there. The complex stays ``minima[0]``: it identifies the hypothesis and gives the formed bond,
@@ -74,7 +74,7 @@ def pair_key(a: MinimumRecord, b: MinimumRecord) -> CaseKey:
 
 
 def seed_species_id(relaxation: DiscoveryRecord) -> str:
-    """The species a relaxation seed is refined as at DFT (R6), named as explore names a
+    """The species a relaxation seed is refined as at DFT, named as explore names a
     discovery's new structure: the seed itself may represent its collapse basin."""
     return f"spc_{relaxation.discovery_id}"
 
@@ -185,7 +185,7 @@ def _record(pool: _Pool, rid: str, source: Source, minima: tuple[MinimumRecord, 
         monomers=tuple(m.minimum_id for m in monomers),
         minima=(ma.minimum_id, mb.minimum_id), endpoints=(sa.species_id, sb.species_id),
         # One basin reached through a relabelling (NH3 inversion) or as its mirror image
-        # (enantiomerization) stays a reaction (CH-35).
+        # (enantiomerization) stays a reaction (design §8.2).
         degenerate=ma.basin_id == mb.basin_id and identity.mapped_equivalent(symbols, xa, xb),
         coordinate=coordinate, torsional=not (formed or broken) if torsional is None else torsional,
         low_level_ts=() if low_level_ts is None else (low_level_ts,), ts_calc=ts_calc,
@@ -211,7 +211,7 @@ def _declared(pool: _Pool, reaction: ReactionInput) -> ReactionRecord:
 
 
 def _relaxation(pool: _Pool, d: DiscoveryRecord) -> _Candidate:
-    """Seed -> collapse (R6): the DFT basin of the seed's own job (``source_species``), only
+    """Seed -> collapse: the DFT basin of the seed's own job (``source_species``), only
     while it keeps the seed's state (a seed that collapsed at DFT too gives none), and its
     collapse basin's. Both ends carry the seed's labelling."""
     ends = pool.ends(d)
@@ -237,7 +237,7 @@ def _candidates(pool: _Pool, discoveries: Iterable[DiscoveryRecord]) -> Iterator
 def _auto(pool: _Pool, c: _Candidate, ma: MinimumRecord, mb: MinimumRecord
           ) -> ReactionRecord | None:
     """An undeclared hypothesis: DFT minima of one level and composition inside the window whose
-    ends, the discovery's own, differ in bonds (CH-07); in one basin, a degenerate
+    ends, the discovery's own, differ in bonds (design §8.2); in one basin, a degenerate
     rearrangement."""
     same_level = ma.tier == mb.tier == "dft" and ma.level_key == mb.level_key
     if not same_level or ma.composition_id != mb.composition_id or c.ends is None:

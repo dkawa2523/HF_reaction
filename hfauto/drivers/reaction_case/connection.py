@@ -51,7 +51,7 @@ def _key(ctx: Ctx, record: MinimumRecord) -> str:
 
 
 def _as_end(ctx: Ctx, well: MinimumRecord, end: MinimumRecord, path: Sequence[float]) -> bool:
-    """G5-P2: another basin of the end's state, within a resolution of it and with no hill of a
+    """Another basin of the end's state, within a resolution of it and with no hill of a
     resolution between them on ``path`` (the energies joining them), is that end at the
     resolution: a basin split finer than the resolution is no intermediate."""
     e_well, e_end, res = well.energy_hartree, end.energy_hartree, ctx.resolution
@@ -116,7 +116,7 @@ def _member(ctx: Ctx, well: Reached) -> tuple[MinimumRecord, SpeciesRecord]:
 
 def _assign(ctx: Ctx, side: Evidence, x: np.ndarray, name: str) -> Reached | None:
     """Registry.find of the side at ``x`` (its own structure, or its image's); a torsional case
-    falls back to the nearest declared dihedral (CH-04); else the converged side is registered."""
+    falls back to the nearest declared dihedral (design §7.3), else registers the converged side."""
     basin = ctx.rt.registry.find(side, coords=x)
     if basin is not None:
         return Reached(ctx.rt.registry.basin(basin), side)
@@ -202,7 +202,7 @@ def _keys(ctx: Ctx, sides: tuple[Reached | None, Reached | None], ts: float
           ) -> tuple[str | None, str | None]:
     """The sides' case keys. A side in a new basin of the state of the end the other side
     reached is that end when it and the TS, the one hill between them, lie within a resolution
-    of that end (G5-P2 on the QRC path)."""
+    of that end (``_as_end`` on the QRC path)."""
     ends = {_key(ctx, e): e for e in ctx.end_records()}
     keys = [None if r is None else _key(ctx, r.record) for r in sides]
     for well, mine, other in ((sides[0], keys[0], keys[1]), (sides[1], keys[1], keys[0])):
@@ -228,7 +228,7 @@ def _rejected(reasons: tuple[str, ...], one_key: bool, a: Reached | None, b: Rea
 
 def _two_steps(ctx: Ctx, state: CaseState, label: str, sides: tuple[Reached, Reached],
                keys: tuple[str | None, str | None], attempt: int) -> CaseState | None:
-    """GEN-05: a reassigned TS with exactly one side at an end (by its case key) makes the case
+    """A reassigned TS with exactly one side at an end (by its case key) makes the case
     two steps (row 5), the other side being the intermediate: a new chemical state for a
     bond-changing case, a new basin for a same-state one; the split child between those two
     validates this TS (a degenerate case: child 1). None for any other connection."""
@@ -262,8 +262,8 @@ def _past_the_well(ctx: Ctx, state: CaseState, e: Sequence[float], name: str) ->
 def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """relax_to_minimum → Registry on the latest profile's lowest well (row 11); the claim of a
     TS of another process (row 8 searched on) is dropped with its connection verdict. The well
-    is an end when it has an end's case key, or (G5-P2) lies within a resolution of an end with
-    no hill of a resolution between them on the profile. A failed relaxation is no chemical
+    is an end when it has an end's case key, or (``_as_end``) lies within a resolution of an end
+    with no hill of a resolution between them on the profile. A failed relaxation is no chemical
     result: the profile goes on from its highest peak."""
     path, state = ctx.work.path, replace(state, claim=None, connection=None)
     if path is None:  # row 11 follows a DFT profile (CaseState.screen)

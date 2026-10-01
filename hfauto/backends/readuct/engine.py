@@ -1,7 +1,7 @@
 """SCINE ReaDuct 6.1 discovery engine (design §6.3, DISCOVERY).
 
 Each ``explore`` call is one JobStore job: an attempt runs ``worker.run_attempt`` in a worker
-subprocess whose cwd is the attempt directory (CH-31), with the timeout of
+subprocess whose cwd is the attempt directory, with the timeout of
 ``DiscoverySettings.timeout_s``. The worker reports the observed scine-readuct version, which
 must equal the site pin. There is no continuation: a failed attempt is final.
 """
@@ -16,7 +16,7 @@ from typing import Any, ClassVar
 from hfauto.backends.protocols import DiscoveryResult, DiscoverySettings, Requirements
 from hfauto.chemistry.xyz import Molecule, written_geometry
 from hfauto.core.evidence import Failure, FailureKind, Geometry
-from hfauto.core.method import Deadline, EngineSite, MethodSpec
+from hfauto.core.method import EngineSite, MethodSpec
 from hfauto.core.records import ReactionTrial
 from hfauto.execution.jobs import JobRunner, Task
 from hfauto.execution.process import Command, CommandResult
@@ -42,8 +42,7 @@ class ReaDuctEngine:
         return method.kind == "xtb" and method.gfn is not None
 
     def explore(self, source: Molecule, trial: ReactionTrial, method: MethodSpec,
-                settings: DiscoverySettings, *,
-                deadline: Deadline | None = None) -> DiscoveryResult | Failure:
+                settings: DiscoverySettings) -> DiscoveryResult | Failure:
         drive = trial.model_dump(mode="json",
                                  include={"associations", "dissociations"})
         task = Task(
@@ -58,7 +57,7 @@ class ReaDuctEngine:
                             "method_family": f"GFN{method.gfn}", "trial": drive,
                             "settings": settings.model_dump(mode="json")}},
         )
-        return self.jobs.run(task, _Adapter(self.site, self.jobs), deadline=deadline)
+        return self.jobs.run(task, _Adapter(self.site, self.jobs))
 
 
 class _Adapter:

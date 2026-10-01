@@ -11,7 +11,7 @@ displacements reach two distinct minima gives two ``mode_follow`` species at the
 minima, registered by identity with no new job, and a ``mode_follow`` discovery between them
 (its ends, in the saddle's atom order); the saddle's own species joins the side basin nearer
 its input structure (note ``endpoint_was_saddle``).
-A relaxation product's seed (R6) is asked at DFT once, last, from its unrelaxed geometry as its
+A relaxation product's seed is asked at DFT once, last, from its unrelaxed geometry as its
 own species (``hypotheses.seed_species_id``; the seed may carry its collapse basin's job); one that
 lands in another state than its own is noted ``collapsed_at_dft_from_seed``.
 """
@@ -111,7 +111,7 @@ class _Run:
     calcs: dict[str, Evidence] = field(default_factory=dict)
     minima: dict[str, MinimumRecord] = field(default_factory=dict)  # latest record per basin
     species: list[SpeciesRecord] = field(default_factory=list)  # mode_follow sides
-    seeds: list[SpeciesRecord] = field(default_factory=list)  # relaxation seeds (R6)
+    seeds: list[SpeciesRecord] = field(default_factory=list)  # relaxation seeds
     extra: list[Artifact] = field(default_factory=list)  # discoveries and failed minima
     records: dict[str, MinimumRecord | None] = field(default_factory=dict)  # per species id
     history: dict[str, list[str]] = field(default_factory=dict)  # diagnostics.json
@@ -223,7 +223,7 @@ class _Run:
         self.history[sid].append(f"joined:{record.basin_id}")
 
     def note_collapses(self) -> None:
-        """R6: a seed whose DFT minimum lies in another state than its own collapsed again."""
+        """A relaxation seed whose DFT minimum is in another state than its own collapsed again."""
         for seed in self.seeds:
             record = self.records.get(seed.species_id)
             if record is not None and record.state_label != seed.state_label:
@@ -262,7 +262,7 @@ def _known(inputs: Manifest, cfg: MinimaConfig, rt: StageRuntime, qm: QMEngine,
 
 def _seeds(discoveries: Iterable[DiscoveryRecord], species: dict[str, SpeciesRecord]
            ) -> list[SpeciesRecord]:
-    """R6: the seed of each relaxation product, unrelaxed, as its own species
+    """The seed of each relaxation product, unrelaxed, as its own species
     (hypotheses.seed_species_id): the seed itself may carry its collapse basin's job."""
     return [species[d.product_species].model_copy(update={"species_id": seed_species_id(d)})
             for d in discoveries if d.mechanism == "relaxation" and d.product_species in species]

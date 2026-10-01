@@ -106,7 +106,7 @@ def qrc(ctx, state, monkeypatch, names, ts_kcal=20.0, amplitudes=None):
     ctx.work.calcs["freq"] = Evidence.model_validate({
         **sides[0].model_dump(), "task": "freq", "energy_hartree": ts_kcal * K, "n_external": 6,
         "frequencies_cm1": (-1500.0, 100.0, 200.0, 300.0, 400.0, 500.0),
-        "imaginary_modes": (tuple(np.eye(12)[3]),)})
+        "imaginary_modes": (tuple(np.eye(12)[3]),), "hessian": sides[0].output})
     finals = tuple(ctx.coords(s.final) for s in sides)
     monkeypatch.setattr(connection, "_sides", lambda _ctx, _freq, _starts, attempt: (
         (amplitudes if amplitudes is not None else []).append(attempt), (sides, finals))[1])

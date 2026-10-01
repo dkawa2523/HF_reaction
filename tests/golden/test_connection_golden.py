@@ -20,7 +20,7 @@ GEO = Geometry(file=FileRef(path="x.xyz", sha256="0" * 64), fingerprint="f", sym
 
 
 def _ev(task, e):  # an atom: a freq has no mode
-    atom = {"frequencies_cm1": (), "n_external": 3} if task == "freq" else {}
+    atom = {"frequencies_cm1": (), "n_external": 3, "hessian": GEO.file} if task == "freq" else {}
     return Evidence(engine="nwchem", task=task, level=LEVEL, start=GEO, final=GEO, output=GEO.file,
                     energy_hartree=e, job_key=task, **atom)
 
@@ -80,7 +80,8 @@ def test_freq_reproduces_its_opt_energy_in_the_same_state(golden, stem, n_extern
             engine="nwchem", task=task, level=nw.observe_level(text), start=geo, final=geo,
             output=GEO.file, energy_hartree=nw.total_energy(text), job_key=task,
             frequencies_cm1=(1000.0,) * n_modes if task == "freq" else None,  # not under test
-            n_external=n_external if task == "freq" else None)
+            n_external=n_external if task == "freq" else None,
+            hessian=GEO.file if task == "freq" else None)
     freq, opt = calcs["freq"], calcs["opt"]
     assert abs(freq.energy_hartree - opt.energy_hartree) == pytest.approx(gap, abs=1e-8)
     assert is_minimum(freq, opt=opt) == Gate(True)

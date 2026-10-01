@@ -3,7 +3,7 @@
 Runs ``xtb input.xyz`` with ``--sp`` / ``--opt vtight`` / ``--hess`` plus ``--gfn``,
 ``--chrg``, ``--uhf`` (multiplicity - 1) and ``--etemp`` when the method asks for it (gas
 phase only). An optimization counts as converged only with return code 0, no
-``FAILED TO CONVERGE`` in the output and no ``NOT_CONVERGED`` file (BUG-07, CH-20); a
+``FAILED TO CONVERGE`` in the output and no ``NOT_CONVERGED`` file; a
 continuation restarts from ``xtbopt.xyz``. The ``hessian`` file (Eh/bohr², input frame)
 becomes the canonical ``.npy`` and the frequencies come from ``chemistry.vibrations``.
 ``init_hessian`` and ``scf_guess`` are accepted and ignored: every optimization is vtight,

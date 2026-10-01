@@ -98,7 +98,7 @@ def _search(engine: bp.ConformerEngine, method: MethodSpec, load_xyz: Callable[[
 
 def _select(cands: list[_Cand], keep_per_state: int) -> list[_Cand]:
     """Per state label the lowest ``keep_per_state``. A missing energy is dropped when the state
-    has energies (BUG-08); a state without energies keeps input order."""
+    has energies; a state without energies keeps input order."""
     ranked = sorted(cands, key=lambda c: (c.energy is None, c.energy or 0.0))
     kept: list[_Cand] = []
     for label in dict.fromkeys(c.label for c in ranked):

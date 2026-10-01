@@ -2,8 +2,8 @@
 
 One JobRunner task per search on the site's execution threads (``-T``, ``OMP_NUM_THREADS``);
 ``--nci`` searches add ``--noopt``. The attempt directory receives ``input.xyz``; the parser
-reads ``crest_conformers.xyz`` (energies from the comment lines, a missing one stays None,
-BUG-08) and turns a stop on 'Change in topology detected' into ``topology_stops`` (the last
+reads ``crest_conformers.xyz`` (energies from the comment lines, a missing one stays None)
+and turns a stop on 'Change in topology detected' into ``topology_stops`` (the last
 ``crestopt.log`` frame).
 The observed version (banner of every run, the same text as ``crest --version``) must match
 the site pin. There is no RDKit fallback.
@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, ClassVar
 from hfauto.backends.protocols import ConformerEnsemble, ConformerSettings, Requirements
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz_trajectory, write_xyz, written_geometry
 from hfauto.core.evidence import Failure, FailureKind, FileRef, Geometry
-from hfauto.core.method import Deadline, EngineSite, MethodSpec
+from hfauto.core.method import EngineSite, MethodSpec
 from hfauto.execution.jobs import Task
 from hfauto.execution.process import Command, CommandResult, resolve_executable
 
@@ -146,8 +146,8 @@ class CRESTEngine:
         etemp_ok = method.electronic_temperature_K in (None, 300.0)
         return method.kind == "xtb" and method.gfn is not None and etemp_ok
 
-    def search(self, mol: Molecule, method: MethodSpec, settings: ConformerSettings, *,
-               deadline: Deadline | None = None) -> ConformerEnsemble | Failure:
+    def search(self, mol: Molecule, method: MethodSpec, settings: ConformerSettings
+               ) -> ConformerEnsemble | Failure:
         if not self.supports(method):
             return Failure(kind=FailureKind.INPUT_INVALID, reason=f"crest cannot run {method.id!r}")
         task = Task(
@@ -157,4 +157,4 @@ class CRESTEngine:
             execution=self.site.execution,
             inputs={"molecule": mol, "method": method, "settings": settings},
         )
-        return self.jobs.run(task, self._adapter, deadline=deadline)
+        return self.jobs.run(task, self._adapter)
