@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from hfauto.chemistry.classification import finalize, split
-from hfauto.chemistry.identity import basin_coords
+from hfauto.chemistry.identity import member_coords
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.xyz import XYZ
 from hfauto.core.evidence import Evidence, FileRef, Geometry
@@ -23,7 +23,6 @@ from hfauto.core.method import Deadline, MethodSpec
 from hfauto.core.records import (
     ArtifactType,
     CaseOutcome,
-    MinimumRecord,
     ReactionRecord,
     SpeciesRecord,
 )
@@ -37,10 +36,10 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class CaseRuntime:
-    """``minima`` (DFT minimum id → record, optimized geometry) and ``species`` grow as cases
-    register basins, ``calcs`` (calculation id → Evidence) as cases finish; ``resolve`` opens a
-    FileRef of the run (trajectories, Hessians); ``map`` (StageRuntime.thread_map) runs
-    independent jobs at once, in input order."""
+    """``registry`` (the DFT minima: minimum id → record, optimized geometry) and ``species``
+    grow as cases register basins, ``calcs`` (calculation id → Evidence) as cases finish;
+    ``resolve`` opens a FileRef of the run (trajectories, Hessians); ``map``
+    (StageRuntime.thread_map) runs independent jobs at once, in input order."""
 
     qm: QMEngine
     saddle: SaddleRefiner
@@ -55,7 +54,6 @@ class CaseRuntime:
     case_dir: Path  # cases/; each case writes below case_dir/<reaction_id>
     resolve: Callable[[FileRef], Path]
     map: Callable[[Callable[[Any], Any], Sequence[Any]], list[Any]]
-    minima: dict[str, tuple[MinimumRecord, Geometry]]
     species: dict[str, SpeciesRecord]
     calcs: dict[str, Evidence]
 
@@ -69,12 +67,9 @@ class CaseResult:
 
 def _endpoint(rt: CaseRuntime, minimum_id: str, species_id: str) -> np.ndarray:
     """The basin's optimized structure in a member species' atom order and handedness."""
-    record, geometry = rt.minima[minimum_id]
-    xyz = rt.load_xyz(geometry)
-    if species_id == record.species_id:  # the representative itself
-        return np.asarray(xyz.coords, dtype=float)
-    own = rt.load_xyz(rt.species[species_id].geometry)
-    return basin_coords(xyz.symbols, xyz.coords, own.coords)
+    record, geometry = rt.registry.minima[minimum_id]
+    basin, own = rt.load_xyz(geometry), rt.load_xyz(rt.species[species_id].geometry)
+    return member_coords(basin.symbols, basin.coords, record.species_id, species_id, own.coords)
 
 
 def open_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline: Deadline,
@@ -91,8 +86,8 @@ def open_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline:
         case=case, rt=rt, rules=rules, deadline=deadline, folder=folder,
         symbols=list(first.geometry.symbols), charge=first.charge,
         multiplicity=first.multiplicity, raw=raw, ends=(raw[0], align_mapped(raw[0], raw[1])),
-        energies=(sum(rt.minima[m][0].energy_hartree for m in reactant),
-                  rt.minima[case.minima[1]][0].energy_hartree),
+        energies=(sum(rt.registry.minima[m][0].energy_hartree for m in reactant),
+                  rt.registry.minima[case.minima[1]][0].energy_hartree),
         log=log, work=actions.Work(saddle=rt.calcs[case.ts_calc] if case.ts_calc else None),
     )
 
@@ -138,8 +133,8 @@ def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline
         with log_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(entry, sort_keys=True) + "\n")
 
-    minima = tuple(rt.minima[m][0] if m in rt.minima else None for m in case.minima)
-    state = CaseState(minima=(minima[0], minima[1]),
+    a, b = (rt.registry.minima.get(m) for m in case.minima)
+    state = CaseState(minima=(a[0] if a else None, b[0] if b else None),
                       last_saddle="converged" if case.ts_calc else None)
     if case.ts_calc:  # validated first (row 9); a failed gate goes on to SCREEN
         log({"note": f"ts_calc:{case.ts_calc}"})

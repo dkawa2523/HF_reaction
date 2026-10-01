@@ -129,9 +129,10 @@ def context(root: Path, qm, minima, species, case, calcs=None):
     rt = CaseRuntime(
         qm=qm, saddle=fakes.FakeSaddle(root, pes), path=fakes.FakePath(root, pes),
         screen_qm=None, screen_path=None, method=DFT, screen_method=None,
-        registry=Registry([], load), load_xyz=load, file_ref=lambda p: fakes._ref(root, p),
+        registry=Registry(minima.values(), load), load_xyz=load,
+        file_ref=lambda p: fakes._ref(root, p),
         case_dir=root / "cases", resolve=lambda ref: root / ref.path,
-        map=lambda fn, items: [fn(x) for x in items], minima=minima, species=species,
+        map=lambda fn, items: [fn(x) for x in items], species=species,
         calcs=calcs or {})
     return open_case(case, rt, CaseRules(screen=False), Deadline.after(600), root,
                      lambda entry: notes.append(entry.get("note"))), notes

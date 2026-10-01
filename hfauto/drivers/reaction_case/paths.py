@@ -158,7 +158,8 @@ def _projected(ctx: Ctx, frames: list[np.ndarray], points: list[Evidence]) -> li
     keeps its broken-symmetry energy, noted ap_skipped. The monomers' sum and the adduct keep
     theirs; spin_ok and the gates of stationary points and thermochemistry are untouched."""
     rt, energies = ctx.rt, [ev.energy_hartree for ev in points]
-    spins = [rt.species[rt.minima[m][0].species_id].multiplicity for m in ctx.case.monomers]
+    spins = [rt.species[rt.registry.minima[m][0].species_id].multiplicity
+             for m in ctx.case.monomers]
     if not low_spin_coupled(spins, ctx.multiplicity):
         return energies
     high, spin = sum(m - 1 for m in spins) + 1, (ctx.multiplicity - 1) / 2

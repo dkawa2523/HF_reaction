@@ -255,6 +255,36 @@ def test_only_reacting_compositions_and_their_monomers_are_refined(fake_runtime,
     assert "energy" not in dft.calls  # one candidate per group: no rerank single point
 
 
+def test_a_crowded_state_is_reranked_by_single_points_at_its_screen_structures(fake_runtime,
+                                                                                tmp_run):
+    """Two bent conformers of one state (100° and 140°) and per_state 1: each gets a single
+    point at its screen minimum's structure, and only the lower one is refined."""
+    cos = np.cos(np.radians([100.0, 140.0]))
+
+    def bent(x):
+        o, a, b = np.reshape(x, (3, 3))
+        ra, rb = np.linalg.norm(a - o), np.linalg.norm(b - o)
+        c = float((a - o) @ (b - o)) / (ra * rb)
+        return float(0.5 * ((ra - 0.96) ** 2 + (rb - 0.96) ** 2)
+                     + ((c - cos[0]) * (c - cos[1])) ** 2 + 1e-3 * c)  # 140° lies lower
+
+    pes = fakes.PES(("O", "H", "H"), bent, {
+        f"w{i}": np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [0.96 * c, 0.96 * s, 0.0]])
+        for i, (c, s) in enumerate(zip(cos, np.sin(np.arccos(cos)), strict=True), start=1)})
+    endpoint = {"id": "w1", "xyz": "w1.xyz", "role": "endpoint"}  # H2O reacts
+    system = SystemConfig(system_id="t", species=[endpoint])
+    run, _, dft = stage(fake_runtime, tmp_run, pes, system=system)
+    screen = run("screen", [species(tmp_run, pes, w, w) for w in ("w1", "w2")], **SCREEN)
+    basins = screen.records(T.MINIMUM, MinimumRecord)
+    assert len(basins) == 2 and len({m.state_label for m in basins}) == 1
+    out = run("dft", screen.artifacts, **DFT, select={"per_state": 1, "rerank_sp": True})
+    sps = [ev for ev in out.records(T.CALCULATION, Evidence) if ev.task == "sp"]
+    starts = {ev.start.fingerprint for ev in sps}
+    assert starts == {screen.evidence(m.opt_calc).final.fingerprint for m in basins}
+    (high,) = [m for m in out.records(T.MINIMUM, MinimumRecord) if m.tier == "dft"]
+    assert high.species_id == "w2" and dft.calls == ["energy", "energy", "optimize", "frequencies"]
+
+
 def test_a_minimum_short_of_stationary_is_pushed_with_the_runtimes_hessian(fake_runtime,
                                                                             tmp_run):
     """G5-P1 through the stage: the runtime opens the freq Hessian, so a DFT opt stopped short

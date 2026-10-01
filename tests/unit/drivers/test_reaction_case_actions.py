@@ -97,28 +97,26 @@ class Batches(list):  # CaseRuntime.map: records each batch's size, runs it back
 
 def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None, neb=()):
     qm, load = fakes.FakeQM(root, pes), fakes.xyz_loader(root)
-    registry, minima, species, ids = Registry([], load), {}, {}, []
+    registry, species, ids = Registry([], load), {}, []
     for name in ("reactant", "product"):
         geo = fakes.write_geometry(root, f"in/{name}.xyz", pes.symbols, pes.points[name])
         species[name] = R.SpeciesRecord(species_id=name, state_label="x", charge=0,
                                         multiplicity=1, geometry=geo, source="input",
                                         composition_id=xyz.composition_key(pes.symbols, 0, 1))
         out = relax_to_minimum(pes.molecule(name), DFT, qm, load_xyz=load)
-        record = registry.add(out, species[name], tier="dft")
-        minima.setdefault(record.minimum_id, (record, out.opt.final))  # image ends: one basin
-        ids.append(record.minimum_id)
+        ids.append(registry.add(out, species[name], tier="dft").minimum_id)  # images: one basin
     rt = CaseRuntime(
         qm=qm, saddle=saddle or fakes.FakeSaddle(root, pes), path=fakes.FakePath(root, pes, script),
         screen_qm=fakes.FakeQM(root, screen_pes or pes),
         screen_path=fakes.FakePath(root, pes, neb, tsopt=True),
         method=DFT, screen_method=XTB, registry=registry, load_xyz=load, case_dir=root / "cases",
         file_ref=lambda p: fakes._ref(root, p), resolve=lambda ref: root / ref.path,
-        map=Batches(), minima=minima, species=species, calcs={})
+        map=Batches(), species=species, calcs={})
     case = R.ReactionRecord(reaction_id="rx", reactants=(), products=(), minima=tuple(ids),
                             endpoints=("reactant", "product"), degenerate=ids[0] == ids[1],
                             source="declared")
     ctx = open_case(case, rt, CaseRules(screen=False), Deadline.after(600), root, lambda _: None)
-    return ctx, CaseState(minima=tuple(minima[m][0] for m in ids))
+    return ctx, CaseState(minima=tuple(registry.minima[m][0] for m in ids))
 
 
 def act(ctx, state, action, reason="test"):
@@ -206,7 +204,7 @@ def test_reaction_direction_is_a_ts_mode_rho_or_a_coordinate(tmp_path):
     """G1-P1: a TS seed's own mode, else ρ = ∇(Σ_broken r − Σ_formed r) of the labelled ends (acac
     PT); with no bond change the chord (NH3 inversion), the dihedral or the declared coordinate."""
     ctx, _ = case_ctx(tmp_path, fakes.double_well())
-    geo = ctx.rt.minima[ctx.case.minima[0]][1]  # direction() reads only the seed's mode
+    geo = ctx.rt.registry.minima[ctx.case.minima[0]][1]  # direction() reads only the seed's mode
     kind, mode = ctx.direction(ctx.ends[0], Seed(geo, "screen_ts", OFF_AXIS))
     assert kind == "mode" and tuple(mode) == OFF_AXIS
     r, p = (xyz.read_xyz(ACAC / f"{end}.xyz") for end in ("reactant", "product"))

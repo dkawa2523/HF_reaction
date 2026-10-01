@@ -29,7 +29,8 @@ def _case(rid: str, minima: tuple[str, str], outcome: O | None = None) -> Reacti
 def _book(max_depth: int) -> _Book:
     states = {"a": "A", "a2": "A", "b": "B", "c": "C"}
     minima = {m: (_minimum(m, s), GEO) for m, s in states.items()}
-    return _Book(cast(CaseRuntime, SimpleNamespace(minima=minima, calcs={})), max_depth)
+    registry = SimpleNamespace(minima=minima)
+    return _Book(cast(CaseRuntime, SimpleNamespace(registry=registry, calcs={})), max_depth)
 
 
 def _parent_done(book: _Book) -> list:

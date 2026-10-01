@@ -5,7 +5,7 @@ Imports are limited to hfauto.core, hfauto.chemistry and hfauto.backends.protoco
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -14,7 +14,7 @@ import numpy as np
 
 from hfauto.chemistry.gates import Policy, imaginary_tier, is_minimum, spin_ok
 from hfauto.chemistry.identity import BASIN_DE_HARTREE, assign, same_as_labelled
-from hfauto.chemistry.modes import BOUNDS_A, amplitude, classify_mode_follow
+from hfauto.chemistry.modes import capped, classify_mode_follow, off_saddle
 from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.vibrations import newton_step, stationarity_gap
 from hfauto.chemistry.xyz import XYZ, Molecule, composition_key
@@ -49,12 +49,6 @@ def calc_id(ev: Evidence) -> str:
     return f"calc_{ev.job_key[:16]}"
 
 
-def _capped(step: np.ndarray) -> np.ndarray:
-    """``step`` (N, 3) with its largest atomic displacement capped at the upper bound."""
-    largest = float(np.linalg.norm(step, axis=1).max())
-    return step * min(1.0, BOUNDS_A[1] / largest) if largest > 0.0 else step
-
-
 def newton_push(hessian: np.ndarray, gradient: Sequence[float], xyz: XYZ, *,
                 signed: bool = False) -> np.ndarray | None:
     """The Newton step (vibrations.newton_step, capped at the upper bound) from a point that is
@@ -63,7 +57,7 @@ def newton_push(hessian: np.ndarray, gradient: Sequence[float], xyz: XYZ, *,
     point. ``signed`` (a saddle): to the quadratic model's stationary point."""
     if stationarity_gap(hessian, gradient, xyz.symbols, xyz.coords) <= BASIN_DE_HARTREE:
         return None
-    return _capped(newton_step(hessian, gradient, xyz.coords, signed=signed))
+    return capped(newton_step(hessian, gradient, xyz.coords, signed=signed))
 
 
 @dataclass(frozen=True)
@@ -77,18 +71,6 @@ class _Point:
     tier: str
     notes: tuple[str, ...]
     newton: np.ndarray | None = None
-
-    def step(self, below_cm1: float) -> tuple[np.ndarray, int]:
-        """Sum of the imaginary modes below -below_cm1, each by its energy-target amplitude
-        (modes.amplitude), with the largest atomic displacement capped at the upper bound; and
-        the number of those modes."""
-        symbols, freq = self.xyz.symbols, self.freq
-        pairs = [(nu, np.asarray(mode, dtype=float).reshape(-1, 3)) for nu, mode in
-                 zip(freq.frequencies_cm1 or (), freq.imaginary_modes, strict=False)
-                 if nu < -below_cm1]
-        step = np.sum([amplitude(nu, mode, symbols) / np.linalg.norm(mode, axis=1).max() * mode
-                       for nu, mode in pairs], axis=0)
-        return _capped(step), len(pairs)
 
 
 @dataclass(frozen=True)
@@ -164,14 +146,15 @@ def _labels(source: _Point, sides: list[_Point | None]) -> list[str | None]:
 
 def _follow(ctx: _Ctx, point: _Point, history: list[str]
             ) -> tuple[_Point, tuple[MinimumOutcome, MinimumOutcome] | None]:
-    """Up to max_mode_follow cycles from a saddle: ± along the imaginary mode of a first-order
-    saddle (a TS candidate when both sides are minima, each side settled as its own outcome);
-    one side along all the modes below -saddle_cm1 of a higher-order one (± would mostly stop
-    at first-order saddles)."""
+    """Up to max_mode_follow cycles from a saddle, along its modes below -saddle_cm1
+    (modes.off_saddle): ± along the one of a first-order saddle, its QRC step (a TS candidate
+    when both sides are minima, each side settled as its own outcome); one side along all of a
+    higher-order one (± would mostly stop at first-order saddles)."""
     for cycle in range(1, ctx.max_mode_follow + 1):
         if point.tier != "saddle" or not point.freq.imaginary_modes:
             break
-        step, order = point.step(ctx.gates.saddle_cm1)
+        step = off_saddle(point.freq, point.xyz.symbols, below_cm1=ctx.gates.saddle_cm1)
+        order = sum(nu < -ctx.gates.saddle_cm1 for nu in point.freq.frequencies_cm1 or ())
         sides = [ctx.relax(point.xyz.coords + step, point),
                  ctx.relax(point.xyz.coords - step, point) if order == 1 else None]
         labels = _labels(point, sides)
@@ -190,10 +173,11 @@ def _follow(ctx: _Ctx, point: _Point, history: list[str]
 
 def _soften(ctx: _Ctx, point: _Point, history: list[str]) -> _Point:
     """One push from a soft point, then relax: its Newton step when it is not stationary
-    (whether or not it has imaginary modes), else along its soft imaginary modes. The relaxed
-    point when it is no longer soft (soft:resolved); else the point itself (soft:persisted,
-    noted soft_imaginary_mode)."""
-    step = point.step(ctx.gates.noise_cm1)[0] if point.newton is None else point.newton
+    (whether or not it has imaginary modes), else along its soft imaginary modes
+    (modes.off_saddle). The relaxed point when it is no longer soft (soft:resolved); else the
+    point itself (soft:persisted, noted soft_imaginary_mode)."""
+    step = point.newton if point.newton is not None else off_saddle(
+        point.freq, point.xyz.symbols, below_cm1=ctx.gates.noise_cm1)
     side = ctx.relax(point.xyz.coords + step, point)
     if side is not None and side.tier in ("none", "noise"):
         history.append("soft:resolved")
@@ -262,23 +246,29 @@ def relax_to_minimum(
 @dataclass
 class _Entry:
     record: MinimumRecord
-    xyz: XYZ
+    geometry: Geometry  # the representative's optimized structure
+    xyz: XYZ  # the same, loaded
 
 
 class Registry:
-    """Minima per composition × level_key; one identity criterion, identity.assign (mirror
-    images are one basin).
-
-    ``minima`` pairs each existing record with the geometry of its representative
-    (MinimumRecord itself carries no geometry).
-    """
+    """The store of the minima of a tier: per composition × level_key, one identity criterion,
+    identity.assign (mirror images are one basin). ``minima`` pairs each existing record with
+    the optimized structure of its representative (a MinimumRecord carries no geometry); a
+    record grows members as species join."""
 
     def __init__(self, minima: Iterable[tuple[MinimumRecord, Geometry]],
                  load_xyz: LoadXYZ) -> None:
         self.load_xyz = load_xyz
-        self._basins: dict[str, _Entry] = {
-            record.basin_id: _Entry(record, load_xyz(geometry)) for record, geometry in minima
-        }
+        self._basins = {r.basin_id: _Entry(r, g, load_xyz(g)) for r, g in minima}
+
+    @property
+    def minima(self) -> Mapping[str, tuple[MinimumRecord, Geometry]]:
+        """Minimum id → (current record, its representative's optimized structure)."""
+        return {e.record.minimum_id: (e.record, e.geometry) for e in self._basins.values()}
+
+    def basin(self, basin_id: str) -> MinimumRecord:
+        """The current record of ``basin_id``."""
+        return self._basins[basin_id].record
 
     def find(self, opt: Evidence, coords: np.ndarray | None = None) -> str | None:
         """Basin id that identity.assign uniquely matches with the optimized structure of
@@ -308,7 +298,7 @@ class Registry:
             return self.join(basin, species.species_id)
         xyz = self.load_xyz(opt.final)
         record = _new_record(opt, freq, outcome.notes, species, tier, xyz)
-        self._basins[record.basin_id] = _Entry(record, xyz)
+        self._basins[record.basin_id] = _Entry(record, opt.final, xyz)
         return record
 
     def join(self, basin_id: str, species_id: str, *notes: str) -> MinimumRecord:

@@ -6,7 +6,8 @@ fit from several starting orientations (the alternation only finds a local optim
 ``basin_coords`` keeps the handedness of a chiral one (``is_chiral``). Labelled comparisons
 (``mapped_rmsd``, ``same_as_labelled``) stay proper, so that a degenerate rearrangement such as
 the NH3 inversion differs from the identity. ``carry`` moves a structure along the relabelling,
-mirror and rotation that match two others.
+mirror and rotation that match two others; ``is_image`` judges an exact image (IMAGE_A), and
+``member_coords`` gives a basin's structure in a member species' atom order.
 """
 
 from __future__ import annotations
@@ -150,6 +151,14 @@ def carry(symbols: Sequence[str], ref: np.ndarray, x: np.ndarray, other: np.ndar
     return rmsd, (ys - centre) @ kabsch(xs - centre, _centered(ref)) + target
 
 
+def is_image(symbols: Sequence[str], ref: np.ndarray, x: np.ndarray) -> bool:
+    """x is an exact image of ref: ``carry``'s basin RMSD within IMAGE_A. On a PES invariant
+    under the exchange of like nuclei and inversion, what x relaxes to is then the image of
+    what ref relaxes to."""
+
+    return _basin_match(symbols, ref, x)[0] <= IMAGE_A
+
+
 def same_as_labelled(xa: np.ndarray, xb: np.ndarray, ea: float, eb: float) -> bool:
     """One structure as labelled: |ea - eb| <= 5e-5 Eh and the identity-mapped RMSD (proper
     rotations) <= 0.05 A. The two structures of a degenerate rearrangement (the NH3 inversion,
@@ -205,6 +214,17 @@ def basin_coords(symbols: Sequence[str], basin: np.ndarray, own: np.ndarray) -> 
         return x[permutation_invariant_rmsd(symbols, y, x, labels)[1]]
     _, perm, mirrored = _basin_match(symbols, y, x, labels)
     return (_mirror(x) if mirrored else x)[perm]
+
+
+def member_coords(symbols: Sequence[str], basin: np.ndarray, rep_species_id: str,
+                  species_id: str, own: np.ndarray) -> np.ndarray:
+    """A basin's optimized structure (its representative's, ``rep_species_id``) for a member
+    species ``species_id`` whose own structure is ``own``: the input coordinates unchanged,
+    bit for bit, for the representative itself (a numerical alignment could move the job keys
+    downstream), else ``basin_coords``."""
+
+    same = species_id == rep_species_id
+    return np.asarray(basin, dtype=float) if same else basin_coords(symbols, basin, own)
 
 
 def mapped_equivalent(symbols: Sequence[str], a: np.ndarray, b: np.ndarray) -> bool:

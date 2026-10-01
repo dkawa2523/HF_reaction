@@ -80,6 +80,17 @@ def test_basin_coords_take_the_atom_order_and_handedness_of_the_member():
     assert np.allclose(x, NH3[order])
 
 
+def test_member_coords_return_the_representatives_input_bit_for_bit():
+    """G7-P4: the representative takes the basin's coordinates unchanged (an alignment could
+    move the job keys downstream); any other member, basin_coords."""
+    basin = NH3 @ _proper_rotation(2).T + 0.1234567891
+    assert idn.member_coords(NH3_SYMBOLS, basin, "rep", "rep", INVERTED).tobytes() == (
+        basin.tobytes())
+    member = NH3[[0, 2, 3, 1]] @ _proper_rotation(3).T + 0.03
+    assert np.array_equal(idn.member_coords(NH3_SYMBOLS, NH3, "rep", "m", member),
+                          idn.basin_coords(NH3_SYMBOLS, NH3, member))
+
+
 def test_basin_coords_keep_the_bonds_of_a_member_far_from_the_basin():
     """S6 (W5, VAL7): an xTB product CH3OH + H, 0.96 A from the PBE0 basin that holds it. As
     elements alone the nearest match moves H1 onto O and H6 onto C (a fake H scramble); within
@@ -124,18 +135,20 @@ def test_one_criterion_energy_first_then_a_unique_structure():
 def test_the_qrc_starts_of_a_symmetric_ts_are_exact_images(name):
     symbols, plus, minus = QRC_STARTS[name]
     rmsd, carried = idn.carry(symbols, minus, plus, plus)
-    assert rmsd < idn.IMAGE_A
+    assert rmsd < idn.IMAGE_A and idn.is_image(symbols, minus, plus)
     assert np.sqrt(np.mean(np.sum((carried - minus) ** 2, axis=1))) == pytest.approx(rmsd)
 
 
 def test_the_qrc_starts_of_an_asymmetric_ts_are_not_images():
     symbols, plus, minus = QRC_STARTS["hcn"]
     assert idn.carry(symbols, minus, plus, plus)[0] == pytest.approx(0.042, abs=5e-4)
+    assert not idn.is_image(symbols, minus, plus)
     symbols, plus, minus = QRC_STARTS["sn2_cl"]
     bent = plus.copy()
     bent[[1, 3], 2] += 0.055  # two H atoms off the image: 0.025 A, like acac's ± starts
     rmsd = idn.carry(symbols, minus, bent, bent)[0]
     assert idn.IMAGE_A < rmsd == pytest.approx(0.025, abs=1e-3)
+    assert not idn.is_image(symbols, minus, bent)
 
 
 def test_carry_takes_other_into_the_atom_order_and_frame_of_ref():

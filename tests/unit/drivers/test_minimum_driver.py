@@ -192,10 +192,14 @@ def test_registry_known_new_joined_and_init_hessian(tmp_run) -> None:
     shifted = replace(a, opt=a.opt.model_copy(update={"energy_hartree": energy + 3e-5}))
     joined = add(registry, shifted, "c")  # one criterion: assign
     assert joined.basin_id == ra.basin_id and joined.members == ("a", "a2", "c")
+    # G7-P4: the one store of the minima: the current record and the representative's opt final
+    assert registry.minima[ra.minimum_id] == (joined, a.opt.final)
+    assert registry.basin(ra.basin_id) == joined and "min_none" not in registry.minima
     far = replace(a, opt=a.opt.model_copy(update={"energy_hartree": energy + 6e-5}))
     assert add(registry, far, "d").basin_id not in (ra.basin_id, rb.basin_id)
     rebuilt = Registry([(rb, b.opt.final)], load)  # (record, geometry)
     assert rebuilt.find(b.opt) == rb.basin_id
+    assert rebuilt.minima == {rb.minimum_id: (rb, b.opt.final)}
 
 
 def test_mirror_images_share_one_chiral_basin_of_one_spin_state(tmp_run) -> None:

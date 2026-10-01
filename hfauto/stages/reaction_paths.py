@@ -66,8 +66,8 @@ class ReactionPathsConfig(StageConfig):
 def _case_runtime(config: ReactionPathsConfig, rt: StageRuntime, inputs: Manifest,
                   species: dict[str, SpeciesRecord]) -> CaseRuntime:
     """Engines, methods, the DFT minima registry and the calculations of this stage."""
-    dft = [m for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord) if m.tier == "dft"]
-    minima = {m.minimum_id: (m, inputs.evidence(m.opt_calc).final) for m in dft}
+    dft = [(m, inputs.evidence(m.opt_calc).final)
+           for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord) if m.tier == "dft"]
     screen = config.screen
     return CaseRuntime(
         qm=cast(QMEngine, rt.engine(Capability.QM, config.engines.qm)),
@@ -77,13 +77,12 @@ def _case_runtime(config: ReactionPathsConfig, rt: StageRuntime, inputs: Manifes
         screen_path=cast(PathEngine, rt.engine(Capability.PATH, screen.path)) if screen else None,
         method=rt.method(config.method),
         screen_method=rt.method(screen.method) if screen else None,
-        registry=Registry(minima.values(), rt.load_xyz),
+        registry=Registry(dft, rt.load_xyz),
         load_xyz=rt.load_xyz,
         file_ref=rt.file_ref,
         case_dir=rt.stage_dir / "cases",
         resolve=rt.resolve,
         map=rt.thread_map,
-        minima=minima,
         species=species,
         calcs=_calcs(inputs.of(ArtifactType.CALCULATION)),
     )
@@ -112,7 +111,7 @@ class _Book:
 
     def key(self, case: ReactionRecord) -> CaseKey | None:
         """The case key of a case between two DFT minima; None for a blocked one."""
-        a, b = (self.rt.minima.get(m) for m in case.minima)
+        a, b = (self.rt.registry.minima.get(m) for m in case.minima)
         return None if a is None or b is None else pair_key(a[0], b[0])
 
     def queue(self, cases: Sequence[ReactionRecord]) -> None:

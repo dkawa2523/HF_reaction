@@ -1,4 +1,10 @@
-"""Displacements along normal modes, mode overlaps and mode-follow outcomes (§5.5)."""
+"""Displacements along normal modes, mode overlaps and mode-follow outcomes (§5.5).
+
+A displacement off a stationary point is ``qrc_step`` (along one imaginary mode, at one energy
+target) or ``off_saddle`` (along the sum of the imaginary modes below a threshold, each by its
+``qrc_step``); both cap the largest atomic displacement at BOUNDS_A[1]. The ± sides of QRC from
+a TS and of the mode-follow of a first-order saddle are therefore one displacement.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +14,9 @@ from typing import Literal
 import numpy as np
 
 from hfauto.chemistry.elements import mass
+from hfauto.chemistry.gates import qrc_drop
 from hfauto.core.constants import AMU_TO_ME, BOHR_TO_ANGSTROM, CM1_TO_HARTREE
+from hfauto.core.evidence import Evidence
 
 TARGET_HARTREE = 3.0e-4  # expected energy change of one displacement (QRC and mode-follow)
 BOUNDS_A = (0.05, 0.4)  # largest atomic displacement (Å); an opt reuses a Hessian within 0.5 Å
@@ -66,6 +74,36 @@ def amplitude(
     if curvature == 0.0:
         return high
     return float(np.clip(np.sqrt(2.0 * target_hartree / curvature), low, high))
+
+
+def capped(step: np.ndarray) -> np.ndarray:
+    """``step`` (N, 3) with its largest atomic displacement capped at BOUNDS_A[1]."""
+
+    largest = float(np.linalg.norm(step, axis=1).max())
+    return step * min(1.0, BOUNDS_A[1] / largest) if largest > 0.0 else step
+
+
+def qrc_step(freq: Evidence, index: int, symbols: Sequence[str], factor: float = 1.0
+             ) -> np.ndarray:
+    """The displacement (N, 3) along imaginary mode ``index`` of ``freq`` (QRC, Goodman & Silva
+    2003): its ``amplitude`` for the energy target max(3 x qrc_drop, TARGET_HARTREE), as a QRC
+    side must end a qrc_drop below the TS, times ``factor``, capped at BOUNDS_A[1]. With the
+    bundled methods (scf_energy_tol 1e-7) 3 x qrc_drop is 3e-5 Eh: the target is TARGET_HARTREE."""
+
+    mode = np.asarray(freq.imaginary_modes[index])
+    target = max(3.0 * qrc_drop(freq.level), TARGET_HARTREE)
+    s = amplitude((freq.frequencies_cm1 or ())[index], mode, symbols, target_hartree=target)
+    return min(s * factor, BOUNDS_A[1]) * _unit_max_displacement(mode)
+
+
+def off_saddle(freq: Evidence, symbols: Sequence[str], *, below_cm1: float,
+               keep: int | None = None) -> np.ndarray:
+    """One side off a stationary point: the sum of its imaginary modes below -below_cm1 but
+    ``keep`` (frequencies ascending, one mode per negative one), each by its ``qrc_step``,
+    capped at BOUNDS_A[1]; with one such mode, its qrc_step."""
+
+    picked = [i for i, nu in enumerate(freq.frequencies_cm1 or ()) if nu < -below_cm1 and i != keep]
+    return capped(sum((qrc_step(freq, i, symbols) for i in picked), np.zeros((len(symbols), 3))))
 
 
 def classify_mode_follow(

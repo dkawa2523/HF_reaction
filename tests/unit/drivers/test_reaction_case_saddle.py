@@ -19,6 +19,7 @@ from unit.drivers.test_reaction_case_actions import (
     case_ctx,
 )
 
+from hfauto.chemistry import modes
 from hfauto.chemistry.identity import mapped_equivalent, mapped_rmsd
 from hfauto.chemistry.modes import BOUNDS_A, displace
 from hfauto.core.evidence import Failure, FailureKind
@@ -114,7 +115,7 @@ def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path, monkeypat
     first = qrc_step(ctx, freq)
     connection.connect(ctx, state, freq, 2)  # the second amplitude: × 2
     assert qrc_step(ctx, freq) == pytest.approx(2 * first, abs=1e-6)
-    monkeypatch.setattr(connection, "BOUNDS_A", (0.03, 0.05))  # the first one is capped
+    monkeypatch.setattr(modes, "BOUNDS_A", (0.03, 0.05))  # the first one is capped
     amplitudes = []
     for attempt in (1, 2):  # C19: × 2, then clipped, so the 2nd amplitude equals the 1st
         amplitudes.append((connection.connect(ctx, state, freq, attempt).connection,
@@ -188,9 +189,10 @@ def test_a_saddle_whose_mode_leaves_the_bond_change_gets_no_qrc(tmp_path) -> Non
 # restart, push and the continuation depth ------------------------------------------------------
 
 def test_a_higher_order_saddle_is_pushed_once_and_refined_from_its_ts_hessian(tmp_path):
-    """U6-P3: the reaction mode is the negative mode along ρ; the most negative other one
-    pushes the saddle once by the energy target, and the TS freq is the seed's Hessian. The
-    push is a counted attempt one continuation deeper."""
+    """U6-P3: the reaction mode is the negative mode along ρ; the other modes below
+    -saddle_cm1 (here the second) push the saddle once by the energy target (modes.off_saddle),
+    and the TS freq is the seed's Hessian. The push is a counted attempt one continuation
+    deeper."""
     ctx, state = case_ctx(tmp_path, fakes.double_well())
     state = act(ctx, act(ctx, state, Action.FIND_PATH), Action.REFINE_SADDLE)
     x = ctx.coords(ctx.work.saddle.final)

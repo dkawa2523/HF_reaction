@@ -1129,3 +1129,45 @@ G3-P8 は分析の §2.3 G3(根本原因 9)と §4.2 にあたり、コードは
 - S8 の 2 回の run では CREST が同じ配座を返したので、配座の番号が入れ替わる場合(source の id の付け替え)は実計算で起きていない。比較の道具(`s8cmp.py`)は source を RMSD で組めるようにしてある。
 - 3 原子以上の直線分子の NT2 の開始構造は、まだ番号付けに依る(24.1)。
 - G3-P8 の第 2 候補(ギ酸二量体 D2h)は流していない。像である側の opt と freq を省く(minima の mode-follow に QRC の像の規則を使う)のは、後の波の候補として残した。
+
+## 25. S6 同じ化学操作は 1 か所(X6 / G7-P2、G7-P3、G7-P4、G7-P7)
+
+挙動を変えない整理で、合格は再生ゲート(strict)で示す。規則は [design.md](design.md) §6.1・§6.2・§7.1。
+
+### 25.1 変えたこと
+
+- 変位(G7-P2): `modes.qrc_step`(1 本の虚モード、目標 max(3 × qrc_drop, 3e-4 Eh)、0.4 Å で切る)と `modes.off_saddle`(−below_cm1 より下の虚モードの和、`keep` を除く、各モードは qrc_step、和を 0.4 Å で切る)。mode-follow(`_follow`、`_soften` の Newton 歩がないとき)、QRC(`connect`)、higher_order_retry(`_retry`)はこの 2 つだけを使う。削除: `minimum._Point.step`、`actions.mode_amplitude`、`connect` と `_retry` の `displace` の手書き。同梱の method(scf 1e-7)では目標は 3e-4 Eh のままなので鍵は同じである。
+- 像の判定(G7-P3): `identity.is_image`。QRC の − 側の省略(`connection._sides`)と minima の像のグループ(`minima._image_groups`)が共有する。
+- 極小のストア(G7-P4): reaction-paths の DFT 極小は `Registry` だけが持つ(`Registry.minima`: minimum_id → 記録、代表の最適化構造。`Registry.basin`)。削除: `CaseRuntime.minima` とその更新、`Ctx.record`、`connection._end_records`(`Ctx.end_records` に統合)。
+- 構造の写像(G7-P4): `identity.member_coords`(代表自身なら入力の座標をビット単位でそのまま、ほかは `basin_coords`)。`driver._endpoint` と `hypotheses._Pool.coords` の重複を削除した。
+- 候補の選択(G7-P7): minima の `_pool`・`_reacting`・`_jobs` の選択部分を `selection.reacting_candidates` へ移した。`rerank` は SP の関数を受け取り、混んだ組だけを自分で問う(`crowded` は `rerank` に入れた)。minima.py は 354 → 326 行。
+- 3 次以上の鞍点(G7-P2): `_retry` は反応モード以外の −saddle_cm1 より下のモードをすべて押す(前は 2 番目に負のモード 1 本)。二次の鞍点では同じである。単体試験(fake freq)で示すだけで、実例はない。
+
+### 25.2 概念の実装数
+
+| 概念 | S5 まで | S6 |
+|---|---|---|
+| QRC の変位(± 1 本のモード、振幅と上限) | 3(`_Point.step`、`mode_amplitude` + `connect`、`_retry` の displace) | 1(`modes.qrc_step`。`off_saddle` はその和) |
+| 像の判定(carry ≤ IMAGE_A) | 2(`connection._sides`、`minima._image_groups`) | 1(`identity.is_image`) |
+| DFT 極小のストア | 2(`Registry`、`CaseRuntime.minima`) | 1(`Registry`) |
+| basin の構造の写像(代表の省略を含む) | 2(`driver._endpoint`、`_Pool.coords`) | 1(`identity.member_coords`) |
+
+- 残る別実装: ReaDuct の worker(`backends/readuct/worker.py`)は xTB の生のモードに `modes.amplitude` + `displace` で ± をとる。Evidence を持たない低レベルの変位なので数えていない。explore の `_left_state` は種(species でない)を `basin_coords` で直接写す。
+- SLOC(radon raw、hfauto): 8,081 → 8,086(+5)。S6a の統合は −2(chemistry +19、drivers と stages −21)、S6b の移動は +7(selection.py +30、minima.py −23。import と `reacting_candidates` の引数)。物理行は +42(docstring)。
+
+### 25.3 QM なしの確認
+
+- S6a のプローブ(CUR の全 run、虚モードのある freq 185 本): mode-follow 174、soft の押し 183、QRC の 2 つの振幅 370 の幾何の指紋(鍵)は旧コードと 0 件違う。CUR の higher_order_retry の種(W3_s6、W5_s6、s6_oh_ch4 の 790468f505)はすべて二次で、新しい開始点は同じだった。
+- S6b のプローブ: CUR の 35 run の minima(dft) の入力で、旧と新の `_jobs` を、そのまま・window + rerank(per_state 1)・per_state 0 の 3 通りで回し、105 通りのジョブ 149 件、SP の要求 13 件、not_reacting、seed の JSON がバイト単位で一致した。
+- `tools/audit_ends.py --src CUR`(`S6/int/audit_ends`): 20 件、不一致 0。
+
+### 25.4 再生ゲート(`/home/user/hfauto_r9/S6/replay`、src CUR = S5/replay、strict、壁時計 4 分、QM 0)
+
+- 38 run すべて PASS(W3_s6 を含む)。misses 0、新しいジョブ 0、記録の差 0。rc と各 run の hits は S5 の再生と同じで、S5 で新しいジョブだった s8、s10、s19 の NT2 は今回 hit(各 +1)。hits の減少はない。
+- CUR を S6/replay の 38 run に進めた。
+
+### 25.5 実証していないこと
+
+- 3 次以上の鞍点での `off_saddle` の挙動(全モードを押す)は単体試験だけで、実計算の例はない。
+- 目標の式の統一で mode-follow の振幅が変わるのは scf_energy_tol > 5e-6 の method だけで、同梱の method にはない。
+- SLOC は減っていない(+5)。S6b は移動であり、統合ではない。

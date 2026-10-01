@@ -14,17 +14,17 @@ import numpy as np
 from hfauto.chemistry import profile, topology
 from hfauto.chemistry.gates import connection
 from hfauto.chemistry.geometry import declared_coordinate
-from hfauto.chemistry.identity import IMAGE_A, carry, mapped_equivalent, periodic_nearest
-from hfauto.chemistry.modes import BOUNDS_A, displace
+from hfauto.chemistry.identity import carry, is_image, mapped_equivalent, periodic_nearest
+from hfauto.chemistry.modes import qrc_step
 from hfauto.chemistry.xyz import composition_key
 from hfauto.core.evidence import Evidence, Failure
 from hfauto.core.ids import species_id
 from hfauto.core.records import ConnectionClaim, MinimumRecord, SpeciesRecord
 from hfauto.drivers.minimum import calc_id, relax_to_minimum
-from hfauto.drivers.reaction_case.actions import Ctx, mode_amplitude, peak_seeds, validate_ts
+from hfauto.drivers.reaction_case.actions import Ctx, peak_seeds, validate_ts
 from hfauto.drivers.reaction_case.state import CaseState, Decision
 
-QRC_RETRY_FACTOR = 2.0  # the second QRC amplitude, capped at BOUNDS_A[1]
+QRC_RETRY_FACTOR = 2.0  # the second QRC amplitude, capped at modes.BOUNDS_A[1]
 
 
 class Reached(NamedTuple):
@@ -41,16 +41,12 @@ def _state(record: MinimumRecord) -> str:
     return f"{record.composition_id}/{record.state_label}"
 
 
-def _end_records(ctx: Ctx) -> tuple[MinimumRecord, MinimumRecord]:
-    return ctx.rt.minima[ctx.case.minima[0]][0], ctx.rt.minima[ctx.case.minima[1]][0]
-
-
 def _key(ctx: Ctx, record: MinimumRecord) -> str:
     """What a minimum counts as in this case. A case whose ends differ in chemical state
     (composition, state label) is judged by state, as thermo prices it (Curtin–Hammett:
     the basins of a state interconvert faster than it reacts); a same-state case (a declared
     torsion, a conformer change, a degenerate rearrangement) by basin."""
-    a, b = _end_records(ctx)
+    a, b = ctx.end_records()
     return _state(record) if _state(a) != _state(b) else record.basin_id
 
 
@@ -77,12 +73,9 @@ def _species(ctx: Ctx, opt: Evidence, name: str,
 
 def _enter(ctx: Ctx, record: MinimumRecord, species: SpeciesRecord) -> MinimumRecord:
     """``species`` and ``record`` (the Registry's, ``species`` among its members) join the
-    runtime and the case's artifacts; a basin already known keeps its representative geometry."""
-    rt = ctx.rt
-    ctx.work.species[species.species_id] = rt.species[species.species_id] = species
+    runtime and the case's artifacts."""
+    ctx.work.species[species.species_id] = ctx.rt.species[species.species_id] = species
     ctx.work.minima[record.minimum_id] = record
-    known = rt.minima.get(record.minimum_id)
-    rt.minima[record.minimum_id] = (record, species.geometry if known is None else known[1])
     return record
 
 
@@ -96,7 +89,7 @@ def _register(ctx: Ctx, coords: np.ndarray, name: str,
     out = relax_to_minimum(ctx.mol(coords), rt.method, rt.qm, known=rt.registry, opt=opt,
                            deadline=ctx.deadline, gates=ctx.rules.gates, resolve=rt.resolve)
     if out.status == "known" and out.known_basin is not None and out.opt is not None:
-        return Reached(ctx.record(out.known_basin), out.opt)
+        return Reached(rt.registry.basin(out.known_basin), out.opt)
     if out.status != "minimum" or out.opt is None or out.freq is None:
         ctx.note(f"{name}:{out.status}:{out.failure.reason if out.failure else ''}")
         return None
@@ -114,7 +107,7 @@ def _member(ctx: Ctx, well: Reached) -> tuple[MinimumRecord, SpeciesRecord]:
     atom labelling, never the representative's arbitrary one. A case has one intermediate (it
     completes the case, row 5), so the member's id is unique."""
     if well.species is not None:
-        return ctx.rt.minima[well.record.minimum_id][0], well.species
+        return ctx.rt.registry.minima[well.record.minimum_id][0], well.species
     species = _species(ctx, well.opt, "intermediate", "intermediate")
     ctx.keep(well.opt)
     record = ctx.rt.registry.join(well.record.basin_id, species.species_id)
@@ -126,24 +119,24 @@ def _assign(ctx: Ctx, side: Evidence, x: np.ndarray, name: str) -> Reached | Non
     falls back to the nearest declared dihedral (CH-04); else the converged side is registered."""
     basin = ctx.rt.registry.find(side, coords=x)
     if basin is not None:
-        return Reached(ctx.record(basin), side)
+        return Reached(ctx.rt.registry.basin(basin), side)
     terms = ctx.case.coordinate
     if ctx.case.torsional and terms and all(t.kind == "dihedral" for t in terms):
         values = [declared_coordinate(terms, end) for end in ctx.raw]
         end = ctx.case.minima[periodic_nearest(declared_coordinate(terms, x), values)]
-        return Reached(ctx.rt.minima[end][0], side)
+        return Reached(ctx.rt.registry.minima[end][0], side)
     return _register(ctx, x, name, "connection", opt=side)
 
 
 def _sides(ctx: Ctx, freq: Evidence, starts: tuple[np.ndarray, np.ndarray], attempt: int
            ) -> tuple[tuple[Evidence, Evidence], tuple[np.ndarray, np.ndarray]] | None:
     """The QRC sides optimized from the TS Hessian and their final structures; None when one
-    fails. At a symmetric TS the minus start is an exact image of the plus start (identity.carry
-    within IMAGE_A), so on the invariant PES the minus optimum is the plus one's image: only the
-    plus side runs and stands for both, the minus structure carried by that image. Two sides
-    run at once (CaseRuntime.map)."""
+    fails. At a symmetric TS the minus start is an exact image of the plus start
+    (identity.is_image), so on the invariant PES the minus optimum is the plus one's image: only
+    the plus side runs and stands for both, the minus structure carried by that image. Two
+    sides run at once (CaseRuntime.map)."""
     rt = ctx.rt
-    image = carry(ctx.symbols, starts[1], starts[0], starts[0])[0] <= IMAGE_A
+    image = is_image(ctx.symbols, starts[1], starts[0])
     if image:
         ctx.note(f"qrc{attempt}:minus_is_image")
     runs = rt.map(lambda y: rt.qm.optimize(ctx.mol(y), rt.method, init_hessian=freq,
@@ -176,11 +169,11 @@ def validate_and_connect(ctx: Ctx, state: CaseState, decision: Decision) -> Case
 
 
 def connect(ctx: Ctx, state: CaseState, freq: Evidence, attempt: int) -> CaseState:
-    """QRC from the TS ``freq``: displace ± along its mode by an energy target (× QRC_RETRY_FACTOR
-    at the second ``attempt``), optimize, assign, gate."""
-    step = min(mode_amplitude(ctx, freq, 0) * QRC_RETRY_FACTOR ** (attempt - 1), BOUNDS_A[1])
-    optimized = _sides(ctx, freq, displace(ctx.coords(freq.final),
-                                           np.asarray(freq.imaginary_modes[0]), step), attempt)
+    """QRC from the TS ``freq``: ± along its mode (modes.qrc_step, × QRC_RETRY_FACTOR at the
+    second ``attempt``), optimize, assign, gate."""
+    x, step = ctx.coords(freq.final), qrc_step(freq, 0, ctx.symbols,
+                                                QRC_RETRY_FACTOR ** (attempt - 1))
+    optimized = _sides(ctx, freq, (x + step, x - step), attempt)
     if optimized is None:
         return replace(state, connection="failed")
     sides, finals = optimized
@@ -189,7 +182,7 @@ def connect(ctx: Ctx, state: CaseState, freq: Evidence, attempt: int) -> CaseSta
     first, second = _keys(ctx, (a, b), freq.energy_hartree)
     distinct = mapped_equivalent(ctx.symbols, *finals) if ctx.case.degenerate else True
     bonds = tuple(topology.bonds(ctx.symbols, x) for x in (*ctx.ends, finals[1], finals[0]))
-    ends = frozenset(_key(ctx, r) for r in _end_records(ctx))
+    ends = frozenset(_key(ctx, r) for r in ctx.end_records())
     gate, label = connection(freq, sides, (first, second), ends,
                              degenerate=ctx.case.degenerate, sides_distinct=distinct,
                              bond_sets=bonds)
@@ -210,7 +203,7 @@ def _keys(ctx: Ctx, sides: tuple[Reached | None, Reached | None], ts: float
     """The sides' case keys. A side in a new basin of the state of the end the other side
     reached is that end when it and the TS, the one hill between them, lie within a resolution
     of that end (G5-P2 on the QRC path)."""
-    ends = {_key(ctx, e): e for e in _end_records(ctx)}
+    ends = {_key(ctx, e): e for e in ctx.end_records()}
     keys = [None if r is None else _key(ctx, r.record) for r in sides]
     for well, mine, other in ((sides[0], keys[0], keys[1]), (sides[1], keys[1], keys[0])):
         end = None if other is None else ends.get(other)
@@ -239,7 +232,7 @@ def _two_steps(ctx: Ctx, state: CaseState, label: str, sides: tuple[Reached, Rea
     two steps (row 5), the other side being the intermediate: a new chemical state for a
     bond-changing case, a new basin for a same-state one; the split child between those two
     validates this TS (a degenerate case: child 1). None for any other connection."""
-    ends = [_key(ctx, r) for r in _end_records(ctx)]
+    ends = [_key(ctx, r) for r in ctx.end_records()]
     inside = [ends.index(k) for k in keys if k in ends]
     if label != "reassigned" or len(inside) != 1 or state.claim is None:
         return None
@@ -282,7 +275,7 @@ def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> Cas
     if well is None:
         ctx.note("int:relax_failed")
         return _with_peak(ctx, replace(state, intermediate="relax_failed"), name)
-    ends, legs = _end_records(ctx), (e[:w + 1], e[w:])  # the profile from the well to each end
+    ends, legs = ctx.end_records(), (e[:w + 1], e[w:])  # the profile from the well to each end
     if _key(ctx, well.record) in {_key(ctx, end) for end in ends} or any(
             _as_end(ctx, well.record, end, leg) for end, leg in zip(ends, legs, strict=True)):
         return _past_the_well(ctx, replace(state, intermediate="same_as_endpoint"), e, name)

@@ -75,28 +75,27 @@ def case_ctx(root: Path, ends=("reactant", "product"), known=(), kcal=None):
     """The case ends[0] -> ends[1], with the DFT basins of ``known`` in the Registry first."""
     pes = surface(kcal or {})
     qm, load = fakes.FakeQM(root, pes), fakes.xyz_loader(root)
-    registry, minima, species, ids = Registry([], load), {}, {}, {}
+    registry, species, ids = Registry([], load), {}, {}
     for name in dict.fromkeys((*known, *ends)):
         geo = fakes.write_geometry(root, f"in/{name}.xyz", SYMBOLS, POINTS[name])
         species[name] = SpeciesRecord(
             species_id=name, composition_id=COMPOSITION, charge=0, multiplicity=2, geometry=geo,
             source="input", state_label=state_label(SYMBOLS, POINTS[name]))
         out = relax_to_minimum(pes.molecule(name, multiplicity=2), DFT, qm, load_xyz=load)
-        record = registry.add(out, species[name], tier="dft")
-        minima[record.minimum_id], ids[name] = (record, out.opt.final), record.minimum_id
+        ids[name] = registry.add(out, species[name], tier="dft").minimum_id
     rt = driver.CaseRuntime(
         qm=qm, saddle=fakes.FakeSaddle(root, pes), path=fakes.FakePath(root, pes),
         screen_qm=None, screen_path=None, method=DFT, screen_method=None, registry=registry,
         load_xyz=load, case_dir=root / "cases", file_ref=lambda p: fakes._ref(root, p),
         resolve=lambda ref: root / ref.path, map=lambda fn, items: [fn(x) for x in items],
-        minima=minima, species=species, calcs={})
+        species=species, calcs={})
     terms = (StoichTerm(composition_id=COMPOSITION, coefficient=1),)
     case = ReactionRecord(reaction_id="rx", reactants=terms, products=terms,
                           minima=(ids[ends[0]], ids[ends[1]]), endpoints=ends,
                           source="discovery")
     ctx = driver.open_case(case, rt, CaseRules(screen=False), Deadline.after(600), root,
                            lambda _: None)
-    return ctx, CaseState(minima=tuple(minima[m][0] for m in case.minima))
+    return ctx, CaseState(minima=tuple(registry.minima[m][0] for m in case.minima))
 
 
 def qrc(ctx, state, monkeypatch, names, ts_kcal=20.0, amplitudes=None):
@@ -122,7 +121,7 @@ def qrc(ctx, state, monkeypatch, names, ts_kcal=20.0, amplitudes=None):
 def minimum_of(ctx, name: str) -> str:
     """The minimum id of the basin the named structure lies in."""
     opt = ctx.rt.qm.optimize(ctx.mol(POINTS[name]), DFT)
-    return ctx.record(ctx.rt.registry.find(opt)).minimum_id
+    return ctx.rt.registry.basin(ctx.rt.registry.find(opt)).minimum_id
 
 
 # X2-2: the granularity -------------------------------------------------------------------
@@ -278,8 +277,7 @@ def test_an_intermediate_in_a_known_basin_continues_the_case_labelling(tmp_path,
     job; the split child I -> P only breaks H1-H3, where the representative's labels would
     also move H3 onto O."""
     ctx, state = case_ctx(tmp_path, known=("representative",))
-    basin, geometry = next(v for v in ctx.rt.minima.values() if v[0].species_id ==
-                           "representative")
+    basin, geometry = ctx.rt.registry.minima[minimum_of(ctx, "representative")]
     jobs = len(ctx.rt.qm.calls)
     state = reach(ctx, state, monkeypatch)
     well, member = ctx.work.intermediate
@@ -291,12 +289,13 @@ def test_an_intermediate_in_a_known_basin_continues_the_case_labelling(tmp_path,
     assert (member.source, member.state_label) == ("intermediate",
                                                    state_label(SYMBOLS, POINTS["bridged"]))
     assert well.species_id == "representative" != member.species_id
-    # (c) the member enters the emitted MinimumRecord and the runtime
+    # (c) the member enters the emitted MinimumRecord and the Registry (the basin's structure
+    # stays the representative's)
     record = ctx.case.model_copy(update={"outcome": CaseOutcome.MULTI_STEP})
     emitted = {a.artifact_id: a.payload for a in driver._artifacts(record, ctx.work)}
     assert emitted[well.minimum_id].members == ("representative", member.species_id)
     assert emitted[species_artifact_id(member.species_id)] == member
-    assert ctx.rt.minima[well.minimum_id] == (emitted[well.minimum_id], geometry)
+    assert ctx.rt.registry.minima[well.minimum_id] == (emitted[well.minimum_id], geometry)
     # (a) the children continue the case labelling
     first, second = driver._children(record, ctx.rt, ctx)
     assert first.endpoints == ("reactant", member.species_id) and not first.torsional

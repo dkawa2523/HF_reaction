@@ -17,14 +17,13 @@ from hfauto.chemistry.gates import (
     Gate,
     barrier_verdict,
     is_first_order_saddle,
-    qrc_drop,
     reaction_mode_character,
     spin_ok,
 )
 from hfauto.chemistry.geometry import declared_coordinate_gradient, most_changed_dihedral
 from hfauto.chemistry.identity import carry, mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
-from hfauto.chemistry.modes import TARGET_HARTREE, amplitude, displace, overlap
+from hfauto.chemistry.modes import off_saddle, overlap
 from hfauto.chemistry.xyz import (
     XYZ,
     Molecule,
@@ -146,8 +145,13 @@ class Ctx:
                                 align_mapped(ends[k], x))[1])
                 for k in ((0, 1) if self._ends_apart() else (near,))]
 
+    def end_records(self) -> tuple[MinimumRecord, MinimumRecord]:
+        """The current Registry records of the case's DFT minima."""
+        minima = self.rt.registry.minima
+        return minima[self.case.minima[0]][0], minima[self.case.minima[1]][0]
+
     def _end_opts(self) -> tuple[Evidence, ...]:
-        return tuple(self.rt.calcs[self.rt.minima[m][0].opt_calc] for m in self.case.minima)
+        return tuple(self.rt.calcs[r.opt_calc] for r in self.end_records())
 
     def _end_s2(self) -> tuple[float | None, float | None]:
         """The DFT minima's ⟨S²⟩ (None: a closed shell)."""
@@ -239,9 +243,6 @@ class Ctx:
                 topology.bonds(self.symbols, a), a, b):
             return "coordinate", declared_coordinate_gradient(terms, x)
         return "chord", (b - a).ravel()
-
-    def record(self, basin_id: str) -> MinimumRecord:
-        return next(r for r, _ in self.rt.minima.values() if r.basin_id == basin_id)
 
 
 def branch_jump(energies: Sequence[float], s2: Sequence[float | None], tol: float) -> bool:
@@ -340,13 +341,6 @@ def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     return replace(state, last_saddle="converged")
 
 
-def mode_amplitude(ctx: Ctx, freq: Evidence, index: int) -> float:
-    """modes.amplitude of imaginary mode ``index`` for max(3 x QRC drop, TARGET_HARTREE)."""
-    target = max(3.0 * qrc_drop(freq.level), TARGET_HARTREE)
-    return amplitude((freq.frequencies_cm1 or ())[index], np.asarray(freq.imaginary_modes[index]),
-                     ctx.symbols, target_hartree=target)
-
-
 def _newton_start(ctx: Ctx, saddle: Evidence, freq: Evidence, x: np.ndarray) -> np.ndarray | None:
     """The signed Newton step (minimum.newton_push) from a saddle that is not stationary by a
     minimum's criterion, when a freq there has at most one mode below -saddle_cm1: its second
@@ -376,15 +370,13 @@ def _retry(ctx: Ctx, saddle: Evidence, freq: Evidence, x: np.ndarray, name: str)
     verified freq is the seed's Hessian and its reaction mode (the imaginary mode of maximal
     overlap with ρ) the seed's mode. It starts at the saddle's Newton step when the second
     imaginary mode is an artefact of a non-stationary point (_newton_start), else at the saddle
-    pushed once along its most negative mode other than the reaction mode."""
+    pushed once off its other modes below -saddle_cm1 (modes.off_saddle)."""
     _, direction = ctx.direction(x)
     r = max(range(len(freq.imaginary_modes)),
             key=lambda i: overlap(np.asarray(freq.imaginary_modes[i]), direction))
     start = _newton_start(ctx, saddle, freq, x)
     if start is None:
-        other = 1 if r == 0 else 0  # imaginary modes are ordered by frequency
-        start, _ = displace(x, np.asarray(freq.imaginary_modes[other]),
-                            mode_amplitude(ctx, freq, other))
+        start = x + off_saddle(freq, ctx.symbols, below_cm1=ctx.rules.gates.saddle_cm1, keep=r)
     return Seed(ctx.geometry(name, start), "higher_order_retry", freq.imaginary_modes[r], freq,
                 depth=ctx.work.depth + 1)
 

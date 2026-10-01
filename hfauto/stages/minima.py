@@ -5,7 +5,7 @@
 optimized structures. Jobs run serially in species-id order and each is registered at once, so a
 later job that falls into a registered basin (mirror image included) is ``known`` and skips its
 freq job (one identity criterion: identity.assign). An exact permutation or mirror image of an
-earlier start (identity.carry within IMAGE_A) runs no job: the PES is invariant under both, so it
+earlier start (identity.is_image) runs no job: the PES is invariant under both, so it
 joins that start's basin when that start relaxed straight into a minimum. A saddle whose ±
 displacements reach two distinct minima gives two ``mode_follow`` species at the driver's side
 minima, registered by identity with no new job, and a ``mode_follow`` discovery between them
@@ -27,18 +27,16 @@ from pydantic import BaseModel, ConfigDict
 
 from hfauto.backends.protocols import Capability, QMEngine
 from hfauto.chemistry.hypotheses import seed_species_id
-from hfauto.chemistry.identity import IMAGE_A, carry, permutation_invariant_rmsd
-from hfauto.chemistry.selection import Candidate, crowded, rerank, select_for_refinement
-from hfauto.chemistry.thermo import monomer_states
+from hfauto.chemistry.identity import is_image, permutation_invariant_rmsd
+from hfauto.chemistry.selection import reacting_candidates, rerank, select_for_refinement
 from hfauto.chemistry.topology import fragments, state_label
-from hfauto.chemistry.xyz import XYZ, Molecule, hill_formula
+from hfauto.chemistry.xyz import XYZ, Molecule
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FailureKind, Geometry
 from hfauto.core.ids import species_artifact_id
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec, level_mismatches
 from hfauto.core.records import ArtifactType, DiscoveryRecord, MinimumRecord, Payload, SpeciesRecord
-from hfauto.core.system import SystemConfig
 from hfauto.drivers import minimum as driver
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
@@ -88,14 +86,14 @@ _Side = tuple[SpeciesRecord, MinimumRecord]
 def _image_groups(jobs: Sequence[_Job], load_xyz: Callable[[Geometry], XYZ]
                   ) -> list[list[_Job]]:
     """Jobs of one composition (charge and multiplicity included) and atom order whose starts
-    are exact permutation or mirror images (identity.carry within IMAGE_A), in input order."""
+    are exact permutation or mirror images (identity.is_image), in input order."""
     groups: list[tuple[XYZ, list[_Job]]] = []
     for job in jobs:
         x = load_xyz(job.start)
         group = next((members for ref, members in groups
                       if members[0].species.composition_id == job.species.composition_id
                       and ref.symbols == x.symbols
-                      and carry(x.symbols, ref.coords, x.coords, x.coords)[0] <= IMAGE_A), None)
+                      and is_image(x.symbols, ref.coords, x.coords)), None)
         if group is None:
             groups.append((x, [job]))
         else:
@@ -262,72 +260,46 @@ def _known(inputs: Manifest, cfg: MinimaConfig, rt: StageRuntime, qm: QMEngine,
     return driver.Registry(pairs, rt.load_xyz)
 
 
-def _seeds(inputs: Manifest, species: dict[str, SpeciesRecord]) -> list[SpeciesRecord]:
+def _seeds(discoveries: Iterable[DiscoveryRecord], species: dict[str, SpeciesRecord]
+           ) -> list[SpeciesRecord]:
     """R6: the seed of each relaxation product, unrelaxed, as its own species
     (hypotheses.seed_species_id): the seed itself may carry its collapse basin's job."""
     return [species[d.product_species].model_copy(update={"species_id": seed_species_id(d)})
-            for d in inputs.records(T.DISCOVERY, DiscoveryRecord)
-            if d.mechanism == "relaxation" and d.product_species in species]
+            for d in discoveries if d.mechanism == "relaxation" and d.product_species in species]
 
 
-def _pool(inputs: Manifest, species: dict[str, SpeciesRecord], seeds: list[SpeciesRecord]
-          ) -> dict[str, tuple[Candidate, _Job]]:
-    """Screen minima (from their optimized structure) plus discovery products and sources;
-    products that skipped screen and the relaxation seeds start from their own geometry."""
-    found = [d for d in inputs.records(T.DISCOVERY, DiscoveryRecord) if d.outcome == "product"]
-    always = {d.source_minimum for d in found}
-    always |= {d.product_species for d in found if d.product_species is not None}
-    screen = [m for m in inputs.records(T.MINIMUM, MinimumRecord)
-              if m.tier == "screen" and m.species_id in species]
-    pool: dict[str, tuple[Candidate, _Job]] = {}
-    for m in screen:
-        kept = bool(always & {m.minimum_id, m.species_id, *m.members})
-        candidate = Candidate(m.species_id, m.composition_id, m.state_label, m.energy_hartree,
-                              always=kept)
-        pool[m.species_id] = (candidate, _Job(species[m.species_id],
-                                              inputs.evidence(m.opt_calc).final))
-    held = {s for m in screen for s in (m.species_id, *m.members)}
-    for s in [*(species[sid] for sid in sorted((always & species.keys()) - held)), *seeds]:
-        pool[s.species_id] = (Candidate(s.species_id, s.composition_id, s.state_label,
-                                        s.energy_hartree, always=True), _Job(s, s.geometry))
-    return pool
-
-
-def _reacting(candidates: Iterable[Candidate], species: dict[str, SpeciesRecord],
-              system: SystemConfig) -> set[str]:
-    """Compositions of the declared endpoints and of the discovery sources and products (the
-    always-kept candidates), plus the monomers of those complexes: the association and
-    separated references of the thermo stage (thermo.monomer_states)."""
-    ends = {species[s.id].composition_id for s in system.species
-            if s.role == "endpoint" and s.id in species}
-    reacting = ends | {c.composition_id for c in candidates if c.always}
-    monomers = monomer_states(species.values(), system.compositions)
-    formulas = {(hill_formula(s.geometry.symbols), s.charge) for s in species.values()
-                if s.composition_id in reacting}
-    return reacting | {state[0] for f in formulas for state, _ in monomers.get(f, ())}
+def _starts(inputs: Manifest, species: dict[str, SpeciesRecord], screen: list[MinimumRecord],
+            seeds: list[SpeciesRecord]) -> dict[str, _Job]:
+    """Each species' job, from the optimized structure of the screen minimum it represents or
+    else from its own geometry; a relaxation seed's from its own geometry."""
+    starts = {m.species_id: inputs.evidence(m.opt_calc).final for m in screen}
+    jobs = {sid: _Job(s, starts.get(sid, s.geometry)) for sid, s in species.items()}
+    return jobs | {s.species_id: _Job(s, s.geometry) for s in seeds}
 
 
 def _jobs(inputs: Manifest, cfg: MinimaConfig, run: _Run) -> list[_Job]:
-    """Every species (screen, all), or the window selection of the reacting compositions (the
-    others are noted not_reacting) and the relaxation seeds (run.seeds, always kept); single
-    points rerank only the crowded groups."""
+    """Every species (screen, all), or the selection (chemistry.selection) of the reacting
+    compositions (the others are noted not_reacting) and the relaxation seeds (run.seeds);
+    single points rerank only the crowded groups."""
     species = {s.species_id: s for s in inputs.records(T.SPECIES, SpeciesRecord)}
     if cfg.level == "screen" or cfg.select.include == "all":
         return [_Job(s, s.geometry) for s in species.values()]
-    run.seeds = _seeds(inputs, species)
-    pool, sel = _pool(inputs, species, run.seeds), cfg.select
-    candidates = [candidate for candidate, _ in pool.values()]
-    reacting = _reacting(candidates, species, run.rt.system)
-    for composition in sorted({c.composition_id for c in candidates} - reacting):
-        run.history[composition] = ["not_reacting"]
+    found = inputs.records(T.DISCOVERY, DiscoveryRecord)
+    run.seeds = _seeds(found, species)
+    screen = [m for m in inputs.records(T.MINIMUM, MinimumRecord)
+              if m.tier == "screen" and m.species_id in species]
+    jobs = _starts(inputs, species, screen, run.seeds)
+    pool, idle = reacting_candidates(species, found, screen, run.seeds, run.rt.system)
+    run.history.update((composition, ["not_reacting"]) for composition in idle)
+    sel = cfg.select
     chosen = select_for_refinement(
-        [c for c in candidates if c.composition_id in reacting],
-        per_state=sel.rerank_top if sel.rerank_sp else sel.per_state, window_kcal=sel.window_kcal)
+        pool, per_state=sel.rerank_top if sel.rerank_sp else sel.per_state,
+        window_kcal=sel.window_kcal)
     if sel.rerank_sp:
-        crowd = crowded(chosen, sel.per_state)
-        chosen = rerank(chosen, run.single_points([pool[c.species_id][1] for c in crowd]),
+        chosen = rerank(chosen,
+                        lambda crowd: run.single_points([jobs[c.species_id] for c in crowd]),
                         sel.per_state, sel.window_kcal)
-    return [pool[c.species_id][1] for c in chosen]
+    return [jobs[c.species_id] for c in chosen]
 
 
 class MinimaStage:

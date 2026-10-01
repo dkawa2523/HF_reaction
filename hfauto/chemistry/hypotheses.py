@@ -10,7 +10,7 @@ saddle (G8-P7). An undeclared pair joins two DFT minima of one level inside the 
 changes bonds between its ends (CH-07): a conformer change, torsion or enantiomerization is studied
 only when declared (Curtin-Hammett), so one basin gives a degenerate rearrangement that exchanges
 bonded partners (S10). Bonds and degeneracy are judged on the basins' optimized structures in the
-endpoints' atom order and handedness (``identity.basin_coords``), never on input coordinates.
+endpoints' atom order and handedness (``identity.member_coords``), never on input coordinates.
 A discovery's ends are its own ``source_species`` and ``product_species``, labelled along the
 structures it followed, so a basin representative's arbitrary labelling never makes or hides a
 bond change (analysis X2); a discovery without both ends gives no hypothesis.
@@ -107,11 +107,9 @@ class _Pool:
 
     def coords(self, minimum: MinimumRecord, species: SpeciesRecord) -> np.ndarray:
         """The basin's optimized structure in the atom order and handedness of ``species``."""
-        basin = self.load(self.structure[minimum.minimum_id])
-        if species.species_id == minimum.species_id:  # the representative itself
-            return np.asarray(basin.coords, dtype=float)
-        own = self.load(species.geometry).coords
-        return identity.basin_coords(basin.symbols, basin.coords, own)
+        basin, own = self.load(self.structure[minimum.minimum_id]), self.load(species.geometry)
+        return identity.member_coords(basin.symbols, basin.coords, minimum.species_id,
+                                      species.species_id, own.coords)
 
     def ends(self, d: DiscoveryRecord) -> Ends | None:
         """The discovery's own ends (source_species, product_species); None unless both are
