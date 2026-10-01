@@ -1,6 +1,7 @@
 import csv
 from dataclasses import astuple
 
+from hfauto.chemistry.gates import Policy
 from hfauto.core import records as rec
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, Geometry, Level
 from hfauto.core.manifest import Artifact
@@ -21,14 +22,14 @@ def th(rid, dg, band=None, T=298.15, blockers=()):
                               energy_level="wb97x-d3/def2-tzvpd")
 
 
-def calc(cid, fp, energy, grid, *subjects):  # an sp names its subjects in its parents
+def calc(cid, fp, energy, grid, *subjects, s2=None):  # an sp names its subjects in parents
     level = Level(program="nwchem", version="7.2.3", method="pbe0", basis="def2-svpd",
-                  charge=0, multiplicity=1, grid=grid)
+                  charge=0, multiplicity=1 if s2 is None else 2, grid=grid)
     g = Geometry(file=FileRef(path=f"{fp}.xyz", sha256="0"), fingerprint=fp, symbols=("H",))
     freq = {} if subjects else {"frequencies_cm1": (), "n_external": 3}  # an atom: no mode
     payload = Evidence(engine="nwchem", task="freq" if not subjects else "sp", level=level,
                        start=g, final=g, energy_hartree=energy, output=g.file, job_key=cid,
-                       **freq)
+                       s2=s2, **freq)
     return Artifact(artifact_id=cid, type=rec.ArtifactType.CALCULATION, payload=payload,
                     parents=subjects)
 
@@ -93,7 +94,7 @@ def test_panel_spread_is_two_ranking_columns_not_a_blocker(tmp_path):
     minima = {"mr": mini("mr", "r"), "mp": mini("mp", "p")}
     saddle = rec.SaddleClaim(saddle_calc="s", freq_calc="t", imag_cm1=-900.0, energy_hartree=-0.98)
     reactions = [rxn("x", saddle=saddle), rxn("lost", minima=("mr", ""))]
-    panel = method_panel(calcs, reactions, minima=minima)
+    panel = method_panel(calcs, reactions, minima=minima, policy=Policy())
     assert len({r.level_key for r in panel}) == 2 and {r.reaction_id for r in panel} == {"x"}
     fine, xfine = sorted(panel, key=lambda r: r.level)
     assert fine.level.endswith(" fine") and xfine.level.endswith(" xfine")
@@ -113,3 +114,30 @@ def test_panel_spread_is_two_ranking_columns_not_a_blocker(tmp_path):
     assert round(float(x["dE_act_panel_max_kcal"]), 2) == 15.69
     assert ranking(panel)["lost"]["dE_act_panel_min_kcal"] == ""
     assert "dE_act_panel_min_kcal" not in ranking([fine])["x"]  # one level is no panel
+
+
+def test_panel_leaves_a_spin_contaminated_energy_out_of_the_spread():
+    """A doublet whose TS sp has a broken-symmetry <S2> (1.71): the value stays in its row,
+    noted, and the min/max (and so the ranking columns) span the clean levels only."""
+    def doublet(ts_s2=0.76, start_s2=0.76, policy=None):
+        calcs = [calc("r", "R", -1.0, "fine", s2=0.76), calc("p", "P", -0.99, "fine", s2=0.76),
+                 calc("t", "T", -0.98, "fine", s2=0.76),
+                 calc("r2", "R", -1.0, "xfine", "mr", s2=start_s2),
+                 calc("p2", "P", -1.01, "xfine", "mp", s2=0.76),
+                 calc("t2", "T", -0.99, "xfine", "t", s2=ts_s2)]
+        saddle = rec.SaddleClaim(saddle_calc="s", freq_calc="t", imag_cm1=-900.0,
+                                 energy_hartree=-0.98)
+        return sorted(method_panel(calcs, [rxn("x", saddle=saddle)], minima={
+            "mr": mini("mr", "r"), "mp": mini("mp", "p")}, policy=policy or Policy()),
+                      key=lambda r: r.level)
+
+    fine, xfine = doublet(ts_s2=1.71)
+    assert (fine.notes, xfine.notes) == ("", "spin_contaminated:dE_act")
+    assert round(xfine.dE_act_kcal, 2) == 6.28  # shown in its row
+    assert round(fine.dE_act_kcal, 2) == 12.55 == round(xfine.dE_act_max_kcal, 2) == round(
+        xfine.dE_act_min_kcal, 2)  # the spread is the clean level's value only
+    assert (round(fine.dE_rxn_min_kcal, 2), round(fine.dE_rxn_max_kcal, 2)) == (-6.28, 6.28)
+    _, xfine = doublet(start_s2=1.71)  # the shared start: both values of its level
+    assert xfine.notes == "spin_contaminated:dE_rxn;spin_contaminated:dE_act"
+    assert round(xfine.dE_rxn_min_kcal, 2) == 6.28 == round(xfine.dE_rxn_max_kcal, 2)
+    assert {r.notes for r in doublet(ts_s2=1.71, policy=Policy(spin_tol=1.0))} == {""}

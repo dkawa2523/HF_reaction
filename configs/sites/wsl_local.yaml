@@ -12,7 +12,8 @@ engines:
       nwchem: /home/user/.local/bin/nwchem
       mpirun: /home/user/.local/opt/nwchem-7.2.3/bin/mpirun
     scratch_dir: /home/user/hfauto_scratch/nwchem
-    execution: {ranks: 4, memory_mb_per_rank: 1200, timeout_s: 14400}
+    # ranks x memory_mb_per_rank <= 0.8 x MemTotal: 4 x 2000 MB = 8 GB <= 0.8 x 11 GB
+    execution: {ranks: 4, memory_mb_per_rank: 2000, timeout_s: 14400}
   nwchem_saddle: *nwchem
   nwchem_string: *nwchem
   xtb:

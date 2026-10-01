@@ -4,7 +4,9 @@ method panel.
 Imports only hfauto.core, hfauto.chemistry.gates and the standard library. Everything is a
 pure function over typed records except ``write_tables``. No confidence score is produced
 (AR-27): a reaction is either rankable by ``gates.rankable`` or listed with its blockers; the
-method panel's dE_act spread is shown as columns, never as a blocker.
+method panel's dE_act spread is shown as columns, never as a blocker. A panel energy that fails
+``gates.spin_ok`` stays in its row, noted, and out of the spread (the thermo stage keeps such an
+energy out of the ranking).
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import astuple, dataclass, fields
 from pathlib import Path
 
-from hfauto.chemistry.gates import rankable, reaction_tier
+from hfauto.chemistry.gates import Policy, rankable, reaction_tier, spin_ok
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Level
 from hfauto.core.manifest import Artifact
@@ -41,17 +43,19 @@ class CoverageRow:
 
 @dataclass(frozen=True)
 class PanelRow:
-    """One reaction at one level of theory; the min/max columns span the reaction's levels."""
+    """One reaction at one level of theory; the min/max columns span the reaction's levels
+    except the values named in ``notes``."""
 
     reaction_id: str
     level_key: str  # Level.full_key(): grid and scf_tol are part of the key (CH-25)
     level: str
     dE_rxn_kcal: float
     dE_act_kcal: float | None
-    dE_rxn_min_kcal: float
-    dE_rxn_max_kcal: float
+    dE_rxn_min_kcal: float | None
+    dE_rxn_max_kcal: float | None
     dE_act_min_kcal: float | None
     dE_act_max_kcal: float | None
+    notes: str = ""  # spin_contaminated:dE_rxn / :dE_act, ';'-joined: left out of the spread
 
 
 def _tie_ranks(intervals: Mapping[str, tuple[float, float]]) -> dict[str, int]:
@@ -121,30 +125,37 @@ def _label(level: Level) -> str:
 
 
 def _deltas(
-    energies: Mapping[str, float], points: tuple[str, str, str | None]
-) -> tuple[float, float | None] | None:
+    at: Mapping[str, Evidence], points: tuple[str, str, str | None], policy: Policy
+) -> tuple[float, float | None, tuple[str, ...]] | None:
+    """dE_rxn, dE_act (kcal/mol) and the names of those with an energy failing spin_ok."""
     start, end, ts = points
-    if start not in energies or end not in energies:
+    if start not in at or end not in at:
         return None
-    e_ts = energies.get(ts) if ts is not None else None
-    act = (e_ts - energies[start]) * HARTREE_TO_KCAL_MOL if e_ts is not None else None
-    return (energies[end] - energies[start]) * HARTREE_TO_KCAL_MOL, act
+    pairs = {"dE_rxn": (start, end)}
+    if ts is not None and ts in at:
+        pairs["dE_act"] = (start, ts)
+    values = {name: (at[b].energy_hartree - at[a].energy_hartree) * HARTREE_TO_KCAL_MOL
+              for name, (a, b) in pairs.items()}
+    contaminated = tuple(name for name, pair in pairs.items()
+                         if not all(spin_ok(at[p], policy) for p in pair))
+    return values["dE_rxn"], values.get("dE_act"), contaminated
 
 
 def _panel_rows(
-    reaction_id: str, found: list[tuple[str, Level, float, float | None]]
+    reaction_id: str, found: list[tuple[str, Level, float, float | None, tuple[str, ...]]]
 ) -> list[PanelRow]:
-    rxn = [f[2] for f in found]
-    act = [f[3] for f in found if f[3] is not None]
+    rxn = [f[2] for f in found if "dE_rxn" not in f[4]]
+    act = [f[3] for f in found if f[3] is not None and "dE_act" not in f[4]]
     spread = {
-        "dE_rxn_min_kcal": min(rxn, default=0.0),
-        "dE_rxn_max_kcal": max(rxn, default=0.0),
+        "dE_rxn_min_kcal": min(rxn, default=None),
+        "dE_rxn_max_kcal": max(rxn, default=None),
         "dE_act_min_kcal": min(act, default=None),
         "dE_act_max_kcal": max(act, default=None),
     }
     return [
-        PanelRow(reaction_id, key, _label(level), d_rxn, d_act, **spread)
-        for key, level, d_rxn, d_act in found
+        PanelRow(reaction_id, key, _label(level), d_rxn, d_act, **spread,
+                 notes=";".join(f"spin_contaminated:{name}" for name in contaminated))
+        for key, level, d_rxn, d_act, contaminated in found
     ]
 
 
@@ -163,28 +174,27 @@ def method_panel(
     reactions: Sequence[ReactionRecord],
     *,
     minima: Mapping[str, MinimumRecord],
+    policy: Policy,
 ) -> list[PanelRow]:
     """dE_rxn and dE_act of each reaction at every level with energies at its stationary
     points, keyed by ``Level.full_key`` (CH-25).
 
     A stationary point is a subject of the sp stage (a minimum_id, or SaddleClaim.freq_calc
     for the TS): its reference energy comes from its freq calculation, the other levels from
-    the sp calculations whose parents name it (the later one in the view wins).
+    the sp calculations whose parents name it (the later one in the view wins). A value with
+    an energy that fails ``spin_ok(policy)`` is noted and left out of the min/max.
     """
     freq = {m.minimum_id: m.freq_calc for m in minima.values()} | {
         r.saddle.freq_calc: r.saddle.freq_calc for r in reactions if r.saddle is not None}
-    energies: dict[str, dict[str, float]] = defaultdict(dict)  # level key -> subject -> E
-    levels: dict[str, Level] = {}
+    energies: dict[str, dict[str, Evidence]] = defaultdict(dict)  # level key -> subject -> ev
     for subject, ev in _subject_energies(calculations, freq):
-        key = ev.level.full_key()
-        levels.setdefault(key, ev.level)
-        energies[key][subject] = ev.energy_hartree
+        energies[ev.level.full_key()][subject] = ev  # one key, one Level
     rows: list[PanelRow] = []
     for reaction in reactions:
         points = (*reaction.minima, reaction.saddle.freq_calc if reaction.saddle else None)
-        deltas = {key: _deltas(energies[key], points) for key in sorted(energies)}
         rows += _panel_rows(reaction.reaction_id, [
-            (key, levels[key], *d) for key, d in deltas.items() if d is not None])
+            (key, next(iter(at.values())).level, *d) for key, at in sorted(energies.items())
+            if (d := _deltas(at, points, policy)) is not None])
     return rows
 
 

@@ -1,0 +1,37 @@
+echo
+start job
+permanent_dir .
+scratch_dir /home/user/hfauto_scratch/nwchem/c43e3713103bda85_attempt_01
+memory total 2000 mb
+
+geometry units angstrom nocenter noautosym
+  H   0.0070589000  0.0070589400  1.8218340500
+  H  -0.0078421300 -0.0078421700  0.2483383500
+  H   0.0007832200  0.0007832300 -1.8651724000
+end
+charge 0
+basis spherical
+  * library def2-svpd
+end
+
+dft
+  xc pbe0
+  mult 2
+  odft
+  grid fine
+  convergence energy 1.0e-07
+  iterations 100
+  disp vdw 4
+  vectors input job.movecs
+  cgmin
+end
+
+task dft energy
+
+unset dft:cgmin
+
+dft
+  vectors input job.movecs
+end
+
+task dft energy

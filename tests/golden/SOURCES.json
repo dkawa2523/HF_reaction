@@ -654,5 +654,117 @@
    "remaining-issues-2026-09-30 §2.6",
    "G6-P1"
   ]
+ },
+ {
+  "id": "G31",
+  "files": [
+   {
+    "golden": "nwchem/G31/hcn_opt.out.gz",
+    "source": "/home/user/hfauto_r7/VAL7/hcn/jobs/3e/3ed7454374d8a9165b04226152ddfcb3daab3c8b34c6a1243593460da3080f28/attempt_00/stdout.txt",
+    "source_sha256": "b12b8b8becc3138ad1d6be5cd555d673cb56ce8f90dbd266528d67a10d1b3110",
+    "method": "copy"
+   },
+   {
+    "golden": "nwchem/G31/hcn_opt_final.xyz",
+    "source": "/home/user/hfauto_r7/VAL7/hcn/jobs/3e/3ed7454374d8a9165b04226152ddfcb3daab3c8b34c6a1243593460da3080f28/attempt_00/final-001.xyz",
+    "source_sha256": "34006b51a81c8d90c363c336c39be0df4f5a949026efad78824a732ed9c630ae",
+    "method": "copy"
+   }
+  ],
+  "expect": "HCN の opt(VAL7 hcn、PBE0-D3BJ/def2-SVPD、hfauto の NWChemEngine)。直線分子で autoz が作れず「AUTOZ failed to generate good internal coordinates. Cartesian coordinates will be used」と通知して Cartesian で続け、1 歩で正常終了する(E −93.220965847143)。classify_failure は None。最後の DFT ENERGY GRADIENTS(bohr、Eh/bohr)は final-001.xyz の構造にあり、最大成分 3e-5 は '@ 1' 行の gmax と一致する",
+  "refs": [
+   "remaining-issues-2026-09-30 §3 X5",
+   "G4-P4",
+   "G5-P1"
+  ]
+ },
+ {
+  "id": "G32",
+  "files": [
+   {
+    "golden": "nwchem/G32/saddle_maxiter.out",
+    "source": "/home/user/hfauto_r6/SB/sba/runs/s17/jobs/b3/b3f7e62b9a0486d56272208cdf3905765349871d917b3e68d4b040f20a9614d9/attempt_01/stdout.txt",
+    "source_sha256": "6b62939a2082db40607740b79275512f307d6131c8f189afeb2b012e1477a142",
+    "method": "head400_tail200"
+   },
+   {
+    "golden": "nwchem/G32/final-050.xyz",
+    "source": "/home/user/hfauto_r6/SB/sba/runs/s17/jobs/b3/b3f7e62b9a0486d56272208cdf3905765349871d917b3e68d4b040f20a9614d9/attempt_01/final-050.xyz",
+    "source_sha256": "97ef94c67eb5171a0a002ab70a7cef0275378c734e8907a251879fd267578c89",
+    "method": "copy"
+   }
+  ],
+  "expect": "r6 SB/sba s17 の saddle b3f7e62b の attempt_01(head400_tail200)。無害な AUTOZ の通知の後、50 歩で maxiter(rc 255)。旧 `_AUTOZ` はこれを autoz と誤分類し、noautoz で始点からやり直した。正しくは GEOMETRY_MAXITER で、最後の '@ 50' 行のエネルギー −200.24793703 が最終フレーム final-050.xyz のもの",
+  "refs": [
+   "remaining-issues-2026-09-30 §3 X5",
+   "G8-P4",
+   "G1-P3"
+  ]
+ },
+ {
+  "id": "G33",
+  "files": [
+   {
+    "golden": "nwchem/G33/opt_autoz.out",
+    "source": "/home/user/hfauto_r7/VAL7/s10_amine_pilot2/jobs/a0/a0a8c70404b80101c34d85c3536083a6e2cd38481792074a9965d7d3712cc279/attempt_00/stdout.txt",
+    "source_sha256": "7de4bc474957ed2d81099cc119ca7c10c23a9a69a8894f55cf06da5cbc33fd34",
+    "method": "head400_tail200"
+   },
+   {
+    "golden": "nwchem/G33/final-021.xyz",
+    "source": "/home/user/hfauto_r7/VAL7/s10_amine_pilot2/jobs/a0/a0a8c70404b80101c34d85c3536083a6e2cd38481792074a9965d7d3712cc279/attempt_00/final-021.xyz",
+    "source_sha256": "5aca844877c457ce1fe74414029142df97c4122ce27c27376a29219f796bdd93",
+    "method": "copy"
+   }
+  ],
+  "expect": "VAL7 s10 の QRC の側の opt a0a8c704 の attempt_00(head400_tail200)。21 フレーム目(gmax 4e-5)で「insufficient internal variables」「geom_binvr: #indep variables incorrect」の致命的な autoz の失敗(rc 236)。継続は final-021.xyz から Cartesian で job.movecs だけを引き継ぐ。r9 S1a のプローブで 1 歩・3.3 s、E −156.757772802645(VAL7 の attempt_01 は始点から 19 歩・41.6 s で −156.75777282、整列後の差 0.0009 Å)",
+  "refs": [
+   "remaining-issues-2026-09-30 §3 X5",
+   "G4-P4"
+  ]
+ },
+ {
+  "id": "G34",
+  "files": [
+   {
+    "golden": "nwchem/G34/h3_rescue.out.gz",
+    "source": "/home/user/hfauto_r9/S1a/h3p3c/jobs/c4/c43e3713103bda8507f0cf33cd0ffb6f0799e2a1eef6e4823f03cba805de21d0/attempt_01/stdout.txt",
+    "source_sha256": "42628fba141f84aabfd6869cb1c55bc51bd52059e314f76fc8c4df9ca0d188d0",
+    "method": "copy"
+   },
+   {
+    "golden": "nwchem/G34/h3_rescue.nw",
+    "source": "/home/user/hfauto_r9/S1a/h3p3c/jobs/c4/c43e3713103bda8507f0cf33cd0ffb6f0799e2a1eef6e4823f03cba805de21d0/attempt_01/job.nw",
+    "source_sha256": "45387d41c170d1e1c5261a5bfb2151a0fcd76b7e259cb58d1d6497d437e6bcbb",
+    "method": "copy"
+   }
+  ],
+  "expect": "r6 P3c の H3 二重項の bead(`/home/user/hfauto_r6/SA/sac_probe/scf/h3p3c/a00_bead_000003_it100` の vectors から)を r9 S1a で NWChemEngine に流した attempt_01。attempt_00 は SCF 未収束、attempt_01 はこのデッキ(cgmin の後に `unset dft:cgmin`、vectors を引き継ぐ通常の SCF 1 回)で、cgmin −1.548056627840 → 通常の SCF 2 反復 −1.548056664703(差 3.7e-8 Eh)、⟨S²⟩ 0.9861。Evidence は ⟨S²⟩ を持ち、spin_ok は spin_contaminated で落とす(spin_tol は動かさない)",
+  "refs": [
+   "remaining-issues-2026-09-30 §2.2",
+   "G2-P6"
+  ]
+ },
+ {
+  "id": "G35",
+  "files": [
+   {
+    "golden": "nwchem/G35/i_ch3i_ccsdt.out.gz",
+    "source": "/home/user/hfauto_r9/S1a/i_ch3i_ccsdt/jobs/aa/aa824f5ae108180901758c914abe8d0d8fffc38fce24d28ee34a5d11a2279ff8/attempt_00/stdout.txt",
+    "source_sha256": "ead9282e62f30bd9266ad0918b6a28bd4eb325ecc8df82c9907f27b29ac8060a",
+    "method": "copy"
+   },
+   {
+    "golden": "nwchem/G35/i_ch3i_ccsdt.nw",
+    "source": "/home/user/hfauto_r9/S1a/i_ch3i_ccsdt/jobs/aa/aa824f5ae108180901758c914abe8d0d8fffc38fce24d28ee34a5d11a2279ff8/attempt_00/job.nw",
+    "source_sha256": "add0e7b68795c2495a76562a6907cdf50b22d630b16bc63acc6cfcb0446550fb",
+    "method": "copy"
+   }
+  ],
+  "expect": "I⁻···CH3I 錯体(VAL7 s2 の PBE0-D3BJ/def2-SVPD 極小、電荷 −1)の CCSD(T)/def2-TZVPD(RHF の ccsd モジュール)、r9 S1a で NWChemEngine に流したもの。デッキは `memory heap 100 mb stack 500 mb global 1400 mb`(memory_mb_per_rank 2000 の 5/25/70 %)と `freeze 9`(C 1s と I 2 個の 4s4p。NWChem の freeze atomic の芯から def2-ECP の 28 電子を引いた数)。出力の number of core 9",
+  "refs": [
+   "remaining-issues-2026-09-30 §3 X7",
+   "G6-P3"
+  ]
  }
 ]

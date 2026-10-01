@@ -38,7 +38,9 @@ def test_a_freq_evidence_holds_3n_minus_external_modes_and_its_imaginary_ones(fr
         engine="nwchem", task=task, level=LEVEL, start=geo, final=geo, energy_hartree=-93.0,
         frequencies_cm1=freqs, n_external=6, imaginary_modes=((0.1,) * 9,) * modes, output=ref,
         job_key="k")
-    make("sp")  # only a freq is checked
+    stored = make("sp").model_dump(mode="json")  # only a freq is checked
+    del stored["gradient"]  # a JobStore record written before Evidence.gradient
+    assert Evidence.model_validate(stored).gradient is None
     if valid:
         make("freq")
     else:
@@ -49,6 +51,6 @@ def test_a_freq_evidence_holds_3n_minus_external_modes_and_its_imaginary_ones(fr
 def test_failure_kinds_and_constants():
     assert len(FailureKind) == 10
     failure = Failure(kind="gate_rejected", reason="no_collision_free_seed")
-    assert failure.kind is FailureKind.GATE_REJECTED
+    assert failure.kind is FailureKind.GATE_REJECTED and failure.energy_hartree is None
     assert CM1_TO_HARTREE * 219474.6313705 == pytest.approx(1.0, rel=1e-9)
     assert BOHR_TO_ANGSTROM == pytest.approx(0.529177210903)

@@ -85,6 +85,23 @@ def test_charge_multiplicity_dispersion_and_frame():
         assert "units angstrom nocenter noautosym" in deck
 
 
+def test_an_scf_rescue_is_cgmin_then_one_plain_scf_from_its_vectors():
+    """G2-P6: the plain SCF prints the <S2> cgmin does not, for every task that gives an
+    Evidence; a string (no <S2> in its PathProfile) runs cgmin only."""
+    rescue = nw.Setup(restart_vectors=True, scf_rescue=True)
+    tail = "\n\nunset dft:cgmin\n\ndft\n  vectors input job.movecs\nend\n\ntask dft energy\n"
+    radical = Molecule(WATER.xyz, 1, 2)
+    for render, task in ((nw.render_energy, "energy"), (nw.render_optimize, "optimize"),
+                         (nw.render_frequencies, "frequencies"), (nw.render_saddle, "saddle")):
+        for mol in (WATER, radical):
+            deck = render(mol, PBE0, rescue)
+            assert "  vectors input job.movecs\n  cgmin\nend" in deck
+            assert deck.endswith(f"task dft {task}{tail}") and deck.count("task ") == 2
+        assert "cgmin" not in render(WATER, PBE0)
+    string = nw.render_string(WATER, WATER, PBE0, rescue, nbeads=5)
+    assert "  cgmin\nend" in string and string.endswith("task dft string\n")
+
+
 def test_def2_writes_one_ecp_line_per_element_beyond_kr():
     ch3i = Molecule(XYZ(["C", "I", "H", "H", "H"], np.zeros((5, 3))), 0, 1)
     ccsd_t = CCSD_T.model_copy(update={"basis": "def2-tzvpd"})
@@ -101,7 +118,8 @@ def test_def2_writes_one_ecp_line_per_element_beyond_kr():
 def test_ccsd_t_single_point_and_hess_round_trip(tmp_path):
     assert "scf\n  maxiter 100\nend" in nw.render_wft(WATER, CCSD_T)
     ccsd = nw.render_wft(WATER, CCSD_T, nw.Setup(restart_vectors=True))
-    assert "task ccsd(t) energy" in ccsd and "dft" not in ccsd and "ccsd\n  freeze atomic\n  maxiter 50\nend" in ccsd
+    assert "task ccsd(t) energy" in ccsd and "dft" not in ccsd
+    assert "ccsd\n  freeze 1\n  maxiter 50\nend" in ccsd  # O 1s
     assert "scf\n  maxiter 100\n  vectors input job.movecs\nend" in ccsd
     assert "nopen" not in ccsd and "rohf" not in ccsd and "tce" not in ccsd
     h = np.arange(81.0).reshape(9, 9) * 1e-3
@@ -114,5 +132,30 @@ def test_open_shell_ccsd_t_is_rohf_through_the_tce(multiplicity, nopen):
     radical = Molecule(WATER.xyz, 1, multiplicity)
     deck = nw.render_wft(radical, CCSD_T)
     assert f"scf\n  rohf\n  nopen {nopen}\n  maxiter 100\nend" in deck
-    assert "tce\n  2eorb\n  2emet 13\n  ccsd(t)\n  freeze atomic\nend" in deck
+    assert "tce\n  2eorb\n  2emet 13\n  ccsd(t)\n  freeze 1\nend" in deck
     assert deck.rstrip().endswith("task tce energy") and "\nccsd\n" not in deck
+
+
+def test_wft_memory_favours_global_arrays_and_dft_keeps_memory_total():
+    """G6-P3: heap 5 %, stack 25 %, global 70 % of the rank's memory, each with its unit
+    (NWChem 7.2.3 memory_input.F stops on a size without one)."""
+    site = nw.Setup(memory_mb=2000)
+    split = "\nmemory heap 100 mb stack 500 mb global 1400 mb\n"
+    assert split in nw.render_wft(WATER, CCSD_T, site)
+    assert "\nmemory heap 60 mb stack 300 mb global 840 mb\n" in nw.render_wft(WATER, CCSD_T)
+    for deck in (nw.render_energy(WATER, PBE0, site), nw.render_optimize(WATER, PBE0, site)):
+        assert "\nmemory total 2000 mb\n" in deck and "heap" not in deck
+
+
+@pytest.mark.parametrize(("symbols", "frozen"), [
+    (["I", "C", "I", "H", "H", "H"], 9),  # I-···CH3I: 2 x I 4s4p + C 1s
+    (["C", "O", "H", "H", "H"], 2),  # CH3O: as freeze atomic (VAL7 s20: 2 frozen cores)
+    (["H", "I"], 4), (["Te", "H", "H"], 4), (["Kr"], 9), (["Cs"], 4), (["Hg"], 0), (["H"], 0)])
+def test_the_frozen_core_is_freeze_atomic_less_the_def2_ecp(symbols, frozen):
+    """G6-P3: per atom, the noble-gas core NWChem's ``freeze atomic`` freezes on an
+    all-electron atom (Li-Ne 1, Na-Ar 5, K-Kr 9, Rb-Xe 18, Cs-Rn 27) less the def2-ECP (28
+    for Rb-Xe, 46 for Cs-La, 60 for Hf-Rn): I freezes 4s4p (18 - 14) and keeps 4d, as an
+    all-electron I would; Hg's ECP covers more than that core."""
+    assert nw.frozen_core(symbols) == frozen
+    mol = Molecule(XYZ(symbols, np.zeros((len(symbols), 3))), -1 if symbols[0] == "I" else 0, 1)
+    assert f"\n  freeze {frozen}\n" in nw.render_wft(mol, CCSD_T)

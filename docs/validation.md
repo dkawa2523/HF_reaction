@@ -5,7 +5,7 @@ round 7 の改良(W0〜W5、結果報告 [2026-09-30_round7_result.md](reviews/2
 ## 1. 条件
 
 - コード: 各 wave の作業ツリー(W1 = `707e656`、W2 = `26389e3`、W3 = `2eaaf53`、W4 = `c5b515e` でコミットしたもの)。VAL7 は W5 の作業ツリー(W4 に挙動を変えない削除だけを足したもの)で、§6 の全体と round 7 の系を `/home/user/hfauto_r7/VAL7` に流し直した(`/home/user/hfauto_r7/VAL7/chain.sh`、比較は `/home/user/hfauto_r7/VAL7/val7check.py` と `/home/user/hfauto_r7/VAL7/val7walls.py`)。数値の比較先 VAL は round 6 の検証(`/home/user/hfauto_r6/VAL/runs`、コード `d5fd24c`)。
-- 環境: WSL2 Ubuntu(4 vCPU / 11 GB)、`configs/sites/wsl_local.yaml`(NWChem 7.2.3 を 4 rank × 1,200 MB、xTB 6.7.1、CREST 3.0.2、SCINE ReaDuct 6.1.0、pysisyphus 1.0、GoodVibes 4.3.0、pymsym 0.3.5)。
+- 環境: WSL2 Ubuntu(4 vCPU / 11 GB)、`configs/sites/wsl_local.yaml`(NWChem 7.2.3 を 4 rank × 1,200 MB(r9-S1 から 2,000 MB。メモリはジョブ鍵に入らない)、xTB 6.7.1、CREST 3.0.2、SCINE ReaDuct 6.1.0、pysisyphus 1.0、GoodVibes 4.3.0、pymsym 0.3.5)。
 - 手法: 停留点と振動は PBE0-D3BJ/def2-SVPD(I は def2-ECP)、低レベルは GFN2-xTB。298.15 K・1 atm、順位の量は δG_eff(kcal/mol)。
 - run: `/home/user/hfauto_r7/<wave>/<run>` に新しい run dir で 1 本ずつ直列(`/home/user/hfauto_r7/runcase.sh`。`/usr/bin/time -v`、終了後の孤児プロセス検査、status と report)。記録の型が変わったので round 6 の run は再開せず、VAL との比較は生の JSON と xyz だけを読む。QM 時間は一意のジョブ鍵ごとの秒数(`/home/user/hfauto_r7/tools/jobtime.py`)。GNU timeout は負荷の下で約 5.5% 遅れて発火する。
 - 一時 pipeline(`/home/user/hfauto_r7/pipelines/`):
@@ -141,7 +141,7 @@ QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ
 | QRC の尾の早期停止 | K1 の後の acac の側は basin に入ってから 7/15 歩と 6/14 歩で、その間の ΔE は 0.004 / 0.009 kcal/mol | 採らない |
 | K6 linopt 0(U3-P11) | `/home/user/hfauto_r7/knowhow_probe/opt2.log` と `qrc_all.log`: DME の QRC 143 → 91 s、acac 723 → 662 s は速く、HCN 11 → 15 s、マロンアルデヒド 105 → 148 s、acac の極小 293 → 326 s は遅い | 採らない(閉じる) |
 | AFIR | M4 より後の run(SA〜VAL)の AFIR 41 件(一意の discovery)はすべて陰性で生成物 0。M4 の生成物は、今の結合規則ではハロゲン結合錯体 ClI+H3N(W3/s7 の screen basin にある)と、同じ run で NT2 も見つけた恒等 SN2 | W3 で削除 |
-| R17 開殻 DFT の SCF 救済 | cgmin の出力は ⟨S²⟩ を出さず、救済したジョブは必ず捨てられる(`/home/user/hfauto_r6/SA/sac_probe/scf/h3p3c/a00_bead_000003_cgmin/stdout.txt`)。実 run での発生は 0 | 開殻 DFT は救済しない(round 7 の run でも発生なし) |
+| R17 開殻 DFT の SCF 救済 | cgmin の出力は ⟨S²⟩ を出さず、救済したジョブは必ず捨てられる(`/home/user/hfauto_r6/SA/sac_probe/scf/h3p3c/a00_bead_000003_cgmin/stdout.txt`)。実 run での発生は 0 | 開殻 DFT は救済しない(round 7 の run でも発生なし)。r9-S1 で、cgmin の後に通常の SCF を 1 回回して ⟨S²⟩ を読む形にした(§20) |
 | K4 CREST の電子温度 | `/home/user/hfauto_r7/knowhow_probe/crest`: OH·CH4 は 1,000 K・3,000 K なら完走するが、組成ごとに低レベルの PES を変える | 採らない。CREST が失敗した組成は seed を使い、失われた状態は DFT に 1 回問う |
 | 失われた seed の DFT(R6) | S6 は PBE0 で OH···CH4 が残り、引き抜きの TS と順位に届いた。S19 は DFT でも崩れた(`collapsed_at_dft_from_seed`) | 採用。崩れても障壁なしとは呼ばない |
 | 付け直した IRC の端(R5a) | 事前の数え上げ(0.05 Å で 4 件)どおり、未接続が S6 2 → 0、S19 5 → 3 | 採用。許容は 0.05 Å のまま |
@@ -171,7 +171,7 @@ QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ
 7. **近直線の錯体の熱化学**: S18 の H···H2 は、軸から 0.006 Å 外れた極小が非直線(振動 3 本、δG_eff 4.091)、正確に直線の極小が直線(4 本、6.360)と扱われる(`vibrations._EXTERNAL_RANK_TOL` = 1e-3、`/home/user/hfauto_r7/W2/superseded_k1neg/s18_h3_doublet`)。直線性を対称性で決める必要がある。M7 で、点群 1 つから直線性を決めるようにした。2 つの run の差は 2.27 から 0.006 kcal/mol になった(§17)。
 8. **分割の深さ**: W3 の S6 の CH3OH + H 側は、ほぼ縮退した緩い錯体(ΔE_rxn ≤ 0.11)の分割で `max_split_depth` に達し、順位が付かない(VAL7 ではその 2 つの極小が 1 つの basin にまとまった)。M1 で偽の結合変化が、M2 で同じ状態の分割がなくなった(W3_s6 の再生、§11.3、§12.3)。
 9. **平らな PES の引き抜きの TS の再現性**: S6 の OH···CH4 → CH3···H2O は W3 だけが −481.1i の TS に届き、VAL7・W5 は OH···CH4 の向きを変える鞍点(−73.0i、−58.6i、両側が同じ basin)に収束して試行を使い切った。虚モードが仮説の結合変化を担わない鞍点を QRC の前に見分け、結合変化の方向に拘束して探す必要がある(その鞍点の QRC は 2 振幅 × 2 本)。
-10. **NWChem の AUTOZ の失敗**: VAL7/s10 の QRC の側の opt が 21 歩目で内部座標の再構築に失敗し、続きからの 2 回目の試行で収束した(+53 s)。VAL7 で 2 回目の試行はこの 1 件。
+10. **NWChem の AUTOZ の失敗**: VAL7/s10 の QRC の側の opt が 21 歩目で内部座標の再構築に失敗し(53 s)、2 回目の試行は始点から Cartesian でやり直して 19 歩で収束した(43 s)。VAL7 で 2 回目の試行はこの 1 件。r9-S1 で最後の frame から続けるようにした(§20)。
 
 ## 10. 再生ゲート
 
@@ -726,3 +726,37 @@ S5(`M8/real/s5_ch3_o2`、CUR の写しを paths から、CAP 2,700 s。壁時計
 - 遷移金属・Te を含む系の M06-2X の SP(H2Te は順位の行がなく SP の対象がない)。I は SN2 で通したが CCSD(T) の参照はない。
 - 層の SP が freq と違う電子状態に収束したことの検出。spin_ok は ⟨S²⟩ の汚染だけを見るので、BS の freq 点で純粋な二重項に落ちた SP を止めない(S5 では順位に影響しなかった)。
 - PBE0 に鞍点がない(山が解像度未満の)反応の障壁。層では取り戻せない([design.md](design.md) §7.4)。
+
+## 20. S1 バックエンドの正しさ(X5-1 / G4-P4 = G8-P4、G2-P6、G6-P3)
+
+分析の §3 X5-1、§2.2 G2-P6、§3 X7 の 2 にあたる。規則は [design.md](design.md) §7.1・§7.3・§8。
+
+### 20.1 変えたこと
+
+- 失敗の分類: autoz の失敗は致命的な文言(`insufficient internal variables`、`geom_binvr: #indep variables incorrect`、`regeneration of autoz failed`)だけにした。Cartesian に切り替えたという無害な注記は、正常終了なら失敗でなく、SCF 未収束や maxiter と並べばそちらの種類になる。
+- 継続: 駆動系ジョブの継続はすべて最後の frame から。opt の autoz も最後の frame から Cartesian で続ける(vectors だけを引き継ぎ、driver の Hessian は捨てる)。frame がまだない autoz と saddle の autoz は従来どおり同じ始点から Cartesian。
+- SCF の救済(G2-P6): `_scf_rescuable` を削除した。DFT は開殻も `cgmin` の後に通常の SCF を 1 回回して ⟨S²⟩ とエネルギーを読み、2 つが qrc_drop より離れたら `rescue_solution_changed` にする。⟨S²⟩ のない開殻の出力を Evidence にしない検査(`s2_not_reported`)は残した。
+- 後の wave が読む欄: `Failure.energy_hartree`(maxiter で止まった saddle の最後の歩、G1-P3)、`Evidence.gradient`(opt と saddle の最後の DFT の勾配。最終フレームになければ `gradient_not_at_final`、G5-P1)。VAL7 と r9 の NWChem の opt・saddle の Evidence 487 件で、最後の勾配のブロックはすべて最終フレームにあった(5.2e-7 Å 以内)。
+- 参照層の容量(G6-P3): wsl_local の `memory_mb_per_rank` を 1,200 → 2,000 MB にした(site の規則 4 × 2,000 MB = 8 GB ≤ 0.8 × MemTotal。新しいつまみはない)。WFT の deck だけ heap 5%・stack 25%・global 70% に分け、凍結する芯を `freeze <n>` で明示する(NWChem の `freeze atomic` の芯 − def2-ECP の電子。I は 4s4p の 4。計画の例の「I は 4s4p4d の 9、I⁻ + CH3I は 19、CH3O は 1」は `freeze atomic` の規則と合わない: CH3O は VAL7 s20 の出力で凍結 2、全電子の Br も 3d を相関させる)。Kr より重い原子を含む CCSD(T) の鍵は `frozen_core` を持つ。手法パネルは `spin_ok` に落ちるエネルギーを使う値を notes に書き、最小・最大から外す。
+- しきい値と予算は変えていない。
+
+### 20.2 検証の道具(repo の外、`/home/user/hfauto_r9/tools/`)
+
+- `harness_autoz.py WAVE`: VAL7 の s10 の QRC の側の opt a0a8c704(NH3·HF、鞍点の freq の初期 Hessian)を、元の始点から新しい run で作業ツリーの NWChem エンジンに流す。合格: ジョブ鍵が元と同じ、attempt_00 が frame を残して autoz で止まる、attempt_01 が Cartesian で attempt_00 の最後の frame(1e-4 Å 以内)から始まり 3 歩以内で収束する、元とのエネルギー差 < 1e-6 Eh、元の run の DFT 極小に対する `Registry.find` が両方に同じ basin を返す。
+- `harness_rescue.py WAVE`: r6 の h3p3c の bead(P3c の H3 二重項 ZTS の bead 4。失敗した string の試行が残した vectors から始める)を energy ジョブとして流す。合格: attempt_00 が scf_not_converged、attempt_01 が cgmin と通常の SCF の 2 task、結果が ⟨S²⟩ 付きの Evidence で `spin_ok` を通る。同じ bead を atomic guess から解くと ⟨S²⟩ 0.9868 の解に収束する(`/home/user/hfauto_r6/SA/sac_probe/scf/h3/it100`)ので、救済した解が `spin_ok` に落ちることもありうる。そのときは結果として記録し、spin_tol は動かさない。
+- どちらも `R9/.runcase.lock` を取り、`R9/WAVE/harness/<name>/summary.json` に書く。
+
+### 20.3 変更前のコード(HEAD 92491f3 の写し)での harness(`/home/user/hfauto_r9/S1/harness/*_head`)
+
+- autoz: attempt_00 は 21 frame の後に autoz で止まった(51 s)。attempt_01 は始点から Cartesian でやり直し(attempt_00 の最後の frame から 0.918 Å)、19 歩(42 s)。エネルギーは元と 2e-9 Eh、basin も同じで、VAL7 の記録を再現した。不合格は continue と steps だけである。
+- rescue: attempt_00 は SCF 未収束なのに、ほぼ直線の H3 で出る無害な AUTOZ の注記のために `input_invalid:autoz` に分類され、同じ始点と vectors から Cartesian で再投入された。attempt_01 も SCF 未収束で、開殻なので救済されず `scf_not_converged` で終わった。救済の前に分類の誤りがあった(20.1 の 1 つ目で直す)。
+
+### 20.4 結果(統合、`/home/user/hfauto_r9/S1/`、`/home/user/hfauto_r9/S1a/`)
+
+- 再生(`S1/replay`、CUR の 36 run、strict): 全 stage で misses 0、新しいジョブ 0。記録の差は report の method_panel.csv の sha256 だけ(36 run、パネルの 3 run は 2 つの report)。列 notes が増えたためで、値は s5_ch3_o2 の 1 行を除いて同じ。s5 の b3febc8052 の PBE0 の ΔE_rxn は BS 錯体の freq のエネルギー(spin_ok 不合格)を使うので notes に `spin_contaminated:dE_rxn` と書かれ、幅から外れた(残る幅は M06-2X の −83.15 だけ。その SP が別の電子状態に落ちた件は §19.6 のとおり)。ranking.csv と結論の記録は同じ。
+- harness autoz(`S1/harness/autoz`): 6 項目すべて合格。attempt_00 は 21 frame の後に autoz(54 s)、attempt_01 は frame 21 から Cartesian で 1 歩・3.3 s(HEAD は始点から 19 歩・42 s)。元とのエネルギー差 1.4e-8 Eh、basin は両方 basin_nh3_hf1_c00_ff60c312。
+- harness rescue(`S1/harness/rescue`): scf・rescue・evidence は合格、`spin_ok` は不合格。attempt_00 は SCF 未収束(今度は autoz に誤分類されない)、attempt_01 は cgmin と通常の SCF の 2 task で ⟨S²⟩ 0.9868 の Evidence。atomic guess の解と 1.6e-10 Eh で同じ解で、この bead の UKS の基底解そのものが汚染されている。spin_tol は動かしていない(S1a のプローブ `S1a/h3p3c` も ⟨S²⟩ 0.9861、cgmin → 通常の SCF の差 3.7e-8 Eh)。
+- DFT の回帰(`S1/real/hcn_fresh`、memory 2,000 MB の新しい run): 極小 2 つは BASE と 1e-8 Eh 以内、TS は CUR と 3e-10 Eh(BASE とは M4 の鞍点の Hessian の変更前で 5.5e-8 Eh)、共通の鍵のジョブは 1.3e-10 Eh 以内、δG_eff 41.5739 は CUR と 1e-7 kcal/mol。
+- CCSD(T)(`S1/real/s14_ccsdt`、CUR の s14 の写しに CCSD(T) のパネル): 極小と TS が 1,396 s と 1,405 s(4 ranks、heap/stack/global 100/500/1,400 MB、`freeze 5`)で完走した(1,200 MB の `memory total` では (T) が配列を確保できなかった)。ΔE‡ は CCSD(T)/def2-TZVPD 3.47、PBE0/SVPD 2.01、PBE0/TZVPD 1.90、M06-2X/TZVPD 2.69、ωB97X-D3/TZVPD 3.24 kcal/mol。文献の CCSD(T)/CBS 約 4 kcal/mol より 0.5 低い(基底の不完全さの範囲)。
+- 凍結する芯(S1a の実計算): HI は `freeze 4` で NWChem の number of core 4、E −297.735051343150(`freeze atomic` は −297.821560434727、G27)。I⁻···CH3I は `freeze 9`、number of core 9、E −634.213649871623、1,024 s(G35)。
+- 実証していないこと: 開殻の救済が `spin_ok` を通る例(h3p3c は汚染された解しかない)。ECP 原子を含む CCSD(T) の参照値との比較。`Failure.energy_hartree` と `Evidence.gradient` を使う側(S3 の G1-P3・G5-P1)。それ以前に保存された JobStore の記録ではどちらも None である。

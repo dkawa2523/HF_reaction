@@ -1,0 +1,32 @@
+echo
+start job
+permanent_dir .
+scratch_dir /home/user/hfauto_scratch/nwchem/aa824f5ae1081809_attempt_00
+memory heap 100 mb stack 500 mb global 1400 mb
+
+geometry units angstrom nocenter noautosym
+  C  -0.0005270400 -0.0000003800  0.0448484800
+  H   1.0414483700 -0.0000003100  0.3705025900
+  H  -0.5207050000  0.9018982500  0.3730983000
+  H  -0.5207047700 -0.9018995100  0.3730972900
+  I   0.0046269000  0.0000010000  3.5046613800
+  I  -0.0041384600  0.0000009400 -2.1462080400
+end
+charge -1
+basis spherical
+  * library def2-tzvpd
+end
+ecp
+  I library def2-ecp
+end
+
+scf
+  maxiter 100
+end
+
+ccsd
+  freeze 9
+  maxiter 50
+end
+
+task ccsd(t) energy

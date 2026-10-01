@@ -3,7 +3,9 @@ files a job leaves in its permanent directory.
 
 The Level is observed, never assumed: version, xc functional or CCSD(T), basis (``/cart``
 when cartesian), DFT-D3 variant, grid, SCF energy tolerance, charge and multiplicity. Frequencies are never taken from the text for
-decisions; the ``.hess`` file is converted to the canonical ``.npy`` instead.
+decisions; the ``.hess`` file is converted to the canonical ``.npy`` instead. The last DFT
+gradient block of a driver job is its final frame's (487 NWChem opt / saddle Evidence of
+VAL7 and r9, within 5e-7 Å).
 """
 
 from __future__ import annotations
@@ -31,9 +33,14 @@ _BASIS = re.compile(
     r"((?:[ \t]*\S.*\n)+)",
     re.MULTILINE,
 )
-_AUTOZ = re.compile(r"AUTOZ failed|regeneration of autoz failed")
+# fatal only: "AUTOZ failed to generate good internal coordinates. Cartesian coordinates will
+# be used" is a notice, after which NWChem goes on (HCN, r6 s17's saddle at maxiter)
+_AUTOZ = re.compile("insufficient internal variables|geom_binvr: #indep variables incorrect"
+                    "|regeneration of autoz failed")
 _SCF = re.compile(r"Calculation failed to converge|SCF not converged")
 _GEOMETRY_MAXITER = re.compile("Failed to converge in maximum number of steps")
+_GRADIENT_ROW = re.compile(rf"^\s*\d+\s+[A-Za-z]\S*((?:\s+{_NUMBER}){{6}})\s*$")
+_DFT_ENERGY = r"Total DFT energy =\s+(\S+)"
 # the ccsd module (RHF) or the TCE (ROHF)
 _CCSD_T = r"(?:Total CCSD\(T\) energy:|CCSD\(T\) total energy / hartree\s+=)\s+(\S+)"
 
@@ -106,8 +113,33 @@ def observe_level(text: str) -> Level | None:
 
 def total_energy(text: str) -> float | None:
     """Final electronic energy: the CCSD(T) total, else the last DFT total energy."""
-    value = _last(_CCSD_T, text) or _last(r"Total DFT energy =\s+(\S+)", text)
+    value = _last(_CCSD_T, text) or _last(_DFT_ENERGY, text)
     return None if value is None else _number(value)
+
+
+def dft_energies(text: str) -> tuple[float, ...]:
+    """The total DFT energy of every SCF, in order."""
+    return tuple(_number(v) for v in re.findall(_DFT_ENERGY, text))
+
+
+def step_energy(text: str) -> float | None:
+    """The energy of the driver's last step line (``@ <step> <energy> ...``), at its last
+    frame."""
+    value = _last(r"^@\s+\d+\s+(\S+)", text)
+    return None if value is None else _number(value)
+
+
+def gradient(text: str) -> tuple[np.ndarray, np.ndarray] | None:
+    """(coordinates in bohr, gradient in Eh/bohr), (N, 3) each, of the last ``DFT ENERGY
+    GRADIENTS`` block."""
+    rows: list[list[float]] = []
+    for line in text[text.rfind("DFT ENERGY GRADIENTS"):].splitlines()[1:]:
+        row = _GRADIENT_ROW.match(line)
+        if row is None and rows:
+            break
+        if row is not None:
+            rows.append([_number(v) for v in row[1].split()])
+    return (np.array(rows)[:, :3], np.array(rows)[:, 3:]) if rows else None
 
 
 def s2(text: str) -> float | None:

@@ -1,4 +1,4 @@
-"""NWChem parser on real outputs (design §10.2: G01, G03-G05, G07, G10, G13, G21-G30)."""
+"""NWChem parser on real outputs (design §10.2: G01, G03-G05, G07, G10, G13, G21-G34)."""
 
 import json
 import re
@@ -8,13 +8,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from hfauto.backends.nwchem import input as nw_in
 from hfauto.backends.nwchem import output as nw
-from hfauto.backends.nwchem.engine import NWChemEngine
+from hfauto.backends.nwchem.engine import NWChemEngine, NWChemSaddle
 from hfauto.chemistry.gates import same_pes, spin_ok
 from hfauto.chemistry.vibrations import external_basis, projected_frequencies
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz
 from hfauto.core.constants import BOHR_TO_ANGSTROM, HARTREE_TO_KCAL_MOL
-from hfauto.core.evidence import Evidence
+from hfauto.core.evidence import Evidence, Failure
 from hfauto.core.evidence import FailureKind as Kind
 from hfauto.core.method import EngineSite, MethodSpec, level_mismatches
 from hfauto.execution.jobs import JobRunner, Task
@@ -97,15 +98,102 @@ def test_g22_g23_g24_and_other_failures(golden):
                             returncode=timeout["returncode"], timed_out=timeout["timed_out"]),
         nw.classify_failure(golden.text("nwchem/G23/nwchem.out"), returncode=1, timed_out=False),
         nw.classify_failure("", returncode=killed["returncode"], timed_out=killed["timed_out"]),
-        nw.classify_failure(" AUTOZ failed to generate", returncode=1, timed_out=False),
         nw.classify_failure("Calculation failed to converge", returncode=1, timed_out=False),
         nw.classify_failure("", returncode=0, timed_out=False),
     ]
     assert [f.kind for f in failures] == [
-        Kind.TIMEOUT, Kind.GEOMETRY_MAXITER, Kind.NONZERO_EXIT, Kind.INPUT_INVALID,
-        Kind.SCF_NOT_CONVERGED, Kind.INCOMPLETE_OUTPUT]
-    ok = " AUTOZ failed to generate good internal coordinates.\n" + nw.NORMAL_END
-    assert nw.classify_failure(ok, returncode=0, timed_out=False) is None  # NWChem fell back
+        Kind.TIMEOUT, Kind.GEOMETRY_MAXITER, Kind.NONZERO_EXIT, Kind.SCF_NOT_CONVERGED,
+        Kind.INCOMPLETE_OUTPUT]
+
+
+@pytest.mark.parametrize(("stem", "returncode", "failure"), [
+    ("G31/hcn_opt.out", 0, None),
+    ("G32/saddle_maxiter.out", 255, (Kind.GEOMETRY_MAXITER, "maxiter")),
+    ("G33/opt_autoz.out", 236, (Kind.INPUT_INVALID, "autoz"))])
+def test_the_autoz_notice_is_no_failure_only_a_fatal_autoz_error_is(golden, stem, returncode,
+                                                                     failure):
+    """G4-P4: G31 (HCN opt) and G32 (r6 s17's saddle, rerun from its start as an autoz
+    failure) print the notice and go on in Cartesian coordinates; G33 (VAL7 s10's QRC side)
+    stops at frame 21 with insufficient internal variables."""
+    text = golden.text(f"nwchem/{stem}")
+    notice = "AUTOZ failed to generate good internal coordinates.\n Cartesian coordinates will be"
+    assert (notice in text) is (stem != "G33/opt_autoz.out")
+    result = nw.classify_failure(text, returncode=returncode, timed_out=False)
+    assert (result and (result.kind, result.reason)) == failure
+
+
+def _parse(golden, tmp_path, engine_type, kind, stem, files, *, returncode=0, **inputs):
+    """(engine, task, job directory, CommandResult) of a recorded SVPD job: its stdout and
+    ``files`` in the job directory, its input echo and observed state as the molecule."""
+    text, work = golden.text(f"nwchem/{stem}"), tmp_path / "jobs" / kind
+    work.mkdir(parents=True)
+    (work / STDOUT_NAME).write_text(text, encoding="utf-8")
+    for name, rel in files.items():
+        shutil.copyfile(golden.path(f"nwchem/{rel}"), work / name)
+    symbols, coords = nw.geometry_block(text, 0)
+    level = nw.observe_level(text)
+    mol = Molecule(XYZ(list(symbols), coords), level.charge, level.multiplicity)
+    site = EngineSite(version="7.2.3")
+    engine = engine_type(jobs=JobRunner(JobStore(tmp_path / "jobs"), cores=1), site=site)
+    task = Task(engine=engine.name, version_pin="7.2.3", kind=kind, key_payload={},
+                execution=site.execution,
+                inputs={"mol": mol, "start": mol, "method": SVPD, **inputs})
+    result = CommandResult(returncode, False, 1.0, work / STDOUT_NAME, work / "stderr.txt")
+    return engine, task, work, result
+
+
+def test_g31_an_opt_carries_its_final_gradient(golden, tmp_path):
+    """G5-P1: the last DFT ENERGY GRADIENTS block (bohr, Eh/bohr) is at the final frame (as in
+    487 NWChem opt / saddle Evidence of VAL7 and r9); its largest component is the gmax of the
+    '@ 1' line. A final frame elsewhere fails the job."""
+    final = read_xyz(golden.path("nwchem/G31/hcn_opt_final.xyz"))
+    coords, gradient = nw.gradient(golden.text("nwchem/G31/hcn_opt.out"))
+    assert np.allclose(coords * BOHR_TO_ANGSTROM, final.coords, atol=1e-6)
+    assert np.abs(gradient).max() == pytest.approx(3.0e-5)
+    engine, task, work, result = _parse(golden, tmp_path, NWChemEngine, "optimize",
+                                        "G31/hcn_opt.out",
+                                        {"final-001.xyz": "G31/hcn_opt_final.xyz"})
+    ev = engine.parse(task, work, result)
+    assert isinstance(ev, Evidence) and ev.task == "opt" and ev.s2 is None
+    assert ev.gradient == pytest.approx(gradient.ravel()) and len(ev.gradient) == 9
+    moved = (work / "final-001.xyz").read_text().replace("0.74709120", "0.74809120")
+    (work / "final-002.xyz").write_text(moved)  # 1e-3 Å along x: beyond FRAME_TOL_A
+    failure = engine.parse(task, work, result)
+    assert (failure.kind, failure.reason) == (Kind.INCOMPLETE_OUTPUT, "gradient_not_at_final")
+
+
+def test_g32_a_saddle_at_maxiter_fails_with_its_last_frame_and_its_energy(golden, tmp_path):
+    """G1-P3: the energy of the last '@' step line is the last frame's (as in 20 saddles of
+    VAL7 and r9 at maxiter)."""
+    engine, task, work, result = _parse(golden, tmp_path, NWChemSaddle, "saddle",
+                                        "G32/saddle_maxiter.out",
+                                        {"final-050.xyz": "G32/final-050.xyz"}, returncode=255)
+    failure = engine.parse(task, work, result)
+    assert isinstance(failure, Failure) and failure.kind is Kind.GEOMETRY_MAXITER
+    assert failure.energy_hartree == pytest.approx(-200.24793703, abs=1e-9)
+    assert failure.final.file.path.endswith("final-050.xyz")
+
+
+def test_g34_an_scf_rescue_is_cgmin_then_one_plain_scf_that_prints_s2(golden, tmp_path):
+    """G2-P6, the r6 P3c H3 bead through NWChemEngine: attempt_00 failed its SCF; attempt_01
+    (this deck, as render_energy writes it) converged with cgmin, then two plain SCF iterations
+    3.7e-8 Eh away printed <S2> 0.9861. The Evidence carries it, and spin_ok rejects the
+    contaminated doublet; a plain SCF that left cgmin's solution is no Evidence."""
+    deck, text = golden.text("nwchem/G34/h3_rescue.nw"), golden.text("nwchem/G34/h3_rescue.out")
+    engine, task, work, result = _parse(golden, tmp_path, NWChemEngine, "energy",
+                                        "G34/h3_rescue.out", {}, scf_rescue=True)
+    setup = nw_in.Setup(scratch_dir=re.search(r"scratch_dir (\S+)", deck)[1], memory_mb=2000,
+                        restart_vectors=True, scf_rescue=True)
+    assert nw_in.render_energy(task.inputs["mol"], SVPD, setup) == deck
+    energies = nw.dft_energies(text)
+    assert energies == pytest.approx((-1.548056627840, -1.548056664703), abs=1e-12)
+    ev = engine.parse(task, work, result)
+    assert isinstance(ev, Evidence) and ev.energy_hartree == energies[-1]
+    assert ev.s2 == pytest.approx(0.9861) and spin_ok(ev).reasons == ("spin_contaminated",)
+    off = text.replace("-1.548056664703", "-1.548156664703")  # 1e-4 Eh below cgmin's
+    (work / STDOUT_NAME).write_text(off, encoding="utf-8")
+    failure = engine.parse(task, work, result)
+    assert (failure.kind, failure.reason) == (Kind.INCOMPLETE_OUTPUT, "rescue_solution_changed")
 
 
 def test_final_xyz_numbering_atom_order_and_missing_d3(golden, tmp_path):
@@ -158,7 +246,7 @@ def test_doublet_anion_and_atom_freq_evidence(golden, tmp_path, stem, charge, mu
     assert isinstance(ev, Evidence) and ev.n_external == n_external
     assert len(ev.frequencies_cm1) == n_modes and all(nu > 0 for nu in ev.frequencies_cm1)
     assert spin_ok(ev) and (ev.s2 is None) == (multiplicity == 1)
-    if multiplicity > 1:  # the SCF rescue (cgmin) prints no <S2>: no UKS Evidence without it
+    if multiplicity > 1:  # cgmin prints no <S2>: no UKS Evidence without it
         (work / STDOUT_NAME).write_text(re.sub("<S2> =.*", "", text), encoding="utf-8")
         failure = engine.parse(task, work, result)
         assert (failure.kind, failure.reason) == (Kind.INCOMPLETE_OUTPUT, "s2_not_reported")
@@ -166,13 +254,30 @@ def test_doublet_anion_and_atom_freq_evidence(golden, tmp_path, stem, charge, mu
 
 def test_g27_iodine_ecp_electrons_and_ccsd_t_frozen_core(golden):
     """def2-ECP on I only: 26 electrons, alpha 13; ``freeze atomic`` freezes no orbital of an
-    ECP atom (its 4s4p4d are correlated)."""
+    ECP atom (its 4s4p4d are correlated), so render_wft writes the count (G6-P3)."""
     sp, cc = golden.text("nwchem/G27/hi_sp.out"), golden.text("nwchem/G27/hi_ccsdt.out")
     for text in (sp, cc):
         assert "\necp\n  I library def2-ecp\nend\n" in text and "* library def2-ecp" not in text
         assert re.search(r"I \(Iodine\) Replaces\s+28 electrons", text)
     assert re.search(r"Alpha electrons :\s+13\n", sp)
     assert re.findall(r"number of core\s+(\d+)", cc) == ["0"]
+
+
+def test_g35_a_ccsd_t_deck_freezes_the_core_left_by_the_ecp_and_favours_global_arrays(golden):
+    """G6-P3, I-···CH3I (VAL7 s2's PBE0 minimum) through NWChemEngine, as render_wft writes it:
+    NWChem freezes 9 orbitals (C 1s, 2 x I 4s4p) and splits memory_mb_per_rank 2000 into heap
+    100, stack 500 and global 1400 MB; 1024 s on 4 ranks."""
+    deck, text = golden.text("nwchem/G35/i_ch3i_ccsdt.nw"), golden.text("nwchem/G35/i_ch3i_ccsdt.out")
+    symbols, coords = nw.geometry_block(text, 0)
+    setup = nw_in.Setup(scratch_dir=re.search(r"scratch_dir (\S+)", deck)[1], memory_mb=2000)
+    assert nw_in.render_wft(Molecule(XYZ(list(symbols), coords), -1, 1), CCSD_T, setup) == deck
+    assert re.findall(r"number of core\s+(\d+)", text) == [str(nw_in.frozen_core(symbols))]
+    memory = re.findall(r"(heap|stack|global)\s+=\s+\d+ doubles =\s+(\S+) Mbytes", text)
+    assert memory == [("heap", "100.0"), ("stack", "500.0"), ("global", "1400.0")]
+    level = nw.observe_level(text)
+    assert level_mismatches(CCSD_T, level, version_pin="7.2.3") == []
+    assert (level.charge, level.multiplicity) == (-1, 1)
+    assert nw.total_energy(text) == pytest.approx(-634.213649871623, abs=1e-9)
 
 
 @pytest.mark.parametrize(("stem", "multiplicity", "energy"), [

@@ -1,7 +1,8 @@
 """NWChem engines through JobRunner with a stub executable that replays recorded outputs:
 G07 (HCN TS: level lines, vibrational block and .hess), G01 (two blocks), G13 (string) and
-G29 (OH. ROHF-CCSD(T)). A driver job with STUB_MAXITER in its environment stops at
-maxiter; a deck with a zcoord block and STUB_AUTOZ fails in autoz."""
+G29 (OH. ROHF-CCSD(T)). A driver job prints a gradient block at its last frame and, with
+STUB_MAXITER in its environment, stops at maxiter; a deck with a zcoord block and STUB_AUTOZ
+fails in autoz (G33's message)."""
 
 import json
 import shutil
@@ -12,7 +13,7 @@ import pytest
 
 from hfauto.backends.nwchem.engine import NWChemEngine, NWChemSaddle, NWChemString
 from hfauto.backends.nwchem.input import hess_text
-from hfauto.backends.nwchem.output import geometry_block, read_hess
+from hfauto.backends.nwchem.output import classify_failure, geometry_block, read_hess
 from hfauto.chemistry.vibrations import KAPPA_MIN, external_basis, shape_hessian
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz, write_xyz_trajectory
 from hfauto.core.constants import BOHR_TO_ANGSTROM
@@ -35,7 +36,7 @@ atoms = [row for row in block.splitlines() if len(row.split()) == 4]  # not the 
 task = deck.rsplit("task ", 1)[1].strip()
 frame = lambda rows: f"{len(rows)}\n geometry\n" + "\n".join(rows) + "\n"
 if os.environ.get("STUB_AUTOZ") and "zcoord" in block:
-    sys.exit(print(" AUTOZ failed"))
+    sys.exit(print(" !! There are insufficient internal variables: expected    11 got    12"))
 if task == "dft string":
     Path("job.string_final.xyz").write_text(frame(atoms) * 11)
     sys.exit(print((here / "G13.out").read_text()))
@@ -56,9 +57,14 @@ if task in ("dft optimize", "dft saddle"):
     restarted = "vectors input" in deck
     moved = [f"{r.split()[0]} " + " ".join(f"{float(v) + 0.01:.8f}" for v in r.split()[1:])
              for r in atoms]
-    for n, rows in enumerate([atoms] * (3 if restarted else 1) + ([] if restarted else [moved])):
+    frames = [atoms] * (3 if restarted else 1) + ([] if restarted else [moved])
+    for n, rows in enumerate(frames):
         Path(f"final-{n:03d}.xyz").write_text(frame(rows))
     Path("job.movecs").write_text("v"), Path("job.drv.hess").write_text("h")
+    print(" DFT ENERGY GRADIENTS\n" + "".join(
+        f"{i:4d} {r.split()[0]} " + " ".join(f"{float(v) / 0.529177210903:.6f}" for v in
+                                             r.split()[1:]) + " 0.000010 0.000000 0.000000\n"
+        for i, r in enumerate(frames[-1], 1)))
     print("@    0    -93.16699428\n@    1    -93.16699428\n")
     if os.environ.get("STUB_MAXITER"):
         sys.exit(print(" Failed to converge in maximum number of steps"))
@@ -207,9 +213,10 @@ def test_double_hybrids_are_rejected_and_autoz_falls_back_to_cartesians(nwchem, 
     assert "noautosym noautoz" in (tmp_path / "job.nw").read_text()
 
 
-def test_scf_rescue_is_cgmin_for_closed_shell_dft_and_none_for_open_shell_dft(nwchem, tmp_path):
-    """R17: cgmin prints no <S2> (the P3c H3 bead), so an open-shell DFT rescue never gives an
-    Evidence; WFT restarts from its old vectors."""
+def test_an_scf_failure_continues_with_cgmin_for_any_dft_and_old_vectors_for_wft(nwchem,
+                                                                                tmp_path):
+    """G2-P6: one plain SCF after cgmin prints <S2> (input._task; the P3c H3 bead, G34), so
+    the rescue serves open-shell DFT too; WFT restarts from its old vectors."""
     jobs, site = nwchem
     engine, scf = NWChemEngine(jobs=jobs, site=site), Failure(kind=FailureKind.SCF_NOT_CONVERGED,
                                                                reason="scf")
@@ -223,10 +230,9 @@ def test_scf_rescue_is_cgmin_for_closed_shell_dft_and_none_for_open_shell_dft(nw
                     execution=site.execution, inputs={"mol": mol, "start": mol, "method": method})
         return engine.continuation(task, tmp_path, scf)
 
-    closed, wft = retry(FINE, 1, 1), retry(ccsd_t, 0, 2)  # H3+ and ROHF H3
-    assert closed is not None and closed.inputs["scf_rescue"]
-    assert wft is not None and wft.inputs["restart"] == [tmp_path / "job.movecs"]
-    assert retry(FINE, 0, 2) is None  # the doublet H3 radical of P3c
+    closed, doublet, wft = retry(FINE, 1, 1), retry(FINE, 0, 2), retry(ccsd_t, 0, 2)
+    assert closed.inputs["scf_rescue"] and doublet.inputs["scf_rescue"]  # H3+ and P3c's H3
+    assert not wft.inputs["scf_rescue"] and wft.inputs["restart"] == [tmp_path / "job.movecs"]
 
 
 def test_open_shell_ccsd_t_is_a_rohf_tce_job_and_all_electron_iodine_is_rejected(nwchem,
@@ -246,6 +252,17 @@ def test_open_shell_ccsd_t_is_a_rohf_tce_job_and_all_electron_iodine_is_rejected
     assert (failure.kind, failure.reason) == (FailureKind.INPUT_INVALID,
                                               "no_ecp_for_basis:cc-pVDZ:I")
     assert (jobs.stats().hits, jobs.stats().misses) == (0, 1)
+    keyed = engine.energy(hi, ccsd_t)  # the stub's DFT output fails it; only its key counts
+
+    def key(mol: Molecule, **extra: int) -> str:
+        payload = {"method": ccsd_t.signature(), "molecule": mol.fingerprint(), **extra}
+        return jobs.store.key(Task(engine="nwchem", version_pin="7.2.3", kind="energy",
+                                   key_payload=payload, execution=site.execution))
+
+    oh = Molecule(XYZ(list(symbols), coords), 0, 2)
+    assert ev.job_key == key(oh)  # G6-P3: an ECP atom's key names its freeze 4 (I 4s4p)
+    assert keyed.job_key == key(hi, frozen_core=4) and "\n  freeze 4\n" in (
+        jobs.store.attempt_dir(keyed.job_key, 0) / "job.nw").read_text()
 
 
 def test_g01_two_vibrational_blocks_are_not_a_freq_evidence(nwchem, golden):
@@ -265,6 +282,7 @@ def test_timeout_continues_from_the_latest_frame(nwchem, golden):
     assert "vectors input job.movecs" in (second / "job.nw").read_text()
     final = read_xyz(jobs.store.run_dir / ev.final.file.path)
     assert np.allclose(final.coords, mol.xyz.coords + 0.01, atol=1e-7)
+    assert ev.gradient == pytest.approx([1e-5, 0.0, 0.0] * 3)  # at the final frame
     assert read_xyz(jobs.store.run_dir / ev.start.file.path).coords == pytest.approx(mol.xyz.coords)
 
 
@@ -310,6 +328,7 @@ def test_a_saddle_at_maxiter_fails_with_its_last_frame_and_takes_a_hessian_nearb
     failure = NWChemSaddle(jobs=jobs, site=capped).refine(near, FINE, hessian=freq,
                                                           mode=freq.imaginary_modes[0])
     assert (failure.kind, failure.reason) == (FailureKind.GEOMETRY_MAXITER, "maxiter")
+    assert failure.energy_hartree == pytest.approx(-93.16699428)  # its last '@' step line
     last = read_xyz(jobs.store.run_dir / failure.final.file.path)
     assert np.allclose(last.coords, near.xyz.coords + 0.01, atol=1e-7)
     assert not jobs.store.attempt_dir(failure.job_key, 1).exists()  # one attempt only
@@ -317,6 +336,44 @@ def test_a_saddle_at_maxiter_fails_with_its_last_frame_and_takes_a_hessian_nearb
                                                          mode=freq.imaginary_modes[0])
     assert (mismatch.kind, mismatch.reason) == (FailureKind.INPUT_INVALID,
                                                 "hessian_geometry_mismatch")
+
+
+def test_an_opt_autoz_failure_continues_from_its_latest_frame_in_cartesians(nwchem, golden,
+                                                                           tmp_path):
+    """G4-P4: VAL7 s10's QRC side stopped in autoz at frame 21 (gmax 4e-5), and its attempt_01
+    restarted from the start (19 steps, 41.6 s). It continues from frame 21 in Cartesian
+    coordinates with its vectors only (the driver Hessian is in internal coordinates): 1 step,
+    3.3 s, the same minimum within 0.001 Å and 2e-8 Eh (r9 S1a probe). Before the first frame,
+    and for a saddle, an autoz failure restarts from the same start."""
+    jobs, site = nwchem
+    engine, text = NWChemEngine(jobs=jobs, site=site), golden.text("nwchem/G33/opt_autoz.out")
+    failure = classify_failure(text, returncode=236, timed_out=False)
+    symbols, coords = geometry_block(text, 0)
+    start, first = Molecule(XYZ(list(symbols), coords), 0, 1), tmp_path / "attempt_00"
+    first.mkdir()
+    for name in ("job.movecs", "job.drv.hess"):
+        (first / name).write_text("x")
+
+    def retry(kind: str) -> Task:
+        task = Task(engine="nwchem", version_pin="7.2.3", kind=kind, key_payload={},
+                    execution=site.execution, inputs={"mol": start, "start": start, "method": FINE,
+                                                      "hessian": tmp_path / "side.npy"})
+        return engine.continuation(task, first, failure)
+
+    early = retry("optimize")
+    assert early.inputs["cartesian"] and early.inputs["mol"] is start and "restart" not in early.inputs
+    shutil.copyfile(golden.path("nwchem/G33/final-021.xyz"), first / "final-021.xyz")
+    late, saddle = retry("optimize"), retry("saddle")
+    assert saddle.inputs["cartesian"] and saddle.inputs["mol"] is start
+    assert late.inputs["cartesian"] and late.inputs["restart"] == [first / "job.movecs"]
+    assert late.inputs["hessian"] is None and late.inputs["start"] is start
+    assert np.allclose(late.inputs["mol"].xyz.coords, read_xyz(first / "final-021.xyz").coords)
+    second = tmp_path / "attempt_01"
+    second.mkdir()
+    engine.prepare(late, second)
+    deck = (second / "job.nw").read_text()
+    assert "noautosym noautoz" in deck and "vectors input job.movecs" in deck
+    assert "inhess" not in deck and not (second / "job.drv.hess").exists()
 
 
 def test_g13_string_profile_from_its_initial_path(nwchem, golden):

@@ -31,6 +31,7 @@ INITIAL_PATH = "initial_path.xyz"  # xyz_path is read from permanent_dir (the jo
 # water O-H held at 1.2 Å: k 5 / 20 / 50 -> 1.1948 / 1.1987 / 1.1995 Å in 6 / 8 / 10 steps).
 SPRING_K = 20.0
 _VDW = {"d3zero": 3, "d3bj": 4}
+_NOBLE_GAS_Z = (2, 10, 18, 36, 54)  # elements.py ends at Rn
 # NWChem tightens frequency jobs to 1e-7 on its own (opt default 1e-6); writing one value for
 # every task keeps opt, saddle, freq and sp on the same numerics layer (same_pes).
 DEFAULT_SCF_ENERGY_TOL = 1e-7
@@ -45,18 +46,27 @@ class Setup:
     memory_mb: int = 1200  # per rank
     cartesian: bool = False  # noautoz: the continuation of an autoz failure
     restart_vectors: bool = False  # start from <name>.movecs of the previous attempt
-    scf_rescue: bool = False  # quadratic SCF (cgmin) after SCF_NOT_CONVERGED
+    scf_rescue: bool = False  # after SCF_NOT_CONVERGED: cgmin, then one plain SCF (_task)
 
 
 _DEFAULT = Setup()
 
 
-def _deck(setup: Setup, *blocks: Sequence[str]) -> str:
+def _deck(setup: Setup, *blocks: Sequence[str], memory: str = "") -> str:
     header = ["echo", f"start {setup.name}", "permanent_dir ."]
     if setup.scratch_dir:
         header.append(f"scratch_dir {setup.scratch_dir}")
-    header.append(f"memory total {setup.memory_mb} mb")
+    header.append(memory or f"memory total {setup.memory_mb} mb")
     return "\n\n".join("\n".join(block) for block in (header, *blocks) if block) + "\n"
+
+
+def _task(setup: Setup, operation: str) -> tuple[list[str], ...]:
+    """``task dft <operation>``; after a cgmin rescue, one plain SCF from its vectors at the
+    same structure prints the <S2> cgmin does not (CH3: 2 iterations, 6e-9 Eh apart)."""
+    if not setup.scf_rescue:
+        return ([f"task dft {operation}"],)
+    return ([f"task dft {operation}"], ["unset dft:cgmin"],
+            ["dft", f"  vectors input {setup.name}.movecs", "end"], ["task dft energy"])
 
 
 def _geometry(xyz: XYZ, *, cartesian: bool, label: str = "", zcoord: Sequence[str] = ()
@@ -95,6 +105,19 @@ def ecp(symbols: Sequence[str], basis: str) -> list[str]:
     return ["ecp", *(f"  {s} library def2-ecp" for s in heavy), "end"]
 
 
+def frozen_core(symbols: Sequence[str]) -> int:
+    """Frozen orbitals: per atom, NWChem's ``freeze atomic`` core (the noble gas before its
+    row, src/geom/geom_numcore.F) less its def2-ECP electrons (NWChem's library def2-ecp: 28
+    for Rb-Xe, 46 for Cs-La, 60 for Hf-Rn), never below zero. ``freeze atomic`` itself
+    freezes nothing on an ECP atom (G27: I keeps 4s4p correlated)."""
+    total = 0
+    for z in map(atomic_number, symbols):
+        core = max((g for g in _NOBLE_GAS_Z if g < z), default=0)
+        ecp_electrons = 0 if z <= 36 else 28 if z <= 54 else 46 if z <= 57 else 60
+        total += max(0, core - ecp_electrons) // 2
+    return total
+
+
 def _system(mol: Molecule, method: MethodSpec, setup: Setup, *, end: Molecule | None = None,
             zcoord: Sequence[str] = ()) -> list[str]:
     """Geometry (and the string's end geometry), charge, basis and ECP."""
@@ -121,8 +144,8 @@ def _dft(mol: Molecule, method: MethodSpec, setup: Setup) -> list[str]:
         lines.append(f"  disp vdw {_VDW[method.dispersion]}")
     if setup.restart_vectors:
         lines.append(f"  vectors input {setup.name}.movecs")
-    if setup.scf_rescue:  # closed-shell DFT only: cgmin prints no <S2>, so an open-shell
-        lines.append("  cgmin")  # result could never pass spin_ok (engine._scf_rescuable)
+    if setup.scf_rescue:
+        lines.append("  cgmin")
     return [*lines, "end"]
 
 
@@ -132,7 +155,7 @@ def _driver(maxiter: int, options: Sequence[str]) -> list[str]:
 
 def render_energy(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:
     return _deck(setup, _system(mol, method, setup), _dft(mol, method, setup),
-                 ["task dft energy"])
+                 *_task(setup, "energy"))
 
 
 def render_optimize(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, *,
@@ -151,13 +174,14 @@ def render_optimize(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, 
     options = ["  trust 0.3", "  inhess 2"] if init_hessian else ["  trust 0.1"]
     zcoord, constraints = _fixed(fixed_bond, setup.cartesian)
     return _deck(setup, _system(mol, method, setup, zcoord=zcoord), constraints,
-                 _dft(mol, method, setup), _driver(OPT_MAXITER, options), ["task dft optimize"])
+                 _dft(mol, method, setup), _driver(OPT_MAXITER, options),
+                 *_task(setup, "optimize"))
 
 
 def render_frequencies(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:
     """The only deck with a Hessian task; <name>.hess is written to permanent_dir."""
     return _deck(setup, _system(mol, method, setup), _dft(mol, method, setup),
-                 ["task dft frequencies"])
+                 *_task(setup, "frequencies"))
 
 
 def render_saddle(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, *,
@@ -167,12 +191,13 @@ def render_saddle(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, *,
     options = ["  trust 0.1", "  sadstp 0.1", *(["  inhess 2"] if init_hessian else []),
                "  moddir 1"]
     return _deck(setup, _system(mol, method, setup), _dft(mol, method, setup),
-                 _driver(SADDLE_MAXITER, options), ["task dft saddle"])
+                 _driver(SADDLE_MAXITER, options), *_task(setup, "saddle"))
 
 
 def render_string(start: Molecule, end: Molecule, method: MethodSpec, setup: Setup = _DEFAULT,
                   *, nbeads: int, initial_path: bool = False) -> str:
-    """Zero-temperature string with frozen ends; ``initial_path`` reads INITIAL_PATH."""
+    """Zero-temperature string with frozen ends; ``initial_path`` reads INITIAL_PATH. No SCF
+    follows a rescue: a PathProfile carries no <S2>."""
     string = ["string", f"  nbeads {nbeads}", f"  maxiter {STRING_MAXITER}",
               "  stepsize 0.05", "  interpol 3", "  tol 1e-5", "  freeze1 .true.",
               "  freezeN .true.", "  impose"]
@@ -182,12 +207,14 @@ def render_string(start: Molecule, end: Molecule, method: MethodSpec, setup: Set
 
 
 def render_wft(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:
-    """CCSD(T) single point with frozen atomic cores. Closed shells use the RHF ``ccsd``
-    module; open shells a high-spin ROHF reference (``nopen`` = m - 1) and the TCE, with
-    ``2eorb 2emet 13`` (without them CH3O./def2-TZVPD exceeds 1200 MB/rank).
+    """CCSD(T) single point with the frozen core of frozen_core. Closed shells use the RHF
+    ``ccsd`` module (up to 50 iterations; default 20); open shells a high-spin ROHF reference
+    (``nopen`` = m - 1) and the TCE, with ``2eorb 2emet 13`` (without them CH3O./def2-TZVPD
+    exceeds 1200 MB/rank).
 
-    ``freeze atomic`` freezes no orbital of an ECP atom (I keeps 4s4p4d correlated, G27).
-    The ccsd module may take 50 iterations (default 20).
+    Of the memory per rank, Global Arrays (the (T) amplitudes) get 70 % instead of the 50 % of
+    ``memory total``: malonaldehyde/def2-TZVPD (227 functions) failed to allocate at ``total
+    1200`` and ran at ``heap 100 mb stack 500 mb global 1300 mb`` (a unit after every size).
     """
     if method.kind != "wft" or method.wft_method is None:
         raise ValueError(f"method {method.id!r} is not a wave-function method")
@@ -195,11 +222,15 @@ def render_wft(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> st
     scf = ["scf", *(["  rohf", f"  nopen {mol.multiplicity - 1}"] if open_shell else []),
            f"  maxiter {SCF_MAXITER}",
            *([f"  vectors input {setup.name}.movecs"] if setup.restart_vectors else []), "end"]
+    freeze = f"  freeze {frozen_core(mol.xyz.symbols)}"
     if open_shell:
-        body, task = ["tce", "  2eorb", "  2emet 13", "  ccsd(t)", "  freeze atomic", "end"], "tce"
+        body, task = ["tce", "  2eorb", "  2emet 13", "  ccsd(t)", freeze, "end"], "tce"
     else:
-        body, task = ["ccsd", "  freeze atomic", "  maxiter 50", "end"], "ccsd(t)"
-    return _deck(setup, _system(mol, method, setup), scf, body, [f"task {task} energy"])
+        body, task = ["ccsd", freeze, "  maxiter 50", "end"], "ccsd(t)"
+    mb = setup.memory_mb
+    heap, stack = mb * 5 // 100, mb * 25 // 100
+    return _deck(setup, _system(mol, method, setup), scf, body, [f"task {task} energy"],
+                 memory=f"memory heap {heap} mb stack {stack} mb global {mb - heap - stack} mb")
 
 
 def hess_text(hessian: np.ndarray) -> str:

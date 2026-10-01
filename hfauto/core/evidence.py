@@ -68,7 +68,8 @@ class Evidence(BaseModel):
     (1) normal termination and SCF convergence  (2) geometry convergence for opt / saddle
     (3) 3N - n_external frequencies for freq  (4) preserved atom order
     (5) preserved input frame (echoed start geometry within 1e-4 A of the input)
-    (6) observed Level matches the requested MethodSpec and the site's version pin.
+    (6) observed Level matches the requested MethodSpec and the site's version pin
+    (7) a gradient, when given, is the one at final.
     Backends return a Failure when any of these does not hold."""
 
     model_config = _FROZEN
@@ -83,6 +84,7 @@ class Evidence(BaseModel):
     n_external: Literal[3, 5, 6] | None = None  # freq only; 5 if linear, 3 for an atom (no mode)
     imaginary_modes: tuple[tuple[float, ...], ...] = ()  # normalized cartesian, input frame
     hessian: FileRef | None = None  # freq only; canonical .npy (3N, 3N) in Eh/bohr^2
+    gradient: tuple[float, ...] | None = None  # opt / saddle; 3N Eh/bohr at final, input frame
     s2: float | None = None  # observed <S^2> (open shell only)
     output: FileRef
     job_key: str
@@ -132,4 +134,5 @@ class Failure(BaseModel):
     kind: FailureKind
     reason: str
     final: Geometry | None = None  # last frame of a saddle search stopped at maxiter
+    energy_hartree: float | None = None  # electronic energy at that frame
     job_key: str | None = None

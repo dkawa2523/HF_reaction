@@ -36,7 +36,7 @@ class ReportStage:
         reactions = inputs.records(ArtifactType.REACTION, ReactionRecord)
         minima = {m.minimum_id: m for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord)}
         panel = summary.method_panel(inputs.of(ArtifactType.CALCULATION), reactions,
-                                     minima=minima)
+                                     minima=minima, policy=rt.policy)
         thermo = inputs.records(ArtifactType.REACTION_THERMO, ReactionThermo)
         T, state = config.T_K, config.standard_state
         if thermo:
