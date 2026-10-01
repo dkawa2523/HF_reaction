@@ -94,10 +94,10 @@ def _register(ctx: Ctx, coords: np.ndarray, name: str,
     member, or None (no minimum)."""
     rt = ctx.rt
     out = relax_to_minimum(ctx.mol(coords), rt.method, rt.qm, known=rt.registry, opt=opt,
-                           deadline=ctx.deadline, gates=ctx.rules.gates)
+                           deadline=ctx.deadline, gates=ctx.rules.gates, resolve=rt.resolve)
     if out.status == "known" and out.known_basin is not None and out.opt is not None:
         return Reached(ctx.record(out.known_basin), out.opt)
-    if out.status not in ("minimum", "soft_minimum") or out.opt is None or out.freq is None:
+    if out.status != "minimum" or out.opt is None or out.freq is None:
         ctx.note(f"{name}:{out.status}:{out.failure.reason if out.failure else ''}")
         return None
     species = _species(ctx, out.opt, name, source)

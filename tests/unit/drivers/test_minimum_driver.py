@@ -8,6 +8,7 @@ import pytest
 from scipy.spatial.distance import pdist
 
 from hfauto.chemistry.xyz import composition_key
+from hfauto.core.constants import BOHR_TO_ANGSTROM
 from hfauto.core.method import MethodSpec
 from hfauto.core.records import SpeciesRecord
 from hfauto.drivers.minimum import Registry, relax_to_minimum
@@ -39,13 +40,56 @@ class SoftQM(fakes.FakeQM):
                                      "imaginary_modes": (tuple(np.eye(9)[3]),)})
 
 
-def test_harmonic_start_gives_a_minimum_or_with_a_stuck_soft_mode_a_soft_minimum(tmp_run):
+class StalledQM(fakes.FakeQM):
+    """Every opt carries the PES gradient at its final structure (Eh/bohr, as NWChem prints it;
+    plus ``bias``); the first one stops at its start, short of the minimum (a flat surface)."""
+
+    bias = np.zeros(9)
+
+    def optimize(self, mol, method, **kw):
+        first = not self.calls
+        ev = super().optimize(mol, method, **kw)
+        if first:
+            ev = ev.model_copy(update={"final": ev.start,
+                                       "energy_hartree": self.pes.energy(mol.xyz.coords)})
+        x = fakes.xyz_loader(self.root)(ev.final).coords
+        gradient = self.pes.gradient(x) * BOHR_TO_ANGSTROM + self.bias
+        return ev.model_copy(update={"gradient": tuple(gradient)})
+
+
+class BiasedQM(StalledQM):  # a residual O-H stretch gradient that no relaxation removes
+    bias = 1e-2 * np.array([-0.96, 0.0, 0.0, 0.96, 0.0, 0.0, 0.0, 0.0, 0.0])
+
+
+def test_harmonic_start_gives_a_minimum_and_a_stuck_soft_mode_persists_as_a_noted_one(tmp_run):
+    """G3-P5: a soft mode that one push does not resolve leaves a minimum noted
+    soft_imaginary_mode (there is no soft_minimum status)."""
     out = relax(tmp_run, fakes.harmonic(), "start")
     assert out.status == "minimum" and out.history == ("opt", "freq:none") and not out.ts_candidate
     assert out.freq.start.fingerprint == out.opt.final.fingerprint
     soft = relax(tmp_run, fakes.harmonic(), "start", SoftQM(tmp_run, fakes.harmonic()))
-    assert soft.status == "soft_minimum" and soft.notes == ("soft_imaginary_mode",)
-    assert soft.history[-1] == "soft:persisted"
+    assert soft.status == "minimum" and soft.notes == ("soft_imaginary_mode",)
+    assert soft.history == ("opt", "freq:soft", "soft:persisted")
+
+
+def test_a_point_short_of_stationary_gets_one_newton_push_whatever_its_frequencies(tmp_run):
+    """G5-P1: an opt stopped short of the harmonic minimum has no imaginary mode, but its
+    gradient and the freq Hessian give ΔE_N far above a basin's energy: soft, pushed by its
+    Newton step (near the minimum) and relaxed. A residual gradient that persists leaves the
+    point noted; an opt without a gradient (or a driver without resolve) is not judged."""
+    pes, resolve = fakes.harmonic(), lambda ref: tmp_run / ref.path
+    qm = StalledQM(tmp_run, pes)
+    out = relax(tmp_run, pes, "start", qm, resolve=resolve)
+    assert out.status == "minimum" and out.history == ("opt", "freq:soft", "soft:resolved")
+    assert out.notes == () and qm.calls == ["optimize", "frequencies",
+                                            "optimize+init_hessian", "frequencies"]
+    pushed = fakes.xyz_loader(tmp_run)(out.opt.start).coords
+    assert pdist(pushed) == pytest.approx(pdist(pes.points["minimum"]), abs=0.01)
+    stuck = relax(tmp_run, pes, "start", BiasedQM(tmp_run, pes), resolve=resolve)
+    assert stuck.status == "minimum" and stuck.notes == ("soft_imaginary_mode",)
+    assert stuck.history == ("opt", "freq:soft", "soft:persisted")
+    unjudged = relax(tmp_run, pes, "start", StalledQM(tmp_run, pes))
+    assert unjudged.status == "minimum" and unjudged.history == ("opt", "freq:none")
 
 
 def test_a_converged_opt_is_taken_as_it_is(tmp_run):
@@ -97,7 +141,7 @@ def test_a_soft_side_of_a_ts_candidate_gets_its_own_push(tmp_run) -> None:
     out = relax(tmp_run, pes, "ts", SoftQM(tmp_run, pes))
     assert out.status == "saddle" and out.history[-1] == "follow1:ts_candidate"
     for side in out.ts_candidate:
-        assert side.status == "soft_minimum" and side.notes == ("soft_imaginary_mode",)
+        assert side.status == "minimum" and side.notes == ("soft_imaginary_mode",)
         assert side.history == ("opt:follow1", "freq:soft", "soft:persisted")
 
 

@@ -85,21 +85,27 @@ HNO2 = np.array([[1.95, -0.90, 0.0], [0.0248, -0.0016, 0.0], [1.4070, 0.0083, 0.
                  [1.8276, 1.0971, 0.0]])
 
 
-def test_split_inherits_the_stoichiometry_and_judges_each_child_by_its_own_ends():
-    """trans-HONO -> HNO2 split at cis-HONO (S15): the rotation to cis is torsional, the
-    1,2-H shift is not, whatever the parent was."""
-    hono = r.StoichTerm(composition_id="HNO2_q0_m1", coefficient=1)
-    case = CASE.model_copy(update={"reactants": (hono,), "products": (hono,)})
-    parent = finalize(case, done(r.CaseOutcome.MULTI_STEP, "intermediate_distinct"),
-                      barrier=None, claim=None, connection=None)
-    well = r.MinimumRecord(minimum_id="mi", basin_id="bi", composition_id="HNO2_q0_m1",
+def _multi_step(composition: str, symbols: str
+                ) -> tuple[r.ReactionRecord, r.MinimumRecord, r.SpeciesRecord]:
+    """A multi-step parent of one composition and its intermediate's minimum and species."""
+    term = r.StoichTerm(composition_id=composition, coefficient=1)
+    parent = finalize(CASE.model_copy(update={"reactants": (term,), "products": (term,)}),
+                      done(r.CaseOutcome.MULTI_STEP, "intermediate_distinct"), barrier=None,
+                      claim=None, connection=None)
+    well = r.MinimumRecord(minimum_id="mi", basin_id="bi", composition_id=composition,
                            species_id="si", tier="dft", level_key="L", opt_calc="o",
                            freq_calc="f", energy_hartree=-205.3, state_label="x")
     geo = Geometry(file=FileRef(path="si.xyz", sha256="0" * 64), fingerprint="si",
-                   symbols=("H", "O", "N", "O"))
-    well_species = r.SpeciesRecord(species_id="si", composition_id="HNO2_q0_m1", charge=0,
-                                   multiplicity=1, geometry=geo, source="intermediate",
-                                   state_label="x")
+                   symbols=tuple(symbols))
+    return parent, well, r.SpeciesRecord(species_id="si", composition_id=composition, charge=0,
+                                         multiplicity=1, geometry=geo, source="intermediate",
+                                         state_label="x")
+
+
+def test_split_inherits_the_stoichiometry_and_judges_each_child_by_its_own_ends():
+    """trans-HONO -> HNO2 split at cis-HONO (S15): the rotation to cis is torsional, the
+    1,2-H shift is not, whatever the parent was."""
+    parent, well, well_species = _multi_step("HNO2_q0_m1", "HONO")
 
     first, second = split(parent, well, well_species, (TRANS, CIS, HNO2))
     assert (first.minima, second.minima) == (("ma", "mi"), ("mi", "mb"))
@@ -116,3 +122,19 @@ def test_split_inherits_the_stoichiometry_and_judges_each_child_by_its_own_ends(
     other = well.model_copy(update={"composition_id": "HF_q0_m1"})
     with pytest.raises(ValueError, match="composition"):
         split(parent, other, well_species, (TRANS, CIS, HNO2))
+
+
+def _nh3_hf(nh: float, hf: float) -> np.ndarray:
+    """N, 3 H, H, F: NH3 with N···H nh and H···F hf (Å) on its axis."""
+    nh3 = [[0.0, 0.0, 0.0], [0.94, 0.0, -0.38], [-0.47, 0.814, -0.38], [-0.47, -0.814, -0.38]]
+    return np.array([*nh3, [0.0, 0.0, nh], [0.0, 0.0, nh + hf]])
+
+
+def test_a_child_whose_ends_differ_inside_the_band_only_is_torsional():
+    """G8-P5: NH3···HF -> NH4+F- split at a contact with N···H 1.37 Å, 0.05 Å inside r_thr
+    (1.42 Å): the first child's ends differ in the bond graph but in no bond change (the band
+    ±RESOLVED_A), so it is torsional; the second breaks H-F."""
+    parent, well, well_species = _multi_step("FH4N_q0_m1", "NHHHHF")
+    ends = (_nh3_hf(1.75, 0.95), _nh3_hf(1.37, 0.95), _nh3_hf(1.05, 1.65))
+    first, second = split(parent, well, well_species, ends)
+    assert (first.torsional, second.torsional) == (True, False)

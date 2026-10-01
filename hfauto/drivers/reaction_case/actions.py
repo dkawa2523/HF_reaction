@@ -44,7 +44,7 @@ from hfauto.core.records import (
     SaddleClaim,
     SpeciesRecord,
 )
-from hfauto.drivers.minimum import calc_id
+from hfauto.drivers.minimum import calc_id, newton_push
 from hfauto.drivers.reaction_case.state import CaseRules, CaseState, Decision, Seed
 
 if TYPE_CHECKING:
@@ -270,17 +270,45 @@ def mode_amplitude(ctx: Ctx, freq: Evidence, index: int) -> float:
                      ctx.symbols, target_hartree=target)
 
 
-def _pushed(ctx: Ctx, freq: Evidence, x: np.ndarray, name: str) -> Seed:
-    """A higher-order saddle pushed once along its most negative mode other than the reaction
-    mode (the imaginary mode of maximal overlap with ρ); its verified freq is the new seed's
-    Hessian and its reaction mode the seed's mode, one continuation deeper than the saddle."""
+def _newton_start(ctx: Ctx, saddle: Evidence, freq: Evidence, x: np.ndarray) -> np.ndarray | None:
+    """The signed Newton step (minimum.newton_push) from a saddle that is not stationary by a
+    minimum's criterion, when a freq there has at most one mode below -saddle_cm1: its second
+    imaginary mode came from the missing stationarity (S6 790468f505: ν2 −54.8i and −77.1i
+    turned real one step away), noted higher_order:not_stationary. None otherwise: a saddle
+    with no gradient, a stationary one, or a second mode that persists at the step."""
+    rt = ctx.rt
+    if saddle.gradient is None or freq.hessian is None:
+        return None
+    newton = newton_push(np.load(rt.resolve(freq.hessian)), saddle.gradient, ctx.mol(x).xyz,
+                         signed=True)
+    if newton is None:
+        return None
+    start = np.reshape(x, (-1, 3)) + newton
+    stepped = rt.qm.frequencies(ctx.mol(start), rt.method, scf_guess=saddle,
+                                deadline=ctx.deadline)
+    saddle_cm1 = ctx.rules.gates.saddle_cm1
+    if isinstance(stepped, Failure) or sum(
+            f < -saddle_cm1 for f in stepped.frequencies_cm1 or ()) >= 2:
+        return None
+    ctx.note("higher_order:not_stationary")
+    return start
+
+
+def _retry(ctx: Ctx, saddle: Evidence, freq: Evidence, x: np.ndarray, name: str) -> Seed:
+    """The seed after a higher-order verdict, one continuation deeper than the saddle: its
+    verified freq is the seed's Hessian and its reaction mode (the imaginary mode of maximal
+    overlap with ρ) the seed's mode. It starts at the saddle's Newton step when the second
+    imaginary mode is an artefact of a non-stationary point (_newton_start), else at the saddle
+    pushed once along its most negative mode other than the reaction mode."""
     _, direction = ctx.direction(x)
     r = max(range(len(freq.imaginary_modes)),
             key=lambda i: overlap(np.asarray(freq.imaginary_modes[i]), direction))
-    other = 1 if r == 0 else 0  # imaginary modes are ordered by frequency
-    step = mode_amplitude(ctx, freq, other)
-    pushed, _ = displace(x, np.asarray(freq.imaginary_modes[other]), step)
-    return Seed(ctx.geometry(name, pushed), "higher_order_retry", freq.imaginary_modes[r], freq,
+    start = _newton_start(ctx, saddle, freq, x)
+    if start is None:
+        other = 1 if r == 0 else 0  # imaginary modes are ordered by frequency
+        start, _ = displace(x, np.asarray(freq.imaginary_modes[other]),
+                            mode_amplitude(ctx, freq, other))
+    return Seed(ctx.geometry(name, start), "higher_order_retry", freq.imaginary_modes[r], freq,
                 depth=ctx.work.depth + 1)
 
 
@@ -297,8 +325,8 @@ def validate_ts(ctx: Ctx, state: CaseState) -> CaseState:
     """Separate DFT freq on the saddle → is_first_order_saddle, reaction_mode_character and
     spin_ok: the claim of an accepted TS, its freq kept. A rejected saddle, one without an
     imaginary mode included, stays a counted attempt and gets no QRC; a higher-order one is
-    pushed while its depth allows. A stationary point with -saddle_cm1 < ν < -noise_cm1 is
-    accepted as a TS: χ and QRC decide whether it is a TS of this case."""
+    retried (_retry) while its depth allows. A stationary point with -saddle_cm1 < ν <
+    -noise_cm1 is accepted as a TS: χ and QRC decide whether it is a TS of this case."""
     rt, saddle, gates = ctx.rt, ctx.work.saddle, ctx.rules.gates
     state = replace(state, last_saddle="failed")
     if saddle is None:
@@ -320,6 +348,6 @@ def validate_ts(ctx: Ctx, state: CaseState) -> CaseState:
         return replace(state, last_saddle=None, claim=claim)
     ctx.note(f"ts_rejected:{','.join(gate.reasons)}")
     if "higher_order" in gate.reasons and ctx.work.depth < MAX_DEPTH:
-        seed = _pushed(ctx, freq, x, f"retry{state.saddle_attempts}")
+        seed = _retry(ctx, saddle, freq, x, f"retry{state.saddle_attempts}")
         return replace(state, seeds=(seed, *state.seeds))
     return state

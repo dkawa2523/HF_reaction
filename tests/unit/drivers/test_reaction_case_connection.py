@@ -11,6 +11,9 @@ from pathlib import Path
 import fakes
 import numpy as np
 import pytest
+from unit.drivers.test_reaction_case_actions import act
+from unit.drivers.test_reaction_case_actions import case_ctx as well_case
+from unit.drivers.test_reaction_case_saddle import HigherOrderQM
 
 from hfauto.chemistry.classification import finalize
 from hfauto.chemistry.topology import bond_changes, bonds, state_label
@@ -316,3 +319,41 @@ def test_an_intermediate_in_a_new_basin_is_the_cases_own_species(tmp_path, monke
     assert well.members == (own.species_id,) and list(ctx.work.species) == [own.species_id]
     assert np.allclose(driver._endpoint(ctx.rt, well.minimum_id, own.species_id),
                        POINTS["bridged"])
+
+
+# a higher-order verdict at a stationary point only ---------------------------------------------
+
+class SteppedQM(HigherOrderQM):  # ν2 at the saddle only: a freq anywhere else has no second mode
+    def frequencies(self, mol, method, **kw):
+        self.freqs = getattr(self, "freqs", 0) + 1
+        if self.freqs == 1:
+            return super().frequencies(mol, method, **kw)
+        return fakes.FakeQM.frequencies(self, mol, method, **kw)
+
+
+@pytest.mark.parametrize(("bend", "qm", "newton"), [(2e-3, SteppedQM, True),
+                                                    (2e-3, HigherOrderQM, False),
+                                                    (0.0, HigherOrderQM, False)])
+def test_a_second_imaginary_mode_counts_only_where_the_saddle_is_stationary(tmp_path, bend, qm,
+                                                                            newton):
+    """S3 (carried M4): a saddle whose final gradient (H off the A-H-B axis) leaves ΔE_N above
+    BASIN_DE_HARTREE gets a freq at its signed Newton step (down the bend). When ν2 is gone
+    there, the retry starts at that step; when it persists, or the saddle is stationary, the
+    saddle is pushed along its second mode (+y). Either seed is the same retry: TS freq
+    Hessian, reaction mode, one continuation deeper. S6 790468f505: ν2 -54.8i and -77.1i
+    turned real one Newton step away (validation §22)."""
+    ctx, state = well_case(tmp_path, fakes.double_well())
+    state = act(ctx, act(ctx, state, Action.FIND_PATH), Action.REFINE_SADDLE)
+    gradient = np.zeros(9)
+    gradient[4] = bend  # Eh/bohr on H along y
+    ctx.work.saddle = ctx.work.saddle.model_copy(update={"gradient": tuple(gradient)})
+    x = ctx.coords(ctx.work.saddle.final)
+    ctx.rt = replace(ctx.rt, qm=qm(tmp_path, ctx.rt.qm.pes))
+    ctx.log = (logged := []).append
+    state = act(ctx, state, Action.VALIDATE_AND_CONNECT)
+    (seed,) = state.seeds
+    assert (seed.source, seed.depth, seed.hessian.task) == ("higher_order_retry", 1, "freq")
+    assert seed.mode == seed.hessian.imaginary_modes[0]
+    assert ({"note": "higher_order:not_stationary"} in logged) is newton
+    h_y = (ctx.coords(seed.geometry) - x)[1, 1]
+    assert h_y < -0.01 if newton else h_y > 0.05

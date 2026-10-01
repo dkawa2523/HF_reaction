@@ -5,11 +5,13 @@ import json
 
 import fakes
 import numpy as np
+import pytest
 from scipy.spatial.distance import pdist
 
 from hfauto.backends.protocols import Capability
 from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.xyz import composition_key
+from hfauto.core.constants import BOHR_TO_ANGSTROM
 from hfauto.core.evidence import Evidence
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
@@ -32,10 +34,25 @@ class SoftQM(fakes.FakeQM):
 
 
 class CollapseQM(fakes.FakeQM):
-    def optimize(self, mol, method, *, init_hessian=None, deadline=None):
-        if np.allclose(mol.xyz.coords, self.pes.points["reactant"]):  # no barrier (GFN2 in S6)
-            mol = self.pes.molecule("product")
-        return super().optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
+    def optimize(self, mol, method, **kw):  # no barrier from the reactant (GFN2 in S6)
+        ev = super().optimize(mol, method, **kw)
+        if isinstance(ev, Evidence) and np.allclose(mol.xyz.coords, self.pes.points["reactant"]):
+            x = self.pes.points["product"]
+            final = fakes.write_geometry(self.root, f"fake/{ev.job_key[:16]}/product.xyz",
+                                         self.pes.symbols, x)
+            ev = ev.model_copy(update={"final": final, "energy_hartree": self.pes.energy(x)})
+        return ev
+
+
+class StalledQM(fakes.FakeQM):
+    def optimize(self, mol, method, **kw):  # the first opt stops at its start; NWChem's gradient
+        first = not self.calls
+        ev = super().optimize(mol, method, **kw)
+        if first:
+            ev = ev.model_copy(update={"final": ev.start,
+                                       "energy_hartree": self.pes.energy(mol.xyz.coords)})
+        x = fakes.xyz_loader(self.root)(ev.final).coords
+        return ev.model_copy(update={"gradient": tuple(self.pes.gradient(x) * BOHR_TO_ANGSTROM)})
 
 
 class StuckQM(fakes.FakeQM):
@@ -194,9 +211,9 @@ def test_an_exact_image_joins_a_minimum_with_no_job_and_settles_after_a_saddle(f
     (basin,) = run("screen", inputs, **SCREEN).records(T.MINIMUM, MinimumRecord)
     assert basin.members == ("a", "b") and xtb.calls == ["optimize", "frequencies"]
     assert diagnostics(tmp_run, "screen")["b"] == ["image_of:a"]
-    run, soft, _ = stage(fake_runtime, tmp_run, pes, low=SoftQM)  # a soft minimum: b settles
+    run, soft, _ = stage(fake_runtime, tmp_run, pes, low=SoftQM)  # a pushed soft point: b settles
     run("soft", inputs, **SCREEN)
-    assert diagnostics(tmp_run, "soft")["a"][0] == "soft_minimum"
+    assert diagnostics(tmp_run, "soft")["a"] == ["minimum", "opt", "freq:soft", "soft:persisted"]
     assert diagnostics(tmp_run, "soft")["b"][0] == "known" and soft.calls[-1] == "optimize"
 
     well = fakes.double_well()  # p's first opt stops on the saddle; q is p rotated by 180°
@@ -238,11 +255,23 @@ def test_only_reacting_compositions_and_their_monomers_are_refined(fake_runtime,
     assert "energy" not in dft.calls  # one candidate per group: no rerank single point
 
 
+def test_a_minimum_short_of_stationary_is_pushed_with_the_runtimes_hessian(fake_runtime,
+                                                                            tmp_run):
+    """G5-P1 through the stage: the runtime opens the freq Hessian, so a DFT opt stopped short
+    of the minimum, with no imaginary mode, is soft and pushed by its Newton step."""
+    pes = fakes.harmonic()
+    run = stage(fake_runtime, tmp_run, pes, high=StalledQM)[0]
+    out = run("dft", [species(tmp_run, pes, "a", "start")], **DFT, select={"include": "all"})
+    assert diagnostics(tmp_run, "dft")["a"] == ["minimum", "opt", "freq:soft", "soft:resolved"]
+    (record,) = out.records(T.MINIMUM, MinimumRecord)
+    assert record.notes == () and record.energy_hartree == pytest.approx(0.0, abs=1e-8)
+
+
 def test_a_relaxation_seed_is_asked_at_dft_once_from_its_own_geometry(fake_runtime, tmp_run):
     """R6 (S5, S6): the seed collapsed at screen and represents that basin, which DFT refines
-    from the screen structure; the seed is asked once more, from its own geometry with no xTB
-    start Hessian (no xTB stationary point), as its own species after the other jobs. A seed
-    that collapses at DFT too is noted."""
+    from the screen structure; the seed is asked once more, from its own geometry with the xTB
+    start Hessian of any 2+ fragment start (G4-P2: the engine writes it as its positive-definite
+    model), as its own species after the other jobs. A seed that collapses at DFT is noted."""
     pes = fakes.double_well()  # the seed at the reactant (H at N); screen has no barrier to H-O
     seed = species(tmp_run, pes, "seed", "reactant")
     init = {"init_hessian": {"engine": "xtb", "method": "gfn2"}}  # both wells: two fragments
@@ -265,8 +294,8 @@ def test_a_relaxation_seed_is_asked_at_dft_once_from_its_own_geometry(fake_runti
             assert minima["spc_relax_seed"].state_label == seed.payload.state_label
             start = out.evidence(minima["spc_relax_seed"].opt_calc).start
             assert start.fingerprint == seed.payload.geometry.fingerprint
-            assert dft.calls == ["optimize+init_hessian", "frequencies", "optimize", "frequencies"]
+            assert dft.calls == ["optimize+init_hessian", "frequencies"] * 2
         else:  # the seed joins the collapse basin with no freq job
             assert minima["seed"].members == ("seed", "spc_relax_seed")
             assert history[-1] == "collapsed_at_dft_from_seed"
-            assert dft.calls == ["optimize+init_hessian", "frequencies", "optimize"]
+            assert dft.calls == ["optimize+init_hessian", "frequencies", "optimize+init_hessian"]

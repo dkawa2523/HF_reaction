@@ -244,18 +244,27 @@ def test_conformers_of_one_state_are_no_hypothesis_but_a_declared_torsion_is():
 def test_an_undeclared_pair_needs_a_bond_change():
     """CH-07 on bonds: the proton moved across F-H...N (F-H broken) is a hypothesis; the proton
     0.05 A further out, or the H...N contact 0.3 A longer (0.2 A sufficed before), changes no
-    bond and is none."""
+    bond and is none. F-H stretched to 0.05 A past r_thr (1.28 A) splits the bond graph inside
+    the band (G8-P5): no bond change, so no hypothesis, and a declared one is torsional."""
     fhn = species("fhn", "FHN", [[0.0, 0, 0], [1.04, 0, 0], [2.28, 0, 0]])
     near = species("near", "FHN", [[0.0, 0, 0], [1.09, 0, 0], [2.28, 0, 0]])
     far = species("far", "FHN", [[0.0, 0, 0], [1.40, 0, 0], [2.28, 0, 0]])
+    edge = species("edge", "FHN", [[0.0, 0, 0], [1.33, 0, 0], [2.28, 0, 0]])
     contact = species("contact", "FHN", [[0.0, 0, 0], [0.93, 0, 0], [2.83, 0, 0]])
     loose = species("loose", "FHN", [[0.0, 0, 0], [0.93, 0, 0], [3.13, 0, 0]])
-    minima = basins(*(minimum(f"m_{n}", n) for n in ("fhn", "near", "far", "contact", "loose")))
+    names = ("fhn", "near", "far", "edge", "contact", "loose")
+    minima = basins(*(minimum(f"m_{n}", n) for n in names))
     found = [product("d_near", "m_fhn", "near"), product("d_far", "m_fhn", "far"),
-             product("d_loose", "m_contact", "loose")]
+             product("d_edge", "m_fhn", "edge"), product("d_loose", "m_contact", "loose")]
+    everything = [fhn, near, far, edge, contact, loose]
 
-    records = select(minima, [fhn, near, far, contact, loose], found, [], load)
+    records = select(minima, everything, found, [], load)
     assert [(r.minima, r.torsional) for r in records] == [(("m_fhn", "m_far"), False)]
+    assert topology.bonds(edge.geometry.symbols, STORE["edge"].coords) != topology.bonds(
+        fhn.geometry.symbols, STORE["fhn"].coords)
+    [stretch] = select(minima, everything, [], [ReactionInput(id="s", reactant="fhn",
+                                                              product="edge")], load)
+    assert stretch.torsional
 
 
 def test_one_hypothesis_per_state_pair_holds_every_distinct_ts_of_it():

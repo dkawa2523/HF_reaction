@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from hfauto.chemistry.elements import mass
-from hfauto.core.constants import AMU_TO_ME, CM1_TO_HARTREE
+from hfauto.core.constants import AMU_TO_ME, BOHR_TO_ANGSTROM, CM1_TO_HARTREE
 
 # Without a point group (an engine reading its own freq, trial directions, shaped Hessians), a
 # singular value of the translation/rotation block counts when it exceeds this fraction of the
@@ -67,6 +67,21 @@ def external_basis(symbols: Sequence[str], coords: np.ndarray) -> np.ndarray:
     return u[:, :k]
 
 
+def _mass_weighted_internal(hessian_eh_bohr2: np.ndarray, symbols: Sequence[str],
+                            coords_A: np.ndarray, linear: bool | None = None
+                            ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """Eigenvalues and mass-weighted eigenvectors (3N, 3N − k) of Bᵀ H_mw B in the complement B
+    of the external space, the weights 1/√m (3N) and k."""
+    u, k, masses = _external_svd(symbols, coords_A, linear)
+    h = _square_hessian(hessian_eh_bohr2, len(masses))
+    inv_root = np.repeat(1.0 / np.sqrt(masses), 3)
+    complement = u[:, k:]
+    values, vectors = np.linalg.eigh(
+        complement.T @ (h * np.outer(inv_root, inv_root)) @ complement
+    )
+    return values, complement @ vectors, inv_root, k
+
+
 def projected_frequencies(
     hessian_eh_bohr2: np.ndarray, symbols: Sequence[str], coords_A: np.ndarray,
     linear: bool | None = None,
@@ -78,37 +93,53 @@ def projected_frequencies(
     with the mass weighting removed, and n_external = k.
     """
 
-    u, k, masses = _external_svd(symbols, coords_A, linear)
-    h = _square_hessian(hessian_eh_bohr2, len(masses))
-    inv_root = np.repeat(1.0 / np.sqrt(masses), 3)
-    complement = u[:, k:]
-    eigenvalues, vectors = np.linalg.eigh(
-        complement.T @ (h * np.outer(inv_root, inv_root)) @ complement
-    )
-    freqs = np.sign(eigenvalues) * np.sqrt(np.abs(eigenvalues)) * _CM1_PER_SQRT_EIGENVALUE
-    modes = (complement @ vectors).T * inv_root
+    values, vectors, inv_root, k = _mass_weighted_internal(
+        hessian_eh_bohr2, symbols, coords_A, linear)
+    freqs = np.sign(values) * np.sqrt(np.abs(values)) * _CM1_PER_SQRT_EIGENVALUE
+    modes = vectors.T * inv_root
     modes /= np.linalg.norm(modes, axis=1, keepdims=True)
     return freqs, modes, k
 
 
-def shape_hessian(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray,
-                  direction: np.ndarray | None = None) -> np.ndarray:
-    """Initial driver Hessian. H₊ = P_r·H·P_r (P_r projects out the unweighted rigid
-    motions) on its eigenvectors with max(|λ|, _CURVATURE_FLOOR), rigid motions at 0: positive
-    definite on the internal motions (a minimization from a TS's side). With a ``direction`` d
-    (3N; d̂ its internal part, normalized): P·H₊·P − κ·d̂d̂ᵀ with P = I − d̂d̂ᵀ and
-    κ = max(d̂ᵀH₊d̂, KAPPA_MIN), so d̂ is the only negative curvature, whatever the eigenvectors
-    of H near it: eigenvector following climbs it (moddir 1) and descends all others (Baker
-    1986). The inertia survives the internal-coordinate transformation (Sylvester)."""
+def stationarity_gap(hessian_eh_bohr2: np.ndarray, gradient_eh_bohr: Sequence[float],
+                     symbols: Sequence[str], coords_A: np.ndarray) -> float:
+    """ΔE_N = Σ g_i²/(2|λ_i|) (Eh) over the modes of projected_frequencies: the energy one
+    Newton step of the quadratic model from the gradient and Hessian at ``coords`` moves by. A
+    point is stationary when it is within an identity basin's energy (identity.
+    BASIN_DE_HARTREE): an optimization converged on a flat surface can stop on a shoulder
+    whose frequencies show nothing. |λ| is not floored: a floor (shape_hessian's) caps the soft
+    modes' terms, which carry the shoulder."""
+    values, vectors, inv_root, _ = _mass_weighted_internal(hessian_eh_bohr2, symbols, coords_A)
+    g = vectors.T @ (np.ravel(gradient_eh_bohr) * inv_root)
+    return float(np.sum(g**2 / (2.0 * np.abs(values))))
+
+
+def _internal_eigen(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray
+                    ) -> tuple[np.ndarray, np.ndarray]:
+    """Eigenvalues and Cartesian eigenvectors (3N, 3N − k) of P_r·H·P_r on the internal
+    motions, P_r projecting out the unweighted rigid motions (equal masses, about the
+    centroid): the modes of every driver model."""
     n = np.size(coords_A) // 3
-    u, k, _ = _external_svd(["H"] * n, coords_A)  # equal masses: unweighted, about the centroid
+    u, k, _ = _external_svd(["H"] * n, coords_A)
     internal = u[:, k:]
     values, vectors = np.linalg.eigh(internal.T @ _square_hessian(hessian_eh_bohr2, n) @ internal)
-    modes = internal @ vectors
+    return values, internal @ vectors
+
+
+def shape_hessian(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray,
+                  direction: np.ndarray | None = None) -> np.ndarray:
+    """Initial driver Hessian. H₊ = P_r·H·P_r on its eigenvectors with max(|λ|,
+    _CURVATURE_FLOOR), rigid motions at 0: positive definite on the internal motions (a
+    minimization from a TS's side). With a ``direction`` d (3N; d̂ its internal part,
+    normalized): P·H₊·P − κ·d̂d̂ᵀ with P = I − d̂d̂ᵀ and κ = max(d̂ᵀH₊d̂, KAPPA_MIN), so d̂ is the
+    only negative curvature, whatever the eigenvectors of H near it: eigenvector following
+    climbs it (moddir 1) and descends all others (Baker 1986). The inertia survives the
+    internal-coordinate transformation (Sylvester)."""
+    values, modes = _internal_eigen(hessian_eh_bohr2, coords_A)
     positive = (modes * np.maximum(np.abs(values), _CURVATURE_FLOOR)) @ modes.T
     if direction is None:
         return positive
-    d = internal @ (internal.T @ np.ravel(direction))
+    d = modes @ (modes.T @ np.ravel(direction))
     norm = float(np.linalg.norm(d))
     if norm <= 1.0e-8 * float(np.linalg.norm(direction)):
         raise ValueError("the direction has no internal component")
@@ -116,6 +147,20 @@ def shape_hessian(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray,
     kappa = max(float(d @ positive @ d), KAPPA_MIN)
     p = np.eye(d.size) - np.outer(d, d)
     return p @ positive @ p - kappa * np.outer(d, d)
+
+
+def newton_step(hessian_eh_bohr2: np.ndarray, gradient_eh_bohr: Sequence[float],
+                coords_A: np.ndarray, *, signed: bool = False) -> np.ndarray:
+    """One Newton step −Σ g_i/λ'_i v_i (N, 3; Å) on shape_hessian's internal modes, |λ'| =
+    max(|λ|, _CURVATURE_FLOOR): with λ' > 0, −H₊⁺g, downhill along every mode, imaginary ones
+    included (a minimum's, as the optimization from H₊ would start); ``signed``, λ' with λ's
+    sign, to the quadratic model's stationary point (a saddle's)."""
+    values, modes = _internal_eigen(hessian_eh_bohr2, coords_A)
+    curvature = np.maximum(np.abs(values), _CURVATURE_FLOOR)
+    if signed:
+        curvature = np.where(values < 0.0, -curvature, curvature)
+    step = -modes @ ((modes.T @ np.ravel(gradient_eh_bohr)) / curvature)
+    return step.reshape(-1, 3) * BOHR_TO_ANGSTROM
 
 
 def rotational_constants_ghz(symbols: Sequence[str], coords: np.ndarray, linear: bool

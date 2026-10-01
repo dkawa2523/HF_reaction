@@ -168,8 +168,8 @@ def render_optimize(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, 
     its saddle, a complex from xTB), ``trust 0.1`` without: from a displaced start the diagonal
     guess overshoots back above the TS energy (HCN->HNC in NWChem 7.2.3). NWChem clamps a
     minimization step along a negative eigenvalue to 0.03-0.3 x trust and its BFGS update keeps
-    the sign (opt_drv.F 7.2.3): the adapter writes a first-order saddle's Hessian as its
-    positive-definite model.
+    the sign (opt_drv.F 7.2.3): the adapter writes every initial Hessian but a higher-order
+    saddle's as its positive-definite model.
     """
     options = ["  trust 0.3", "  inhess 2"] if init_hessian else ["  trust 0.1"]
     zcoord, constraints = _fixed(fixed_bond, setup.cartesian)

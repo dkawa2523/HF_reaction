@@ -404,13 +404,13 @@ class NWChemEngine(_NWChem):
                  scf_guess: Evidence | None = None,
                  deadline: Deadline | None = None) -> Evidence | Failure:
         """``init_hessian`` may come from a nearby structure (a QRC or mode-follow side from its
-        saddle). A first-order saddle's (one mode below -saddle_cm1: the side's only negative
-        direction is its displacement) is written as its positive-definite model
-        (vibrations.shape_hessian; why in input.render_optimize). Any other is written as it
-        is: from a higher-order saddle the side must stay free to leave its other saddle
-        directions (DME C2v seed: 29 steps as it is, unconverged after 207 as the model).
-        ``fixed_bond`` and ``scf_guess`` (a relaxed scan's point and its predecessor) enter the
-        job key only when given, so every other key is unchanged."""
+        saddle, a low-level freq at a start). It is written as its positive-definite model
+        (vibrations.shape_hessian; why in input.render_optimize) unless it is a higher-order
+        saddle's (two or more modes below -saddle_cm1), written as it is: from there the side
+        must stay free to leave its other saddle directions (DME C2v seed: 29 steps as it is,
+        unconverged after 207 as the model). ``fixed_bond`` and ``scf_guess`` (a relaxed scan's
+        point and its predecessor) enter the job key only when given, so every other key is
+        unchanged."""
         hessian = None if init_hessian is None else self._hessian_file(init_hessian, mol)
         if isinstance(hessian, Failure):
             return hessian
@@ -418,9 +418,8 @@ class NWChemEngine(_NWChem):
         if isinstance(fixed, Failure):
             return fixed
         sha = init_hessian and init_hessian.hessian and init_hessian.hessian.sha256
-        first_order = init_hessian is not None and hessian is not None and sum(
-            f < -_SADDLE_CM1 for f in init_hessian.frequencies_cm1 or ()) == 1
-        model = {"hessian_model": "positive"} if first_order else {}
+        model = {} if init_hessian is None or sum(f < -_SADDLE_CM1 for f in (
+            init_hessian.frequencies_cm1 or ())) >= 2 else {"hessian_model": "positive"}
         guess, restart = self._guess(scf_guess)
         return self._qm("optimize", mol, method, deadline,
                         payload={"hessian": sha, **model, **fixed, **guess},

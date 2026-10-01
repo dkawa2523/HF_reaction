@@ -112,7 +112,7 @@ VAL7 では S7・S8(生成物 0、試行数 2・19)、S10(32.2892)、S19(`collap
 | 初期 Hessian | xTB(65 case)、DFT 5 case(W1 の noscreen 2 本、W2/s13、W2/s18、W3/s6)、TS freq 1(W3/s6) | — |
 | outcome | elementary、degenerate、same_basin、out_of_window(W1/formaldehyde)、multi_step(oxalic、S6)、barrierless_at_resolution(W1/h2o_hf_inversion、water_dimer_as)、reassigned(W3/s5、W3/s6)、unresolved_within_budget(W1/hono_walltime_b、W3/s5) | blocked_upstream |
 | QRC | `minus_is_image`(W2 の NH3、nh3_planar_seed、dme_c2v_seed、S1、S2、S10、S12〜S14、S17、S18。W3・W4 の再実行も)、`end<i>_to_new_basin`(oxalic、S6) | — |
-| 極小 | DFT の mode-follow `ts_candidate`(W1・W2/nh3_planar_seed、W1・W2/s4、W3/s6)と `one_side`(W1・W2/dme_c2v_seed)、`image_of`(W2 以後の NH3、nh3_planar_seed、S1、S2、S10、S13、S14、S16〜S18)、`not_reacting`(W2〜W4/s10)、`collapsed_at_dft_from_seed`(W3・W4/s19)、screen の `soft:resolved`(s19) | DFT の soft_minimum |
+| 極小 | DFT の mode-follow `ts_candidate`(W1・W2/nh3_planar_seed、W1・W2/s4、W3/s6)と `one_side`(W1・W2/dme_c2v_seed)、`image_of`(W2 以後の NH3、nh3_planar_seed、S1、S2、S10、S13、S14、S16〜S18)、`not_reacting`(W2〜W4/s10)、`collapsed_at_dft_from_seed`(W3・W4/s19)、screen の `soft:resolved`(s19)、DFT の `soft:resolved`(S3 のニトロメタン、§22.8) | DFT の Newton の歩による押し出し(非停留の極小が実計算で出ていない) |
 | explore | 付け直した IRC の端(W3/s6 2 件、W3/s19 2 件)、relaxation(W3/s5、s6、s19)、CREST 失敗時の seed(W3/s5、s6) | S8・S10 の付け直し(該当する端がない) |
 | エンジン | CREST、xTB、ReaDuct NT2、pysis NEB、NWChem の opt・freq・saddle・SP・string(W1 の noscreen 2 本、W3/s5、W3/s6)、ωB97X-D3 の SP(W1/s20_sn2_panel)、CCSD(T) の SP(VAL7/s20_hcn_panel が閉殻、VAL7/s20_ch3o_panel が開殻) | — |
 
@@ -162,15 +162,15 @@ QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ
 
 ## 9. 残る課題
 
-1. **実計算で通っていない分岐**: 2 回目の SCREEN、ケースの例外の閉じ込め(単体テストだけ)、DFT の soft_minimum、maxiter からの再開の上限(G1-P3。単体テストと QM なしの評価だけ、§21.6)。行 6 の中点による高密度化は対称な経路でしか通っておらず、隠れた障壁を見つけた例はない。round 7 で未到達だった行 11 は M5 で削除した(§15)。round 7 の行 16(string の次のチャンク)は M4 の S5 split2 で通り(SCREEN の SP が未収束で種がなく、string の種を χ で拒否した後)、S2 で FIND_PATH の 1 行にまとめた。行 1 は S2 で実計算に通った(§21.6)。
+1. **実計算で通っていない分岐**: 2 回目の SCREEN、ケースの例外の閉じ込め(単体テストだけ)、Newton の歩で非停留の極小から抜けること(S3、§22.7。DFT の soft の分岐はニトロメタンで通った、§22.8)と、非停留の高次の鞍点からの `higher_order:not_stationary`(単体テストとプローブだけ)、maxiter からの再開の上限(G1-P3。単体テストと QM なしの評価だけ、§21.6)。行 6 の中点による高密度化は対称な経路でしか通っておらず、隠れた障壁を見つけた例はない。round 7 で未到達だった行 11 は M5 で削除した(§15)。round 7 の行 16(string の次のチャンク)は M4 の S5 split2 で通り(SCREEN の SP が未収束で種がなく、string の種を χ で拒否した後)、S2 で FIND_PATH の 1 行にまとめた。行 1 は S2 で実計算に通った(§21.6)。
 2. **既定の順位の精度**: PBE0/SVPD は CCSD(T) から最大 3 kcal/mol ずれ(SN2 −3.0、HONO +2.0)、H 引き抜きは分離基準の ΔE‡ 0.79 と文献 約 5 を大きく下回る(round 8 のプローブの CCSD(T)/def2-TZVPD は 6.96 で、差は −6.2)。M9 で、既定の順位を M06-2X-D3(0)/def2-TZVPD のエネルギー層にした(§19)。実 run の 5 反応で障壁の誤差は平均 0.83、最大 1.79 kcal/mol。ΔE_rxn は改善しない(平均 1.17、最大 2.30。HCN)。
 3. **開殻の会合**: S5 の UKS CH3···O2 は ⟨S²⟩ 1.71 で、障壁なしかどうかを判定できない。多参照かスピン射影の扱いが要る。M8 で、会合を分離した単量体からの緩和スキャンで問うようにし、S5 の会合は障壁なし(UKS、AP なし)で順位が付いた(§18.4)。結論が出なかった主因は多参照性ではなく問いの形だった。
-4. **失われた seed の費用**: S19 の seed は DFT の 1 歩目で状態を離れたのに、既知の basin に入るまで 44 歩(約 33 分)払った。M6 で、この seed のラベルの違いはしきい値の帯の中(0.006 Å)なので、失われた状態にしなくなった(§16)。本物の R6 の seed の opt(Hessian なし)の費用は残る(G4-P2、should)。
+4. **失われた seed の費用**: S19 の seed は DFT の 1 歩目で状態を離れたのに、既知の basin に入るまで 44 歩(約 33 分)払った。M6 で、この seed のラベルの違いはしきい値の帯の中(0.006 Å)なので、失われた状態にしなくなった(§16)。本物の R6 の seed の opt(Hessian なし)の費用は残っていた。S3 で、seed も xTB Hessian の正定値のモデルから始めるようにした(G4-P2、§22)。
 5. **鞍点探索の空回り**: 柔らかい H 引き抜き・ラジカル会合では string の前に saddle が maxiter で 2 回止まる(S5 で saddle 826 s)。
 6. **対称な鞍点の mode-follow**: ± の側は厳密な像なのに 2 本とも opt と freq を払う(S6 で 329 s、NH3 は 21 歩/側)。
 7. **近直線の錯体の熱化学**: S18 の H···H2 は、軸から 0.006 Å 外れた極小が非直線(振動 3 本、δG_eff 4.091)、正確に直線の極小が直線(4 本、6.360)と扱われる(`vibrations._EXTERNAL_RANK_TOL` = 1e-3、`/home/user/hfauto_r7/W2/superseded_k1neg/s18_h3_doublet`)。直線性を対称性で決める必要がある。M7 で、点群 1 つから直線性を決めるようにした。2 つの run の差は 2.27 から 0.006 kcal/mol になった(§17)。
 8. **分割の深さ**: W3 の S6 の CH3OH + H 側は、ほぼ縮退した緩い錯体(ΔE_rxn ≤ 0.11)の分割で `max_split_depth` に達し、順位が付かない(VAL7 ではその 2 つの極小が 1 つの basin にまとまった)。M1 で偽の結合変化が、M2 で同じ状態の分割がなくなった(W3_s6 の再生、§11.3、§12.3)。
-9. **平らな PES の引き抜きの TS の再現性**: S6 の OH···CH4 → CH3···H2O は W3 だけが −481.1i の TS に届き、VAL7・W5 は OH···CH4 の向きを変える鞍点(−73.0i、−58.6i、両側が同じ basin)に収束して試行を使い切った。虚モードが仮説の結合変化を担わない鞍点を QRC の前に見分け、結合変化の方向に拘束して探す必要がある(その鞍点の QRC は 2 振幅 × 2 本)。
+9. **平らな PES の引き抜きの TS の再現性**: S6 の OH···CH4 → CH3···H2O は W3 だけが −481.1i の TS に届き、VAL7・W5 は OH···CH4 の向きを変える鞍点(−73.0i、−58.6i、両側が同じ basin)に収束して試行を使い切った。虚モードが仮説の結合変化を担わない鞍点を QRC の前に見分け、結合変化の方向に拘束して探す必要がある(その鞍点の QRC は 2 振幅 × 2 本)。M3 の χ と M4 の ρ で、7 つの文脈のうち 6 つで同じ引き抜きの TS に届いた(§14.5)。その TS の領域の鞍点は、Cartesian の勾配で見るとどれも停留していない(ΔE_N 1.0e-4〜1.5e-4 Eh、§22.3)。
 10. **NWChem の AUTOZ の失敗**: VAL7/s10 の QRC の側の opt が 21 歩目で内部座標の再構築に失敗し(53 s)、2 回目の試行は始点から Cartesian でやり直して 19 歩で収束した(43 s)。VAL7 で 2 回目の試行はこの 1 件。r9-S1 で最後の frame から続けるようにした(§20)。
 
 ## 10. 再生ゲート
@@ -520,7 +520,7 @@ CUR のうち paths を持つ 33 本の 41 case について、記録と case �
 
 ### 16.1 変えたこと
 
-- `topology.resolved_bond_changes(symbols, x, y)` を足した。r − r_thr が一方の構造で ≥ +0.1 Å、他方で ≤ −0.1 Å の対だけを、形成と切断に分けて返す。`RESOLVED_A` = 0.1 Å はモジュール定数で、根拠は S19 の N···H の GFN2 と PBE0 の差(0.15 Å)である。
+- `topology.resolved_bond_changes(symbols, x, y)` を足した(S3 で `bond_changes` に統合)。r − r_thr が一方の構造で ≥ +0.1 Å、他方で ≤ −0.1 Å の対だけを、形成と切断に分けて返す。`RESOLVED_A` = 0.1 Å はモジュール定数で、根拠は S19 の N···H の GFN2 と PBE0 の差(0.15 Å)である。
 - explore の R6(`_relaxations`)は、ラベルが screen 極小に残らない seed のうち、seed と落ちた basin の構造(`identity.basin_coords` で seed の添字に並べたもの)の間に resolved な変化が 1 つでもあるものだけを、失われた状態とする。すべての変化が resolved であることは求めない。
 - `bond_changes` と状態ラベルは変えていない(帯を広く使う G8-P5 は could)。
 
@@ -850,3 +850,98 @@ audit_ends(S2 の再生): 19 件を監査し、不一致 0、別経路の TS 3(�
 - O 上の置換と C 上の置換の両方の種を saddle まで試すこと(分析の検証)は満たしていない。種は順に試し、最初に結論が出た種で case が閉じる(G8-P7 の実装)。どの種を先にするか(低レベルの障壁 `dE_act_kcal` の順など)と、2 段の結論より直接の素反応を優先するかは未決。
 - まとめた仮説の χ は、仮説の端の添字に対して測る。別の添字の経路の TS は、正しい TS でも χ が下がる(上の 0.276)。端を鞍点の添字に合わせ直して測る(`identity.basin_coords`)案があるが、縮退転位では両端が同じ添字に重なるので、そのまま入れられない。REACTION_MODE_MIN は変えない。
 - 再開の上限は、S1 より後に maxiter で止まった saddle にしか効かない(それより前の Failure はエネルギーを持たない)。
+
+## 22. S3 極小の停留性、初期 Hessian の 1 行の規則、結合変化の帯(X3-3、X1、X3-1)
+
+分析の §2.5 G5-P1、§2.3 G3-P5、§2.4 G4-P2、§2.8 G8-P5、§3 X1・X3 にあたる。規則は [design.md](design.md) §5、§6.1、§7.1(explore、minima(dft)、「結合と状態」)。
+
+### 22.1 変えたこと
+
+- 極小の停留性(G5-P1): `vibrations.stationarity_gap` は二次モデルの降下量 ΔE_N = Σ g_i²/(2\|λ_i\|)(freq と同じ質量加重の内部モード、\|λ\| に床なし)を返す。`MinimumDriver` は saddle 級でない点で、opt の最終の DFT 勾配(r9-S1 の `Evidence.gradient`)と freq の Hessian から ΔE_N を求め、5e-5 Eh(`identity.BASIN_DE_HARTREE`)を超えれば振動数によらず soft にする(注記 `soft_imaginary_mode`)。基準は 2 つの極小を 1 つの basin とみなすエネルギーの幅で、新しい数ではない。勾配のない Evidence は判定しない。
+- soft の押し出し: 停留していない点は Newton の歩 −H₊⁺g(`vibrations.newton_step`。§5 の正定値のモデルなので、虚モードがなくても下る)、停留した soft の点は従来どおり soft の虚モードの和の方向に、1 回だけ押して緩和する(最大の原子変位 0.4 Å)。
+- `soft_minimum` の status を削除した(G3-P5)。登録(`Registry.add`、minima の `register`、connection の `_register`)は以前から minimum と同じ扱いだった。結果は常に `minimum` で、残った soft は history の `soft:persisted` と注記 `soft_imaginary_mode` に残る。
+- 初期 Hessian の 1 行の規則(X1、G4-P2): NWChem の optimize は、ν < −saddle_cm1 のモードが 2 本以上の Hessian だけをそのまま書き、ほかはすべて正定値のモデル(ジョブ鍵に `hessian_model: positive`)にする。「ちょうど 1 本のときだけモデル」という engine の推測を置き換えた。minima の `init_hessian` から relaxation の seed の除外を外した。
+- 結合変化の帯(G8-P5): `topology.bond_changes` が `RESOLVED_A`(0.1 Å)の帯を持ち、`resolved_bond_changes` を削除した。結合変化の定義は 1 つになり、仮説と分割の子のねじれ、会合の形、ρ と χ、R6 が同じ定義を使う。`bonds` と状態ラベルは変えていない。
+- 2 本目の虚モードは停留点でだけ数える(持ち越した M4 の問い、22.3): higher_order の saddle が勾配を持ち ΔE_N > 5e-5 Eh なら、符号付きの Newton 歩(二次モデルの停留点へ、最大 0.4 Å。`minimum.newton_push` を極小と共有)の点で freq を 1 本とり、そこで −saddle_cm1 より下が 1 本以下なら、2 本目のモードに沿う押し出しの代わりにその点から `higher_order_retry`(段数 + 1、注記 `higher_order:not_stationary`)。残れば従来どおり押す。2 回目の higher_order_retry は足していない。統合で、S3a の版(Newton 点の freq なしで種にする)を直した: 本物の高次の鞍点(W3_s6 の 975217d3、−1627.8i / −356.9i、ΔE_N 5.7e-5)では二次モデルの停留点がその鞍点自身なので、押さずに戻ると続きを 1 段失う。
+- しきい値(noise_cm1、saddle_cm1、BASIN_DE_HARTREE、RESOLVED_A)と予算は変えていない。tight の収束は足していない(分析 G5 で退けた案)。一次の鞍点の受理には停留性をかけていない(分析 X3-3 の「TS への拡張は今回は入れない」)。
+
+### 22.2 期待される差(QM なし)
+
+- 停留性: CUR の opt の Evidence は勾配を持たない(r9-S1 より前の JobStore)ので、再生では判定せず、記録は変わらない。勾配のない記録を停留とはみなさない。
+- 初期 Hessian の規則: 以前そのまま書いていた Hessian(低レベルの錯体と R6 の seed の xTB Hessian、停留した soft の点の freq)を渡す opt は、鍵に `hessian_model: positive` が入って新しいジョブになる。最終構造の指紋が変われば、その下流(freq、経路の SP、saddle、QRC、sp)も新しくなる。CUR では W3_s6(4 本。1 本は DFT の soft の点の freq から押した opt)、W5_s6 と s6_oh_ch4(各 3 本)、s1_sn2_cl、s20_sn2_panel、s2_sn2_i、s10_amine_pilot2、s19_tma_hf2(各 1 本)の opt が該当する。一次の鞍点からの側(QRC、mode-follow)の鍵は変わらない。
+- R6 の seed: S5 と S6 の seed の opt は、xTB Hessian の正定値のモデルから始まる新しいジョブになる(S19 の seed は M6 で失われた状態でなくなった)。
+- 結合変化の帯: r − r_thr が ±0.1 Å の帯の中でしきい値を横切るだけの対は、結合変化でなくなる。ねじれの判定、未宣言の仮説の採否、ρ の項、χ の結合に効く。
+
+### 22.3 QM なしの確認
+
+道具は `/home/user/hfauto_r9/tools/stationarity.py`(出力 `/home/user/hfauto_r9/S3a/stationarity.txt`)。`stationarity_gap` の式で、記録の Evidence に勾配がなければ stdout から読み直し、最終構造にある勾配だけを使う(なければ unknown で、停留とはみなさない)。unknown は 0 点だった。
+
+- 極小: VAL7 の 64 点は 5e-5 Eh を超えるものがなく、最大は S10 の 8e8cc220 の 1.2e-5。W3 の 29 点で超えるのは 1ee97b40(CH3OH···H の肩、ν1 −6.5i)の 2.66e-4 だけで、そのうち 2.5e-4 が −6.5i のモードの項である。次は 67b7f32a(CH3OH···H の領域、ν1 0.7 cm⁻¹)の 2.0e-5。CUR の 36 本(`--minima` に全 run を渡す)でも 75 点のうち同じ 1 点だけである。分析 G5 のプローブの値と一致する。
+- 鞍点(S3 では判定しない): CUR の 82 点のうち 21 点が 5e-5 を超える。S6 の引き抜きの領域が 13 点(run ごとに数える)、W3_s6 の高次の鞍点 975217d3(−1627.8i / −356.9i)が 5.7e-5 で、残る 7 点(回転子の鞍点 −58.6〜−73.2i の 5 点と acac の −987i の TS の 2 点)は 5.5e-4〜1.6e-2 Eh である。この 7 点の項のほとんどは 40 cm⁻¹ 未満のモード(6 点は 8〜16 cm⁻¹ のメチルや OH の回転)にある。大振幅の回転には二次モデルが成り立たないので、この値をそのまま停留点までのエネルギーとは読めない(推定)。置換の TS(−1347.5i、−1418.1i)は 5.2e-7 Eh 以下で停留している。
+- S6 の引き抜きの TS の領域(M4 から持ち越した問い): CUR/W3_s6 の鞍点は次のとおり。
+
+  | 鞍点 | ν1 / ν2(cm⁻¹) | ΔE_N(Eh) | 322〜331 cm⁻¹ の 2 本の項 | Cartesian の gmax(Eh/bohr) |
+  |---|---|---|---|---|
+  | 57fc1cfb(W3 の素反応) | −481.1 / +33.4 | 1.3e-4 | 5.8e-5、4.7e-5 | 1.1e-3 |
+  | 9f533dcb(460166732f_split1、M4) | −487.0 / +29.7 | 1.0e-4 | 5.5e-5、2.7e-5 | 1.2e-3 |
+  | ae9d9169(同、M3) | −485.8 / +25.1 | 1.5e-4 | 1.0e-4、2.3e-5 | 1.4e-3 |
+  | f66b9f98(790468f505、screen_hei) | −489.6 / −77.1 | 1.5e-4 | 7.2e-5、5.5e-5 | 1.2e-3 |
+  | 57c69460(790468f505、retry) | −499.0 / −54.8 | 1.3e-4 | 8.5e-5、2.3e-5 | 1.1e-3 |
+
+  - 項の大部分は 322〜331 cm⁻¹ の 2 本にある(ν2 の向きの項だけでは説明できないが、ν2 はこの変角と結合しているので、Newton の歩で ν2 も変わる)。移る H と CH3 の H が動き、C–H···O の角(176〜178°)が 1 Å あたり 30〜44° 変わるモード、つまりほぼ直線の C–H···O の変角である。ν2(OH のねじれ。OH の H の振幅が 76%)そのものの項は 3e-6〜7e-6 Eh と小さい。
+  - 原因(saddle の出力の autoz の座標表から Wilson の B 行列を組んで確かめた): この 5 本の autoz の座標は、ほぼ直線の C–H···O をまたぐねじれ(X–C–H–O と C–H–O–H)を含み、その B の行の大きさは通常のねじれの 9〜16 倍である(直線からのずれの sin に反比例する)。そのため Cartesian の勾配(gmax 1.1e-3 Eh/bohr)が内部座標の勾配では 1e-4〜2e-4 に縮み、driver の既定の gmax 4.5e-4 で収束と判定された(57fc1cfb の最後の歩の表示は 9e-5)。
+  - M4 の実計算 6 本(`M4/real/s6_*`)の引き抜きの領域の鞍点も、一意の 16 本のうち 14 本が ΔE_N 6.9e-5〜2.2e-4 Eh(Cartesian の gmax 7.5e-4〜1.4e-3)で、ν1 −476〜−522i、ν2 −77〜+41 cm⁻¹ と散らばる。残る 2 本は s6_fresh の r2 と r4 の 460166732f_split1 の TS(7ffefe2d、1f9571ef)で、ΔE_N 1.6e-6 と 2.2e-6 Eh で停留している。C–H–O は 172.5° で、autoz の座標に直線をまたぐねじれはない。この 2 本は ν1 −484.6i と −491.7i、ν2 +53.7 と +49.0 cm⁻¹ の一次の鞍点で、E は −116.031418 と −116.031417 Eh である。同じ run の 790468f505 の TS(非停留、ν2 −15.9i と −34.6i)より 1.3e-4 と 1.7e-4 Eh 低く、その TS の ΔE_N(2.0e-4、1.5e-4)と同じ大きさである。
+  - Newton の歩のプローブ(S3a、`/home/user/hfauto_r9/S3a/ts_newton_probe.py`、出力は `S3a/ts_newton/`。runcase のロックの下で NWChem の gradient と freq を 1 回ずつ): 790468f505 の 2 本から、Hessian の符号を保った Newton の歩(二次モデルの停留点へ、最大 0.07 Å)を 1 回とると、f66b9f98 は ν1 −480.2i / ν2 +187.0、57c69460 は −482.5i / +117.9 の一次の鞍点になり、ΔE_N は 2.9e-5 と 1.8e-5 Eh(基準の内側)、E は 1.3e-4 と 1.2e-4 Eh 下がった。
+  - したがって、M4 が記録した「平らな回転子の領域」(0.04 kcal/mol の中で ν2 が −77i〜+24)は、停留していない点の Hessian で測った値である。W3_s6 の 790468f505 の 2 本目の虚振動(−54.8i)も非停留の点での判定で、停留点では一次の鞍点になる。
+  - S3 のコードは、この 2 本のような非停留の高次の鞍点を Newton の歩の点から続ける(22.1)。CUR の saddle は勾配を持たない(r9-S1 より前)ので、再生ではこの分岐は動かず、新しい saddle にだけ効く。
+- 結合変化の帯(S3b、`/home/user/hfauto_r9/S3/S3b/band_audit.py` と `split_labels.py`、出力は同じ場所の `*_cur.txt`): CUR の 36 本で、仮説の集合、記録された case、χ の行は帯を入れても変わらない(差 0)。帯の中でラベルだけが割れる組は 11 組で、以前は結合変化 1 本、今は変化なし(ラベルの違いは別の状態としてだけ残る)。10 組は S19 の N1–H13(c01・c02 の seed と neutral・shared_proton の構造、r − r_thr は +0.006〜+0.043 と −0.006〜−0.149 Å。分析の「amine·HF の割れた組」)、1 組は S5 の NT2 の生成物(O4–O5 が −0.079 Å)とその DFT 極小(CH2O + HO)である。帯に最も近い本物の結合変化は acac の PT の O–H(+0.175 Å)、S10 の N–H(+0.215)、マロンアルデヒドの O–H(+0.228)で、帯の外にある。帯を 0.3 Å にすると仮説 3、case 4、χ の行 8 が変わる(感度の確認だけで、定数は 0.1 のまま)。
+- ニトロメタンのプローブ: 22.6。
+
+### 22.4 合格条件(統合)
+
+1. QM なし(`/home/user/hfauto_r9/tools/stationarity.py`): W3 と VAL7 の全 DFT 極小で、ΔE_N > 5e-5 Eh は W3 の 1ee97b40(約 2.7e-4)だけ。VAL7 は 64 点で最大 1.2e-5(分析 G5 のプローブの値)。勾配を読めない点(unknown)を停留とみなさない。
+2. 再生(`--src CUR`): 停留性は記録を変えない。初期 Hessian の鍵と帯で変わる run は `--allow-new` で報告し、新しいジョブと差分を 22.2 の理由で説明する。ほかは strict。
+3. S6 の dft stage × 3(CUR の s6 の写しを `FRESH_ENGINES=nwchem`、`FROM=dft`、`--to dft` で、rank 4 で 2 本と rank 2 で 1 本): すべての DFT 極小で ΔE_N ≤ 5e-5 Eh。basin の数は報告するが、基準にしない。
+4. ニトロメタン(22.6): status は minimum で、`soft:resolved` か注記 `soft_imaginary_mode`。`soft_minimum` は出ない。
+5. G4-P2(CUR の s5 と s6 の写しを `FROM=dft`): R6 の seed の終点(極小か鞍点か、どの basin か)と下流のジョブ数が CUR と同じ。崩れるかどうかが変われば不合格。
+6. 帯: 再生の差(ねじれ、仮説の採否、分割の子、ρ)をすべて挙げて説明する。S19 の amine·HF の割れた組(分析では未検証)の扱いも報告する。
+
+### 22.5 見かけの合格の見分け方
+
+- run 間で basin の数が一致したことを合格にする。判定するのは各点の停留性である。
+- tight の収束を足す。noise_cm1、saddle_cm1、BASIN_DE_HARTREE を動かして soft の分岐に入れる、または避ける。系ごとのしきい値や、2 つ目の帯の定数を置く。
+- 勾配のない Evidence を停留とみなす。
+- ニトロメタンをずれ形の入力にして、soft の分岐を通さずに合格にする。
+
+### 22.6 検証セットに足した系: ニトロメタン
+
+- 入力: `/home/user/hfauto_r9/inputs/nitromethane.yaml`(repo の外)。構造はプローブ `/home/user/hfauto_r8_probe/G3-4_soft` の `ch3no2.xyz`(C–H の 1 本が NO2 の面にある重なり形)、pipeline は同じプローブの `pipeline.yaml`(structures と minima(dft)、`include: all`)。
+- 化学: CH3 のねじれは 6 回対称の数 cm⁻¹ の障壁の準自由回転子で、重なり形は停留した柔らかい鞍点である。これまでの検証セットには、DFT の soft の分岐を通す系がなかった(§4 の DFT の soft_minimum)。
+- プローブ(S3 より前のコード): 1 本目の opt は重なり形で止まり、ν1 −35.7 cm⁻¹(soft。NWChem の表示は −36.95 で、分析 §2.3 の値)、ΔE_N 7.6e-8 Eh で停留している。虚モードの方向に 1 回押すと、ずれ形の極小(ν1 +36.4 cm⁻¹、ΔE_N 7.3e-8 Eh)に入り、2.8e-5 Eh(6.1 cm⁻¹)低い。history は `freq:soft`、`soft:resolved`。
+- S3 で期待すること: 停留しているので、Newton の歩ではなく虚モードの押し出しを使う。status は minimum で、`soft:resolved`(残れば `soft:persisted` と注記 `soft_imaginary_mode`)。押し出しの opt は鍵に `hessian_model: positive` が入るので、プローブのジョブは再利用しない。
+
+### 22.7 実証していないこと
+
+- TS の停留性。S6 の引き抜きの TS は、受理したものも ΔE_N 6.9e-5〜2.2e-4 Eh で、極小の基準では非停留である(22.3)。原因は、ほぼ直線の角をまたぐ autoz のねじれで内部座標の勾配が縮み、driver が収束と判定することである。停留した 2 本の TS は ν2 が正で 0.08〜0.11 kcal/mol 低く、790468f505 の 2 本も Newton の歩 1 回で一次の鞍点になった(プローブ)。2 本目の虚振動は S3 から停留点でだけ数える(22.1)が、実計算の saddle で `higher_order:not_stationary` の分岐が通るかは 22.8 の再生による。一次の鞍点の受理に停留性をかけるには、40 cm⁻¹ 未満の大振幅のモードで ΔE_N が二次モデルの外に出る(acac の TS で 8e-3 Eh)ことを先に扱う必要がある。高次の判定の ΔE_N もこの影響を受けうるが、種を変えるのは Newton 点の freq で 2 本目が消えたときだけである。
+- 極小でも、ほぼ 0 の振動数のモードは ΔE_N を大きくしうる(W3 の 67b7f32a で、0.7 cm⁻¹ のモードの項が 2.0e-5)。W3・VAL7・CUR で、それで基準を超えた例はない。
+- Newton の歩で肩から抜ける実例。W3 と VAL7 で非停留の極小は W3 の 1ee97b40 だけで(22.3)、S3 の再生ではその opt が正定値のモデルの初期 Hessian で新しく走り、停留した極小に直接入った(22.8)。実計算 4 本(S6 の dft × 3、ニトロメタン)にも非停留の極小は出ず、極小の Newton の押し出しと TS の `higher_order:not_stationary` は単体テストでしか通っていない。
+- 点群の判定が、ほぼ Cs の停留した TS で割れる(22.8、M7 の領分): 同じ TS(E の差 3e-7 Eh)を W5_s6 は C1(鏡像 2、R ln 2)、W3_s6 と s6_oh_ch4 は Cs と判定し、dG_eff が 5.53 と 5.95 kcal/mol に分かれる。1e-3 Å の雑音で Cs と C1 が入れ替わる(`tools/symcheck.py` の UNSTABLE)。
+
+### 22.8 結果(統合)
+
+道具の出力は `/home/user/hfauto_r9/S3/`(`stationarity*.txt`、`replay/summary.txt`、`real/logs/`)。
+
+- 統合で直したこと: S3a の版は、非停留の高次の鞍点を Newton の点から続けるだけで、そこの ν2 を見なかった。本物の高次の鞍点(W3_s6 の 975217d3、−1627.8i / −356.9i、ΔE_N 5.7e-5)では二次モデルの停留点がその鞍点自身なので、押さずに戻り、続きを 1 段失う。仕様どおり、Newton の点で freq を 1 本とり、2 本目が消えたときだけその点を種にする(22.1)。単体テスト(消える・残る・停留の 3 通り)を足した。
+- QM なし(`stationarity.txt`): 22.3 と同じ。W3 の 1ee97b40 だけが 2.66e-4、VAL7 の 64 点は最大 1.2e-5。
+- ニトロメタン(実計算、4 ジョブ、4 分): 1 本目の opt は重なり形で止まり ν1 −35.7 cm⁻¹(soft、停留)。虚モードの方向に 1 回押した opt(鍵に `hessian_model: positive`)でずれ形の極小(ν1 +36.2、ΔE_N 5.3e-10 Eh)に入り、2.79e-5 Eh 低い。status は `minimum`、history は `opt`、`freq:soft`、`soft:resolved`。`soft_minimum` は出ない。合格。再生の集合(`tools/runs.json`)に足し、CUR からの strict の再生も PASS。
+- 再生(`--src CUR` = S2/replay、37 本目のニトロメタンを除く 36 本): 27 本は strict で PASS(初期 Hessian に高次の鞍点の Hessian だけを渡す dme_c2v_seed、h2o_hf_inversion、水と HF の二量体、S18 も鍵は変わらない)。`--allow-new` の 9 本の差は次のとおり。帯(S3b)による差は 0 件で、予測どおり。
+  - S1、S20 の SN2 パネル、S2、S10、S19: 錯体の opt の鍵が変わり(xTB の Hessian が正定値のモデルになる)、同じ極小に入る(E の差 ≤ 3.4e-8 Eh)。最終構造の指紋が変わるので、下流の経路の SP、saddle、QRC、sp が新しいジョブになる。結論は同じで、数値の差は dE_act で最大 4.4e-4 kcal/mol(S2)。
+  - S5: R6 の seed の opt が xTB Hessian のモデルから始まり、CUR と同じ basin の極小に入る(E の差 2.2e-7 Eh)。dft のジョブは +1(その xTB freq)、paths 35 と sp 8 は CUR と同じ。会合の走査の点の opt は始点が変わるので新しいが、経路の記録は同じ。G は低い振動の多い錯体で 2.2e-4 Eh 動く。
+  - S6(W3_s6、W5_s6、s6_oh_ch4): R6 の seed の opt は、CUR では初期 Hessian なしで DFT の鞍点に止まり、mode-follow の両側が同じ極小 mf1 に入っていた。S3 では xTB Hessian のモデルから直接その極小に入る(E の差 1.6e-8 Eh)。崩れるかどうかは変わらないが、終点の「極小か鞍点か」は鞍点 → 極小に変わる(G4-P2 の判定を字義どおりには満たさない)。dft のジョブは 18 → 15。極小の id が `..._mf1` から `spc_relax_oh_ch4_p02` に変わるので、その端をもつ仮説の id が 790468f505 から 1f266f1727 に変わる。
+  - W3_s6: CUR で W3 だけにあった肩 1ee97b40(05c19 の極小、−6.5i、ΔE_N 2.7e-4)が、正定値のモデルから走り直した opt で停留した極小(ΔE_N 6.7e-10)に入り、bfac3 の seed と同じ basin になった。仮説は 460166732f から、ほかの S6 と同じ f9bc3a1cd8 に変わり、W3 だけの −481.1i の枝はなくなった。CUR で未解決(attempts_exhausted)だった 790468f505 は、1f266f1727 として素反応で結論した。
+  - 3 本の S6 は同じ結論になった: 1f266f1727 は素反応、TS は −488.7〜−490.7i、ν2 +48.8〜+50.1 cm⁻¹ の一次の鞍点で、E は −116.031419 Eh(3 本の差 3e-7)、ΔE_N 6.9e-7〜9.0e-7 Eh(停留)。CUR の非停留の TS(−486.4i、ν2 −37.5i、ΔE_N 1.3e-4)より 0.09 kcal/mol 低い。f9bc3a1cd8 は multi_step、split1 と split2 は素反応のまま。どの新しい case でも higher_order の判定は起きなかった(TS の Newton の分岐は通っていない)。
+  - dG_eff: 1f266f1727 は W3_s6 と s6_oh_ch4 で 5.95、W5_s6 で 5.53 kcal/mol(CUR の s6 は 5.50)。差 0.42 は RT ln 2 で、W5 の TS だけを C1(鏡像 2)と判定したため(22.7)。CUR の TS は C1 の非停留点だった。
+- S6 の dft stage × 3(CUR の s6_oh_ch4 の写し、NWChem を消して `--from dft --to dft`; rank 4 × 2 と rank 2、12〜19 分): 3 本とも DFT 極小は 5 点(CH4、OH、p02、05c19 + bfac3、R6 の seed)で、ΔE_N はすべて ≤ 2.9e-7 Eh。soft の点は出なかった。basin の数は基準にしない。
+- 再生の後の CUR: 37 本の DFT 極小 75 点で ΔE_N > 5e-5 Eh は 0(最大 1.2e-5)。受理した TS で超えるのは acac の 1 本だけ(−987.2i、ν2 −36.9i の大振幅のメチル、8.6e-3)。
+- CUR は `/home/user/hfauto_r9/S3/replay/<name>`(37 本)を指す。
+

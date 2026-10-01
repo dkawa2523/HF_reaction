@@ -5,26 +5,29 @@ Imports are limited to hfauto.core, hfauto.chemistry and hfauto.backends.protoco
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
 from hfauto.chemistry.gates import Policy, imaginary_tier, is_minimum, spin_ok
-from hfauto.chemistry.identity import assign, same_as_labelled
+from hfauto.chemistry.identity import BASIN_DE_HARTREE, assign, same_as_labelled
 from hfauto.chemistry.modes import BOUNDS_A, amplitude, classify_mode_follow
 from hfauto.chemistry.topology import state_label
+from hfauto.chemistry.vibrations import newton_step, stationarity_gap
 from hfauto.chemistry.xyz import XYZ, Molecule, composition_key
-from hfauto.core.evidence import Evidence, Failure, FailureKind, Geometry
+from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, Geometry
 from hfauto.core.method import Deadline, MethodSpec
 from hfauto.core.records import MinimumRecord, SpeciesRecord
 
 if TYPE_CHECKING:
     from hfauto.backends.protocols import QMEngine
 
-Status = Literal["minimum", "soft_minimum", "saddle", "known", "failed"]
+Status = Literal["minimum", "saddle", "known", "failed"]
 LoadXYZ = Callable[[Geometry], XYZ]
+Resolve = Callable[[FileRef], Path]
 _GATES = Policy()
 
 
@@ -46,15 +49,34 @@ def calc_id(ev: Evidence) -> str:
     return f"calc_{ev.job_key[:16]}"
 
 
+def _capped(step: np.ndarray) -> np.ndarray:
+    """``step`` (N, 3) with its largest atomic displacement capped at the upper bound."""
+    largest = float(np.linalg.norm(step, axis=1).max())
+    return step * min(1.0, BOUNDS_A[1] / largest) if largest > 0.0 else step
+
+
+def newton_push(hessian: np.ndarray, gradient: Sequence[float], xyz: XYZ, *,
+                signed: bool = False) -> np.ndarray | None:
+    """The Newton step (vibrations.newton_step, capped at the upper bound) from a point that is
+    not stationary: ΔE_N (vibrations.stationarity_gap, its final gradient and freq Hessian) >
+    BASIN_DE_HARTREE, the energy within which two minima are one basin. None at a stationary
+    point. ``signed`` (a saddle): to the quadratic model's stationary point."""
+    if stationarity_gap(hessian, gradient, xyz.symbols, xyz.coords) <= BASIN_DE_HARTREE:
+        return None
+    return _capped(newton_step(hessian, gradient, xyz.coords, signed=signed))
+
+
 @dataclass(frozen=True)
 class _Point:
-    """An optimized structure with its separate freq job."""
+    """An optimized structure with its separate freq job; ``newton`` is the Newton step of a
+    point that is not stationary."""
 
     opt: Evidence
     freq: Evidence
     xyz: XYZ
     tier: str
     notes: tuple[str, ...]
+    newton: np.ndarray | None = None
 
     def step(self, below_cm1: float) -> tuple[np.ndarray, int]:
         """Sum of the imaginary modes below -below_cm1, each by its energy-target amplitude
@@ -66,8 +88,7 @@ class _Point:
                  if nu < -below_cm1]
         step = np.sum([amplitude(nu, mode, symbols) / np.linalg.norm(mode, axis=1).max() * mode
                        for nu, mode in pairs], axis=0)
-        largest = float(np.linalg.norm(step, axis=1).max())
-        return step * min(1.0, BOUNDS_A[1] / largest), len(pairs)
+        return _capped(step), len(pairs)
 
 
 @dataclass(frozen=True)
@@ -79,12 +100,16 @@ class _Ctx:
     max_mode_follow: int
     gates: Policy
     deadline: Deadline | None
+    resolve: Resolve | None
 
     def molecule(self, xyz: XYZ) -> Molecule:
         return Molecule(xyz=xyz, charge=self.template.charge,
                         multiplicity=self.template.multiplicity)
 
     def frequencies(self, opt: Evidence) -> _Point | Failure:
+        """freq → is_minimum. A point below saddle order that is not stationary (``newton``) is
+        soft whatever its frequencies, noted soft_imaginary_mode: noise_cm1 is numerical noise
+        only at a stationary point."""
         xyz = self.load(opt.final)
         freq = self.qm.frequencies(self.molecule(xyz), self.method, scf_guess=opt,
                                    deadline=self.deadline)
@@ -95,14 +120,23 @@ class _Ctx:
         if hard:
             return Failure(kind=FailureKind.GATE_REJECTED, reason=",".join(hard),
                            job_key=freq.job_key)
-        tier = imaginary_tier(freq.frequencies_cm1 or (), self.gates)
-        notes = gate.notes + spin_ok(freq, self.gates).reasons
-        return _Point(opt, freq, xyz, tier, notes)
+        tier, notes = imaginary_tier(freq.frequencies_cm1 or (), self.gates), gate.notes
+        newton = None if tier == "saddle" else self.newton(opt, freq, xyz)
+        if newton is not None:
+            tier, notes = "soft", ("soft_imaginary_mode",)
+        return _Point(opt, freq, xyz, tier, notes + spin_ok(freq, self.gates).reasons, newton)
+
+    def newton(self, opt: Evidence, freq: Evidence, xyz: XYZ) -> np.ndarray | None:
+        """newton_push −H₊⁺g from the opt's final structure; not judged without a gradient (an
+        opt stored before Evidence carried one)."""
+        if opt.gradient is None or freq.hessian is None or self.resolve is None:
+            return None
+        return newton_push(np.load(self.resolve(freq.hessian)), opt.gradient, xyz)
 
     def relax(self, coords: np.ndarray, source: _Point) -> _Point | None:
         """opt → freq from coordinates displaced from ``source``, whose freq Hessian starts the
-        opt (the engine writes a first-order saddle's as its positive-definite model,
-        trust 0.3); None when either job fails."""
+        opt (the engine writes it as its positive-definite model unless it is a higher-order
+        saddle's; trust 0.3); None when either job fails."""
         xyz = XYZ(symbols=list(self.template.xyz.symbols), coords=coords)
         opt = self.qm.optimize(self.molecule(xyz), self.method, init_hessian=source.freq,
                                deadline=self.deadline)
@@ -154,23 +188,26 @@ def _follow(ctx: _Ctx, point: _Point, history: list[str]
     return point, None
 
 
-def _soften(ctx: _Ctx, point: _Point, history: list[str]) -> tuple[_Point, Status]:
-    """One displacement along the soft imaginary modes; soft_minimum when one persists."""
-    if point.freq.imaginary_modes:
-        side = ctx.relax(point.xyz.coords + point.step(ctx.gates.noise_cm1)[0], point)
-        if side is not None and side.tier in ("none", "noise"):
-            history.append("soft:resolved")
-            return side, "minimum"
+def _soften(ctx: _Ctx, point: _Point, history: list[str]) -> _Point:
+    """One push from a soft point, then relax: its Newton step when it is not stationary
+    (whether or not it has imaginary modes), else along its soft imaginary modes. The relaxed
+    point when it is no longer soft (soft:resolved); else the point itself (soft:persisted,
+    noted soft_imaginary_mode)."""
+    step = point.step(ctx.gates.noise_cm1)[0] if point.newton is None else point.newton
+    side = ctx.relax(point.xyz.coords + step, point)
+    if side is not None and side.tier in ("none", "noise"):
+        history.append("soft:resolved")
+        return side
     history.append("soft:persisted")
-    return point, "soft_minimum"
+    return point
 
 
 def _outcome(ctx: _Ctx, point: _Point, history: list[str],
              pair: tuple[MinimumOutcome, MinimumOutcome] | None = None) -> MinimumOutcome:
-    """A saddle as it is; else a minimum, after one push when a soft mode remains."""
+    """A saddle as it is; else a minimum, after one push when it is soft."""
     status: Status = "saddle" if point.tier == "saddle" else "minimum"
     if point.tier == "soft":
-        point, status = _soften(ctx, point, history)
+        point = _soften(ctx, point, history)
     return MinimumOutcome(status, point.opt, point.freq, tuple(history), ts_candidate=pair,
                           notes=point.notes)
 
@@ -192,16 +229,18 @@ def relax_to_minimum(
     gates: Policy = _GATES,
     deadline: Deadline | None = None,
     load_xyz: LoadXYZ | None = None,
+    resolve: Resolve | None = None,
 ) -> MinimumOutcome:
     """opt (with init_hessian) → known check → freq → mode-follow (saddle) / one push (soft).
 
     A converged ``opt`` is taken as it is (``mol`` then gives only charge and multiplicity).
-    ``load_xyz`` (default ``known.load_xyz``) reads the optimized geometry for the freq job.
+    ``load_xyz`` (default ``known.load_xyz``) reads the optimized geometry for the freq job;
+    ``resolve`` opens a freq's Hessian, which judges stationarity (not judged without it).
     """
     load = load_xyz or (known.load_xyz if known is not None else None)
     if load is None:
         raise ValueError("relax_to_minimum needs load_xyz or a known Registry")
-    ctx = _Ctx(mol, method, qm, load, max_mode_follow, gates, deadline)
+    ctx = _Ctx(mol, method, qm, load, max_mode_follow, gates, deadline, resolve)
     history = ["opt" if opt is None else "opt:reused"]
     done = opt if opt is not None else qm.optimize(
         mol, method, init_hessian=init_hessian, deadline=deadline)
@@ -262,7 +301,7 @@ class Registry:
         if outcome.status == "known" and outcome.known_basin is not None:
             return self.join(outcome.known_basin, species.species_id)
         opt, freq = outcome.opt, outcome.freq
-        if outcome.status not in ("minimum", "soft_minimum") or opt is None or freq is None:
+        if outcome.status != "minimum" or opt is None or freq is None:
             raise ValueError(f"cannot register a {outcome.status!r} outcome")
         basin = self.find(opt)
         if basin is not None:

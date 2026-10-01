@@ -129,8 +129,9 @@ class _Run:
         species to the nearer side and a mode_follow discovery."""
         mol = self.molecule(job.species, job.start)
         done = job, driver.relax_to_minimum(
-            mol, self.method, self.qm, known=self.registry, init_hessian=self.init_hessian(job, mol),
-            max_mode_follow=self.cfg.mode_follow, gates=self.rt.policy, load_xyz=self.rt.load_xyz)
+            mol, self.method, self.qm, known=self.registry, init_hessian=self.init_hessian(mol),
+            max_mode_follow=self.cfg.mode_follow, gates=self.rt.policy, load_xyz=self.rt.load_xyz,
+            resolve=self.rt.resolve)
         self.register(done)
         sides = self.sides(done)
         if len(sides) == 2:
@@ -140,11 +141,11 @@ class _Run:
                 self.extra.append(_artifact(found.discovery_id, found))
         return done
 
-    def init_hessian(self, job: _Job, mol: Molecule) -> Evidence | None:
-        """A low-level freq at the start of 2+ fragments; none at a relaxation seed, which is no
-        low-level stationary point (a negative xTB eigenvalue at each seed of S5, S6 and S19)."""
-        spec, single = self.cfg.init_hessian, len(fragments(mol.xyz.symbols, mol.xyz.coords)) < 2
-        if spec is None or single or job.species in self.seeds:
+    def init_hessian(self, mol: Molecule) -> Evidence | None:
+        """A low-level freq at the start of 2+ fragments, a relaxation seed's included: the
+        engine writes it as its positive-definite model unless it is a higher-order saddle's."""
+        spec = self.cfg.init_hessian
+        if spec is None or len(fragments(mol.xyz.symbols, mol.xyz.coords)) < 2:
             return None
         low = cast(QMEngine, self.rt.engine(Capability.QM, spec.engine))
         freq = low.frequencies(mol, self.rt.method(spec.method))
@@ -164,7 +165,7 @@ class _Run:
         sid, record = job.species.species_id, None
         self.keep(outcome.opt, outcome.freq)
         self.history[sid] = [outcome.status, *outcome.history]
-        if outcome.status in ("minimum", "soft_minimum", "known"):
+        if outcome.status in ("minimum", "known"):
             record = self.registry.add(outcome, job.species, tier=self.cfg.level)
             self.minima[record.basin_id] = record
         elif outcome.ts_candidate is None:  # a TS candidate is reported as a discovery instead
@@ -179,7 +180,7 @@ class _Run:
     def join_image(self, job: _Job, first: _Relaxed) -> bool:
         """``job`` starts at an exact image of ``first``'s start and joins its basin with no job
         when ``first`` relaxed straight into a minimum or a known basin; False otherwise (a
-        saddle endpoint, a soft minimum, a failure or a step along a mode)."""
+        saddle endpoint, a failure, or a step along a mode or a soft point's push)."""
         rep, outcome = first
         record = self.records.get(rep.species.species_id)
         moved = any(step.startswith(_MOVED) for step in outcome.history)

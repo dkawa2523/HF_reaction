@@ -137,17 +137,19 @@ def test_a_freq_starts_from_the_converged_vectors_of_its_opt(nwchem, golden):
 def test_a_first_order_saddle_hessian_starts_a_minimization_as_its_positive_definite_model(
         nwchem, golden):
     """K1: the TS Hessian of G07 (one mode below -saddle_cm1) is written as its positive-definite
-    model under a new job key; with a second saddle mode (a higher-order saddle) the same
-    Hessian is written as it is under the old key."""
+    model under a new job key, and so is the same Hessian with no saddle mode (a minimum's or an
+    R6 seed's, X1); with a second saddle mode (a higher-order saddle) it is written as it is
+    under the old key."""
     jobs, site = nwchem
     engine, mol = NWChemEngine(jobs=jobs, site=site), _hcn_ts(golden)
     ts = engine.frequencies(mol, FINE)
     side = Molecule(XYZ(mol.xyz.symbols, mol.xyz.coords + [0.1, 0, 0]), 0, 1)
     raw = np.load(jobs.store.resolve(ts.hessian))
     higher = ts.model_copy(update={"frequencies_cm1": (-120.0, *ts.frequencies_cm1)})
+    none = ts.model_copy(update={"frequencies_cm1": tuple(abs(f) for f in ts.frequencies_cm1)})
+    model = shape_hessian(raw, side.xyz.coords)
     decks = []
-    for freq, written, reshaped in ((ts, shape_hessian(raw, side.xyz.coords), True),
-                                    (higher, raw, False)):
+    for freq, written, reshaped in ((ts, model, True), (none, model, True), (higher, raw, False)):
         opt = engine.optimize(side, FINE, init_hessian=freq)
         assert isinstance(opt, Evidence) and opt.task == "opt"
         payload = {"method": FINE.signature(), "molecule": side.fingerprint(),
@@ -158,7 +160,7 @@ def test_a_first_order_saddle_hessian_starts_a_minimization_as_its_positive_defi
         attempt = jobs.store.attempt_dir(opt.job_key, 0)
         assert (attempt / "job.hess").read_text() == hess_text(written)
         decks.append((attempt / "job.nw").read_text())
-    assert decks[0] == decks[1] and "trust 0.3\n  inhess 2" in decks[0]
+    assert decks[0] == decks[1] == decks[2] and "trust 0.3\n  inhess 2" in decks[0]
 
 
 def test_a_scan_point_holds_its_bond_and_starts_from_the_previous_vectors(nwchem, golden):

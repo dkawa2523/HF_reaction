@@ -8,8 +8,8 @@ joins a known basin (a screen minimum or an earlier product of its composition) 
 labelled: the same atom-indexed bonds and permutation-invariant RMSD (ReaDuct's and the screen's
 xTB energies are not compared); else it becomes a species. So a discovery's ends keep the
 labelling it followed, and a degenerate product never joins its source (analysis X2). A lost
-seed state (a resolved bond change from the basin it collapsed into) becomes one ``relaxation``
-product, from the seed refined as its own species.
+seed state (a bond change from the basin it collapsed into) becomes one ``relaxation`` product,
+from the seed refined as its own species.
 """
 
 from __future__ import annotations
@@ -84,19 +84,18 @@ def _sources(minima: list[MinimumRecord], per_state: int) -> list[MinimumRecord]
 
 
 def _left_state(seed: XYZ, basin: XYZ) -> bool:
-    """True when a resolved bond change (topology.resolved_bond_changes) separates the seed from
-    its basin's structure carried into the seed's labelling (identity.basin_coords)."""
+    """True when a bond change (topology.bond_changes, resolved by its band) separates the seed
+    from its basin's structure carried into the seed's labelling (identity.basin_coords)."""
     symbols = seed.symbols
-    formed, broken = topology.resolved_bond_changes(
-        symbols, seed.coords, identity.basin_coords(symbols, basin.coords, seed.coords))
-    return bool(formed or broken)
+    return any(topology.bond_changes(
+        symbols, seed.coords, identity.basin_coords(symbols, basin.coords, seed.coords)))
 
 
 def _relaxations(species: Mapping[str, SpeciesRecord], minima: Sequence[MinimumRecord],
                  final: Mapping[str, XYZ], load: Callable[[Geometry], XYZ]
                  ) -> list[DiscoveryRecord]:
     """One ``relaxation`` product per seed state the screen lost: no screen minimum of the
-    composition keeps its label, and a resolved bond change separates a seed of that label from
+    composition keeps its label, and a bond change separates a seed of that label from
     the basin it collapsed into (``final``: screen-optimized structures by minimum id). A
     threshold crossing inside one basin loses no state (S19: N···H 1.426 Å in the c01 seed,
     1.414 Å in its basin, r_thr 1.42 Å); one resolved change suffices (S6: H2–O5 +2.00 / −0.35 Å

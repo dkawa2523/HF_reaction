@@ -1,10 +1,11 @@
 """Covalent bond graph, fragments, bond changes, WL atom classes and state labels (§5.5).
 
 A pair is bonded when r < r_thr = r_cov,i + r_cov,j + 0.4 Å (additive tolerance, Meng & Lewis
-1991; SCINE BondDetector, OpenBabel). The rule sees one structure only, so ``bond_changes`` is
-symmetric: FHF⁻ (1.14 Å) and I3⁻ (2.92 Å) are bonded, a halogen bond I···N at 2.8 Å is not.
-``resolved_bond_changes`` keeps only the changes that clear a band of ±RESOLVED_A around r_thr
-on both sides, so a contact the threshold cuts within one basin is no change.
+1991; SCINE BondDetector, OpenBabel): FHF⁻ (1.14 Å) and I3⁻ (2.92 Å) are bonded, a halogen bond
+I···N at 2.8 Å is not. A bond change between two structures clears the band ±RESOLVED_A around
+r_thr on both sides, so ``bond_changes`` is symmetric and a contact the threshold cuts within one
+basin is no change. Two structures can then differ in ``bonds`` and state label with no bond
+change: a split label only makes another state, never a merge.
 """
 
 from __future__ import annotations
@@ -74,21 +75,12 @@ def fragments(symbols: Sequence[str], coords: np.ndarray) -> tuple[tuple[int, ..
 def bond_changes(
     symbols: Sequence[str], a: np.ndarray, b: np.ndarray
 ) -> tuple[frozenset[Bond], frozenset[Bond]]:
-    """(formed, broken) going from a to b: the two set differences of the bond graphs."""
+    """(formed, broken) going from a to b (one atom order): the pairs whose r − r_thr is
+    ≥ +RESOLVED_A in one structure and ≤ −RESOLVED_A in the other."""
 
-    before, after = bonds(symbols, a), bonds(symbols, b)
-    return after - before, before - after
-
-
-def resolved_bond_changes(
-    symbols: Sequence[str], x: np.ndarray, y: np.ndarray
-) -> tuple[frozenset[Bond], frozenset[Bond]]:
-    """(formed, broken) going from x to y, only the pairs whose r − r_thr is ≥ +RESOLVED_A in
-    one structure and ≤ −RESOLVED_A in the other (both in one atom order)."""
-
-    ex, ey = _excess(symbols, x), _excess(symbols, y)
-    return (_pairs((ex >= RESOLVED_A) & (ey <= -RESOLVED_A)),
-            _pairs((ex <= -RESOLVED_A) & (ey >= RESOLVED_A)))
+    ea, eb = _excess(symbols, a), _excess(symbols, b)
+    return (_pairs((ea >= RESOLVED_A) & (eb <= -RESOLVED_A)),
+            _pairs((ea <= -RESOLVED_A) & (eb >= RESOLVED_A)))
 
 
 def _wl_rounds(symbols: Sequence[str], bonded: Collection[Bond]) -> list[list[str]]:
