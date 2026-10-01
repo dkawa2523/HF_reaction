@@ -97,7 +97,14 @@ class EngineFactory(Protocol):
 @runtime_checkable
 class QMEngine(Engine, Protocol):
     def energy(
-        self, mol: Molecule, method: MethodSpec, *, deadline: Deadline | None = None
+        self,
+        mol: Molecule,
+        method: MethodSpec,
+        *,
+        # a job of the same atoms, state and basis whose converged SCF starts this one (a
+        # profile point on its end's SCF branch); an engine without SCF vectors ignores it
+        scf_guess: Evidence | None = None,
+        deadline: Deadline | None = None,
     ) -> Evidence | Failure: ...
 
     def optimize(

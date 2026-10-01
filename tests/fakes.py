@@ -249,11 +249,15 @@ class _Surface(_Fake):
 
 
 class FakeQM(_Surface):
-    """calls: "energy", "optimize" (+"+init_hessian", +"+fixed_bond"), "frequencies"."""
+    """calls: "energy" (+"+scf_guess"), "optimize" (+"+init_hessian", +"+fixed_bond"),
+    "frequencies"."""
 
-    def energy(self, mol, method, *, deadline=None) -> Evidence | Failure:
-        self.calls.append("energy")
-        key = self._key("sp", mol.fingerprint(), method.signature())
+    def energy(self, mol, method, *, scf_guess: Evidence | None = None, deadline=None
+               ) -> Evidence | Failure:
+        """scf_guess only enters the key and the call, when given (a PES has no SCF branches)."""
+        self.calls.append("energy+scf_guess" if scf_guess else "energy")
+        guess = (scf_guess.job_key,) if scf_guess else ()
+        key = self._key("sp", mol.fingerprint(), method.signature(), *guess)
         return self._evidence("sp", mol, method, key, self._start(mol, key))
 
     def optimize(self, mol, method, *, init_hessian: Evidence | None = None,

@@ -22,6 +22,7 @@ from hfauto.chemistry.gates import (
     spin_ok,
 )
 from hfauto.chemistry.geometry import declared_coordinate_gradient, most_changed_dihedral
+from hfauto.chemistry.identity import carry, mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.modes import TARGET_HARTREE, amplitude, displace, overlap
 from hfauto.chemistry.xyz import (
@@ -111,18 +112,55 @@ class Ctx:
         self.work.calcs[calc_id(ev)] = ev
         return ev
 
-    def sps(self, frames: Sequence[np.ndarray]) -> list[float | None]:
-        """DFT SPs at ``frames``, independent jobs run at once (CaseRuntime.map); kept and
-        noted in order."""
+    def sps(self, frames: Sequence[np.ndarray]) -> list[Evidence | None]:
+        """DFT SPs at ``frames``, independent jobs run at once (CaseRuntime.map), kept and
+        noted in order; per frame the lowest of its guesses' (``_guesses``)."""
         rt = self.rt
-        return [self._energy(ev) for ev in rt.map(
-            lambda x: rt.qm.energy(self.mol(x), rt.method, deadline=self.deadline), frames)]
+        jobs = [(i, *job) for i, x in enumerate(frames) for job in self._guesses(x)]
+        found: list[Evidence | None] = [None] * len(frames)
+        for (i, _, _), ev in zip(jobs, rt.map(lambda job: rt.qm.energy(
+                self.mol(job[2]), rt.method, scf_guess=job[1], deadline=self.deadline), jobs),
+                                  strict=True):
+            if isinstance(ev, Failure):
+                self.note(f"sp:{ev.kind.value}")
+                continue
+            self.keep(ev)
+            if (best := found[i]) is None or ev.energy_hartree < best.energy_hartree:
+                found[i] = ev
+        return found
 
-    def _energy(self, ev: Evidence | Failure) -> float | None:
-        if isinstance(ev, Failure):
-            self.note(f"sp:{ev.kind.value}")
-            return None
-        return self.keep(ev).energy_hartree
+    def _guesses(self, x: np.ndarray) -> list[tuple[Evidence | None, np.ndarray]]:
+        """(scf_guess, structure) of each SP at ``x`` (G2-P1): a closed shell's from scratch; an
+        open shell's from the opt of the nearer DFT minimum, or of both when they differ in spin
+        coupling (``_ends_apart``). From scratch S5's middle frames fell onto another branch up
+        to 28.9 kcal/mol high; an end's vectors passed directly reproduce the frame-by-frame
+        continuation within 5e-8 Eh, and the lower of the two ends' is continuous (probe
+        G2-1v). NWChem reads the vectors as stored, so x, aligned onto that end, goes into the
+        opt's atom order and frame as the end is carried onto it (identity.carry; ends[1] is
+        rotated onto ends[0]); energy and ⟨S²⟩ do not change."""
+        if self.multiplicity == 1:
+            return [(None, x)]
+        opts, ends = self._end_opts(), self.ends
+        near = int(mapped_rmsd(x, ends[1]) < mapped_rmsd(x, ends[0]))
+        return [(opts[k], carry(self.symbols, self.coords(opts[k].final), ends[k],
+                                align_mapped(ends[k], x))[1])
+                for k in ((0, 1) if self._ends_apart() else (near,))]
+
+    def _end_opts(self) -> tuple[Evidence, ...]:
+        return tuple(self.rt.calcs[self.rt.minima[m][0].opt_calc] for m in self.case.minima)
+
+    def _end_s2(self) -> tuple[float | None, float | None]:
+        """The DFT minima's ⟨S²⟩ (None: a closed shell)."""
+        if self.multiplicity == 1:
+            return None, None
+        a, b = self._end_opts()
+        return a.s2, b.s2
+
+    def _ends_apart(self) -> bool:
+        """Whether the DFT minima differ in spin coupling: their ⟨S²⟩ more than spin_tol apart
+        (S5's broken-symmetry complex 1.71, its adduct 0.754)."""
+        a, b = self._end_s2()
+        return a is not None and b is not None and abs(a - b) > self.rules.gates.spin_tol
 
     def geometry(self, name: str, coords: np.ndarray) -> Geometry:
         return written_geometry(self.mol(coords).write(self.folder / f"{name}.xyz"),
@@ -137,15 +175,17 @@ class Ctx:
         return [np.asarray(i.coords, dtype=float) for i in images]
 
     def verdict(self, frames: list[np.ndarray], inner: Sequence[float],
-                source: Literal["screen", "string"]) -> BarrierVerdict:
+                source: Literal["screen", "string"], s2: Sequence[float | None] = ()
+                ) -> BarrierVerdict:
         """Class of the sequence-aligned path ``frames`` between the DFT minima (``inner``: its
-        interior DFT energies), kept as the latest profile; its maximum bounds the saddle from
-        above. A barrierless class is accepted only after densifying: DFT SPs at the midpoints
-        of the two segments beside the highest interior node, where a barrier the nodes step
-        over would rise (nodes lie ~0.2 A apart, so the midpoints stay near the path)."""
-        energies = [self.energies[0], *inner, self.energies[1]]
+        interior DFT energies, ``s2`` their ⟨S²⟩; a string's beads have none), kept as the
+        latest profile; its maximum bounds the saddle from above. A barrierless class is
+        accepted only after densifying: DFT SPs at the midpoints of the two segments beside the
+        highest interior node, where a barrier the nodes step over would rise (nodes lie ~0.2 A
+        apart, so the midpoints stay near the path)."""
+        energies, spins = [self.energies[0], *inner, self.energies[1]], list(s2)
         self.work.path = Profile(frames, tuple(energies), source)
-        verdict = barrier_verdict(energies, source=source, policy=self.rules.gates)
+        verdict = self.classify(energies, spins, source)
         if verdict.verdict != "barrierless":
             return verdict
         k = 1 + int(np.argmax(inner))
@@ -154,12 +194,32 @@ class Ctx:
         if low is None or high is None:
             return BarrierVerdict(verdict="unavailable", source=source,
                                   reasons=("midpoint_single_point",))
-        frames = [*frames[:k], mids[0], frames[k], mids[1], *frames[k + 1:]]
-        energies = [*energies[:k], low, energies[k], high, *energies[k + 1:]]
+
+        def splice(nodes: list, before: object, after: object, at: int = k) -> list:
+            return [*nodes[:at], before, nodes[at], after, *nodes[at + 1:]]  # beside node k
+
+        frames, energies = splice(frames, *mids), splice(energies, low.energy_hartree,
+                                                         high.energy_hartree)
+        spins = splice(spins, low.s2, high.s2, k - 1) if spins else []
         self.work.path = Profile(frames, tuple(energies), source)
-        verdict = barrier_verdict(energies, source=source, policy=self.rules.gates)
+        verdict = self.classify(energies, spins, source)
         self.note(f"{source}_midpoints:{verdict.verdict}")
         return verdict
+
+    def classify(self, energies: Sequence[float], s2: Sequence[float | None],
+                 source: Literal["screen", "string"]) -> BarrierVerdict:
+        """barrier_verdict of a profile from DFT minimum to DFT minimum (``s2``: its interior
+        points' ⟨S²⟩, none for a string's beads), unless the profile leaves its SCF branch
+        (G2-P1): a ``branch_jump`` against the minima's opts' ⟨S²⟩ and spin_tol, on every
+        open-shell profile with ⟨S²⟩ (SCREEN's, densified or not, and the shortcut's three
+        points) whatever the minima's spin coupling (VAL7 S5's minima were both broken-symmetry,
+        1.7114 and 1.7637)."""
+        first, last = self._end_s2()
+        spins = [first, *(s2 or [None] * (len(energies) - 2)), last]
+        if branch_jump(energies, spins, self.rules.gates.spin_tol):
+            return BarrierVerdict(verdict="unavailable", source=source,
+                                  reasons=("scf_branch_jump",))
+        return barrier_verdict(energies, source=source, policy=self.rules.gates)
 
     def direction(self, x: np.ndarray, seed: Seed | None = None) -> tuple[str, np.ndarray]:
         """(kind, 3N vector) of the reaction direction at ``x`` (design §7.3): a TS seed's own
@@ -182,6 +242,23 @@ class Ctx:
 
     def record(self, basin_id: str) -> MinimumRecord:
         return next(r for r, _ in self.rt.minima.values() if r.basin_id == basin_id)
+
+
+def branch_jump(energies: Sequence[float], s2: Sequence[float | None], tol: float) -> bool:
+    """Whether a profile's highest interior point lies on another SCF branch than its
+    neighbours: its ⟨S²⟩ outside theirs and more than ``tol`` (Policy.spin_tol) from one of
+    them. At a genuine radical TS the UKS contamination peaks smoothly, at most 0.022 above a
+    neighbour (S18 H + H2 0.7674 beside 0.7565 and 0.7570, S6's shortcut 0.7722 beside 0.7544
+    and 0.7500), and through the Coulson–Fischer region it changes monotonically (S5 CH3 + O2
+    1.7115 → 0.7545, its 0.80 kcal/mol hill at 1.5438 between 1.6261 and 1.4145); an SCF branch
+    jump moves it 0.77–0.95 (VAL7 S5 0.7604 beside 1.7114; probe G2-1v's atomic guess 0.7591
+    beside 1.7115, its mixed guesses 0.7697 beside 1.5438). An unobserved ⟨S²⟩ is no evidence."""
+    k = 1 + int(np.argmax(energies[1:-1]))
+    before, at, after = s2[k - 1:k + 2]
+    if before is None or at is None or after is None:
+        return False
+    outside = not min(before, after) <= at <= max(before, after)
+    return outside and max(abs(at - before), abs(at - after)) > tol
 
 
 def peak_seeds(ctx: Ctx, name: str) -> tuple[Seed, ...]:

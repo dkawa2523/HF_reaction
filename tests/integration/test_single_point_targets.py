@@ -30,7 +30,7 @@ REFERENCE = {"m_r", "m_r2", "m_nh", "m_o"}  # the reactant state and the monomer
 class SpQM(FakeQM):
     """Single points on any molecule (the monomers are off the double well) at 0 Eh."""
 
-    def energy(self, mol, method, *, deadline=None):
+    def energy(self, mol, method, *, scf_guess=None, deadline=None):
         key = self._key("sp", mol.fingerprint(), method.signature())
         start = self._start(mol, key)
         return Evidence(engine=self.name, task="sp", level=fake_level(method, mol), start=start,

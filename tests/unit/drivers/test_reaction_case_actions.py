@@ -61,8 +61,8 @@ class Bumped(fakes.FakeQM):  # an SP within 0.01 Å of ``at`` rises by ``bump`` 
         super().__init__(root, pes)
         self.at, self.bump = at, bump
 
-    def energy(self, mol, method, *, deadline=None):
-        ev = super().energy(mol, method, deadline=deadline)
+    def energy(self, mol, method, *, scf_guess=None, deadline=None):
+        ev = super().energy(mol, method, scf_guess=scf_guess, deadline=deadline)
         if np.abs(mol.xyz.coords - self.at).max() > 0.01:
             return ev
         if self.bump is None:
@@ -271,7 +271,7 @@ def test_a_barrierless_profile_is_densified_beside_its_highest_node(tmp_path, bu
     ctx, _ = case_ctx(tmp_path, fakes.flat_uphill())
     a, b = ctx.ends
     frames = [a + t * (b - a) for t in np.linspace(0.0, 1.0, 7)]
-    inner = ctx.sps(frames[1:-1])
+    inner = [ev.energy_hartree for ev in ctx.sps(frames[1:-1])]
     k = 1 + int(np.argmax(inner))
     mids = [0.5 * (frames[i] + frames[i + 1]) for i in (k - 1, k)]
     ctx.rt = replace(ctx.rt, qm=Bumped(tmp_path, ctx.rt.qm.pes, mids[1], bump))

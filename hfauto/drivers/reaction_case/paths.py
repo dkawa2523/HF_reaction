@@ -1,7 +1,7 @@
 """Reaction-case path actions (design §7.3): SCREEN's low-level barrier pre-check, or an
 association's relaxed scan, and FIND_PATH's DFT string chunk. Each classifies a DFT profile
-between the DFT minima (an association: from its separated monomers) and may seed the saddle
-search at its peak."""
+between the DFT minima (an association: from its separated monomers, spin-projected for a
+low-spin-coupled pair) and may seed the saddle search at its peak."""
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ from dataclasses import replace
 import numpy as np
 
 from hfauto.chemistry import topology
-from hfauto.chemistry.gates import barrier_verdict
+from hfauto.chemistry.electronic_state import low_spin_coupled
+from hfauto.chemistry.gates import barrier_verdict, spin_ok
 from hfauto.chemistry.interpolation import align_sequential, idpp, resample
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
 from hfauto.core.records import BarrierVerdict
@@ -43,18 +44,22 @@ def _xtb_ts_mode(ctx: Ctx, coords: np.ndarray) -> tuple[float, ...] | None:
 def _shortcut(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]] | None:
     """Step 1: the low-level TSs already known for this pair of states (discovery /
     mode-follow), in order. Each whose xTB freq confirms its mode gets a DFT SP and a
-    three-point verdict; the single-step ones seed the saddle search in that order, under the
-    first one's verdict. None without a single-step one."""
+    three-point verdict [minimum, TS SP, minimum] (Ctx.classify: an open shell's with its
+    ⟨S²⟩); the single-step ones seed the saddle search in that order, under the first one's
+    verdict. None without a single-step one."""
     seeds = []
     for geometry in ctx.case.low_level_ts:
         if (mode := _xtb_ts_mode(ctx, ctx.coords(geometry))) is None:
             ctx.note("low_level_ts_rejected")
         else:
             seeds.append(Seed(geometry, "discovery_ts", mode))
-    energies = ctx.sps([ctx.coords(s.geometry) for s in seeds]) if seeds else []
-    verdicts = [(barrier_verdict((ctx.energies[0], e, ctx.energies[1]), source="screen",
-                                 policy=ctx.rules.gates), seed)
-                for seed, e in zip(seeds, energies, strict=True) if e is not None]
+    found = ctx.sps([ctx.coords(s.geometry) for s in seeds]) if seeds else []
+    verdicts = [(ctx.classify((ctx.energies[0], ev.energy_hartree, ctx.energies[1]), (ev.s2,),
+                              "screen"), seed)
+                for seed, ev in zip(seeds, found, strict=True) if ev is not None]
+    for verdict, _ in verdicts:
+        if "scf_branch_jump" in verdict.reasons:
+            ctx.note("shortcut:scf_branch_jump")
     singles = [(verdict, seed) for verdict, seed in verdicts if verdict.verdict == "single"]
     return (singles[0][0], tuple(seed for _, seed in singles)) if singles else None
 
@@ -80,10 +85,11 @@ def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]]:
         frames, ts = _neb(ctx, idpp(ctx.symbols, *ctx.ends, SCREEN_IMAGES))
     except ValueError as exc:
         return _unavailable(f"idpp:{exc}"), ()
-    inner = ctx.sps(frames[1:-1])
-    if any(e is None for e in inner):
+    inner = [ev for ev in ctx.sps(frames[1:-1]) if ev is not None]
+    if len(inner) < len(frames) - 2:
         return _unavailable("screen_single_point"), ()
-    verdict = ctx.verdict(frames, [e for e in inner if e is not None], "screen")
+    verdict = ctx.verdict(frames, [ev.energy_hartree for ev in inner], "screen",
+                          [ev.s2 for ev in inner])
     if verdict.verdict != "single":
         return verdict, ()
     mode = None if ts is None else _xtb_ts_mode(ctx, ctx.coords(ts))
@@ -107,31 +113,68 @@ def _scan(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]]:
     is the adduct with the fragment holding j moved out along i→j, each next one the previous
     optimum moved in; each is optimized with r_ij fixed, its SCF started from the previous
     point's (a broken-symmetry pair stays on its continuous branch). The profile is
-    [ΣE(monomers), scan..., E(adduct)]; the longest point stands as the monomers' frame. A
-    failed point leaves no profile: unavailable, no point dropped."""
+    [ΣE(monomers), scan..., E(adduct)] (the scan points' energies by ``_projected``); the
+    longest point stands as the monomers' frame. A failed point leaves no profile: unavailable,
+    no point dropped."""
     rt, adduct = ctx.rt, ctx.ends[1]
     [(i, j)] = topology.bond_changes(ctx.symbols, *ctx.ends)[0]  # the one formed bond
     fragment = next(f for f in topology.fragments(ctx.symbols, ctx.ends[0]) if j in f)
     r_p = float(np.linalg.norm(adduct[j] - adduct[i]))
     ctx.note(f"scan:{i}-{j}:{r_p:.3f}+{SCAN_REACH_A}A:{SCAN_POINTS}_points")
-    x, frames, energies = adduct, [], []
-    guess: Evidence | None = None
+    x, frames, points = adduct, [], []
     for k in range(SCAN_POINTS - 1):
         r = r_p + SCAN_REACH_A * (1.0 - k / (SCAN_POINTS - 1))
         opt = rt.qm.optimize(ctx.mol(_moved(x, (i, j), fragment, r)), rt.method,
-                             fixed_bond=(i, j, r), scf_guess=guess, deadline=ctx.deadline)
+                             fixed_bond=(i, j, r), scf_guess=points[-1] if points else None,
+                             deadline=ctx.deadline)
         if isinstance(opt, Failure):
             ctx.note(f"scan{k}:{opt.kind.value}")
             return BarrierVerdict(verdict="unavailable", source="scan",
                                   reasons=("scan_point",)), ()
-        guess, x = ctx.keep(opt), ctx.coords(opt.final)
+        points.append(ctx.keep(opt))
+        x = ctx.coords(opt.final)
         frames.append(x)
-        energies.append(opt.energy_hartree)
+    energies = _projected(ctx, frames, points)
     frames = align_sequential([*frames, adduct])
     ctx.work.path = Profile([frames[0], *frames], (ctx.energies[0], *energies, ctx.energies[1]),
                             "scan")
     verdict = barrier_verdict(ctx.work.path.energies, source="scan", policy=ctx.rules.gates)
     return verdict, peak_seeds(ctx, "scan_hei") if verdict.verdict == "single" else ()
+
+
+def projected(e_bs: float, s2_bs: float, e_hs: float, s2_hs: float, spin: float) -> float:
+    """Yamaguchi's approximate spin projection (CPL 149, 537 (1988)): the energy of the pure
+    spin-``spin`` state from a broken-symmetry solution and the high-spin one at its structure,
+    E_LS = E_BS + α(E_BS − E_HS), α = (⟨S²⟩_BS − S(S+1)) / (⟨S²⟩_HS − ⟨S²⟩_BS)."""
+    alpha = (s2_bs - spin * (spin + 1)) / (s2_hs - s2_bs)
+    return e_bs + alpha * (e_bs - e_hs)
+
+
+def _projected(ctx: Ctx, frames: list[np.ndarray], points: list[Evidence]) -> list[float]:
+    """The scan points' energies (G2-P3): those of a low-spin-coupled pair (CH3· + O2 as a
+    doublet, electronic_state.low_spin_coupled), broken-symmetry where the monomers separate,
+    are spin-projected (``projected``) with an SP of the high-spin coupling Σ(m_i − 1) + 1 at
+    each point's structure. A point whose high-spin SP fails or is itself contaminated (spin_ok)
+    keeps its broken-symmetry energy, noted ap_skipped. The monomers' sum and the adduct keep
+    theirs; spin_ok and the gates of stationary points and thermochemistry are untouched."""
+    rt, energies = ctx.rt, [ev.energy_hartree for ev in points]
+    spins = [rt.species[rt.minima[m][0].species_id].multiplicity for m in ctx.case.monomers]
+    if not low_spin_coupled(spins, ctx.multiplicity):
+        return energies
+    high, spin = sum(m - 1 for m in spins) + 1, (ctx.multiplicity - 1) / 2
+    ctx.note(f"scan:ap:{high}")
+    sps = rt.map(lambda x: rt.qm.energy(replace(ctx.mol(x), multiplicity=high), rt.method,
+                                        deadline=ctx.deadline), frames)
+    for k, (bs, hs) in enumerate(zip(points, sps, strict=True)):
+        if isinstance(hs, Failure):
+            ctx.note(f"scan{k}:ap_skipped:{hs.kind.value}")
+            continue
+        ctx.keep(hs)
+        if hs.s2 is None or bs.s2 is None or not spin_ok(hs, ctx.rules.gates):
+            ctx.note(f"scan{k}:ap_skipped:s2={hs.s2}")
+        else:
+            energies[k] = projected(bs.energy_hartree, bs.s2, hs.energy_hartree, hs.s2, spin)
+    return energies
 
 
 def screen(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:

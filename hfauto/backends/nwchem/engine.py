@@ -379,14 +379,17 @@ class NWChemEngine(_NWChem):
         return self._run(kind, {"molecule": mol.fingerprint(), **(payload or {})},
                          {"mol": mol, "start": mol, "method": method, **inputs}, deadline)
 
-    def energy(self, mol: Molecule, method: MethodSpec, *,
+    def energy(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None,
                deadline: Deadline | None = None) -> Evidence | Failure:
         """A CCSD(T) key names the frozen core when an atom beyond Kr makes it differ from the
-        old ``freeze atomic`` (input.frozen_core): no result of that deck is reused."""
+        old ``freeze atomic`` (input.frozen_core): no result of that deck is reused.
+        ``scf_guess`` (a profile point's end) starts the SCF from its converged vectors, so an
+        open-shell point stays on that end's SCF branch; it enters the key only when given."""
         symbols = mol.xyz.symbols
         ecp = method.kind == "wft" and any(atomic_number(s) > 36 for s in symbols)
         payload = {"frozen_core": nw_in.frozen_core(symbols)} if ecp else {}
-        return self._qm("energy", mol, method, deadline, payload=payload)
+        guess, restart = self._guess(scf_guess)
+        return self._qm("energy", mol, method, deadline, payload={**payload, **guess}, **restart)
 
     def _guess(self, scf_guess: Evidence | None) -> tuple[dict[str, Any], dict[str, Any]]:
         """(key payload, inputs) starting the SCF from the converged vectors of ``scf_guess``'s

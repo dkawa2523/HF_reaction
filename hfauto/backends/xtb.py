@@ -205,8 +205,8 @@ class XTBEngine:
             execution=self.site.execution, inputs={"mol": mol, "method": method},
         )
 
-    def energy(self, mol: Molecule, method: MethodSpec, *, deadline: Deadline | None = None
-               ) -> Evidence | Failure:
+    def energy(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None,
+               deadline: Deadline | None = None) -> Evidence | Failure:
         return self.jobs.run(self.task("energy", mol, method), self.adapter, deadline=deadline)
 
     def optimize(self, mol: Molecule, method: MethodSpec, *,

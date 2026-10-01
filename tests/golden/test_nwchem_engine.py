@@ -119,19 +119,28 @@ def test_frequencies_cache_and_input_checks(nwchem, golden):
     assert grid.kind is FailureKind.METHOD_MISMATCH and "grid" in grid.reason
 
 
-def test_a_freq_starts_from_the_converged_vectors_of_its_opt(nwchem, golden):
+def test_a_freq_or_a_single_point_starts_from_the_converged_vectors_of_its_guess(nwchem, golden):
     """The freq at an opt's final structure reads the opt's job.movecs under its own key: it
     stays on the opt's electronic state (from scratch, the UKS OH···CH4 complex found the other
-    OH π component)."""
+    OH π component). G2-P1: so does a single point given a profile end; a single point without
+    a guess keeps its key."""
     jobs, site = nwchem
     engine = NWChemEngine(jobs=jobs, site=site)
     opt = engine.optimize(_hcn_ts(golden), FINE)
     final = Molecule(read_xyz(jobs.store.resolve(opt.final.file)), 0, 1)
-    guided, plain = engine.frequencies(final, FINE, scf_guess=opt), engine.frequencies(final, FINE)
-    assert isinstance(guided, Evidence) and guided.job_key != plain.job_key
-    decks = [(jobs.store.attempt_dir(ev.job_key, 0) / "job.nw").read_text()
-             for ev in (guided, plain)]
-    assert "vectors input job.movecs" in decks[0] and "vectors input" not in decks[1]
+    for job in (engine.frequencies, engine.energy):
+        guided, plain = job(final, FINE, scf_guess=opt), job(final, FINE)
+        assert isinstance(guided, Evidence) and guided.job_key != plain.job_key
+        first = jobs.store.attempt_dir(guided.job_key, 0)
+        decks = [(jobs.store.attempt_dir(ev.job_key, 0) / "job.nw").read_text()
+                 for ev in (guided, plain)]
+        assert "vectors input job.movecs" in decks[0] and "vectors input" not in decks[1]
+        assert (first / "job.movecs").read_text() == "v"  # the opt's vectors
+    sp = {"method": FINE.signature(), "molecule": final.fingerprint()}
+    keys = [jobs.store.key(Task(engine="nwchem", version_pin="7.2.3", kind="energy",
+                                key_payload=p, execution=site.execution))
+            for p in (sp, {**sp, "scf_guess": opt.job_key})]
+    assert keys == [plain.job_key, guided.job_key] and guided.task == "sp"
 
 
 def test_a_first_order_saddle_hessian_starts_a_minimization_as_its_positive_definite_model(
