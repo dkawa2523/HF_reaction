@@ -1,7 +1,7 @@
 """NWChem engines through JobRunner with a stub executable that replays recorded outputs:
 G07 (HCN TS: level lines, vibrational block and .hess), G01 (two blocks), G13 (string) and
 G29 (OH. ROHF-CCSD(T)). A driver job with STUB_MAXITER in its environment stops at
-maxiter."""
+maxiter; a deck with a zcoord block and STUB_AUTOZ fails in autoz."""
 
 import json
 import shutil
@@ -15,6 +15,7 @@ from hfauto.backends.nwchem.input import hess_text
 from hfauto.backends.nwchem.output import geometry_block, read_hess
 from hfauto.chemistry.vibrations import KAPPA_MIN, external_basis, shape_hessian
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz, write_xyz_trajectory
+from hfauto.core.constants import BOHR_TO_ANGSTROM
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, PathProfile
 from hfauto.core.hashing import sha256_file, sha256_text
 from hfauto.core.method import EngineSite, MethodSpec
@@ -29,9 +30,12 @@ STUB = r'''
 import os, re, shutil, sys
 from pathlib import Path
 here, deck = Path(__file__).parent, Path(sys.argv[-1]).read_text()
-atoms = re.search(r"^geometry[^\n]*\n(.*?)^end", deck, re.M | re.S).group(1).splitlines()
+block = re.search(r"^geometry[^\n]*\n(.*?)^end", deck, re.M | re.S).group(1)
+atoms = [row for row in block.splitlines() if len(row.split()) == 4]  # not the zcoord lines
 task = deck.rsplit("task ", 1)[1].strip()
 frame = lambda rows: f"{len(rows)}\n geometry\n" + "\n".join(rows) + "\n"
+if os.environ.get("STUB_AUTOZ") and "zcoord" in block:
+    sys.exit(print(" AUTOZ failed"))
 if task == "dft string":
     Path("job.string_final.xyz").write_text(frame(atoms) * 11)
     sys.exit(print((here / "G13.out").read_text()))
@@ -149,6 +153,39 @@ def test_a_first_order_saddle_hessian_starts_a_minimization_as_its_positive_defi
         assert (attempt / "job.hess").read_text() == hess_text(written)
         decks.append((attempt / "job.nw").read_text())
     assert decks[0] == decks[1] and "trust 0.3\n  inhess 2" in decks[0]
+
+
+def test_a_scan_point_holds_its_bond_and_starts_from_the_previous_vectors(nwchem, golden):
+    """G2-P4: fixed_bond is a frozen zcoord bond (1-based atoms) and scf_guess the previous
+    point's job.movecs, both in the job key only when given (every other key is unchanged); the
+    start must carry the bond (NWChem moves an input to its zcoord value). An autoz failure
+    continues in Cartesian coordinates with a spring restraint (r0 in bohr)."""
+    jobs, site = nwchem
+    engine, mol = NWChemEngine(jobs=jobs, site=site), _hcn_ts(golden)
+    r = round(float(np.linalg.norm(mol.xyz.coords[2] - mol.xyz.coords[0])), 4)
+    plain = engine.optimize(mol, FINE)
+    point = engine.optimize(mol, FINE, fixed_bond=(2, 0, r), scf_guess=plain)
+    assert isinstance(point, Evidence) and point.task == "opt"
+    old = {"method": FINE.signature(), "molecule": mol.fingerprint(), "hessian": None}
+    keys = [jobs.store.key(Task(engine="nwchem", version_pin="7.2.3", kind="optimize",
+                                key_payload=p, execution=site.execution))
+            for p in (old, {**old, "fixed_bond": [0, 2, r], "scf_guess": plain.job_key})]
+    assert keys == [plain.job_key, point.job_key]
+    first = jobs.store.attempt_dir(point.job_key, 0)
+    deck = (first / "job.nw").read_text()
+    assert f"\n  zcoord\n    bond 1 3 {r:.4f} rc constant\n  end\nend\ncharge 0" in deck
+    assert "vectors input job.movecs" in deck and (first / "job.movecs").is_file()
+    off = engine.optimize(mol, FINE, fixed_bond=(0, 2, r + 0.001))
+    assert (off.kind, off.reason) == (FailureKind.INPUT_INVALID, "fixed_bond_mismatch")
+    autoz = site.model_copy(update={"execution": site.execution.model_copy(
+        update={"env": {"STUB_AUTOZ": "1"}})})
+    held = NWChemEngine(jobs=jobs, site=autoz).optimize(mol, FINE, fixed_bond=(0, 2, r))
+    assert isinstance(held, Evidence)
+    decks = [(jobs.store.attempt_dir(held.job_key, i) / "job.nw").read_text() for i in range(3)]
+    assert "zcoord" in decks[0] and "constraints" not in decks[0]
+    spring = f"\n\nconstraints\n  spring bond 1 3 20.0 {r / BOHR_TO_ANGSTROM:.6f}\nend\n\ndft\n"
+    for later in decks[1:]:  # the Cartesian start, then its timeout continuation
+        assert "noautosym noautoz" in later and spring in later and "zcoord" not in later
 
 
 def test_double_hybrids_are_rejected_and_autoz_falls_back_to_cartesians(nwchem, golden, tmp_path):

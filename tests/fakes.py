@@ -14,6 +14,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 from numpy.polynomial import Polynomial
+from scipy.optimize import minimize
 from scipy.spatial.distance import pdist
 
 from hfauto.backends import protocols as bp
@@ -169,6 +170,20 @@ def _minimize(pes: PES, x0: np.ndarray, h0: np.ndarray | None, maxiter: int = 50
     return x.reshape(-1, 3), False
 
 
+def _minimize_fixed(pes: PES, x0: np.ndarray, bond: tuple[int, int, float]
+                    ) -> tuple[np.ndarray, bool]:
+    """SLSQP with atoms i and j held r Å apart (NWChem's frozen zcoord bond)."""
+    i, j, r = bond
+
+    def stretch(x: np.ndarray) -> float:
+        return float(np.linalg.norm(x[3 * j:3 * j + 3] - x[3 * i:3 * i + 3]) - r)
+
+    res = minimize(pes.energy, np.ravel(x0), jac=pes.gradient, method="SLSQP",
+                   constraints=[{"type": "eq", "fun": stretch}],
+                   options={"ftol": 1e-12, "maxiter": 500})
+    return res.x.reshape(-1, 3), bool(res.success)
+
+
 def _saddle(pes: PES, x0: np.ndarray, mode: np.ndarray | None, maxiter: int = 200
             ) -> tuple[np.ndarray, bool]:
     """Eigenvector following: climb along the tracked mode (initially ``mode``, else the
@@ -233,22 +248,35 @@ class _Surface(_Fake):
                         final=end, energy_hartree=energy, output=end.file, job_key=key, **extra)
 
 
-class FakeQM(_Surface):  # calls: "energy", "optimize" / "optimize+init_hessian", "frequencies"
+class FakeQM(_Surface):
+    """calls: "energy", "optimize" (+"+init_hessian", +"+fixed_bond"), "frequencies"."""
+
     def energy(self, mol, method, *, deadline=None) -> Evidence | Failure:
         self.calls.append("energy")
         key = self._key("sp", mol.fingerprint(), method.signature())
         return self._evidence("sp", mol, method, key, self._start(mol, key))
 
     def optimize(self, mol, method, *, init_hessian: Evidence | None = None,
-                 deadline=None) -> Evidence | Failure:  # init_hessian: within 0.5 Å, like NWChem
-        self.calls.append("optimize+init_hessian" if init_hessian else "optimize")
+                 fixed_bond: tuple[int, int, float] | None = None,
+                 scf_guess: Evidence | None = None, deadline=None) -> Evidence | Failure:
+        """Like NWChem: init_hessian within 0.5 Å; fixed_bond (i, j, r) at mol within 1e-4 Å
+        and then held exactly; scf_guess only enters the key (a PES has no SCF branches)."""
+        self.calls.append("+".join(["optimize", *(["init_hessian"] if init_hessian else []),
+                                    *(["fixed_bond"] if fixed_bond else [])]))
         key = self._key("opt", mol.fingerprint(), method.signature(),
-                        init_hessian and init_hessian.job_key)
+                        init_hessian and init_hessian.job_key, fixed_bond,
+                        scf_guess and scf_guess.job_key)
         start = self._start(mol, key)
         h0 = None if init_hessian is None else self._hessian(init_hessian, start, key, 0.5)
         if isinstance(h0, Failure):
             return h0
-        x, ok = _minimize(self.pes, mol.xyz.coords, h0)
+        if fixed_bond is None:
+            x, ok = _minimize(self.pes, mol.xyz.coords, h0)
+        else:
+            i, j, r = fixed_bond
+            if abs(np.linalg.norm(mol.xyz.coords[j] - mol.xyz.coords[i]) - r) > 1e-4:
+                return Failure(kind=Kind.INPUT_INVALID, reason="fixed_bond_mismatch", job_key=key)
+            x, ok = _minimize_fixed(self.pes, mol.xyz.coords, fixed_bond)
         if not ok:
             return Failure(kind=Kind.GEOMETRY_MAXITER, reason="maxiter", job_key=key)
         return self._evidence("opt", mol, method, key, start, x)

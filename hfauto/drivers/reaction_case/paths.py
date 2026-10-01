@@ -1,23 +1,31 @@
-"""Reaction-case path actions (design §7.3): SCREEN's low-level barrier pre-check and FIND_PATH's
-DFT string chunk. Each classifies a DFT profile between the DFT minima and may seed the saddle
+"""Reaction-case path actions (design §7.3): SCREEN's low-level barrier pre-check, or an
+association's relaxed scan, and FIND_PATH's DFT string chunk. Each classifies a DFT profile
+between the DFT minima (an association: from its separated monomers) and may seed the saddle
 search at its peak."""
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import replace
 
 import numpy as np
 
+from hfauto.chemistry import topology
 from hfauto.chemistry.gates import barrier_verdict
 from hfauto.chemistry.interpolation import align_sequential, idpp, resample
-from hfauto.core.evidence import Failure, FileRef, Geometry
+from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
 from hfauto.core.records import BarrierVerdict
 from hfauto.drivers.reaction_case import state as case_state
-from hfauto.drivers.reaction_case.actions import Ctx, peak_seed, xtb_freq
+from hfauto.drivers.reaction_case.actions import Ctx, Profile, peak_seed, xtb_freq
 from hfauto.drivers.reaction_case.state import CaseState, Decision, Seed
 
 SCREEN_IMAGES = 11  # SCREEN's NEB images including both ends
 STRING_BEADS = 9  # DFT string beads including both ends
+# An association's scan (design X4): its longest point lies SCAN_REACH_A beyond the adduct's
+# bond, outside the Coulson-Fischer region (~2.2 A for C-O), and the SCAN_POINTS - 1 constrained
+# points step evenly to the adduct minimum, the last point.
+SCAN_REACH_A = 1.5
+SCAN_POINTS = 8
 
 
 def _unavailable(reason: str) -> BarrierVerdict:
@@ -80,15 +88,61 @@ def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
     return verdict, peak_seed(ctx, "screen_hei", "screen_hei")
 
 
+def _moved(x: np.ndarray, bond: tuple[int, int], fragment: Collection[int], r: float
+           ) -> np.ndarray:
+    """``x`` with ``fragment`` (holding j) translated rigidly along i→j until r_ij = r."""
+    (i, j), y = bond, np.array(x, dtype=float)
+    axis = y[j] - y[i]
+    y[list(fragment)] += (r / float(np.linalg.norm(axis)) - 1.0) * axis
+    return y
+
+
+def _scan(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
+    """An association (design X4): the separated monomers → the adduct along a relaxed scan of
+    the formed bond (i, j), from r_P + SCAN_REACH_A inwards (r_P: the adduct's). The first point
+    is the adduct with the fragment holding j moved out along i→j, each next one the previous
+    optimum moved in; each is optimized with r_ij fixed, its SCF started from the previous
+    point's (a broken-symmetry pair stays on its continuous branch). The profile is
+    [ΣE(monomers), scan..., E(adduct)]; the longest point stands as the monomers' frame. A
+    failed point leaves no profile: unavailable, no point dropped."""
+    rt, adduct = ctx.rt, ctx.ends[1]
+    [(i, j)] = topology.bond_changes(ctx.symbols, *ctx.ends)[0]  # the one formed bond
+    fragment = next(f for f in topology.fragments(ctx.symbols, ctx.ends[0]) if j in f)
+    r_p = float(np.linalg.norm(adduct[j] - adduct[i]))
+    ctx.note(f"scan:{i}-{j}:{r_p:.3f}+{SCAN_REACH_A}A:{SCAN_POINTS}_points")
+    x, frames, energies = adduct, [], []
+    guess: Evidence | None = None
+    for k in range(SCAN_POINTS - 1):
+        r = r_p + SCAN_REACH_A * (1.0 - k / (SCAN_POINTS - 1))
+        opt = rt.qm.optimize(ctx.mol(_moved(x, (i, j), fragment, r)), rt.method,
+                             fixed_bond=(i, j, r), scf_guess=guess, deadline=ctx.deadline)
+        if isinstance(opt, Failure):
+            ctx.note(f"scan{k}:{opt.kind.value}")
+            return BarrierVerdict(verdict="unavailable", source="scan",
+                                  reasons=("scan_point",)), None
+        guess, x = ctx.keep(opt), ctx.coords(opt.final)
+        frames.append(x)
+        energies.append(opt.energy_hartree)
+    frames = align_sequential([*frames, adduct])
+    ctx.work.path = Profile([frames[0], *frames], (ctx.energies[0], *energies, ctx.energies[1]))
+    verdict = barrier_verdict(ctx.work.path.energies, source="scan", policy=ctx.rules.gates)
+    single = verdict.verdict == "single"
+    return verdict, peak_seed(ctx, "scan_hei", "path_hei") if single else None
+
+
 def screen(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """Barrier pre-check (chem 16): first the shortcut from a low-level TS; the low-level path
-    when there is none, it is not a single step, or its seed has failed (a second SCREEN)."""
-    ts = ctx.case.low_level_ts
-    found = None if ts is None or state.screen is not None else _shortcut(ctx, ts)
-    if found is None or found[0].verdict != "single":
-        found, state = _screen_path(ctx), replace(state, neb_done=True)
+    """Barrier pre-check (chem 16): an association's scan; else first the shortcut from a
+    low-level TS, the low-level path when there is none, it is not a single step, or its seed
+    has failed (a second SCREEN)."""
+    if ctx.case.monomers:
+        found, state = _scan(ctx), replace(state, neb_done=True)
+    else:
+        ts = ctx.case.low_level_ts
+        found = None if ts is None or state.screen is not None else _shortcut(ctx, ts)
+        if found is None or found[0].verdict != "single":
+            found, state = _screen_path(ctx), replace(state, neb_done=True)
     verdict, seed = found
-    ctx.note(f"screen:{verdict.verdict}:{','.join(verdict.reasons)}")
+    ctx.note(f"{verdict.source}:{verdict.verdict}:{','.join(verdict.reasons)}")
     return case_state.record_profile(state, verdict, seed)
 
 

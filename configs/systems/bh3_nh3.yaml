@@ -1,0 +1,17 @@
+# M8 closed-shell association (analysis X4-2): BH3 + NH3 -> H3B-NH3, a Lewis acid-base adduct
+# formed without a barrier (RKS singlet: no spin projection applies). Expected: the relaxed B0-N4
+# scan from the separated monomers descends monotonically, barrierless_at_resolution, rankable,
+# with dG_rxn against the separated monomers. The B...N 3.2 A complex need not be a DFT minimum:
+# one that relaxes into the adduct is judged on this input structure (chemistry.hypotheses).
+# Fake-pass checks: the scan starts at the adduct B0-N4 + 1.5 A or beyond; the reactant end is
+# BH3 + NH3 apart. Runs with known_endpoints (declared) or discover (composition).
+system_id: bh3_nh3
+species:
+  - {id: bh3, smiles: "B"}
+  - {id: nh3, smiles: "N"}
+  - {id: complex, xyz: xyz/bh3_nh3_complex.xyz, multiplicity: 1, role: endpoint}
+  - {id: adduct, xyz: xyz/bh3_nh3_adduct.xyz, multiplicity: 1, role: endpoint}
+compositions:
+  - {id: bh3_nh3, components: {bh3: 1, nh3: 1}}
+reactions:
+  - {id: bh3_nh3_association, reactant: complex, product: adduct}

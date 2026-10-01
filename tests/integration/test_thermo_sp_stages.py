@@ -148,6 +148,41 @@ def test_association_across_charge_and_spin_fails_closed(fake_runtime, tmp_run):
     assert out["rx1_298.15K_1atm"].dG_assoc_kcal is None  # no O minimum on the complex's LOT
 
 
+def test_an_association_refers_to_its_separated_monomers(fake_runtime, tmp_run):
+    """X4 (G2-P4): NH + O -> HNO (a triplet anion from a singlet anion and a triplet) asked from
+    its separated monomers: G_R is their state G with the standard-state shift of dn = -1, a
+    barrierless dG_eff is max(dG_rxn, 0) against them, and a TS below them is submerged. The
+    complex (in S5 a broken-symmetry vdW minimum) is no participant and blocks nothing, and an
+    association has no dG_assoc of its own. The participants' charges and multiplicities differ by design."""
+    anion = {"complex": (-1, 3), "nh": (-1, 1), "o": (0, 3)}
+    inputs, rt, ev = _setup(fake_runtime, tmp_run, anion)
+    rx1 = inputs.get("rx1").payload
+    separated = tuple(R.StoichTerm(composition_id=c, coefficient=1) for c in ("nh", "o"))
+    bound = rx1.model_copy(update={"reaction_id": "bound", "reactants": separated,
+                                   "monomers": ("m_nh", "m_o")})
+    flat = bound.model_copy(update={"reaction_id": "flat", "saddle": None,
+                                    "outcome": R.CaseOutcome.BARRIERLESS})
+    view = _relabel(inputs.model_copy(update={"artifacts": [*inputs.artifacts, *(
+        Artifact(artifact_id=r.reaction_id, type=T.REACTION, payload=r) for r in (bound, flat))]}),
+        {"m_reactant": {"notes": ("spin_contaminated",)}})
+    out = _thermo(view, rt)
+    G = {k: out[f"m_{k}_298.15K"].G_hartree for k in ("reactant", "product", "nh", "o")}
+    dG_rxn = (G["product"] - G["nh"] - G["o"]) * HARTREE_TO_KCAL_MOL
+    rx, molar = out["flat_298.15K_1atm"], out["flat_298.15K_1M"]
+    assert rx.dG_rxn_kcal == pytest.approx(dG_rxn) and dG_rxn < 0
+    assert molar.dG_rxn_kcal == pytest.approx(dG_rxn - 1.894, abs=1e-3)  # dn = -1
+    assert rx.dG_eff_kcal == 0.0 and rx.blockers == () and rx.dG_act_kcal is None
+    assert rx.dE_rxn_kcal == pytest.approx((ev["product"].energy_hartree - ev["nh"].energy_hartree
+                                            - ev["o"].energy_hartree) * HARTREE_TO_KCAL_MOL)
+    assert rx.dG_assoc_kcal is None  # its dG_rxn is against the separated monomers
+    ts = out["bound_298.15K_1atm"]
+    G_ts = out[f"{calc_id(ev['ts'])}_298.15K"].G_hartree
+    assert ts.dG_act_kcal == pytest.approx((G_ts - G["nh"] - G["o"]) * HARTREE_TO_KCAL_MOL)
+    assert ts.dG_act_vs_separated_kcal is None and ts.dG_act_kcal < 0
+    assert ts.notes == ("submerged_barrier",) and ts.dG_eff_kcal == 0.0
+    assert out["rx1_298.15K_1atm"].blockers == ("spin_contaminated",)  # the complex's own step
+
+
 def _relabel(view, updates):
     arts = [a.model_copy(update={"payload": a.payload.model_copy(update=updates[a.artifact_id])})
             if a.artifact_id in updates else a for a in view.artifacts]

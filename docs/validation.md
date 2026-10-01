@@ -17,10 +17,10 @@ round 7 の改良(W0〜W5、結果報告 [2026-09-30_round7_result.md](reviews/2
 
 | 項目 | DFT(PBE0/SVPD)まで通したもの | 低レベルだけ |
 |---|---|---|
-| 元素 | H、C、N、O、F、Cl、I(ECP)。Te(ECP、VAL7/s3_h2te) | S(SO2·NMe3)。Fe(FeCl3·CH4、VAL7/s9_conformers) |
+| 元素 | H、B(M8 の BH3 + NH3)、C、N、O、F、Cl、I(ECP)。Te(ECP、VAL7/s3_h2te) | S(SO2·NMe3)。Fe(FeCl3·CH4、VAL7/s9_conformers) |
 | 電荷 | 0、−1(Cl⁻・I⁻ の SN2) | — |
-| スピン | 一重項、二重項(CH3O•、H + H2、OH···CH4)、三重項(O2) | — |
-| 反応型 | 1,2-H 移動(HCN、CH3O•、HCOH → H2CO)、ねじれ(HONO、シュウ酸の 2 段)、1,3-H 移動、縮退転位(NH3、DME、H2O2、PT、恒等 SN2、H 交換、(HF)₂)、H 引き抜き(OH···CH4 → CH3···H2O)、障壁なし(H2O·HF の反転、水二量体の受容体交換)、会合(TMA·(HF)₂) | ラジカル会合(CH3 + O2 → CH3OO•、UKS 参照がスピン汚染で結論なし)、ハロゲン結合、配位付加体 |
+| スピン | 一重項、二重項(CH3O•、H + H2、OH···CH4)、三重項(O2)、低スピン結合の二重項(CH3• + O2、M8) | — |
+| 反応型 | 1,2-H 移動(HCN、CH3O•、HCOH → H2CO)、ねじれ(HONO、シュウ酸の 2 段)、1,3-H 移動、縮退転位(NH3、DME、H2O2、PT、恒等 SN2、H 交換、(HF)₂)、H 引き抜き(OH···CH4 → CH3···H2O)、障壁なし(H2O·HF の反転、水二量体の受容体交換)、会合(TMA·(HF)₂)。分離した単量体からの会合(M8: CH3 + O2 → CH3OO•、H + C2H4 → C2H5•、BH3 + NH3 → H3B–NH3。いずれも障壁なし) | ハロゲン結合、配位付加体(SO2·NMe3) |
 
 通していないもの: 陽イオン、−2 以下の陰イオン、遷移金属の DFT、開殻一重項、溶媒。
 
@@ -70,7 +70,7 @@ VAL7 でもすべて同じ outcome で、δG_eff の差は 2e-4 以内(oxalic �
 | `hf_dimer_swap_noscreen` | `path_hei` → higher_order_retry | `path_hei` から直接 C2h の TS(−226.9i、ΔE‡ 1.256)、degenerate 1.392 | higher_order_retry はここでは未達(§4 で W3/s6 が通した) |
 | `hono_walltime_b` | 行 7 | 最初の decide で `walltime`、report が出て孤児 0 | 予算の仕組みだけ |
 
-宣言反応で行 1 を通す系はない。両端の多重度が違う宣言は structures が拒否する(`/home/user/hfauto_r7/W1/probe/ch3n_spin`: `endpoints differ in charge, multiplicity or atom order`)。
+宣言反応で行 1 を通す系はない。両端の多重度が違う宣言は structures が拒否する(`/home/user/hfauto_r7/W1/probe/ch3n_spin`: `endpoints differ in charge, multiplicity or atom order`。M8 からは `spin_crossing_reaction_unsupported`、§18)。
 
 ### 3.4 discover の系(W3、VAL7)
 
@@ -81,7 +81,7 @@ VAL7 では S7・S8(生成物 0、試行数 2・19)、S10(32.2892)、S19(`collap
 
 | # | 系 | 実測 | 時間 | 判定 |
 |---|---|---|---|---|
-| S5 | CH3• + O2 | CREST rc −11 で配置の seed を使う。失われた seed の状態を DFT に問うと CH3···O2 の vdW 極小(C···O 2.84 Å)が残るが ⟨S²⟩ 1.71(spin_contaminated)。CH3···O2 → CH3OO• の case は saddle の maxiter 4 回で attempts_exhausted。別の発見の case は reassigned(32.67) | 46:49 | 結論なし(多参照性のある二重項の結合) |
+| S5 | CH3• + O2 | CREST rc −11 で配置の seed を使う。失われた seed の状態を DFT に問うと CH3···O2 の vdW 極小(C···O 2.84 Å)が残るが ⟨S²⟩ 1.71(spin_contaminated)。CH3···O2 → CH3OO• の case は saddle の maxiter 4 回で attempts_exhausted。別の発見の case は reassigned(32.67) | 46:49 | 結論なし(多参照性のある二重項の結合)。M8 で会合は障壁なし・順位あり(§18.4) |
 | S6 | OH···CH4 | CREST rc 1。IRC の端の添字の付け直しで未接続 2 → 0。seed の DFT opt は対称な鞍点に止まり mode-follow で 1 つの basin。仮説 OH···CH4 → CH3···H2O は SCREEN single → saddle の maxiter 2 回 → string → `path_hei` で −481.1i、elementary、ΔE‡ 2.40(分離基準 0.79、文献 約 5)、δG_eff 1.48 で 1 位。CH3···H2O → CH3OH + H の発見は multi_step(split1 elementary 48.48、split2 は分割の深さの上限で未解決) | 1:33:13 | W3 は合格(基準どおり)。VAL7・W5 は TS を再現せず(上記) |
 | S7 | NH3···ICl(`--to explore`) | 2 attempt、生成物 0(VAL と同じ) | 0:13 | 合格 |
 | S8 | SO2·NMe3(`--to explore`) | 付加体(N···S 2.17 Å)が screen の極小に残る(`--notopo` のない旧規則では残らず、最低でも +17.3 の vdW 構造だけ)。19 attempt、生成物 0(VAL と同じ) | 1:10 | 合格 |
@@ -164,7 +164,7 @@ QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ
 
 1. **実計算で通っていない分岐**: 行 1、2 回目の SCREEN、ケースの例外の閉じ込め、DFT の soft_minimum。行 6 の中点による高密度化は対称な経路でしか通っておらず、隠れた障壁を見つけた例はない。round 7 で未到達だった行 11 は M5 で削除した(§15)。行 16(今の行 15、`next_chunk`)は M4 の S5 split2 で通った(SCREEN の SP が未収束で種がなく、string の種を χ で拒否した後)。
 2. **既定の順位の精度**: PBE0/SVPD は CCSD(T) から最大 3 kcal/mol ずれ(SN2 −3.0、HONO +2.0)、H 引き抜きは分離基準の ΔE‡ 0.79 と文献 約 5 を大きく下回る。反応クラスが混ざる順位は method_panel を追記して読む。
-3. **開殻の会合**: S5 の UKS CH3···O2 は ⟨S²⟩ 1.71 で、障壁なしかどうかを判定できない。多参照かスピン射影の扱いが要る。
+3. **開殻の会合**: S5 の UKS CH3···O2 は ⟨S²⟩ 1.71 で、障壁なしかどうかを判定できない。多参照かスピン射影の扱いが要る。M8 で、会合を分離した単量体からの緩和スキャンで問うようにし、S5 の会合は障壁なし(UKS、AP なし)で順位が付いた(§18.4)。結論が出なかった主因は多参照性ではなく問いの形だった。
 4. **失われた seed の費用**: S19 の seed は DFT の 1 歩目で状態を離れたのに、既知の basin に入るまで 44 歩(約 33 分)払った。M6 で、この seed のラベルの違いはしきい値の帯の中(0.006 Å)なので、失われた状態にしなくなった(§16)。本物の R6 の seed の opt(Hessian なし)の費用は残る(G4-P2、should)。
 5. **鞍点探索の空回り**: 柔らかい H 引き抜き・ラジカル会合では string の前に saddle が maxiter で 2 回止まる(S5 で saddle 826 s)。
 6. **対称な鞍点の mode-follow**: ± の側は厳密な像なのに 2 本とも opt と freq を払う(S6 で 329 s、NH3 は 21 歩/側)。
@@ -586,3 +586,83 @@ CUR のうち paths を持つ 33 本の 41 case について、記録と case �
 - 結果(`/home/user/hfauto_r9/M5M7/replay/`、分類は `/home/user/hfauto_r9/M5M7/audit/classify.py`、出力 `classify.txt`): 36 本すべてで misses 0。差 732 件はすべて次のどれかで、説明のつかない差は 0 件である。(1) `chiral` 欄の削除 108 件。(2) §17.3 の表に挙げた変化 33 件。17.3 の再計算の値と 1e-9 の相対誤差で一致し、表のすべての変化が再生でも起きた(S18 6.3656、S17 1.3954、S6 0.8483 / 0.8531、split2 40.5987 など)。同じ記録の H・ZPE・帯の変化が 53 件。(3) 対称化した構造で振動を評価した分の差 352 件(1e-4 kcal/mol 以内か、species で 2.1e-7 Eh 以内。最大は S6 の Cs の TS の H と ZPE の 1.2e-7 Eh)。(4) report の行と表の sha256 が thermo の差を写したもの 183 件。(5) §16.3 の S19 の 3 件。thermo と report のほかの stage(structures〜paths)の差は (1) と (5) だけである。
 - S18 の検証 (c): W2 の run(`superseded_k1neg`)の写しを最初の stage から再生すると、今のジョブ鍵では極小の opt をやり直すことになり(新しいジョブ 16 本、97 core 秒)、VAL7 と同じく軸から外れた極小(H の軸からの距離 0.0097 Å)に収束した。そのため 2 つの再生の δG_eff は 6.365608 と 6.365609 で一致するが、これは構造の違いを試していない。正確に直線の W2 の構造そのものに作業ツリーの thermo をかけると 6.3596 のまま(`/home/user/hfauto_r9/M5M7/audit/thermo_w2_s18.json`、変化なし)で、CUR の再生の 6.3656 との差は 0.006 kcal/mol(M7 の前は 2.27)である。
 - symcheck を再生した 36 本にかけ直した(`/home/user/hfauto_r9/M5M7/audit/symcheck.txt`): (a) 110/110 が不変、(b) 6 つの既知の点群がすべて一致。
+
+## 18. M8 低スピン結合の組成と会合のスキャン(X4-1/2 / G2-P2、G2-P4、G2-P8)
+
+分析の §2.2 G2、§3 X4、§4.1 M8 にあたる。規則は [design.md](design.md) §7.1 の「会合と低スピン結合の組成」と、§6.2 の行 11・14。
+
+### 18.1 変えたこと
+
+- 低スピン結合の組成(`electronic_state.low_spin_coupled`): 開殻の成分が 2 つ以上あり、宣言した多重度が高スピンの結合 Σ(m_i − 1) + 1 より小さい組成。拒否しない。S5 の CH3• + O2 の二重項がこれにあたる。
+  - このクラスの一重項は `low_spin_singlet_unsupported` で止める。旧 `open_shell_singlet_unsupported` の名前を一般化しただけで、止まる組成は変わらない(開殻の成分が 1 つなら、スピン結合で一重項は作れない)。
+- スピン交差(G2-P8): 多重度だけが違う宣言反応の理由を `spin_crossing_reaction_unsupported` にした。再生では ch3n_spin の失敗理由の文字列だけが変わる。
+- 会合(G2-P4)
+  - 仮説: 形成 1 本(2 つの断片の間)で切断なし、単量体の DFT 極小が錯体と同じ LOT にある仮説は、反応物側を分離した単量体にする(`ReactionRecord.monomers`)。出所(宣言、explore、R6)には依らない。
+  - 経路: SCREEN が、付加体の結合 + 1.5 Å から付加体までの 8 点の緩和スキャンを走らせる(NWChem の `zcoord` の固定結合、前の点の vectors から SCF)。string は走らせない。
+  - 判定: [Σ E(単量体)、スキャン、E(付加体)] を `barrier_verdict` で分ける。
+  - 熱化学: 反応物側は分離した単量体の状態の G の和で、錯体は対象にしない。標準状態の換算は化学量論から入り(Δn = −1)、barrierless の δG_eff は max(ΔG_rxn, 0)。
+- しきい値と予算(resolution_kcal、spin_tol、saddle の試行)は変えていない。
+
+### 18.2 S5 の期待値の訂正
+
+| case | VAL7 | M2 | M3 | M4 | M8 の期待 |
+|---|---|---|---|---|---|
+| `rxn_discovery_b3febc8052`(CH3···O2 → CH3OO•、R6 の relaxation) | reassigned_step(−72.0i、`spin_contaminated` で順位なし) | unresolved(`connection_failed`。両側が同じ CH3 + O2 の状態) | unresolved(`attempts_exhausted`。−72.0i を χ 0.004 で拒否) | unresolved(ρ の saddle 4 本がすべて maxiter) | 会合。barrierless_at_resolution で順位あり、ΔE_e 約 −37 kcal/mol |
+| `rxn_discovery_b3e2f366b6`(CH3OO• → CH2OOH•) | reassigned_step(32.67、順位あり) | multi_step(CH2OOH• を経る) | split1 elementary(46.34)、split2 attempts_exhausted | split2 barrierless_at_resolution(string) | 変わらない |
+
+b3febc8052 の期待を変える理由:
+- 問いの形が誤っていた。障壁のない会合では、反応物は漸近であって極小ではない。これまでの case は、R6 の seed が DFT で残した CH3···O2(C···O 2.84 Å)を反応物の極小にしていた。
+- その極小の ⟨S²⟩ 1.71 は、分離した低スピンの二重項の BS 行列式から必ず出る値(1.75 = 二重項 2/3 と四重項 1/3 の混合)である。斥力的な四重項が 1/3 混ざるので、極小そのものが汚染による人工物である。AP の面では、この点から C–O の方向に下る(分析 §2.2)。
+- M2〜M4 の unresolved は、人工の極小どうしを結ぶ鞍点(両側が同じ CH3 + O2 の状態、χ 0.004)を正しく棄却した結果で、会合の結論ではない。
+- M8 では、反応物の端は分離した CH3(⟨S²⟩ 0.754)と O2(2.010)で、付加体 CH3OO•(0.755)とともに汚染がない。プローブの C–O 緩和スキャン(`/home/user/hfauto_r8_probe/G2-1/scan/scan.log`)では、BS の曲線の山は +0.13 kcal/mol で解像度 1.0 より小さく、1.45 Å で −36.8 kcal/mol(AP −37.0)だった。
+- 合格条件: barrierless_at_resolution で rankable。ΔE_e は約 −37 kcal/mol。ZPE を含めた ΔH₀ が、実験の D₀(CH3–OO)約 32 kcal/mol から数 kcal/mol 以内。b3e2f366b6 が残ること(結合した異性体どうしの反応で、結合が切れるので会合の形ではない)。
+- 見かけの合格の見分け方: 多重度を上げた宣言(四重項)にすり替えていないか。スキャンの開始を Coulson–Fischer 点(約 2.2 Å)より内側に置いていないか。resolution を広げていないか。点を落としていないか。
+
+S5 全体の結論は、§3.4 の「結論なし(多参照性のある二重項の結合)」から「会合は障壁なし(UKS、AP なし)」に変わる見込みである。結論が出なかった主因は、多参照性ではなく問いの形だった(分析 §0.1)。多参照法による定量的なエネルギーと会合の速度定数は、引き続き範囲外である。
+
+### 18.3 検証系
+
+| 系 | 入力 | 確かめること | 期待 | 見かけの合格の見分け方 |
+|---|---|---|---|---|
+| H + C2H4(二重項) | `configs/systems/h_c2h4.yaml`(単量体、錯体 H···C2H4 2.9 Å、組成。宣言反応 錯体 → C2H5) | 障壁のある会合(反例)。開殻の成分は 1 つなので低スピン結合ではない | スキャンに山があり、saddle に進む。参照の障壁は 1.72 kcal/mol(W1、NHTBH38) | PBE0 の山が解像度より低ければ barrierless として記録し、resolution を変えない |
+| BH3 + NH3(一重項、閉殻) | `configs/systems/bh3_nh3.yaml`(単量体、錯体 B···N 3.2 Å、組成。宣言反応 錯体 → H3B–NH3) | 閉殻の障壁のない会合 | barrierless_at_resolution で rankable。ΔG_rxn は分離した単量体基準(付加体の会合の自由エネルギー) | 錯体の極小を反応物にしていないか |
+| CH3 + O2(四重項) | `/home/user/hfauto_r9/inputs/ch3_o2_quartet.yaml`(repo の外、discover) | 高スピンの宣言。should の X4-3(AP)で使う | 低スピン結合ではない。四重項の面は斥力的(プローブで 2.84 Å で +0.83、1.45 Å で +115.9 kcal/mol)で、付加体はない | AP がかかっていないか |
+| ch3n_spin(再生) | `/home/user/hfauto_r7/VAL7/outside/ch3n_spin.yaml` | スピン交差の理由 | 両端の species が `spin_crossing_reaction_unsupported` で失敗し、ジョブ 0 | — |
+
+- H + C2H4 と BH3 + NH3 は known_endpoints で流す(discover は要らない)。組成と単量体を持つので、discover でも流せる。
+- 宣言した錯体は、端点の原子順と会合の形を決める入力である。会合の case は錯体の極小をエネルギーと熱化学の端点にしない。
+- BH3 + NH3 の錯体(孤立電子対を B に向けた配置)は、DFT で付加体に落ちうる(H + C2H4 も、PBE0 に障壁がなければ同じ)。そのときは錯体の入力構造で会合の形を判定し、case の反応物端もその構造にする(統合で追加。行 2 の same_basin は会合には効かない)。錯体の配置や resolution を変えて通すことはしない。
+
+### 18.4 実計算と再生(統合、`/home/user/hfauto_r9/M8/`)
+
+- QM なしの監査(`M8/audit/assoc_audit.py`): 作業ツリーの `hypotheses.select` を CUR の 33 本の paths の入力にかけると、会合の仮説になるのは s5_ch3_o2 の b3febc8052 だけだった(単量体 `min_ch3_5a7804cb`、`min_o2_2fbb137e`)。ほかの仮説の数と id は変わらない。ほかの run のジョブ鍵も変わらない(`fixed_bond` と `scf_guess` は渡したときだけ鍵に入る)。
+- 統合で足したこと: 錯体が自分の DFT 極小を持たず付加体に落ちた宣言反応は、錯体の入力構造で会合の形を判定する(`minima[0]` は付加体の極小、case の反応物端はその入力構造、行 2 は会合に効かない)。BH3 + NH3 の錯体は実際に付加体へ落ちた(付加体の members に錯体)。これがなければ、この系は same_basin で終わっていた。会合は ΔG_assoc を出さない(ΔG_rxn が分離した単量体基準の値)。
+
+S5(`M8/real/s5_ch3_o2`、CUR の写しを paths から、CAP 2,700 s。壁時計 2 分 55 秒、新しいジョブはスキャンの opt 7 本で 172 s、687 core 秒。VAL7 の S5 は 54 分):
+
+| r(C–O) Å | 分離 | 2.930 | 2.716 | 2.502 | 2.287 | 2.073 | 1.859 | 1.644 | 1.430(付加体) |
+|---|---|---|---|---|---|---|---|---|---|
+| ΔE kcal/mol | 0 | −1.04 | −1.04 | −0.94 | −1.15 | −3.70 | −13.98 | −28.64 | −37.56 |
+| ⟨S²⟩ | 0.754 / 2.010 | 1.723 | 1.687 | 1.614 | 1.462 | 1.136 | 0.772 | 0.755 | 0.755 |
+
+- b3febc8052: `scan:barrierless`、barrierless_at_resolution、順位あり(blocker なし)。2.716 → 2.502 Å の山は +0.10 kcal/mol で解像度 1.0 より小さい(プローブの +0.13 と同じ)。⟨S²⟩ は Coulson–Fischer 領域(2.3 → 1.9 Å)で 1.46 → 0.77 と単調に変わり、枝の跳びはない。
+- ΔE_e = −37.56 kcal/mol(合格条件 −37 ± 2)。ΔZPE +5.93 で ΔH₀ = −31.63 kcal/mol、実験の D₀(CH3–OO)約 32 から 0.4 以内。ΔH298 = −33.20、ΔG298(1 atm)= −23.86。δG_eff は 0.0。
+- 順位のあるスピン汚染の reassigned_step はない(CUR の b3febc8052 は unresolved で `spin_contaminated`)。
+- b3e2f366b6 は CUR(M4〜M7)と同じ: multi_step、split1 elementary 46.34(帯 46.28〜46.37)、split2 barrierless_at_resolution(string)。VAL7 の reassigned 32.67 は M2 の状態単位の判定で multi_step に変わったもので(§12)、M8 では変わらない。
+- CUR との差(paths・thermo・report)は b3febc8052 の記録と、それを写した report の行の並びだけである。
+
+反例と閉殻(known_endpoints、新しい run。CAP 2,700 s):
+
+| 系 | 壁時計 | 錯体 | スキャン(分離 = 0、長い側から、kcal/mol) | 結果 |
+|---|---|---|---|---|
+| H + C2H4(二重項、C–H) | 6 分 55 秒 | DFT 極小あり(−0.44) | −0.06、+0.30、+0.60(2.18 Å)、0.00、−4.23、−16.65、−34.11、付加体 −44.74。⟨S²⟩ 0.752〜0.803 | `scan:barrierless`、barrierless_at_resolution、順位あり。ΔG_rxn −34.89 |
+| BH3 + NH3(一重項、B–N) | 4 分 23 秒 | 付加体に落ちた | −5.66、−7.63、−10.42、−14.29、−19.50、−26.13、−33.44、付加体 −37.77 | `scan:barrierless`、barrierless_at_resolution、順位あり。ΔG_rxn −23.56 |
+
+- H + C2H4 は期待(約 2 kcal/mol の山から saddle へ)を満たさない。PBE0-D3BJ/def2-SVPD の山は +0.60 kcal/mol(谷からの深さ 0.66)で、解像度 1.0 より小さい。参照の障壁 1.72(W1)を混成汎関数が過小評価するのは既知で、resolution とスキャンの点は変えていない。山から REFINE_SADDLE に進む分岐は単体テスト(`test_reaction_case_paths.py`)だけで、実計算では通っていない。
+- BH3 + NH3 の ΔE_e −37.8 は CCSD(T)/CBS の約 −31 より深い(BSSE を補正しない def2-SVPD。[design.md](design.md) の ΔG_assoc の注意と同じ)。
+- 四重項の CH3·O2(`/home/user/hfauto_r9/inputs/ch3_o2_quartet.yaml`)は should の AP(G2-P3)用で、今回は流していない。
+
+再生(`M8F/replay/summary.txt`):
+- s5_ch3_o2 を除く 35 本を CUR から strict: 35 本すべて PASS(misses 0、記録の差 0。ch3n_spin の理由の文字列は比較の対象外)。M8 の WP のコードでの先行の再生(`M8/replay`)も 35/35 PASS。
+- s5_ch3_o2 を M8 の実 run から strict: PASS(新しいジョブ 0、記録の差 0)。CUR は 36 本とも `M8F/replay` を指す。
+- 再生ツールは、元の記録にない欄が空の既定値(`monomers: []`)で現れる差を、結論の差として数えないようにした(`tools/replay.py` の `diff`、`test_tools.py`)。

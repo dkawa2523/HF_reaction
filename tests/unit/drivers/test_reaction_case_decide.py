@@ -18,6 +18,7 @@ TERM = r.StoichTerm(composition_id="CHN_q0_m1", coefficient=1)
 CASE = r.ReactionRecord(reaction_id="rxn", reactants=(TERM,), products=(TERM,), minima=("ma", "mb"),
                         endpoints=("sa", "sb"), source="declared")
 DEGENERATE = CASE.model_copy(update={"minima": ("ma", "ma"), "degenerate": True})
+ASSOCIATION = CASE.model_copy(update={"monomers": ("m_ch3", "m_o2")})  # X4: from the monomers
 GEO = Geometry(file=FileRef(path="seed.xyz", sha256="0" * 64), fingerprint="f", symbols=("H",))
 SEED = st.Seed(geometry=GEO, source="screen_ts")
 HIGHER = st.Seed(geometry=GEO, source="higher_order_retry")
@@ -58,6 +59,9 @@ ROW_CASES = [  # (row, id, case, state, rules, expected decision)
                                     path_runs=2), RULES, BLOCKED),
     (2, "same_basin", CASE, replace(BASE, minima=(MA, minimum("mb", "A")), claim=CLAIM), RULES,
      Decision(A.COMPLETE, "same_basin", C.SAME_BASIN)),
+    # X4: a complex that relaxed into its adduct leaves one basin; the monomers are the reactant
+    (11, "association_from_the_adduct_basin", ASSOCIATION, replace(BASE, minima=(MA, MA)), RULES,
+     Decision(A.SCREEN, "screen")),
     (3, "uphill", CASE, replace(BASE, minima=(MA, minimum("mb", "B", 41.0))), RULES,
      Decision(A.COMPLETE, "out_of_window", C.OUT_OF_WINDOW)),
     (4, "elementary", CASE, replace(S, claim=CLAIM, connection="elementary"), RULES, ELEMENTARY),
@@ -78,6 +82,9 @@ ROW_CASES = [  # (row, id, case, state, rules, expected decision)
                                                              source="string"),
                                                 path_runs=1, expired=True), RULES,
      Decision(A.COMPLETE, "string:barrierless", C.BARRIERLESS)),
+    (6, "association_scan", ASSOCIATION, replace(S, screen=BV(verdict="barrierless",
+                                                              source="scan")), RULES,
+     Decision(A.COMPLETE, "scan:barrierless", C.BARRIERLESS)),
     (7, "walltime", CASE, replace(S, expired=True, claim=CLAIM), RULES, WALLTIME),
     (7, "no_retry", CASE, replace(S, expired=True, claim=CLAIM, connection="same_basin",
                                   connection_attempts=1), RULES, WALLTIME),
@@ -101,6 +108,8 @@ ROW_CASES = [  # (row, id, case, state, rules, expected decision)
     (11, "after_the_shortcut_seed", CASE, SHORTCUT, RULES, Decision(A.SCREEN, "screen")),
     (11, "a_given_ts_failed", CASE, replace(BASE, last_saddle="failed"), RULES,
      Decision(A.SCREEN, "screen")),
+    (11, "association_without_a_low_level_engine", ASSOCIATION, BASE,
+     replace(RULES, screen=False), Decision(A.SCREEN, "screen")),
     (12, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
                                        seeds=(SEED,)), RULES,
      Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")),
@@ -135,6 +144,13 @@ ROW_CASES = [  # (row, id, case, state, rules, expected decision)
     (16, "no_chunk_without_attempts", CASE, replace(S, screen=BV(verdict="single", source="string"),
                                                     path_runs=1, saddle_attempts=2), RULES,
      EXHAUSTED),
+    # X4: no string joins an association's monomers, after a failed scan or its failed seed
+    (16, "association_scan_point_failed", ASSOCIATION, replace(S, screen=BV(
+        verdict="unavailable", source="scan", reasons=("scan_point",))), RULES, EXHAUSTED),
+    (16, "association_seed_failed", ASSOCIATION, replace(S, screen=BV(verdict="single",
+                                                                      source="scan"),
+                                                         saddle_attempts=1, last_saddle="failed"),
+     RULES, EXHAUSTED),
 ]
 
 

@@ -10,7 +10,7 @@ only through ``standard_state_shift``.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from typing import NamedTuple
 
 import numpy as np
@@ -26,7 +26,6 @@ from hfauto.core.records import (
     CONNECTED_OUTCOMES,
     ReactionRecord,
     SpeciesRecord,
-    SpeciesThermo,
     StandardState,
 )
 from hfauto.core.system import CompositionInput
@@ -150,31 +149,12 @@ def association(
     return delta(G_complex), delta(G_ts)
 
 
-def _kcal(a: float | None, b: float | None) -> float | None:
-    return None if a is None or b is None else (a - b) * HARTREE_TO_KCAL_MOL
-
-
 def participants(reaction: ReactionRecord) -> tuple[str, ...]:
     """Thermo subjects of a reaction: both minima, then the TS (SaddleClaim.freq_calc) for
     elementary / degenerate / reassigned outcomes with a saddle claim."""
     if reaction.saddle is None or reaction.outcome not in CONNECTED_OUTCOMES.values():
         return reaction.minima
     return (*reaction.minima, reaction.saddle.freq_calc)
-
-
-def reaction_delta(
-    reaction: ReactionRecord, species_thermo: Mapping[str, SpeciesThermo]
-) -> tuple[float | None, float | None]:
-    """(dG_act, dG_rxn) in kcal/mol at 1 atm from the thermo of each subject; dG_act exists only
-    when ``participants`` includes the TS."""
-
-    def value(subject: str) -> float | None:
-        thermo = species_thermo.get(subject)
-        return None if thermo is None else thermo.G_hartree
-
-    reactant, product, *ts = participants(reaction)
-    G_R = value(reactant)
-    return (_kcal(value(ts[0]), G_R) if ts else None), _kcal(value(product), G_R)
 
 
 def effective_barrier(G_ts: float | None, G_R: float, G_P: float) -> float:

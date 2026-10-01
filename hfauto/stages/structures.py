@@ -4,8 +4,10 @@ xyz files are copied into the stage directory and SMILES are embedded once (RDKi
 An undeclared multiplicity is the SMILES radical electrons + 1, or 1 for xyz. Elements,
 charge and multiplicity are checked once here with ``check_electronic_state``; both ends of a
 declared reaction must share composition id (formula, charge, multiplicity) and atom order,
-and its coordinate indices must fall inside the molecule. Every problem becomes a failed
-artifact with ``INPUT_INVALID``.
+and its coordinate indices must fall inside the molecule. Ends that differ only in
+multiplicity are a spin crossing (``spin_crossing_reaction_unsupported``: no MECP search; each
+surface can be declared as its own reaction). Every problem becomes a failed artifact with
+``INPUT_INVALID``.
 """
 
 from __future__ import annotations
@@ -78,9 +80,11 @@ class StructuresStage:
             a, b = out[reaction.reactant].payload, out[reaction.product].payload
             if not (isinstance(a, SpeciesRecord) and isinstance(b, SpeciesRecord)):
                 continue  # a failed endpoint already carries its reason
-            if a.composition_id != b.composition_id or a.geometry.symbols != b.geometry.symbols:
-                reason = (f"reaction {reaction.id}: endpoints differ in charge, multiplicity "
-                          "or atom order")
+            if a.charge != b.charge or a.geometry.symbols != b.geometry.symbols:
+                reason = f"reaction {reaction.id}: endpoints differ in charge or atom order"
+            elif a.multiplicity != b.multiplicity:
+                reason = (f"spin_crossing_reaction_unsupported: reaction {reaction.id} joins "
+                          f"multiplicities {a.multiplicity} and {b.multiplicity}")
             elif any(i >= len(a.geometry.symbols) for t in reaction.coordinate for i in t.atoms):
                 reason = f"reaction {reaction.id}: coordinate atom index out of range"
             else:

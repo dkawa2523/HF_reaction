@@ -1,8 +1,10 @@
 """reaction-paths stage (design §4.1, §8.2): hypotheses → ReactionCaseDriver, one case at a time.
 
-Engines have no defaults here; the pipeline YAML names them (``engines`` and ``screen``). A
-hypothesis has ``policy.walltime_h`` in all: its split children run right after it, on its
-deadline, and see its calculations (a TS it validated for a child).
+The monomer states of the system's compositions (thermo.monomer_states) make an association's
+separated reactant side (chemistry.hypotheses). Engines have no defaults here; the pipeline YAML
+names them (``engines`` and ``screen``). A hypothesis has ``policy.walltime_h`` in all: its split
+children run right after it, on its deadline, and see its calculations (a TS it validated for a
+child).
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from typing import ClassVar, cast
 
 from hfauto.backends.protocols import Capability, PathEngine, QMEngine, SaddleRefiner
 from hfauto.chemistry.hypotheses import select
+from hfauto.chemistry.thermo import monomer_states
 from hfauto.core.evidence import Evidence
 from hfauto.core.ids import path_token
 from hfauto.core.manifest import Artifact, Manifest
@@ -119,12 +122,14 @@ class ReactionPathsStage:
         rules = CaseRules(gates=rt.policy, budget=budget, screen=config.screen is not None)
         species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)}
         case_rt = _case_runtime(config, rt, inputs, species)
-        minima = [(m, inputs.evidence(m.opt_calc).final)
-                  for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord)]
+        opts = [(m, inputs.evidence(m.opt_calc))
+                for m in inputs.records(ArtifactType.MINIMUM, MinimumRecord)]
         cases = select(
-            minima, list(species.values()),
+            [(m, opt.final) for m, opt in opts], list(species.values()),
             inputs.records(ArtifactType.DISCOVERY, DiscoveryRecord), rt.system.reactions,
             rt.load_xyz, window_kcal=rt.policy.reaction_window_kcal,
+            monomers=monomer_states(species.values(), rt.system.compositions),
+            levels={m.minimum_id: opt.level for m, opt in opts if m.tier == "dft"},
         )
         if config.reaction_ids is not None:
             cases = [c for c in cases if c.reaction_id in config.reaction_ids]

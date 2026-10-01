@@ -5,7 +5,9 @@ driver accumulates ``CaseState`` in memory; actions only change the state, never
 Rows 4-6 complete a case from evidence already in hand and so come before the walltime (row 7);
 every row after it starts a computation or gives up. A saddle without an imaginary mode is a
 failed attempt like any rejected saddle: an intermediate comes only from a profile's well
-(row 12) or a QRC side (GEN-05).
+(row 12) or a QRC side (GEN-05). An association (``ReactionRecord.monomers``) is asked from its
+separated monomers: SCREEN runs its relaxed scan, with or without a low-level engine (row 11),
+and no string runs (rows 14-15: a string joins two minima, and the monomers' end is none).
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ STRING_CHUNKS = 3  # DFT string chunks (maxiter 20 each) per case
 
 
 class Action(StrEnum):
-    SCREEN = "screen"  # low-level path and DFT single points: barrier pre-check
+    SCREEN = "screen"  # low-level path and DFT single points, or an association's scan
     REFINE_SADDLE = "refine_saddle"  # initial Hessian (xTB first, then DFT) -> saddle
     VALIDATE_TS = "validate_ts"  # separate DFT freq -> is_first_order_saddle
     FIND_PATH = "find_path"  # DFT string, only without a usable seed or after saddle failure
@@ -86,7 +88,8 @@ class CaseState:
     an endpoint has none: rows 1-3 need their tier, level, basin and energy, which a
     ReactionRecord does not carry. ``screen`` is the verdict of the latest DFT profile (SCREEN
     or string), which decides rows 6, 12 and 15 and goes into the record. ``neb_done``: the
-    low-level path of SCREEN ran (after a shortcut, row 11 runs it once its seed has failed).
+    low-level path of SCREEN ran (after a shortcut, row 11 runs it once its seed has failed), or
+    an association's scan.
     """
 
     minima: tuple[MinimumRecord | None, MinimumRecord | None] = (None, None)
@@ -137,7 +140,8 @@ def _r01_one_pes(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision |
 
 def _r02_same_basin(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     a, b = s.minima
-    if a and b and a.basin_id == b.basin_id and not case.degenerate:
+    # an association's reactant end is its separated monomers, never the adduct's basin
+    if a and b and a.basin_id == b.basin_id and not case.degenerate and not case.monomers:
         return _complete(CaseOutcome.SAME_BASIN, "same_basin")
     return None
 
@@ -196,8 +200,10 @@ def _r10_saddle(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | 
 
 
 def _r11_screen(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
-    # the cheap low-level path comes before any string, also once a shortcut's seed has failed
-    fire = p.screen and not s.neb_done and (s.screen is None or not s.seeds)
+    # the cheap low-level path comes before any string, also once a shortcut's seed has failed;
+    # an association's scan needs no low-level engine
+    fire = ((p.screen or bool(case.monomers)) and not s.neb_done
+            and (s.screen is None or not s.seeds))
     return Decision(Action.SCREEN, "screen") if fire else None
 
 
@@ -218,9 +224,9 @@ def _r13_seed(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | No
     return None
 
 
-# A string runs only while its peak seed can still be refined.
+# A string runs only while its peak seed can still be refined, never for an association.
 def _r14_no_path(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
-    fire = not s.path_runs and _attempts_left(s, p)
+    fire = not s.path_runs and _attempts_left(s, p) and not case.monomers
     return Decision(Action.FIND_PATH, "no_dft_path") if fire else None
 
 

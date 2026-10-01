@@ -6,8 +6,9 @@ phase only). An optimization counts as converged only with return code 0, no
 ``FAILED TO CONVERGE`` in the output and no ``NOT_CONVERGED`` file (BUG-07, CH-20); a
 continuation restarts from ``xtbopt.xyz``. The ``hessian`` file (Eh/bohr², input frame)
 becomes the canonical ``.npy`` and the frequencies come from ``chemistry.vibrations``.
-``init_hessian`` is accepted and ignored: every optimization is vtight and xTB builds its
-own model Hessian.
+``init_hessian`` and ``scf_guess`` are accepted and ignored: every optimization is vtight,
+xTB builds its own model Hessian and keeps no SCF vectors. A ``fixed_bond`` is refused
+(``constraint_unsupported``).
 """
 
 from __future__ import annotations
@@ -209,8 +210,12 @@ class XTBEngine:
         return self.jobs.run(self.task("energy", mol, method), self.adapter, deadline=deadline)
 
     def optimize(self, mol: Molecule, method: MethodSpec, *,
-                 init_hessian: Evidence | None = None, deadline: Deadline | None = None
+                 init_hessian: Evidence | None = None,
+                 fixed_bond: tuple[int, int, float] | None = None,
+                 scf_guess: Evidence | None = None, deadline: Deadline | None = None
                  ) -> Evidence | Failure:
+        if fixed_bond is not None:
+            return _fail(FailureKind.INPUT_INVALID, "constraint_unsupported")
         return self.jobs.run(self.task("optimize", mol, method), self.adapter, deadline=deadline)
 
     def frequencies(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None,

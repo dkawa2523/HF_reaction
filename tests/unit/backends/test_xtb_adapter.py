@@ -38,3 +38,10 @@ def test_optimization_continues_from_xtbopt(tmp_run):
     new = xtb.adapter.continuation(task, work, Failure(kind="geometry_maxiter", reason="")).inputs
     assert np.allclose(new["mol"].xyz.coords, WATER.coords * 1.01)
     assert new["start"].file.path == "attempt_00/input.xyz"
+
+
+def test_a_fixed_bond_is_refused_without_a_job(tmp_run):
+    xtb = engine(tmp_run)
+    out = xtb.optimize(Molecule(WATER, 0, 1), GFN1, fixed_bond=(0, 1, 0.96))
+    assert isinstance(out, Failure) and out.kind == "input_invalid"
+    assert out.reason == "constraint_unsupported" and xtb.jobs.stats().misses == 0

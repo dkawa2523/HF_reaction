@@ -78,15 +78,19 @@ def _endpoint(rt: CaseRuntime, minimum_id: str, species_id: str) -> np.ndarray:
 
 def open_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline: Deadline,
               folder: Path, log: Callable[[dict[str, object]], None]) -> actions.Ctx:
-    """The case context; a given DFT stationary point (``ts_calc``) is its saddle."""
-    raw = (_endpoint(rt, case.minima[0], case.endpoints[0]),
+    """The case context; a given DFT stationary point (``ts_calc``) is its saddle. An
+    association's reactant energy is its separated monomers' sum."""
+    first, reactant = rt.species[case.endpoints[0]], case.monomers or case.minima[:1]
+    # an association's complex that relaxed into the adduct ends at its own structure (hypotheses)
+    collapsed = bool(case.monomers) and case.minima[0] == case.minima[1]
+    raw = (np.asarray(rt.load_xyz(first.geometry).coords, dtype=float) if collapsed
+           else _endpoint(rt, case.minima[0], case.endpoints[0]),
            _endpoint(rt, case.minima[1], case.endpoints[1]))
-    first = rt.species[case.endpoints[0]]
     return actions.Ctx(
         case=case, rt=rt, rules=rules, deadline=deadline, folder=folder,
         symbols=list(first.geometry.symbols), charge=first.charge,
         multiplicity=first.multiplicity, raw=raw, ends=(raw[0], align_mapped(raw[0], raw[1])),
-        energies=(rt.minima[case.minima[0]][0].energy_hartree,
+        energies=(sum(rt.minima[m][0].energy_hartree for m in reactant),
                   rt.minima[case.minima[1]][0].energy_hartree),
         log=log, work=actions.Work(saddle=rt.calcs[case.ts_calc] if case.ts_calc else None),
     )

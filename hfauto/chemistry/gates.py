@@ -19,6 +19,7 @@ from hfauto.core.records import (
     BarrierVerdict,
     CaseOutcome,
     ConnectionLabel,
+    ProfileSource,
     ReactionRecord,
     ReactionThermo,
 )
@@ -173,10 +174,11 @@ def reaction_mode_character(mode: Sequence[float], coords: np.ndarray, bonds: Bo
 
 
 def barrier_verdict(
-    energies: Sequence[float], *, source: Literal["screen", "string"], policy: Policy = _DEFAULT
+    energies: Sequence[float], *, source: ProfileSource, policy: Policy = _DEFAULT
 ) -> BarrierVerdict:
-    """Class of a DFT profile with the two DFT minima energies at its ends, at resolution_kcal:
-    a continuous path's maximum bounds the saddle from above."""
+    """Class of a DFT profile with the two DFT minima energies at its ends (an association's
+    scan: the separated monomers' sum first), at resolution_kcal: a continuous path's maximum
+    bounds the saddle from above."""
     if len(energies) < 3:
         return BarrierVerdict(verdict="unavailable", source=source, reasons=("too_few_points",))
     verdict = classify(energies, policy.resolution_kcal / HARTREE_TO_KCAL_MOL)

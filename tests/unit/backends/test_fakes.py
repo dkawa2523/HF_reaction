@@ -24,6 +24,21 @@ def test_harmonic_minimum_has_only_real_frequencies(tmp_run) -> None:
     assert np.load(tmp_run / freq.hessian.path).shape == (9, 9)
 
 
+def test_a_fixed_bond_is_held_while_the_rest_relaxes(tmp_run) -> None:
+    """Like NWChem's frozen zcoord bond: the start carries the bond, which stays at r."""
+    p = fakes.harmonic()
+    qm, coords = fakes.FakeQM(tmp_run, p), p.points["minimum"].copy()
+    coords[1] *= 1.2 / 0.96  # O-H1 stretched along itself (O at the origin)
+    mol = Molecule(XYZ(list(p.symbols), coords), 0, 1)
+    held, free = qm.optimize(mol, M, fixed_bond=(1, 0, 1.2)), qm.optimize(mol, M)
+    final = fakes.xyz_loader(tmp_run)(held.final).coords
+    assert np.linalg.norm(final[1] - final[0]) == pytest.approx(1.2, abs=1e-6)
+    assert p.energy(coords) > held.energy_hartree > free.energy_hartree + 1e-3
+    off = qm.optimize(mol, M, fixed_bond=(0, 1, 1.3))
+    assert (off.kind, off.reason) == (FailureKind.INPUT_INVALID, "fixed_bond_mismatch")
+    assert qm.calls == ["optimize+fixed_bond", "optimize", "optimize+fixed_bond"]
+
+
 def test_double_well_ts_has_one_imaginary_mode_and_saddle_finds_it(tmp_run) -> None:
     pes = fakes.double_well()
     qm, saddle = fakes.FakeQM(tmp_run, pes), fakes.FakeSaddle(tmp_run, pes)

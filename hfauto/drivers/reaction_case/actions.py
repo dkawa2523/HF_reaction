@@ -85,7 +85,7 @@ class Ctx:
     multiplicity: int
     raw: tuple[np.ndarray, np.ndarray]  # DFT minima in their own frames (JobStore reuse)
     ends: tuple[np.ndarray, np.ndarray]  # the same with b aligned onto a (path endpoints)
-    energies: tuple[float, float]  # DFT minimum energies
+    energies: tuple[float, float]  # DFT minimum energies (an association: the monomers' sum)
     log: Callable[[dict[str, object]], None]
     work: Work = field(default_factory=Work)
 

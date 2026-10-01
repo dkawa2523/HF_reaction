@@ -1,6 +1,6 @@
 """Reaction hypotheses (design §8.2): priority, degeneracy on basin structures (declared and
-discovered), undeclared pairs only with a bond change (CH-07), TS lending, R6, and a discovery's
-own ends (X2: never a basin representative's labelling)."""
+discovered), undeclared pairs only with a bond change (CH-07), TS lending, R6, a discovery's
+own ends (X2: never a basin representative's labelling) and associations (X4)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from hfauto.chemistry import identity, topology
 from hfauto.chemistry.hypotheses import select
 from hfauto.chemistry.xyz import XYZ
 from hfauto.core import records as r
-from hfauto.core.evidence import FileRef, Geometry
+from hfauto.core.evidence import FileRef, Geometry, Level
 from hfauto.core.system import ReactionInput
 
 STORE: dict[str, XYZ] = {}
@@ -334,3 +334,97 @@ def test_a_mode_follow_hypothesis_runs_between_its_side_species():
     assert (rec.source, rec.minima, rec.endpoints) == ("mode_follow", ("m_one", "m_two"),
                                                        ("t_mf1", "t_mf2"))
     assert (rec.ts_calc, rec.low_level_ts, rec.torsional) == ("calc_saddle", None, False)
+
+
+# CH3OO (C O O H H H) and CH3·O2, the O2 moved 1.5 A out along C-O (C...O 2.95 A)
+CH3OO = np.array([[0.0, 0, 0], [1.45, 0, 0], [1.905, 1.25, 0], [-0.363, 1.028, 0],
+                  [-0.363, -0.514, 0.89], [-0.363, -0.514, -0.89]])
+CH3_O2 = CH3OO + np.outer([0, 1, 1, 0, 0, 0], [1.5, 0, 0])
+CH2_HOO = CH3_O2 + np.outer([0, 0, 0, 1, 0, 0], [3.768, 1.192, 0])  # H3 moved from C to O2
+# 1,2-dioxetane (C C O O H H H H) and C2H4·O2, the O2 moved 1.5 A out
+DIOXETANE = np.array([[0.0, 0, 0], [1.54, 0, 0], [0, 1.45, 0], [1.54, 1.45, 0],
+                      [-0.35, -0.55, 0.85], [-0.35, -0.55, -0.85], [1.89, -0.55, 0.85],
+                      [1.89, -0.55, -0.85]])
+C2H4_O2 = DIOXETANE + np.outer([0, 0, 1, 1, 0, 0, 0, 0], [0, 1.5, 0])
+# ethane (C C H H H H H H) and CH3·CH3, the second methyl moved 1.5 A out along C-C
+ETHANE = np.array([[0.0, 0, 0], [1.53, 0, 0], [-0.36, 1.03, 0], [-0.36, -0.51, 0.89],
+                   [-0.36, -0.51, -0.89], [1.89, -1.03, 0], [1.89, 0.51, 0.89],
+                   [1.89, 0.51, -0.89]])
+CH3_CH3 = ETHANE + np.outer([0, 1, 0, 0, 0, 1, 1, 1], [1.5, 0, 0])
+MONOMERS = {("CH3O2", 0): [(("CH3", "CH3"), 1), (("O2", "O2"), 1)],  # thermo.monomer_states
+            ("C2H4O2", 0): [(("C2H4", "C2H4"), 1), (("O2", "O2"), 1)],
+            ("C2H6", 0): [(("CH3", "CH3"), 2)]}
+
+
+def level(multiplicity: int, basis: str = "def2-svpd") -> Level:
+    return Level(program="nwchem", version="7.2.3", method="pbe0", basis=basis, charge=0,
+                 multiplicity=multiplicity)
+
+
+def monomer(mid: str, state: str, energy: float) -> r.MinimumRecord:
+    """A DFT minimum of a monomer state (its composition and state label: ``state``)."""
+    species(mid, "H", [[0.0, 0.0, 0.0]])  # its structure is never read
+    return minimum(mid, mid, energy).model_copy(update={"composition_id": state,
+                                                        "state_label": state})
+
+
+def test_a_one_bond_formation_between_fragments_is_an_association():
+    """X4 (G2-P4): CH3·O2 -> CH3OO forms one C-O bond between the fragments and breaks none: its
+    reactant side is the separated CH3 and O2, each the lowest DFT minimum of its state on the
+    complex's level (charge and multiplicity aside: a lower CH3 on another basis is none), the
+    complex staying minima[0]; CH3·CH3 -> C2H6 takes one CH3 twice. The H abstraction CH3·O2 ->
+    CH2·HOO (a bond broken), the cycloaddition C2H4·O2 -> dioxetane (two bonds formed) and an
+    association without a monomer minimum on its level stay ordinary hypotheses."""
+    ends = [species(s, symbols, x) for s, symbols, x in (
+        ("cpx", "COOHHH", CH3_O2), ("add", "COOHHH", CH3OO), ("abst", "COOHHH", CH2_HOO),
+        ("c2o2", "CCOOHHHH", C2H4_O2), ("ring", "CCOOHHHH", DIOXETANE),
+        ("ch3ch3", "CCHHHHHH", CH3_CH3), ("c2h6", "CCHHHHHH", ETHANE))]
+    pairs = [minimum(f"m_{e.species_id}", e.species_id, -1.0 - 0.01 * k)
+             for k, e in enumerate(ends)]
+    parts = [monomer("m_ch3", "CH3", -0.5), monomer("m_ch3_tz", "CH3", -0.6),
+             monomer("m_o2", "O2", -0.4), monomer("m_c2h4", "C2H4", -0.3)]
+    levels = {m.minimum_id: level(2) for m in pairs} | {
+        "m_ch3": level(2), "m_ch3_tz": level(2, "def2-tzvpd"), "m_o2": level(3),
+        "m_c2h4": level(1)}
+    declared = [ReactionInput(id=i, reactant=a, product=b) for i, a, b in (
+        ("assoc", "cpx", "add"), ("abst", "cpx", "abst"), ("ring", "c2o2", "ring"),
+        ("dimer", "ch3ch3", "c2h6"))]
+
+    def run(**kw) -> dict[str, r.ReactionRecord]:
+        found = select(basins(*pairs, *parts), ends, [], declared, load,
+                       **({"monomers": MONOMERS, "levels": levels} | kw))
+        return {rec.reaction_id: rec for rec in found}
+
+    out = run()
+    assoc, dimer = out["assoc"], out["dimer"]
+    assert (assoc.monomers, assoc.minima) == (("m_ch3", "m_o2"), ("m_cpx", "m_add"))
+    assert [(t.composition_id, t.coefficient) for t in assoc.reactants] == [("CH3", 1),
+                                                                         ("O2", 1)]
+    assert assoc.products[0].composition_id == "CH3O2_q0_m1" and not assoc.torsional
+    assert dimer.monomers == ("m_ch3", "m_ch3")
+    assert [(t.composition_id, t.coefficient) for t in dimer.reactants] == [("CH3", 2)]
+    assert change("cpx", "abst") == ({(2, 3)}, {(0, 3)})
+    assert change("c2o2", "ring") == ({(0, 2), (1, 3)}, set())
+    for ordinary in (out["abst"], out["ring"]):
+        assert ordinary.monomers == () and ordinary.reactants == ordinary.products
+    elsewhere = run(levels=levels | {"m_o2": level(3, "def2-tzvpd")})["assoc"]
+    assert elsewhere.monomers == () and elsewhere.reactants == elsewhere.products
+    assert run(monomers={})["assoc"].monomers == ()
+
+
+def test_a_complex_that_relaxed_into_its_adduct_is_judged_on_its_own_structure():
+    """X4: a declared complex without a DFT minimum of its own (BH3 + NH3 relaxes into the
+    adduct) is still an association, judged on its input structure; minima[0] is then the
+    adduct's basin, and the record is neither degenerate nor torsional. Without monomer states
+    it stays an ordinary hypothesis."""
+    ends = [species("cpx_in", "COOHHH", CH3_O2), species("add_in", "COOHHH", CH3OO)]
+    adduct = minimum("m_add_in", "add_in", -1.1, members=("cpx_in",))
+    parts = [monomer("m_ch3", "CH3", -0.5), monomer("m_o2", "O2", -0.4)]
+    levels = {"m_add_in": level(2), "m_ch3": level(2), "m_o2": level(3)}
+    declared = [ReactionInput(id="assoc", reactant="cpx_in", product="add_in")]
+    [rec] = select(basins(adduct, *parts), ends, [], declared, load, monomers=MONOMERS,
+                   levels=levels)
+    assert (rec.monomers, rec.minima) == (("m_ch3", "m_o2"), ("m_add_in", "m_add_in"))
+    assert not rec.degenerate and not rec.torsional
+    [plain] = select(basins(adduct, *parts), ends, [], declared, load)
+    assert plain.monomers == () and plain.reactants == plain.products

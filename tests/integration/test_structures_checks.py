@@ -13,23 +13,25 @@ from hfauto.stages.structures import StructuresConfig, StructuresStage
 
 def test_endpoint_mismatch_and_coordinate_range_fail_both_ends(tmp_path, fake_runtime):
     hf = write_xyz(XYZ(["H", "F"], np.array([[0, 0, 0], [0, 0, 0.92]])), tmp_path / "hf.xyz")
-    cation = {"charge": 1, "multiplicity": 2}
-    species = [SpeciesInput(id=k, xyz=hf, role="endpoint", **(cation if k == "q" else {}))
-               for k in ("p", "q", "r", "s", "u", "v")]
+    spin = {"q": {"charge": 1, "multiplicity": 2}, "x": {"multiplicity": 3}}
+    species = [SpeciesInput(id=k, xyz=hf, role="endpoint", **spin.get(k, {}))
+               for k in ("p", "q", "r", "s", "u", "v", "w", "x")]
     bond = [CoordinateTerm(kind="distance", atoms=(0, 1))]
     reactions = [ReactionInput(id="charge", reactant="p", product="q", coordinate=bond),
                  ReactionInput(id="index", reactant="r", product="s",
                                coordinate=[CoordinateTerm(kind="distance", atoms=(0, 2))]),
-                 ReactionInput(id="ok", reactant="u", product="v", coordinate=bond)]
+                 ReactionInput(id="ok", reactant="u", product="v", coordinate=bond),
+                 ReactionInput(id="spin", reactant="w", product="x", coordinate=bond)]
     system = SystemConfig(system_id="t", species=species, reactions=reactions)
     arts = StructuresStage().run(Manifest(run_id="r", stage_id="s", created_at=""),
                                  StructuresConfig(), fake_runtime(system, {}, stage_id="s"))
     failed = {a.artifact_id: a.failure for a in arts if a.failure}
-    assert set(failed) == {"species_p", "species_q", "species_r", "species_s"}
+    assert set(failed) == {f"species_{k}" for k in ("p", "q", "r", "s", "w", "x")}
     assert all(f.kind == FailureKind.INPUT_INVALID for f in failed.values())
-    assert "reaction charge: endpoints differ" in failed["species_q"].reason
-    assert "atom order" in failed["species_p"].reason
+    assert failed["species_q"].reason == "reaction charge: endpoints differ in charge or atom order"
     assert failed["species_r"].reason == "reaction index: coordinate atom index out of range"
+    assert failed["species_w"].reason == failed["species_x"].reason == (  # only the spin differs
+        "spin_crossing_reaction_unsupported: reaction spin joins multiplicities 1 and 3")
 
 
 def test_elements_and_spin_are_checked_once_at_the_entrance(tmp_path, fake_runtime):

@@ -28,6 +28,19 @@ def test_opt_and_saddle_never_compute_hessians():
     assert "task dft frequencies" in freq and freq.count("task ") == 1 and "driver" not in freq
 
 
+def test_a_fixed_bond_is_a_frozen_zcoord_bond_or_a_cartesian_spring():
+    """G2-P4: 1-based atoms inside the geometry; in Cartesian coordinates (the autoz failure's
+    continuation) a restraint k (r - r0)² with r0 in bohr (NWChem 7.2.3, M8 probe)."""
+    deck = nw.render_optimize(WATER, PBE0, fixed_bond=(0, 2, 1.2345))
+    assert "-0.4692000000\n  zcoord\n    bond 1 3 1.2345 rc constant\n  end\nend\ncharge 0" in deck
+    assert "constraints" not in deck and "noautoz" not in deck
+    spring = nw.render_optimize(WATER, PBE0, nw.Setup(cartesian=True), fixed_bond=(0, 2, 1.2345))
+    assert "\nend\n\nconstraints\n  spring bond 1 3 20.0 2.332867\nend\n\ndft\n" in spring
+    assert "noautosym noautoz" in spring and "zcoord" not in spring
+    for plain in (nw.render_optimize(WATER, PBE0), nw.render_saddle(WATER, PBE0)):
+        assert "zcoord" not in plain and "constraints" not in plain
+
+
 def test_saddle_keywords_always_follow_mode_1():
     deck = nw.render_saddle(WATER, PBE0)  # the shaped Hessian's only negative mode
     for key in ("trust 0.1", "sadstp 0.1", "maxiter 50", "inhess 2\n  moddir 1",

@@ -72,7 +72,7 @@ def _child(parent: ReactionRecord, index: int, minima: tuple[str, str],
     return ReactionRecord(
         reaction_id=f"{parent.reaction_id}_split{index}",
         source="split",
-        reactants=parent.reactants,
+        reactants=parent.products,  # a child of an association starts at its complex
         products=parent.products,
         minima=minima,
         endpoints=endpoints,
@@ -92,7 +92,8 @@ def split(
     """Fresh child cases R→I and I→P of a multi-step case.
 
     ``structures`` are the basin structures of R, I and P in one atom order. Stoichiometry is
-    inherited from the parent; a child is torsional when its own ends differ in no bond. The
+    the parent's product side (one composition; an association's monomers are not a child's
+    end); a child is torsional when its own ends differ in no bond. The
     declared coordinate and low-level TS describe the whole step and are not inherited; ``ts``
     (child 1 or 2, saddle calc) is a TS the parent validated between that child's ends, which
     the child validates first (``ts_calc``) instead of searching again.

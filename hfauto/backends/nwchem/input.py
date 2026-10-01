@@ -18,6 +18,7 @@ import numpy as np
 
 from hfauto.chemistry.elements import atomic_number
 from hfauto.chemistry.xyz import XYZ, Molecule
+from hfauto.core.constants import BOHR_TO_ANGSTROM
 from hfauto.core.method import MethodSpec
 
 OPT_MAXITER = 100
@@ -25,6 +26,10 @@ SADDLE_MAXITER = 50
 STRING_MAXITER = 20
 SCF_MAXITER = 100  # NWChem 7.2.3 defaults: DFT 50, SCF 20
 INITIAL_PATH = "initial_path.xyz"  # xyz_path is read from permanent_dir (the job's cwd)
+# Eh/bohr²: NWChem 7.2.3 adds k (r - r0)² (r, r0 in bohr; not in "Total DFT energy"), so r
+# settles F/2k short of r0: 7e-4 Å at 0.05 Eh/bohr, the steepest CH3 + O2 scan force (a
+# water O-H held at 1.2 Å: k 5 / 20 / 50 -> 1.1948 / 1.1987 / 1.1995 Å in 6 / 8 / 10 steps).
+SPRING_K = 20.0
 _VDW = {"d3zero": 3, "d3bj": 4}
 # NWChem tightens frequency jobs to 1e-7 on its own (opt default 1e-6); writing one value for
 # every task keeps opt, saddle, freq and sp on the same numerics layer (same_pes).
@@ -54,13 +59,27 @@ def _deck(setup: Setup, *blocks: Sequence[str]) -> str:
     return "\n\n".join("\n".join(block) for block in (header, *blocks) if block) + "\n"
 
 
-def _geometry(xyz: XYZ, *, cartesian: bool, label: str = "") -> list[str]:
+def _geometry(xyz: XYZ, *, cartesian: bool, label: str = "", zcoord: Sequence[str] = ()
+              ) -> list[str]:
     flags = "units angstrom nocenter noautosym" + (" noautoz" if cartesian else "")
     rows = np.asarray(xyz.coords, dtype=float).reshape(-1, 3)
     lines = [f"geometry {label} {flags}" if label else f"geometry {flags}"]
     lines += [f"  {s:2s} {x: .10f} {y: .10f} {z: .10f}" for s, (x, y, z) in
               zip(xyz.symbols, rows, strict=True)]
-    return [*lines, "end"]
+    return [*lines, *zcoord, "end"]
+
+
+def _fixed(bond: tuple[int, int, float] | None, cartesian: bool) -> tuple[list[str], list[str]]:
+    """(zcoord lines inside the geometry, constraints block) holding atoms i, j (0-based) r Å
+    apart: a frozen ``zcoord`` bond (NWChem moves the input to its value, so the start must
+    have it), or in Cartesian coordinates (noautoz) a SPRING_K ``spring bond`` restraint."""
+    if bond is None:
+        return [], []
+    i, j, r = bond
+    if cartesian:
+        r0 = r / BOHR_TO_ANGSTROM
+        return [], ["constraints", f"  spring bond {i + 1} {j + 1} {SPRING_K} {r0:.6f}", "end"]
+    return ["  zcoord", f"    bond {i + 1} {j + 1} {r:.4f} rc constant", "  end"], []
 
 
 def ecp(symbols: Sequence[str], basis: str) -> list[str]:
@@ -76,12 +95,12 @@ def ecp(symbols: Sequence[str], basis: str) -> list[str]:
     return ["ecp", *(f"  {s} library def2-ecp" for s in heavy), "end"]
 
 
-def _system(mol: Molecule, method: MethodSpec, setup: Setup, *, end: Molecule | None = None
-            ) -> list[str]:
+def _system(mol: Molecule, method: MethodSpec, setup: Setup, *, end: Molecule | None = None,
+            zcoord: Sequence[str] = ()) -> list[str]:
     """Geometry (and the string's end geometry), charge, basis and ECP."""
     if not method.basis:
         raise ValueError(f"method {method.id!r} names no basis set")
-    lines = _geometry(mol.xyz, cartesian=setup.cartesian)
+    lines = _geometry(mol.xyz, cartesian=setup.cartesian, zcoord=zcoord)
     if end is not None:
         lines += _geometry(end.xyz, cartesian=setup.cartesian, label="endgeom")
     lines += [f"charge {mol.charge}", "basis spherical", f"  * library {method.basis}", "end"]
@@ -117,8 +136,10 @@ def render_energy(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) ->
 
 
 def render_optimize(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, *,
-                    init_hessian: bool = False) -> str:
-    """Default driver thresholds; ``init_hessian`` reads <name>.hess.
+                    init_hessian: bool = False,
+                    fixed_bond: tuple[int, int, float] | None = None) -> str:
+    """Default driver thresholds; ``init_hessian`` reads <name>.hess; ``fixed_bond`` (i, j, r
+    Å; 0-based) holds a bond (_fixed).
 
     ``trust 0.3`` (the NWChem default) with an initial Hessian (a QRC or mode-follow side from
     its saddle, a complex from xTB), ``trust 0.1`` without: from a displaced start the diagonal
@@ -128,8 +149,9 @@ def render_optimize(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT, 
     positive-definite model.
     """
     options = ["  trust 0.3", "  inhess 2"] if init_hessian else ["  trust 0.1"]
-    return _deck(setup, _system(mol, method, setup), _dft(mol, method, setup),
-                 _driver(OPT_MAXITER, options), ["task dft optimize"])
+    zcoord, constraints = _fixed(fixed_bond, setup.cartesian)
+    return _deck(setup, _system(mol, method, setup, zcoord=zcoord), constraints,
+                 _dft(mol, method, setup), _driver(OPT_MAXITER, options), ["task dft optimize"])
 
 
 def render_frequencies(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:

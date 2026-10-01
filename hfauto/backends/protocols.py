@@ -107,6 +107,12 @@ class QMEngine(Engine, Protocol):
         *,
         # freq Evidence at mol or within 0.5 Å per atom of it (same atom order and frame)
         init_hessian: Evidence | None = None,
+        # (i, j, r): atoms i and j (0-based) held r Å apart, as mol already has them; an
+        # engine without constraints fails INPUT_INVALID "constraint_unsupported"
+        fixed_bond: tuple[int, int, float] | None = None,
+        # an opt of the same atoms and state whose converged SCF starts this one (a scan's
+        # previous point); an engine without SCF vectors ignores it
+        scf_guess: Evidence | None = None,
         deadline: Deadline | None = None,
     ) -> Evidence | Failure: ...
 

@@ -87,6 +87,20 @@ def _max_shift_A(xyz: XYZ, mol: Molecule) -> float:
     return float(np.linalg.norm(delta.reshape(-1, 3), axis=1).max())
 
 
+def _fixed_bond(mol: Molecule, bond: tuple[int, int, float] | None
+                ) -> dict[str, tuple[int, int, float]] | Failure:
+    """{"fixed_bond": (i < j, r rounded to 1e-4 Å as in the job key)} ({} without one), or a
+    Failure unless mol has atoms i and j r apart within FRAME_TOL_A: NWChem moves an input to
+    its zcoord value (the frame check)."""
+    if bond is None:
+        return {}
+    coords = np.asarray(mol.xyz.coords, dtype=float).reshape(-1, 3)
+    (i, j), r = sorted(map(int, bond[:2])), round(float(bond[2]), 4)
+    if not 0 <= i < j < len(coords) or abs(np.linalg.norm(coords[j] - coords[i]) - r) > FRAME_TOL_A:
+        return _invalid("fixed_bond_mismatch")
+    return {"fixed_bond": (i, j, r)}
+
+
 def _scf_rescuable(task: Task) -> bool:
     """Not open-shell DFT: cgmin prints no <S2>, and an open-shell DFT output without it is
     never an Evidence (the P3c H3 bead, docs/validation.md)."""
@@ -104,7 +118,8 @@ def _render(task: Task, setup: nw_in.Setup) -> str:
         render = nw_in.render_wft if method.kind == "wft" else nw_in.render_energy
         return render(mol, method, setup)
     if task.kind == "optimize":
-        return nw_in.render_optimize(mol, method, setup, init_hessian=hessian)
+        return nw_in.render_optimize(mol, method, setup, init_hessian=hessian,
+                                     fixed_bond=i.get("fixed_bond"))
     if task.kind == "frequencies":
         return nw_in.render_frequencies(mol, method, setup)
     if task.kind == "saddle":
@@ -189,10 +204,10 @@ class _NWChem:
         return self._evidence(task, workdir, text, level)
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
-        """autoz -> Cartesian coordinates from the same start; SCF -> the old vectors (DFT: with
-        the quadratic solver cgmin; none for open-shell DFT, _scf_rescuable); timeout of a
-        driver job or maxiter of an opt -> its latest frame with the old vectors and driver
-        Hessian (design §7.1)."""
+        """autoz -> Cartesian coordinates from the same start (a fixed bond becomes a spring
+        restraint, input._fixed); SCF -> the old vectors (DFT: with the quadratic solver cgmin;
+        none for open-shell DFT, _scf_rescuable); timeout of a driver job or maxiter of an opt
+        -> its latest frame with the old vectors and driver Hessian (design §7.1)."""
         if failure.kind is FailureKind.INPUT_INVALID and failure.reason == "autoz":
             return replace(task, inputs={**task.inputs, "cartesian": True})
         rescue = failure.kind is FailureKind.SCF_NOT_CONVERGED and _scf_rescuable(task)
@@ -314,8 +329,8 @@ class _NWChem:
 
 
 class NWChemEngine(_NWChem):
-    """QM: DFT energy / optimize / frequencies; CCSD(T) energies (ROHF-CCSD(T) for open
-    shells)."""
+    """QM: DFT energy / optimize (also with a fixed bond) / frequencies; CCSD(T) energies
+    (ROHF-CCSD(T) for open shells)."""
 
     name: ClassVar[str] = "nwchem"
 
@@ -333,36 +348,51 @@ class NWChemEngine(_NWChem):
                deadline: Deadline | None = None) -> Evidence | Failure:
         return self._qm("energy", mol, method, deadline)
 
+    def _guess(self, scf_guess: Evidence | None) -> tuple[dict[str, Any], dict[str, Any]]:
+        """(key payload, inputs) starting the SCF from the converged vectors of ``scf_guess``'s
+        job; empty when there is none (no job.movecs next to its output: another engine)."""
+        if scf_guess is None:
+            return {}, {}
+        movecs = self._jobs.store.resolve(scf_guess.output).with_name(f"{NAME}.movecs")
+        if not movecs.is_file():
+            return {}, {}
+        return {"scf_guess": scf_guess.job_key}, {"restart": [movecs]}
+
     def optimize(self, mol: Molecule, method: MethodSpec, *,
                  init_hessian: Evidence | None = None,
+                 fixed_bond: tuple[int, int, float] | None = None,
+                 scf_guess: Evidence | None = None,
                  deadline: Deadline | None = None) -> Evidence | Failure:
         """``init_hessian`` may come from a nearby structure (a QRC or mode-follow side from its
         saddle). A first-order saddle's (one mode below -saddle_cm1: the side's only negative
         direction is its displacement) is written as its positive-definite model
         (vibrations.shape_hessian; why in input.render_optimize). Any other is written as it
         is: from a higher-order saddle the side must stay free to leave its other saddle
-        directions (DME C2v seed: 29 steps as it is, unconverged after 207 as the model)."""
+        directions (DME C2v seed: 29 steps as it is, unconverged after 207 as the model).
+        ``fixed_bond`` and ``scf_guess`` (a relaxed scan's point and its predecessor) enter the
+        job key only when given, so every other key is unchanged."""
         hessian = None if init_hessian is None else self._hessian_file(init_hessian, mol)
         if isinstance(hessian, Failure):
             return hessian
+        fixed = _fixed_bond(mol, fixed_bond)
+        if isinstance(fixed, Failure):
+            return fixed
         sha = init_hessian and init_hessian.hessian and init_hessian.hessian.sha256
         first_order = init_hessian is not None and hessian is not None and sum(
             f < -_SADDLE_CM1 for f in init_hessian.frequencies_cm1 or ()) == 1
         model = {"hessian_model": "positive"} if first_order else {}
-        return self._qm("optimize", mol, method, deadline, payload={"hessian": sha, **model},
-                        hessian=hessian, **model)
+        guess, restart = self._guess(scf_guess)
+        return self._qm("optimize", mol, method, deadline,
+                        payload={"hessian": sha, **model, **fixed, **guess},
+                        hessian=hessian, **model, **fixed, **restart)
 
     def frequencies(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None,
                     deadline: Deadline | None = None) -> Evidence | Failure:
         """``scf_guess`` (the opt or saddle at mol) starts the SCF from its converged vectors, so
         the freq stays on its electronic state: from scratch, the UKS OH···CH4 complex found the
         other OH π component, 7.2e-5 Eh above its opt."""
-        if scf_guess is not None:
-            movecs = self._jobs.store.resolve(scf_guess.output).with_name(f"{NAME}.movecs")
-            if movecs.is_file():
-                return self._qm("frequencies", mol, method, deadline,
-                                payload={"scf_guess": scf_guess.job_key}, restart=[movecs])
-        return self._qm("frequencies", mol, method, deadline)
+        guess, restart = self._guess(scf_guess)
+        return self._qm("frequencies", mol, method, deadline, payload=guess, **restart)
 
 
 class NWChemSaddle(_NWChem):

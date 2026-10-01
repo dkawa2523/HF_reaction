@@ -14,22 +14,34 @@ A mode-follow saddle of the DFT tier is a verified saddle (``ts_calc``); any oth
 is a low-level TS. Negative discoveries never veto a hypothesis (review X1). A relaxation product
 (a seed state lost at screen, R6) runs from the DFT basin of the seed's own job, while it keeps
 the seed's state, to the DFT basin of its collapse basin; it offers no TS.
+
+A hypothesis that forms exactly one bond, between two fragments of its reactant, and breaks
+none, in a composition with monomer states (``thermo.monomer_states``) whose DFT minima lie on
+its level, is an association (design X4): its reactant side is the separated monomers
+(``ReactionRecord.monomers``), each the lowest DFT minimum of its state on the complex's level
+(charge and multiplicity aside), as a barrierless association has an asymptote, not a minimum,
+there. The complex stays ``minima[0]``: it identifies the hypothesis and gives the formed bond,
+but ends no path. A complex without a DFT minimum of its own (it relaxed into the adduct, as
+BH3 + NH3 does) is judged on its own input structure, and ``minima[0]`` is then the adduct's
+basin (the driver takes that structure as the reactant end). A formation of two or more bonds (a cycloaddition)
+stays an ordinary hypothesis: a one-bond relaxed scan cannot follow it.
 """
 
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 
 from hfauto.chemistry import identity, topology
-from hfauto.chemistry.gates import Policy
-from hfauto.chemistry.xyz import XYZ, composition_key
+from hfauto.chemistry.gates import Policy, same_pes
+from hfauto.chemistry.thermo import Monomers, State
+from hfauto.chemistry.xyz import XYZ, composition_key, hill_formula
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
-from hfauto.core.evidence import Geometry
+from hfauto.core.evidence import Geometry, Level
 from hfauto.core.hashing import sha256_text
 from hfauto.core.ids import reaction_id
 from hfauto.core.records import (
@@ -68,6 +80,16 @@ class _Pool:
     basin_of: dict[str, MinimumRecord]  # species id -> minimum holding it (DFT first)
     load: LoadXYZ
     window_kcal: float
+    monomers: Monomers  # thermo.monomer_states
+    levels: Mapping[str, Level]  # DFT minimum id -> the Level of its optimization
+
+    def lowest(self, state: State, level: Level) -> MinimumRecord | None:
+        """The lowest DFT minimum of ``state`` on ``level``, charge and multiplicity aside."""
+        found = [m for m in self.minima.values()
+                 if m.tier == "dft" and (m.composition_id, m.state_label) == state
+                 and (own := self.levels.get(m.minimum_id)) is not None
+                 and same_pes(level, own, state=False)]
+        return min(found, key=lambda m: m.energy_hartree) if found else None
 
     def coords(self, minimum: MinimumRecord, species: SpeciesRecord) -> np.ndarray:
         """The basin's optimized structure in the atom order and handedness of ``species``."""
@@ -111,15 +133,44 @@ class _Candidate:
     ts_calc: str | None  # a verified DFT saddle: a mode-follow saddle of the DFT tier
 
 
-def _record(rid: str, source: Source, minima: tuple[MinimumRecord, MinimumRecord], ends: Ends,
-            coords: tuple[np.ndarray, np.ndarray], *, coordinate: tuple[CoordinateTerm, ...] = (),
-            torsional: bool | None = None, low_level_ts: Geometry | None = None,
-            ts_calc: str | None = None) -> ReactionRecord:
+def _monomers(pool: _Pool, complex_: MinimumRecord, species: SpeciesRecord, x: np.ndarray,
+              change: tuple[frozenset[topology.Bond], frozenset[topology.Bond]]
+              ) -> tuple[MinimumRecord, ...]:
+    """The separated monomers of an association, each repeated by its count (module doc); ()
+    for any other hypothesis. ``change``: (formed, broken) from the reactant ``x``."""
+    (formed, broken), symbols = change, species.geometry.symbols
+    parts = pool.monomers.get((hill_formula(symbols), species.charge), [])
+    level = pool.levels.get(complex_.minimum_id)
+    if len(formed) != 1 or broken or not parts or level is None:
+        return ()
+    [(i, j)] = formed
+    if any(i in f and j in f for f in topology.fragments(symbols, x)):
+        return ()  # a ring closed within one fragment
+    found = [(pool.lowest(state, level), count) for state, count in parts]
+    monomers = tuple(m for m, count in found if m is not None for _ in range(count))
+    return monomers if all(m is not None for m, _ in found) else ()
+
+
+def _separated(monomers: Sequence[MinimumRecord]) -> tuple[StoichTerm, ...]:
+    counts = Counter(m.composition_id for m in monomers)
+    return tuple(StoichTerm(composition_id=c, coefficient=n) for c, n in counts.items())
+
+
+def _record(pool: _Pool, rid: str, source: Source, minima: tuple[MinimumRecord, MinimumRecord],
+            ends: Ends, coords: tuple[np.ndarray, np.ndarray], *,
+            coordinate: tuple[CoordinateTerm, ...] = (), torsional: bool | None = None,
+            low_level_ts: Geometry | None = None, ts_calc: str | None = None) -> ReactionRecord:
     (ma, mb), (sa, sb), (xa, xb) = minima, ends, coords
     symbols = sa.geometry.symbols
+    if ma.minimum_id == mb.minimum_id:  # a complex relaxed into the adduct: its own structure
+        own = np.asarray(pool.load(sa.geometry).coords, dtype=float)
+        xa = own if _monomers(pool, ma, sa, own, topology.bond_changes(symbols, own, xb)) else xa
     formed, broken = topology.bond_changes(symbols, xa, xb)
+    monomers = _monomers(pool, ma, sa, xa, (formed, broken))
     return ReactionRecord(
-        reaction_id=rid, source=source, reactants=_stoich(sa), products=_stoich(sb),
+        reaction_id=rid, source=source, products=_stoich(sb),
+        reactants=_separated(monomers) if monomers else _stoich(sa),
+        monomers=tuple(m.minimum_id for m in monomers),
         minima=(ma.minimum_id, mb.minimum_id), endpoints=(sa.species_id, sb.species_id),
         # One basin reached through a relabelling (NH3 inversion) or as its mirror image
         # (enantiomerization) stays a reaction (CH-35).
@@ -143,7 +194,7 @@ def _declared(pool: _Pool, reaction: ReactionInput) -> ReactionRecord:
     if sa.geometry.symbols != sb.geometry.symbols:
         raise ValueError(f"reaction {reaction.id}: endpoints differ in atom order")
     coords = (pool.coords(ma, sa), pool.coords(mb, sb))
-    return _record(reaction.id, "declared", (ma, mb), (sa, sb), coords,
+    return _record(pool, reaction.id, "declared", (ma, mb), (sa, sb), coords,
                    coordinate=coordinate, torsional=reaction.torsional)
 
 
@@ -183,13 +234,15 @@ def _auto(pool: _Pool, c: _Candidate, ma: MinimumRecord, mb: MinimumRecord
         return None
     sa, sb = c.ends
     rid = reaction_id(c.source, sha256_text(f"{ma.minimum_id}|{mb.minimum_id}")[:10])
-    record = _record(rid, c.source, (ma, mb), c.ends, (pool.coords(ma, sa), pool.coords(mb, sb)),
-                     low_level_ts=c.low_level_ts, ts_calc=c.ts_calc)
+    record = _record(pool, rid, c.source, (ma, mb), c.ends,
+                     (pool.coords(ma, sa), pool.coords(mb, sb)), low_level_ts=c.low_level_ts,
+                     ts_calc=c.ts_calc)
     return None if record.torsional else record
 
 
 def _pool(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[SpeciesRecord],
-          load_xyz: LoadXYZ, window_kcal: float) -> _Pool:
+          load_xyz: LoadXYZ, window_kcal: float, monomers: Monomers | None = None,
+          levels: Mapping[str, Level] | None = None) -> _Pool:
     pairs = list(minima)
     by_id = {m.minimum_id: m for m, _ in pairs}
     basin_of: dict[str, MinimumRecord] = {}
@@ -198,7 +251,8 @@ def _pool(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[Sp
             basin_of.setdefault(s, m)
     return _Pool(species={s.species_id: s for s in species}, minima=by_id,
                  structure={m.minimum_id: g for m, g in pairs}, basin_of=basin_of,
-                 load=load_xyz, window_kcal=window_kcal)
+                 load=load_xyz, window_kcal=window_kcal, monomers=monomers or {},
+                 levels=levels or {})
 
 
 def _lend(record: ReactionRecord, c: _Candidate) -> ReactionRecord:
@@ -211,14 +265,19 @@ def _lend(record: ReactionRecord, c: _Candidate) -> ReactionRecord:
 def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[SpeciesRecord],
            discoveries: Iterable[DiscoveryRecord], declared: Sequence[ReactionInput],
            load_xyz: LoadXYZ, *, window_kcal: float = Policy.reaction_window_kcal,
-           max_per_composition: int = 6) -> list[ReactionRecord]:
+           max_per_composition: int = 6, monomers: Monomers | None = None,
+           levels: Mapping[str, Level] | None = None) -> list[ReactionRecord]:
     """One ReactionRecord per hypothesis. A repeated minima pair keeps the first one, which
     borrows the TS it lacks, also from a discovery that is no hypothesis (an inversion's saddle).
-    ``minima`` pairs every minimum (any tier) with its optimized structure."""
-    pool = _pool(minima, species, load_xyz, window_kcal)
+    ``minima`` pairs every minimum (any tier) with its optimized structure; ``monomers``
+    (thermo.monomer_states) and ``levels`` (DFT minimum id -> its opt Level) find an
+    association's separated monomers."""
+    pool = _pool(minima, species, load_xyz, window_kcal, monomers, levels)
     records = [_declared(pool, r) for r in declared]
     index = {frozenset(r.minima): i for i, r in enumerate(records)}
-    per_composition = Counter(r.reactants[0].composition_id for r in records if r.reactants)
+    # by the composition of the case's ends (an association's reactants are its monomers)
+    per_composition = Counter(t.composition_id for r in records
+                              for t in (r.products or r.reactants)[:1])
     for c in _candidates(pool, discoveries):
         ma, mb = c.start, c.end
         if ma is None or mb is None:

@@ -13,6 +13,7 @@ _FROZEN = ConfigDict(frozen=True, extra="forbid")
 
 StandardState = Literal["1atm", "1bar", "1M"]
 ConnectionLabel = Literal["elementary", "degenerate", "reassigned", "failed"]  # gates.connection
+ProfileSource = Literal["screen", "string", "scan"]  # scan: an association's relaxed scan
 
 
 class ArtifactType(StrEnum):
@@ -105,11 +106,12 @@ class CoordinateTerm(BaseModel):
 
 
 class BarrierVerdict(BaseModel):
-    """Class of the latest DFT profile (profile.classify), the DFT minima energies at its ends."""
+    """Class of the latest DFT profile (profile.classify), the DFT minima energies at its ends
+    (an association's scan: the sum of the separated monomers' and the adduct's)."""
 
     model_config = _FROZEN
     verdict: Literal["barrierless", "single", "intermediate", "unavailable"]
-    source: Literal["screen", "string"]
+    source: ProfileSource
     reasons: tuple[str, ...] = ()
 
 
@@ -158,6 +160,9 @@ class ReactionRecord(BaseModel):
     products: tuple[StoichTerm, ...]
     minima: tuple[str, str]  # (reactant side, product side); equal for degenerate reactions
     endpoints: tuple[str, str]  # species ids used for path calculations
+    # an association (chemistry.hypotheses): the DFT minima of the separated monomers, repeated
+    # by count, its reactant side; minima[0], the complex, identifies it but ends no path
+    monomers: tuple[str, ...] = ()
     degenerate: bool = False
     source: Literal["declared", "discovery", "mode_follow", "split", "reassigned"]
     coordinate: tuple[CoordinateTerm, ...] = ()

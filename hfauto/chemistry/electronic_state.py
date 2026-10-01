@@ -60,14 +60,26 @@ def coupled_multiplicities(component_multiplicities: Iterable[int]) -> tuple[int
     return tuple(sorted(value + 1 for value in coupled_twice_spins))
 
 
+def low_spin_coupled(component_multiplicities: Iterable[int], multiplicity: int) -> bool:
+    """Whether at least two open-shell components couple below their high-spin multiplicity
+    Σ(m_i − 1) + 1 (CH3· + O2 as a doublet; its quartet is high-spin).
+
+    UKS describes the bound isomers of such a composition, but where the components separate
+    its solution is broken-symmetry and spin-contaminated.
+    """
+
+    unpaired = [m - 1 for m in component_multiplicities if m > 1]
+    return len(unpaired) >= 2 and multiplicity < sum(unpaired) + 1
+
+
 def composition_multiplicity(component_multiplicities: Iterable[int],
                              declared: int | None) -> int:
     """The declared multiplicity of a composition, or the only one coupling allows.
 
-    Raise ValueError when several are allowed and none is declared, when the declared one is
-    not allowed, or when it is a singlet built from open-shell components (open-shell singlets
-    need broken-symmetry UKS, which hfauto does not do; declare a radical-recombination
-    product as a monomer instead).
+    A low-spin coupling is accepted. Raise ValueError when several multiplicities are allowed
+    and none is declared, when the declared one is not allowed, or for a low-spin-coupled
+    singlet (``low_spin_singlet_unsupported``: a singlet runs as RKS, which has no
+    broken-symmetry solution; declare a recombination product as a monomer instead).
     """
 
     components = list(component_multiplicities)
@@ -79,7 +91,7 @@ def composition_multiplicity(component_multiplicities: Iterable[int],
         return allowed[0]
     if declared not in allowed:
         raise ValueError(f"multiplicity {declared} is not among the coupled ones ({listed})")
-    if declared == 1 and any(m > 1 for m in components):
-        raise ValueError("open_shell_singlet_unsupported: declare a radical-recombination "
-                         "product as a monomer; broken-symmetry UKS is out of scope")
+    if declared == 1 and low_spin_coupled(components, declared):
+        raise ValueError("low_spin_singlet_unsupported: RKS has no broken-symmetry solution; "
+                         "declare a recombination product as a monomer")
     return declared

@@ -4,6 +4,7 @@ from hfauto.chemistry.electronic_state import (
     check_electronic_state,
     composition_multiplicity,
     coupled_multiplicities,
+    low_spin_coupled,
 )
 
 
@@ -28,11 +29,26 @@ def test_coupled_multiplicities():
         coupled_multiplicities([])
 
 
+@pytest.mark.parametrize(("components", "multiplicity", "expected"), [
+    ([2, 3], 2, True),  # CH3. + O2 doublet
+    ([2, 3], 4, False),  # its quartet is the high-spin coupling
+    ([2, 2], 1, True),  # OH. + OH. singlet
+    ([2, 2], 3, False),
+    ([3, 3, 1], 3, True),  # O2 + O2 + N2 triplet
+    ([2, 1], 2, False),  # one open-shell component
+    ([1, 1], 1, False),  # H2O + H2O
+])
+def test_low_spin_coupled(components, multiplicity, expected):
+    assert low_spin_coupled(components, multiplicity) is expected
+
+
 @pytest.mark.parametrize(("components", "declared", "expected"), [
     ([1, 1], None, 1),  # HF + HF
     ([2, 1], None, 2),  # radical + closed shell
     ([2, 2], 3, 3),  # OH. + OH. declared triplet
-    ([2, 3], 2, 2),  # CH3. + O2 declared doublet
+    ([2, 3], 2, 2),  # CH3. + O2 declared doublet: low-spin coupled, accepted
+    ([2, 3], 4, 4),  # CH3. + O2 declared quartet
+    ([3, 3], 3, 3),  # O2 + O2 declared triplet: low-spin coupled, accepted
     ([6, 1], 6, 6),  # FeCl3 + CH4
 ])
 def test_composition_multiplicity(components, declared, expected):
@@ -42,7 +58,8 @@ def test_composition_multiplicity(components, declared, expected):
 @pytest.mark.parametrize(("components", "declared", "match"), [
     ([2, 2], None, r"declare_multiplicity: candidates \(1, 3\)"),
     ([2, 3], None, r"declare_multiplicity: candidates \(2, 4\)"),
-    ([2, 2], 1, "open_shell_singlet_unsupported"),
+    ([2, 2], 1, "low_spin_singlet_unsupported"),
+    ([3, 3], 1, "low_spin_singlet_unsupported"),
     ([2, 2], 5, "not among"),
     ([2, 1], 1, "not among"),
 ])
