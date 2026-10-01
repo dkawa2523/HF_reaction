@@ -1,6 +1,6 @@
 # 実計算による検証の記録
 
-round 7 の改良(W0〜W5、結果報告 [2026-09-30_round7_result.md](reviews/2026-09-30_round7_result.md))の実計算の記録である。検証セットはレビュー `docs/reviews/2026-09-27_platform_review.md` §6 と、round 7 で足した分岐用の系。round 6 までの記録(VAL を含む)は git の履歴(`git show f2309b9:docs/validation.md`)にある。
+round 7 の改良(W0〜W5、結果報告 [2026-09-30_round7_result.md](reviews/2026-09-30_round7_result.md))の実計算の記録である。検証セットはレビュー `docs/reviews/2026-09-27_platform_review.md` §6 と、round 7 で足した分岐用の系。round 6 までの記録(VAL を含む)は git の履歴(`git show f2309b9:docs/validation.md`)にある。決定表の行番号は、各節の時点の表のもの(round 7 は 17 行、M5〜S1 は 16 行。今の表は [design.md](design.md) §6.2)。
 
 ## 1. 条件
 
@@ -102,12 +102,12 @@ VAL7 では S7・S8(生成物 0、試行数 2・19)、S10(32.2892)、S19(`collap
 
 ## 4. 到達表(round 7 の実 run だけ)
 
-`log.jsonl` の decide の reason と注記、minima の diagnostics.json から数えた。run dir は `/home/user/hfauto_r7/` 以下。
+`log.jsonl` の decide の reason と注記、minima の diagnostics.json から数えた。run dir は `/home/user/hfauto_r7/` 以下。行番号は round 7 の決定表(17 行)のもの。
 
 | 対象 | 通ったもの | 通っていないもの |
 |---|---|---|
 | 決定表の行 | 8(VAL7/s6_oh_ch4 の `connection_retry` → `connection_failed`、W5/s6_oh_ch4_rowfix の `connection_retry` → FIND_PATH)、2(W0〜W4/water_same_basin、s19)、3(W1/formaldehyde)、4(R1〜R3 ほか多数)、5(W1・W2・W4/oxalic_two_step、W3/s6_oh_ch4)、6(W1/h2o_hf_inversion、W1/water_dimer_as)、7(W1/hono_walltime_b)、9・10・12・14(R1〜R3 ほか多数)、13(W3/s6_oh_ch4)、15(W1/hcn_noscreen、W1/hf_dimer_swap_noscreen、W3/s5_ch3_o2、W3/s6_oh_ch4)、17(W3/s5_ch3_o2) | 1(端点の DFT 極小が欠けたときだけ発火)、11(崩壊した鞍点)、16(string の次のチャンク)、近道の種が失敗した後の 2 回目の SCREEN、ケースの例外の閉じ込め |
-| 検証済みの鞍点(`ts_calc`) | W1・W2/nh3_planar_seed、W1・W2・W4/oxalic_two_step(split1)、W3/s6_oh_ch4(split1) | ゲートを通らず SCREEN へ戻る分岐 |
+| 検証済みの鞍点(`ts_calc`) | W1・W2/nh3_planar_seed、W1・W2・W4/oxalic_two_step(split1)、W3/s6_oh_ch4(split1) | ゲートを通らず SCREEN へ戻る分岐(ts_calc は order 1 の DFT 鞍点か親が検証した TS なので、χ で拒否されるか freq が失敗したときだけ。専用のコードはなく、ほかの鞍点の失敗と同じ経路) |
 | saddle の種 | `screen_ts`(R1〜R3 ほか多数)、`screen_hei`(W2/s13_h2o2_gauche、W2/s18_h3_doublet、W3/s5、W3/s6)、`discovery_ts`(W2〜W4/s10、W3/s5、W3/s6)、`path_hei`(W1 の noscreen 2 本、W3/s5、W3/s6)、`higher_order_retry`(W3/s6 の split2_split2、Hessian は検証済み TS freq)、`saddle_restart`(W3/s5 に 2 回、W3/s6 に 2 回) | — |
 | 初期 Hessian | xTB(65 case)、DFT 5 case(W1 の noscreen 2 本、W2/s13、W2/s18、W3/s6)、TS freq 1(W3/s6) | — |
 | outcome | elementary、degenerate、same_basin、out_of_window(W1/formaldehyde)、multi_step(oxalic、S6)、barrierless_at_resolution(W1/h2o_hf_inversion、water_dimer_as)、reassigned(W3/s5、W3/s6)、unresolved_within_budget(W1/hono_walltime_b、W3/s5) | blocked_upstream |
@@ -162,7 +162,7 @@ QM 秒は `/home/user/hfauto_r7/tools/jobtime.py` が数える一意のジョブ
 
 ## 9. 残る課題
 
-1. **実計算で通っていない分岐**: 行 1、2 回目の SCREEN、ケースの例外の閉じ込め、DFT の soft_minimum。行 6 の中点による高密度化は対称な経路でしか通っておらず、隠れた障壁を見つけた例はない。round 7 で未到達だった行 11 は M5 で削除した(§15)。行 16(今の行 15、`next_chunk`)は M4 の S5 split2 で通った(SCREEN の SP が未収束で種がなく、string の種を χ で拒否した後)。
+1. **実計算で通っていない分岐**: 2 回目の SCREEN、ケースの例外の閉じ込め(単体テストだけ)、DFT の soft_minimum、maxiter からの再開の上限(G1-P3。単体テストと QM なしの評価だけ、§21.6)。行 6 の中点による高密度化は対称な経路でしか通っておらず、隠れた障壁を見つけた例はない。round 7 で未到達だった行 11 は M5 で削除した(§15)。round 7 の行 16(string の次のチャンク)は M4 の S5 split2 で通り(SCREEN の SP が未収束で種がなく、string の種を χ で拒否した後)、S2 で FIND_PATH の 1 行にまとめた。行 1 は S2 で実計算に通った(§21.6)。
 2. **既定の順位の精度**: PBE0/SVPD は CCSD(T) から最大 3 kcal/mol ずれ(SN2 −3.0、HONO +2.0)、H 引き抜きは分離基準の ΔE‡ 0.79 と文献 約 5 を大きく下回る(round 8 のプローブの CCSD(T)/def2-TZVPD は 6.96 で、差は −6.2)。M9 で、既定の順位を M06-2X-D3(0)/def2-TZVPD のエネルギー層にした(§19)。実 run の 5 反応で障壁の誤差は平均 0.83、最大 1.79 kcal/mol。ΔE_rxn は改善しない(平均 1.17、最大 2.30。HCN)。
 3. **開殻の会合**: S5 の UKS CH3···O2 は ⟨S²⟩ 1.71 で、障壁なしかどうかを判定できない。多参照かスピン射影の扱いが要る。M8 で、会合を分離した単量体からの緩和スキャンで問うようにし、S5 の会合は障壁なし(UKS、AP なし)で順位が付いた(§18.4)。結論が出なかった主因は多参照性ではなく問いの形だった。
 4. **失われた seed の費用**: S19 の seed は DFT の 1 歩目で状態を離れたのに、既知の basin に入るまで 44 歩(約 33 分)払った。M6 で、この seed のラベルの違いはしきい値の帯の中(0.006 Å)なので、失われた状態にしなくなった(§16)。本物の R6 の seed の opt(Hessian なし)の費用は残る(G4-P2、should)。
@@ -346,7 +346,7 @@ CUR のうち paths を持つ 33 本の 41 case について、記録と case �
 
 ## 13. M3 反応モード性 χ(X1 / G1-P2)
 
-分析の §2.1 G1-P2、§3 X1 と §4.1 M3 にあたる。規則は [design.md](design.md) §3 の `reaction_mode_character` と §6.2 の VALIDATE_TS。
+分析の §2.1 G1-P2、§3 X1 と §4.1 M3 にあたる。規則は [design.md](design.md) §3 の `reaction_mode_character` と §6.2 の VALIDATE_AND_CONNECT(M3 の時点では VALIDATE_TS)。
 
 ### 13.1 変えたこと
 
@@ -589,7 +589,7 @@ CUR のうち paths を持つ 33 本の 41 case について、記録と case �
 
 ## 18. M8 低スピン結合の組成と会合のスキャン(X4-1/2 / G2-P2、G2-P4、G2-P8)
 
-分析の §2.2 G2、§3 X4、§4.1 M8 にあたる。規則は [design.md](design.md) §7.1 の「会合と低スピン結合の組成」と、§6.2 の行 11・14。
+分析の §2.2 G2、§3 X4、§4.1 M8 にあたる。規則は [design.md](design.md) §7.1 の「会合と低スピン結合の組成」と、§6.2 の SCREEN・FIND_PATH の行(M8 の時点の行 11・14)。
 
 ### 18.1 変えたこと
 
@@ -760,3 +760,93 @@ S5(`M8/real/s5_ch3_o2`、CUR の写しを paths から、CAP 2,700 s。壁時計
 - CCSD(T)(`S1/real/s14_ccsdt`、CUR の s14 の写しに CCSD(T) のパネル): 極小と TS が 1,396 s と 1,405 s(4 ranks、heap/stack/global 100/500/1,400 MB、`freeze 5`)で完走した(1,200 MB の `memory total` では (T) が配列を確保できなかった)。ΔE‡ は CCSD(T)/def2-TZVPD 3.47、PBE0/SVPD 2.01、PBE0/TZVPD 1.90、M06-2X/TZVPD 2.69、ωB97X-D3/TZVPD 3.24 kcal/mol。文献の CCSD(T)/CBS 約 4 kcal/mol より 0.5 低い(基底の不完全さの範囲)。
 - 凍結する芯(S1a の実計算): HI は `freeze 4` で NWChem の number of core 4、E −297.735051343150(`freeze atomic` は −297.821560434727、G27)。I⁻···CH3I は `freeze 9`、number of core 9、E −634.213649871623、1,024 s(G35)。
 - 実証していないこと: 開殻の救済が `spin_ok` を通る例(h3p3c は汚染された解しかない)。ECP 原子を含む CCSD(T) の参照値との比較。`Failure.energy_hartree` と `Evidence.gradient` を使う側(S3 の G1-P3・G5-P1)。それ以前に保存された JobStore の記録ではどちらも None である。
+
+## 21. S2 決定表と仮説の単位の整理(X5-2〜4、X2-3/4、X6-5)
+
+分析の §3 X5 の 2〜4(G1-P3、G3-P2、G3-P3 + G7-P1、G3-P6、G7-P5)、X2 の 3・4(G8-P7、G8-P3)、X6 の 5(G3-P4)にあたる。規則は [design.md](design.md) §6.2・§7.1・§8。
+
+### 21.1 変えたこと
+
+- 行 1 は「端点に reaction-paths の DFT 極小がない」の 1 節にし、理由を `endpoint_without_dft_minimum`(旧 `endpoints_not_on_one_pes`)にした。level_key の節は削除した。両端が 1 つの PES にあることは、設定の読み込みで `PipelineConfig._check_stages` が保証する(minima(dft) と reaction-paths の method が 1 つ)。
+- TS の検証と QRC を 1 つの action(VALIDATE_AND_CONNECT: 別ジョブの freq → `is_first_order_saddle` → χ → QRC。両側が同じ basin なら 2 倍の振幅でもう 1 回)にした。旧行 9・10(`ts_validated` → CONNECT、`saddle_converged` → VALIDATE_TS)は行 9 の 1 行になり、`connection_retry`、`connection_attempts`、`ts_check` を削除した。行 8 の判断(same_basin、same_state、それ以外)は表に残る。決定表は 14 行になった。
+- FIND_PATH を 1 行(行 13、理由 `dft_path`。旧 `no_dft_path` と `next_chunk`)にし、`STRING_CHUNKS`(3)を削除した。string は、saddle の試行が残り、走らせた string の数が saddle の試行数以下で、まだ string がないか最新のプロファイルが unavailable でない string のときに走る。種を出さなかった string の後は、すぐに打ち切り(`attempts_exhausted`)に進む。以前は種がなくても 3 チャンクまで続けた。
+- 続きの段数(G3-P6): `Seed.depth`。maxiter からの再開と高次の鞍点の押し出しは、どちらも段数 + 1 の続きで、2 段(`actions.MAX_DEPTH`)までにした。再開は種の `saddle_restart` ではなく、`refine_saddle` の中で同じ試行として 1 回だけ行う(締め切りの前だけ)。試行の数え方は前と同じで、種 1 つが 1 試行(押した種も数える)、再開は数えない。`saddle_restart` の特別扱い(数えない、上限でも通す、再開の再開をしない)と、行 12 のその例外は削除した。分析は「段数 0 の種だけを数える」としていたが、押した種は試行として数えたままにした(予算の意味を変えない)。
+- 再開の上限(G1-P3): maxiter で止まった saddle の最後の歩のエネルギー(`Failure.energy_hartree`、S1)が、最新の DFT プロファイルの最大 + resolution_kcal を超えるなら再開しない(注記 `saddle:above_path_bound:<screen|string|scan>`)。エネルギーのない Failure(S1 より前に保存されたもの)とプロファイルのない case は、今までどおり再開する。
+- 仮説の単位(G8-P7): 仮説は case キー(`hypotheses.pair_key`: 両端の状態が違えば 2 つの状態の組、同じなら 2 つの極小の組)で重複を除く(宣言反応はそれぞれ残す)。どの仮説も、そのキーの全候補の低レベル TS を優先順に `low_level_ts`(タプル)に持つ(持っている TS と構造で 1 つの basin に入るものは除く。以前は 1 つだけ)。SCREEN の近道はそれを順に 3 点で分け、single の種を順に積む(記録する判定は最初の single)。分割の子は、同じキーの case が駆動済みか待ち行列にあれば、その駆動を待ち、結論が出ていれば駆動せずにその結果(outcome と claim)を写す(理由 `same_as:<reaction_id>`、ジョブも log もない)。その case が unresolved なら、子は自分の予算で駆動する(統合で追加。§21.6)。
+- 分割の深さ(G8-P3): 深さが `max_split_depth` に達した case の子は、駆動せずに unresolved_within_budget(理由 `split_depth`、ジョブも log もない)として記録する(`classification.undriven`)。以前は記録せずに捨てていた。
+- 例外の閉じ込め(G3-P4): `drive_case` が decide → action の繰り返しを囲む。例外の case は unresolved(`error:<型>`)で、それまでに登録した極小・species・計算も artifact に出す。`reaction_paths._drive` を削除した。
+- しきい値と予算(resolution_kcal、max_saddle_attempts、max_split_depth、walltime_h)は変えていない。
+
+### 21.2 期待される差(QM なし、CUR の記録と case log から)
+
+- 行 1、FIND_PATH の 1 行、VALIDATE_AND_CONNECT、続きの段数: CUR の記録は変わらない見込み。string を走らせた case は hcn_noscreen、hf_dimer_swap_noscreen、s5_ch3_o2 の b3e2f366b6_split2 の 3 つで、どれも種を出し、2 本目の条件も前と同じに満たす。QRC の 2 段目の振幅(`connection_retry`)に進んだ case はない。押した種(W3_s6・W5_s6・s6_oh_ch4 の 790468f505)と再開(W5_s6 の f9bc3a1cd8_split1)は、前と同じ試行の数え方で同じ経過になる。case log の行動と理由の列は変わる(検証と接続が 1 行、再開は `seed:saddle_restart` の行がなくなり注記だけ)が、再生は理由の文字列を比べない。
+- 再開の上限: CUR で再開したのは W5_s6 の f9bc3a1cd8_split1 だけ(screen_hei → maxiter → 再開 → elementary)。CUR の Failure にはエネルギーがないので、再生では今までどおり再開する。
+- 仮説の単位: W3_s6 の 460166732f と f9bc3a1cd8 は同じ状態の組(CH3 + H2O ↔ CH4O + H)で、1 つの仮説になる。種は d7d2ff63 の xTB TS(C 上の置換、−1347.6i に着いたもの)と b9c080cc の xTB TS(O 上の置換、−1417.9i)の 2 つ。formaldehyde の 2 つの宣言反応は、宣言なのでそれぞれ残る。
+- 子の再利用: CH3 + H2O ↔ CH4 + HO の子(s6_oh_ch4 と W5_s6 の f9bc3a1cd8_split1)は 790468f505 と同じ状態の組なので、駆動せずにその結果を写す(分析 X2 の検証 (c))。W3_s6 の同じ組の子(460166732f_split1)は、790468f505 が attempts_exhausted なので写さず、前と同じに駆動する(§21.6 の統合の修正)。
+- 分割の深さ: CUR で `max_split_depth` 2 に達した子はない。
+
+### 21.3 合格条件(統合)
+
+1. 再生(`tools/replay.py S2 --src CUR`、全 run): 次の差の run だけを `--allow-new` で報告し、ほかは strict。(i) 種を出さなかった string の後の打ち切り(CUR では 0 件の見込み)、(ii) 状態の組でまとめた仮説とその追加の種(W3_s6)、(iii) 子の結果の再利用(W3_s6、W5_s6、s6_oh_ch4)。
+2. W3_s6: CH3 + H2O / CH3OH + H の組で、O 上の置換(b9c080cc)と C 上の置換(d7d2ff63)の両方の種が試されること。
+3. s6_oh_ch4 と W5_s6: 子 split1 が 790468f505 の結果を再利用すること。
+4. 分割の深さ: `/home/user/hfauto_r9/inputs/oxalic_split0.yaml`(known_endpoints の reaction-paths に `policy: {max_split_depth: 0}`。検証専用で、製品の既定は 2 のまま)で CUR/oxalic_two_step の写しを paths から再ステージする。親は multi_step のまま、子 2 つが `split_depth` で記録され、新しいジョブがないこと(分析 X2 の検証 (g))。
+5. 再開の上限
+   - QM なし(`tools/bound_check.py`): VAL7/s5 の eb9bb06f(最後の歩 −189.73505)と b0660ccc(−189.73438)は上限を超えて再開しない。W5_s6 の f9bc3a1cd8_split1 の再開のフレームは上限の下にあり、再開が残る。
+   - 実計算: CUR/W5_s6 の写しを paths から `--retry-failed geometry_maxiter` で再ステージし(maxiter の saddle を取り直してエネルギーを記録する)、f9bc3a1cd8_split1 が再開を経て収束すること(予算 1.5 h)。すべての仮説を流すと split1 は same_as になって駆動されないので、検証専用の入力 `/home/user/hfauto_r9/inputs/w5_split1_restart.yaml`(paths の `reaction_ids` を f9bc3a1cd8 だけにする)を使う。分析の例の W3 の split2_split2 は、M1 で記録が消えたので CUR/W3_s6 にない。
+6. 行 1(各 15 分)
+   - `/home/user/hfauto_r8_probe/G3-1_row1`(平面 NH3 を宣言の端点にし、mode_follow 0): blocked_upstream(`endpoint_without_dft_minimum`)。
+   - 既定の mode_follow の `/home/user/hfauto_r9/inputs/nh3_planar_row1_default.yaml`(known_endpoints): 結果をそのまま記録する。コードでは、平面の端点は mode-follow の後、入力に近い側の NH3 の basin に加わる(`endpoint_was_saddle`)ので、DFT 極小を持ち、行 1 は発火しない見込みである(分析 G3 の根本原因 1 は「既定でも行 1 に落ちる」としていた)。
+7. 単体テスト: 決定表の試験に加え、振る舞いの試験(虚モードのない鞍点は探索の行に進む、W3 の押し出し → maxiter → 再開の連鎖が段数の範囲で再現され交互の無限連鎖がない、上限、種のない string の後の打ち切り)、状態の組の重複除去、複数の低レベル TS、split_depth の記録、子の再利用、例外の閉じ込め(`_register` の後の例外で minimum の artifact が manifest に残る)。
+
+### 21.4 見かけの合格の見分け方
+
+- 決定表の試験を書き換えただけで、振る舞いの試験がない。
+- 予算(max_saddle_attempts、max_split_depth、walltime_h)を変えて通す。oxalic の max_split_depth 0 は検証用の入力だけである。
+- manifest から黙って消えた子(S2 より前の捨て方)を split_depth と数える。
+- 行 1 を、宣言のすり替えや mode_follow・ゲートの変更で発火させる。
+- 上限の確認で、SCREEN と string のどちらのプロファイルの最大を使ったかを取り違える(注記にプロファイルの種類が残る)。
+
+### 21.5 結果(QM なし)
+
+再開の上限(`/home/user/hfauto_r9/tools/bound_check.py`、出力は同じ場所の `bound_check.out`): 記録された case の maxiter で止まった探索ごとに、最後の attempt の最後の歩のエネルギー E_last と、その探索の前の最新の DFT プロファイルの最大を比べた(プロファイルは case のジョブから組み立て直す)。
+
+| run | case | 探索(種) | E_last − 最大(kcal/mol) | プロファイル | 判定 |
+|---|---|---|---|---|---|
+| VAL7/s5_ch3_o2 | b3febc8052 | eb9bb06f(screen_hei) | +27.21 | screen | `above_path_bound:screen`(再開しない) |
+| VAL7/s5_ch3_o2 | b3febc8052 | b0660ccc(path_hei) | +31.99 | string0 | `above_path_bound:string`(再開しない) |
+| W3/s6_oh_ch4 | f9bc3a1cd8_split2_split2 | e5ef2bd9(higher_order_retry) | −21.29 | screen | 再開する(W3 の経路が残る) |
+| CUR/W5_s6 | f9bc3a1cd8_split1 | 204845c7(screen_hei) | −68.51 | screen(NEB 失敗で IDPP) | 再開する |
+
+上限(+1.0 kcal/mol)の近くの値はない。VAL7/s5 の 2 本は HEI の種から 27〜32 kcal/mol 登ったフレームで、上限で切られる。再開して収束した 2 本は上限より十分下にある。
+
+### 21.6 結果(統合)
+
+再生(`tools/replay.py S2 --src CUR --allow-new W3_s6,W5_s6,s6_oh_ch4`。CUR は S1 の再生を指す。36 本、4.2 分): 33 本は strict に合格(misses 0、記録の差 0)。hits 1,006、misses 4。差は 3 本の S6 だけで、すべて許した差である。
+
+- `low_level_ts` は Geometry | null からリストになった。replay.py は null を []、G を [G] と読み替えて比べる。
+- (ii) 状態の組でまとめた仮説: W3_s6 では f9bc3a1cd8 が 460166732f にまとまり(記録・その QRC の species と極小・thermo が消える)、460166732f は d7d2ff63(C 上の置換)と b9c080cc(O 上の置換)の 2 つの低レベル TS を持つ。近道は両方を xTB freq と DFT SP の 3 点で分け、どちらも single で種になった(W3_s6 では f9bc3a1cd8 の前のジョブが再利用され、新しいジョブは 0)。最初の種(C 上の置換、−1347.5i)が QRC で CH4 + HO を経る 2 段(multi_step)を示して case を閉じたので、O 上の置換の種は saddle まで試されていない。前の f9bc3a1cd8 の O 上の置換の素反応(−1418.1i、順位付き)は W3_s6 の記録から消えた。W5_s6 と s6_oh_ch4 の f9bc3a1cd8 も 2 つの TS を持ち、2 つ目の xTB freq と DFT SP が新しいジョブ(各 2 件、約 15 core-s)。結論は前と同じ multi_step。
+- (iii) 子の再利用: W5_s6 と s6_oh_ch4 の f9bc3a1cd8_split1 は `same_as:rxn_discovery_790468f505` になり、駆動しない(saddle は 790468f505 の −486.0i / −486.4i。自前の −482.8i / −476.7i の代わり。dG_eff の差は +0.05 / −0.04 kcal/mol)。
+- (i) 種を出さなかった string の後の打ち切り: 0 件。
+- W3_s6 の 790468f505(screen_hei → 押し出し → 高次 → attempts_exhausted)は strict に同じ。
+
+統合で直したこと: 最初の再生で、W3_s6 の 460166732f_split1 が 790468f505 の unresolved(attempts_exhausted)を写し、自前の素反応(−487.0i、CH4 + HO ↔ CH3 + H2O の引き抜き)を失った。その結果、M06-2X の SP が選ばれなくなった p02 の thermo も、460166732f と 790468f505 の thermo も unavailable になった。結論のなさは共有する結果ではないので、子は同じキーの case の結論だけを写し、その case が unresolved なら自分の予算で駆動するようにした(`reaction_paths._Book`。待ち行列にある case を待った子は、待ち行列が空になってから親の締め切りで駆動する)。予算の意味は G8-P7 の前と同じである。修正後の再生で W3_s6 の 460166732f_split1 は前と同じ記録(新しいジョブ 0)。
+
+χ(`tools/chi.py`、S2 の再生の S6 3 本): 状態の組の種から新しい鞍点は生まれていない(新しい saddle ジョブ 0)。接続して順位の付く TS 9 個の χ は 0.680〜0.798 で、0.3 未満はない。ただし、まとめた仮説の端の添字(C 上の置換)に対して、O 上の置換の TS(−1418.1i)の χ は 0.276 で、REACTION_MODE_MIN 0.3 を下回る(自分の端に対しては 0.80)。今の順序では試されないが、試されれば添字だけで not_reaction_mode と棄却される。残る課題(下)。
+
+audit_ends(S2 の再生): 19 件を監査し、不一致 0、別経路の TS 3(上の 05c19 の O 上の置換)、緩和で状態が変わった極小を端に使う仮説 0。M1 の選択肢 (a) は要らない。
+
+実計算(`/home/user/hfauto_r9/S2/real/`、`s2_real.sh`):
+
+| 確認 | 入力 | 結果 |
+|---|---|---|
+| 分割の深さ(X2 (g)) | oxalic_split0(CUR/oxalic_two_step の写し、paths から) | ctc_to_ttt は multi_step のまま、子 2 つは unresolved_within_budget(`split_depth`)、log なし。paths は hits 17、misses 0 |
+| 行 1(mode_follow 0) | `/home/user/hfauto_r8_probe/G3-1_row1` | up_to_planar は blocked_upstream(`endpoint_without_dft_minimum`)。平面 NH3 の端点に DFT 極小がない |
+| 行 1(既定の mode_follow) | nh3_planar_row1_default | 平面 NH3 は mode-follow で NH3 の basin に加わり(メンバー planar_nh3、_mf1、_mf2)、行 1 は発火せず same_basin(行 2)。分析 G3 の根本原因 1 の「既定でも行 1 に落ちる」は成り立たなかった |
+| 再開の上限(実計算) | w5_split1_restart(CUR/W5_s6 の写し、paths から `--retry-failed geometry_maxiter`) | 取り直した saddle(同じジョブ鍵 204845c7)は今回は maxiter で止まらず収束した(NWChem の並列の非決定性。前回は 50 歩で maxiter)。再開も上限の判定も起きず、split1 は elementary(−484.8i)。実計算での再開の上限は実証できていない(10 分) |
+
+残る課題:
+
+- O 上の置換と C 上の置換の両方の種を saddle まで試すこと(分析の検証)は満たしていない。種は順に試し、最初に結論が出た種で case が閉じる(G8-P7 の実装)。どの種を先にするか(低レベルの障壁 `dE_act_kcal` の順など)と、2 段の結論より直接の素反応を優先するかは未決。
+- まとめた仮説の χ は、仮説の端の添字に対して測る。別の添字の経路の TS は、正しい TS でも χ が下がる(上の 0.276)。端を鞍点の添字に合わせ直して測る(`identity.basin_coords`)案があるが、縮退転位では両端が同じ添字に重なるので、そのまま入れられない。REACTION_MODE_MIN は変えない。
+- 再開の上限は、S1 より後に maxiter で止まった saddle にしか効かない(それより前の Failure はエネルギーを持たない)。

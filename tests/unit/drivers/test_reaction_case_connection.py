@@ -96,19 +96,24 @@ def case_ctx(root: Path, ends=("reactant", "product"), known=(), kcal=None):
     return ctx, CaseState(minima=tuple(minima[m][0] for m in case.minima))
 
 
-def qrc(ctx, state, monkeypatch, names, ts_kcal=20.0):
-    """CONNECT from a validated TS ``ts_kcal`` above the reactant whose QRC sides optimize to
-    the named structures (the QRC optimization itself: test_reaction_case_actions)."""
+def qrc(ctx, state, monkeypatch, names, ts_kcal=20.0, amplitudes=None):
+    """VALIDATE_AND_CONNECT on a TS ``ts_kcal`` above the reactant that passes its checks and
+    whose QRC sides optimize to the named structures at every amplitude (``amplitudes``
+    collects them; the checks and the QRC optimization: test_reaction_case_saddle)."""
     sides = tuple(ctx.rt.qm.optimize(ctx.mol(POINTS[n]), DFT) for n in names)
-    ctx.work.ts_freq = Evidence.model_validate({
+    ctx.work.calcs["freq"] = Evidence.model_validate({
         **sides[0].model_dump(), "task": "freq", "energy_hartree": ts_kcal * K, "n_external": 6,
         "frequencies_cm1": (-1500.0, 100.0, 200.0, 300.0, 400.0, 500.0),
         "imaginary_modes": (tuple(np.eye(12)[3]),)})
-    monkeypatch.setattr(connection, "_sides", lambda *_: (
-        sides, tuple(ctx.coords(s.final) for s in sides)))
+    finals = tuple(ctx.coords(s.final) for s in sides)
+    monkeypatch.setattr(connection, "_sides", lambda _ctx, _freq, _starts, attempt: (
+        (amplitudes if amplitudes is not None else []).append(attempt), (sides, finals))[1])
     claim = SaddleClaim(saddle_calc="ts", freq_calc="freq", imag_cm1=-1500.0,
                         energy_hartree=ts_kcal * K)
-    return connection.connect(ctx, replace(state, claim=claim), Decision(Action.CONNECT, "ts"))
+    monkeypatch.setattr(connection, "validate_ts",
+                        lambda _ctx, s: replace(s, last_saddle=None, claim=claim))
+    return connection.validate_and_connect(ctx, replace(state, last_saddle="converged"),
+                                           Decision(Action.VALIDATE_AND_CONNECT, "test"))
 
 
 def minimum_of(ctx, name: str) -> str:
@@ -148,17 +153,38 @@ def test_a_ts_whose_sides_join_one_state_is_rejected_and_the_search_goes_on(
     assert state.connection == "same_state" and ctx.work.connection is None
     assert ctx.work.intermediate is None and ctx.work.split_ts is None
     assert ctx.rt.qm.calls[jobs:] == ["optimize", "optimize", "frequencies"]  # its new basin
-    assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "no_dft_path")
+    assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "dft_path")
     spent = replace(state, saddle_attempts=ctx.rules.budget.max_saddle_attempts)
     assert decide(ctx.case, spent, ctx.rules) == Decision(Action.COMPLETE, "connection_failed",
                                                           CaseOutcome.UNRESOLVED)
 
 
-def test_sides_in_one_basin_are_retried_wider(tmp_path, monkeypatch):
+@pytest.mark.parametrize("names,amplitudes,label", [
+    (("product", "product"), [1, 2], "same_basin"),  # one basin at both amplitudes
+    (("side", "product"), [1], "same_state"),  # two basins of one state: no wider QRC
+    (("reactant", "product"), [1], "elementary"),
+])
+def test_sides_in_one_basin_are_retried_wider_within_the_action(tmp_path, monkeypatch, names,
+                                                                amplitudes, label):
+    """G7-P5: one action from the TS checks to QRC; only sides in one basin get the second,
+    wider amplitude. Row 8 then searches on while attempts are left."""
     ctx, state = case_ctx(tmp_path)
-    state = qrc(ctx, state, monkeypatch, ("product", "product"))
-    assert state.connection == "same_basin"
-    assert decide(ctx.case, state, ctx.rules) == Decision(Action.CONNECT, "connection_retry")
+    ran = []
+    state = qrc(ctx, state, monkeypatch, names, amplitudes=ran)
+    assert (ran, state.connection, state.last_saddle) == (amplitudes, label, None)
+    if label != "elementary":
+        assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "dft_path")
+
+
+def test_no_qrc_starts_after_the_walltime(tmp_path, monkeypatch):
+    """The walltime closes the case between steps (row 7) as when QRC was an action of its own:
+    the accepted TS keeps its claim, no QRC runs."""
+    ctx, state = case_ctx(tmp_path)
+    ctx.deadline, ran = Deadline.after(0.0), []
+    state = qrc(ctx, state, monkeypatch, ("reactant", "product"), amplitudes=ran)
+    assert ran == [] and state.claim is not None and state.connection is None
+    assert decide(ctx.case, replace(state, expired=True), ctx.rules) == Decision(
+        Action.COMPLETE, "walltime", CaseOutcome.UNRESOLVED)
 
 
 def test_a_new_state_on_one_side_splits_and_none_at_an_end_is_reassigned(tmp_path,
@@ -215,7 +241,7 @@ def test_a_profile_well_is_an_end_by_state_or_at_the_resolution(tmp_path, ends, 
     names = (ends[0], "apart", well, "apart", ends[1])  # "apart" frames are never relaxed
     ctx, state = case_ctx(tmp_path, ends, kcal={ends[0]: kcal[0], well: kcal[2], ends[1]: kcal[4]})
     frames = [POINTS[n] for n in names]
-    ctx.work.path = Profile(frames, tuple(e * K for e in kcal))
+    ctx.work.path = Profile(frames, tuple(e * K for e in kcal), "string")
     state = record_profile(state, BarrierVerdict(verdict="intermediate", source="string"))
     state = connection.validate_intermediate(
         ctx, state, Decision(Action.VALIDATE_INTERMEDIATE, "path_intermediate"))
@@ -235,7 +261,8 @@ def by_qrc(ctx, state, monkeypatch):
 def by_profile(ctx, state, monkeypatch):
     """A string whose lowest well is the H3O chain."""
     names = ("reactant", "apart", "bridged", "apart", "product")
-    ctx.work.path = Profile([POINTS[n] for n in names], tuple(e * K for e in (0, 3, -1, 3, 0)))
+    ctx.work.path = Profile([POINTS[n] for n in names], tuple(e * K for e in (0, 3, -1, 3, 0)),
+                            "string")
     state = record_profile(state, BarrierVerdict(verdict="intermediate", source="string"))
     decision = Decision(Action.VALIDATE_INTERMEDIATE, "path_intermediate")
     return connection.validate_intermediate(ctx, state, decision)

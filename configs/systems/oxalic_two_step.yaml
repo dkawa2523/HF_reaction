@@ -1,6 +1,6 @@
 # Oxalic acid cTc -> tTt (H-O-C-C 0/0 -> 180/180) takes two OH rotations through tTc (Macoas
 # 2000; W1 DFT probe: three minima, tTc +3.18, tTt +5.15): expected multi_step via GEN-05, both
-# children elementary with barriers of 8-15 kcal/mol. Fake-pass checks: REASSIGNED fails; row 12
+# children elementary with barriers of 8-15 kcal/mol. Fake-pass checks: REASSIGNED fails; row 11
 # multi_step leaves GEN-05 unreached; the ts_calc child runs no new saddle or freq job.
 system_id: oxalic_two_step
 species:

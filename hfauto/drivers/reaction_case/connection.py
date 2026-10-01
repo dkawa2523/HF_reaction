@@ -1,5 +1,5 @@
-"""The connection and intermediate actions of a reaction case (design §7.3): QRC from a
-validated TS, assignment of its sides to DFT basins, and the wells that split a case. A well
+"""The connection and intermediate actions of a reaction case (design §7.3): the TS checks and
+QRC from the TS, assignment of its sides to DFT basins, and the wells that split a case. A well
 that becomes an endpoint is the structure the case reached, in its atom order; a case is
 judged at the granularity its ends differ in (``_key``)."""
 
@@ -21,7 +21,7 @@ from hfauto.core.evidence import Evidence, Failure
 from hfauto.core.ids import species_id
 from hfauto.core.records import ConnectionClaim, MinimumRecord, SpeciesRecord
 from hfauto.drivers.minimum import calc_id, relax_to_minimum
-from hfauto.drivers.reaction_case.actions import Ctx, Profile, mode_amplitude, peak_seed
+from hfauto.drivers.reaction_case.actions import Ctx, mode_amplitude, peak_seeds, validate_ts
 from hfauto.drivers.reaction_case.state import CaseState, Decision
 
 QRC_RETRY_FACTOR = 2.0  # the second QRC amplitude, capped at BOUNDS_A[1]
@@ -157,13 +157,27 @@ def _sides(ctx: Ctx, freq: Evidence, starts: tuple[np.ndarray, np.ndarray], atte
     return (plus, minus), (x, y)
 
 
-def connect(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """QRC: displace ± along the TS mode by an energy target, optimize, assign, gate."""
-    freq = ctx.work.ts_freq
-    attempt = state.connection_attempts + 1
-    state = replace(state, connection_attempts=attempt)
-    if freq is None or not freq.imaginary_modes:
-        return replace(state, connection="failed")
+def validate_and_connect(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
+    """The saddle's TS checks (actions.validate_ts), then QRC from an accepted TS. Sides in one
+    basin may be a displacement too small to leave it: QRC runs once more, wider. Each QRC
+    starts only before the walltime (row 7 then closes the case); row 8 judges a connection
+    that is still rejected."""
+    state = validate_ts(ctx, state)
+    if state.claim is None:
+        return state
+    freq = ctx.work.calcs[state.claim.freq_calc]
+    for attempt in (1, 2):
+        if ctx.deadline.expired():
+            break
+        state = connect(ctx, state, freq, attempt)
+        if state.connection != "same_basin":
+            break
+    return state
+
+
+def connect(ctx: Ctx, state: CaseState, freq: Evidence, attempt: int) -> CaseState:
+    """QRC from the TS ``freq``: displace ± along its mode by an energy target (× QRC_RETRY_FACTOR
+    at the second ``attempt``), optimize, assign, gate."""
     step = min(mode_amplitude(ctx, freq, 0) * QRC_RETRY_FACTOR ** (attempt - 1), BOUNDS_A[1])
     optimized = _sides(ctx, freq, displace(ctx.coords(freq.final),
                                            np.asarray(freq.imaginary_modes[0]), step), attempt)
@@ -184,7 +198,7 @@ def connect(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
         ctx.note(f"qrc{attempt}:{verdict}:{','.join(gate.reasons)}")
         return replace(state, connection=verdict)
     side_calcs = (calc_id(ctx.keep(sides[0])), calc_id(ctx.keep(sides[1])))
-    if (two := _two_steps(ctx, state, label, (a, b), (first, second))) is not None:
+    if (two := _two_steps(ctx, state, label, (a, b), (first, second), attempt)) is not None:
         return two
     ctx.work.connection = ConnectionClaim(side_calcs=side_calcs,
                                           minima=(a.record.minimum_id, b.record.minimum_id))
@@ -209,9 +223,9 @@ def _keys(ctx: Ctx, sides: tuple[Reached | None, Reached | None], ts: float
 def _rejected(reasons: tuple[str, ...], one_key: bool, a: Reached | None, b: Reached | None
               ) -> Literal["same_basin", "same_state", "failed"]:
     """A connection that failed the gate. Both sides in one basin may be a displacement too
-    small to leave it: worth a wider one (row 8). Both in one key but two basins (one state of a
-    bond-changing case, or a basin split finer than the resolution) make a saddle of another
-    process, never this case's (row 8 searches on). Anything else failed."""
+    small to leave it: worth a wider one (validate_and_connect). Both in one key but two basins
+    (one state of a bond-changing case, or a basin split finer than the resolution) make a
+    saddle of another process, never this case's (row 8 searches on). Anything else failed."""
     if a is None or b is None or not one_key:
         return "failed"
     if a.record.basin_id != b.record.basin_id:
@@ -220,7 +234,7 @@ def _rejected(reasons: tuple[str, ...], one_key: bool, a: Reached | None, b: Rea
 
 
 def _two_steps(ctx: Ctx, state: CaseState, label: str, sides: tuple[Reached, Reached],
-               keys: tuple[str | None, str | None]) -> CaseState | None:
+               keys: tuple[str | None, str | None], attempt: int) -> CaseState | None:
     """GEN-05: a reassigned TS with exactly one side at an end (by its case key) makes the case
     two steps (row 5), the other side being the intermediate: a new chemical state for a
     bond-changing case, a new basin for a same-state one; the split child between those two
@@ -230,8 +244,7 @@ def _two_steps(ctx: Ctx, state: CaseState, label: str, sides: tuple[Reached, Rea
     if label != "reassigned" or len(inside) != 1 or state.claim is None:
         return None
     well = next(r for r, k in zip(sides, keys, strict=True) if k not in ends)
-    ctx.note(f"qrc{state.connection_attempts}:end{inside[0]}_to_new_basin:"
-             f"{well.record.minimum_id}")
+    ctx.note(f"qrc{attempt}:end{inside[0]}_to_new_basin:{well.record.minimum_id}")
     ctx.work.intermediate = _member(ctx, well)
     ctx.work.split_ts = (inside[0] + 1, state.claim.saddle_calc)
     return replace(state, connection=None, claim=None, intermediate="distinct")
@@ -239,16 +252,14 @@ def _two_steps(ctx: Ctx, state: CaseState, label: str, sides: tuple[Reached, Rea
 
 def _with_peak(ctx: Ctx, state: CaseState, name: str) -> CaseState:
     """The latest profile's highest peak joins the seeds."""
+    return replace(state, seeds=(*state.seeds, *peak_seeds(ctx, f"{name}_hei")))
+
+
+def _past_the_well(ctx: Ctx, state: CaseState, e: Sequence[float], name: str) -> CaseState:
+    """The well relaxed into an endpoint: barrierless when no interior point of the profile
+    (energies ``e``) rises a resolution above the higher end, else its highest peak seeds the
+    saddle search."""
     v = state.screen
-    source = "screen_hei" if v is not None and v.source == "screen" else "path_hei"
-    seed = peak_seed(ctx, f"{name}_hei", source)
-    return replace(state, seeds=(*state.seeds, seed)) if seed else state
-
-
-def _past_the_well(ctx: Ctx, state: CaseState, path: Profile, name: str) -> CaseState:
-    """The well relaxed into an endpoint: barrierless when no interior point rises a resolution
-    above the higher end, else the highest peak seeds the saddle search."""
-    v, e = state.screen, path.energies
     if v is not None and max(e[1:-1]) - max(e[0], e[-1]) < ctx.resolution:
         return replace(state, screen=v.model_copy(update={"verdict": "barrierless",
                                                           "reasons": ("well_is_endpoint",)}))
@@ -256,13 +267,13 @@ def _past_the_well(ctx: Ctx, state: CaseState, path: Profile, name: str) -> Case
 
 
 def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """relax_to_minimum → Registry on the latest profile's lowest well (row 12); the claim of a
+    """relax_to_minimum → Registry on the latest profile's lowest well (row 11); the claim of a
     TS of another process (row 8 searched on) is dropped with its connection verdict. The well
     is an end when it has an end's case key, or (G5-P2) lies within a resolution of an end with
     no hill of a resolution between them on the profile. A failed relaxation is no chemical
     result: the profile goes on from its highest peak."""
     path, state = ctx.work.path, replace(state, claim=None, connection=None)
-    if path is None:  # row 12 follows a DFT profile (CaseState.screen)
+    if path is None:  # row 11 follows a DFT profile (CaseState.screen)
         return replace(state, intermediate="relax_failed")
     e = path.energies
     w = min(profile.interior_maxima([-v for v in e], ctx.resolution), key=e.__getitem__)
@@ -274,6 +285,6 @@ def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> Cas
     ends, legs = _end_records(ctx), (e[:w + 1], e[w:])  # the profile from the well to each end
     if _key(ctx, well.record) in {_key(ctx, end) for end in ends} or any(
             _as_end(ctx, well.record, end, leg) for end, leg in zip(ends, legs, strict=True)):
-        return _past_the_well(ctx, replace(state, intermediate="same_as_endpoint"), path, name)
+        return _past_the_well(ctx, replace(state, intermediate="same_as_endpoint"), e, name)
     ctx.work.intermediate = _member(ctx, well)
     return replace(state, intermediate="distinct")

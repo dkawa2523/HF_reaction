@@ -1,11 +1,12 @@
-"""finalize() and split() (design §7.3); split is ported from tests/test_reaction_segments.py."""
+"""finalize(), split() and undriven() (design §7.3); split is ported from
+tests/test_reaction_segments.py."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from hfauto.chemistry.classification import finalize, split
+from hfauto.chemistry.classification import finalize, split, undriven
 from hfauto.core import records as r
 from hfauto.core.evidence import FileRef, Geometry
 from hfauto.drivers.reaction_case.state import Action, Decision
@@ -49,6 +50,30 @@ def test_reassigned_step_adopts_the_connected_minima():
     rec = finalize(CASE, done(r.CaseOutcome.REASSIGNED), barrier=None, claim=SADDLE,
                    connection=qrc)
     assert (rec.source, rec.minima, rec.reaction_id) == ("reassigned", ("ma", "mc"), "rxn")
+
+
+def test_an_undriven_child_takes_the_result_of_its_case_key_or_stays_unresolved():
+    """G8-P7: a split child whose case key a driven case has takes that case's outcome and
+    claims (same_as); a reassigned one adopts the minima its TS connects. G8-P3: one deeper than
+    max_split_depth is UNRESOLVED (split_depth) with no claim. Neither has a log."""
+    child = CASE.model_copy(update={"reaction_id": "rxn_split1", "source": "split", "reasons": ()})
+    barrier = r.BarrierVerdict(verdict="single", source="screen")
+    other = CASE.model_copy(update={"reaction_id": "rxn_b", "minima": ("mb", "ma")})
+    driven = finalize(other, done(r.CaseOutcome.ELEMENTARY_STEP), barrier=barrier, claim=SADDLE,
+                      connection=QRC)
+    rec = undriven(child, "same_as:rxn_b", driven)
+    assert (rec.outcome, rec.reasons, rec.barrier, rec.saddle, rec.connection) == (
+        r.CaseOutcome.ELEMENTARY_STEP, ("same_as:rxn_b",), barrier, SADDLE, QRC)
+    assert (rec.reaction_id, rec.minima, rec.source, rec.log) == ("rxn_split1", ("ma", "mb"),
+                                                                  "split", None)
+    qrc = QRC.model_copy(update={"minima": ("mc", "ma")})
+    moved = finalize(other, done(r.CaseOutcome.REASSIGNED), barrier=None, claim=SADDLE,
+                     connection=qrc)
+    reassigned = undriven(child, "same_as:rxn_b", moved)
+    assert (reassigned.source, reassigned.minima) == ("reassigned", ("ma", "mc"))
+    capped = undriven(child, "split_depth")
+    assert (capped.outcome, capped.reasons, capped.saddle, capped.log) == (
+        r.CaseOutcome.UNRESOLVED, ("split_depth",), None, None)
 
 
 # H, O, N, O: PBE0-D3BJ/def2-SVPD trans- and cis-HONO (golden G03); HNO2 with the H on N

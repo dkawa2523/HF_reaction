@@ -167,7 +167,9 @@ class ReactionRecord(BaseModel):
     source: Literal["declared", "discovery", "mode_follow", "split", "reassigned"]
     coordinate: tuple[CoordinateTerm, ...] = ()
     torsional: bool = False
-    low_level_ts: Geometry | None = None
+    # every distinct low-level TS of the hypothesis's case key (chemistry.hypotheses), in
+    # priority order: the TS seeds the case tries in turn
+    low_level_ts: tuple[Geometry, ...] = ()
     # a DFT stationary point at the case Level (a mode-follow saddle or a split parent's TS):
     # validated first instead of searched again
     ts_calc: str | None = None
@@ -208,7 +210,7 @@ class ReactionThermo(BaseModel):
     band_kcal: tuple[float, float] | None = None  # dG_eff over the qs x cutoff variants
     blockers: tuple[str, ...] = ()
     dG_eff_kcal: float | None = None  # the ranking quantity (chemistry.thermo.effective_barrier)
-    energy_level: str | None = None  # method/basis of the energies, e.g. wb97x-d3/def2-tzvpd
+    energy_level: str | None = None  # method/basis of the energies, e.g. m06-2x-d3/def2-tzvpd
     notes: tuple[str, ...] = ()  # submerged_barrier
 
 

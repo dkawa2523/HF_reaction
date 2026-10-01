@@ -2,7 +2,11 @@
 
 Priority: declared reactions, discovery products (low-level TS first), mode-follow TS candidates.
 Declared reactions, torsions and inversions included, are always kept so that decide() classifies
-them. An undeclared pair joins two DFT minima of one level inside the window, or one basin, and
+them. A hypothesis stands for its case key (``pair_key``): a pair that differs in chemical state
+by its two states, else by its two minima. An undeclared pair whose key a hypothesis already has
+makes none; every hypothesis of a key holds each distinct low-level TS of that key (its own
+first, then in priority order), the seeds its case tries in turn, and the first verified DFT
+saddle (G8-P7). An undeclared pair joins two DFT minima of one level inside the window, or one basin, and
 changes bonds between its ends (CH-07): a conformer change, torsion or enantiomerization is studied
 only when declared (Curtin-Hammett), so one basin gives a degenerate rearrangement that exchanges
 bonded partners (S10). Bonds and degeneracy are judged on the basins' optimized structures in the
@@ -57,6 +61,16 @@ from hfauto.core.system import ReactionInput
 LoadXYZ = Callable[[Geometry], XYZ]
 Source = Literal["declared", "discovery", "mode_follow"]
 Ends = tuple[SpeciesRecord, SpeciesRecord]
+CaseKey = frozenset[tuple[str, str]] | frozenset[str]
+
+
+def pair_key(a: MinimumRecord, b: MinimumRecord) -> CaseKey:
+    """What a case between ``a`` and ``b`` answers, at the granularity it is judged
+    (drivers.reaction_case.connection._key): the two chemical states (composition, state
+    label) when they differ, as the basins of a state interconvert faster than it reacts
+    (Curtin-Hammett); else (a torsion, a degenerate rearrangement) the two minima."""
+    sa, sb = (a.composition_id, a.state_label), (b.composition_id, b.state_label)
+    return frozenset((sa, sb)) if sa != sb else frozenset((a.minimum_id, b.minimum_id))
 
 
 def seed_species_id(relaxation: DiscoveryRecord) -> str:
@@ -176,7 +190,7 @@ def _record(pool: _Pool, rid: str, source: Source, minima: tuple[MinimumRecord, 
         # (enantiomerization) stays a reaction (CH-35).
         degenerate=ma.basin_id == mb.basin_id and identity.mapped_equivalent(symbols, xa, xb),
         coordinate=coordinate, torsional=not (formed or broken) if torsional is None else torsional,
-        low_level_ts=low_level_ts, ts_calc=ts_calc,
+        low_level_ts=() if low_level_ts is None else (low_level_ts,), ts_calc=ts_calc,
     )
 
 
@@ -255,11 +269,18 @@ def _pool(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[Sp
                  levels=levels or {})
 
 
-def _lend(record: ReactionRecord, c: _Candidate) -> ReactionRecord:
-    """The TS a repeated pair's first hypothesis lacks: a low-level TS, and a verified DFT saddle
-    even when a low-level TS was lent first (the case validates the saddle first)."""
-    return record.model_copy(update={"low_level_ts": record.low_level_ts or c.low_level_ts,
-                                     "ts_calc": record.ts_calc or c.ts_calc})
+def _lend(pool: _Pool, record: ReactionRecord, c: _Candidate) -> ReactionRecord:
+    """The TSs of a candidate of the hypothesis's key: its low-level TS is appended unless it
+    lies in one basin with a TS held (identity.assign on structure alone: a low-level TS has no
+    energy on the case's PES); its verified DFT saddle when the hypothesis has none (the case
+    validates it first)."""
+    held, ts = record.low_level_ts, c.low_level_ts
+    if ts is not None:
+        x = pool.load(ts)
+        known = {str(k): (pool.load(g).coords, 0.0) for k, g in enumerate(held)}
+        if identity.assign(x.symbols, x.coords, 0.0, known) is None:
+            held = (*held, ts)
+    return record.model_copy(update={"low_level_ts": held, "ts_calc": record.ts_calc or c.ts_calc})
 
 
 def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[SpeciesRecord],
@@ -267,30 +288,36 @@ def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[S
            load_xyz: LoadXYZ, *, window_kcal: float = Policy.reaction_window_kcal,
            max_per_composition: int = 6, monomers: Monomers | None = None,
            levels: Mapping[str, Level] | None = None) -> list[ReactionRecord]:
-    """One ReactionRecord per hypothesis. A repeated minima pair keeps the first one, which
-    borrows the TS it lacks, also from a discovery that is no hypothesis (an inversion's saddle).
-    ``minima`` pairs every minimum (any tier) with its optimized structure; ``monomers``
-    (thermo.monomer_states) and ``levels`` (DFT minimum id -> its opt Level) find an
-    association's separated monomers."""
+    """One ReactionRecord per hypothesis: each declared reaction, and the first discovery
+    candidate of a case key (``pair_key``) no hypothesis has. Every hypothesis of a key then
+    takes the TSs of all candidates of that key in priority order (``_lend``), also of one that
+    is no hypothesis itself (an inversion's saddle). ``minima`` pairs every minimum (any tier)
+    with its optimized structure; ``monomers`` (thermo.monomer_states) and ``levels`` (DFT
+    minimum id -> its opt Level) find an association's separated monomers."""
     pool = _pool(minima, species, load_xyz, window_kcal, monomers, levels)
     records = [_declared(pool, r) for r in declared]
-    index = {frozenset(r.minima): i for i, r in enumerate(records)}
+    index: dict[CaseKey, list[int]] = {}
+    for i, r in enumerate(records):
+        if "" not in r.minima:  # an endpoint without a minimum is blocked (row 1)
+            a, b = (pool.minima[m] for m in r.minima)
+            index.setdefault(pair_key(a, b), []).append(i)
     # by the composition of the case's ends (an association's reactants are its monomers)
     per_composition = Counter(t.composition_id for r in records
                               for t in (r.products or r.reactants)[:1])
-    for c in _candidates(pool, discoveries):
+    candidates = list(_candidates(pool, discoveries))
+    for c in candidates:
         ma, mb = c.start, c.end
-        if ma is None or mb is None:
-            continue
-        pair = frozenset((ma.minimum_id, mb.minimum_id))
-        if pair in index:
-            records[index[pair]] = _lend(records[index[pair]], c)
+        if ma is None or mb is None or (key := pair_key(ma, mb)) in index:
             continue
         if per_composition[ma.composition_id] >= max_per_composition:
             continue
         record = _auto(pool, c, ma, mb)
         if record is not None:
-            index[pair] = len(records)
+            index[key] = [len(records)]
             records.append(record)
             per_composition[ma.composition_id] += 1
+    for c in candidates:
+        if c.start is not None and c.end is not None:
+            for i in index.get(pair_key(c.start, c.end), []):
+                records[i] = _lend(pool, records[i], c)
     return records

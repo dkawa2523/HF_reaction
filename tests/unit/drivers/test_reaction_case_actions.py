@@ -1,4 +1,5 @@
-"""Reaction-case actions on fake surfaces (design §7.3); K cases of the old path/decision tests."""
+"""Reaction-case path actions on fake surfaces (design §7.3); K cases of the old path/decision
+tests. The saddle search, TS checks and QRC: test_reaction_case_saddle (on these builders)."""
 
 from dataclasses import replace
 from itertools import pairwise
@@ -10,25 +11,21 @@ import pytest
 
 from hfauto.chemistry import xyz
 from hfauto.chemistry.geometry import declared_coordinate_gradient
-from hfauto.chemistry.identity import mapped_equivalent, mapped_rmsd
+from hfauto.chemistry.identity import mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
-from hfauto.chemistry.modes import BOUNDS_A, displace
 from hfauto.core import records as R
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.method import Deadline, MethodSpec
 from hfauto.drivers.minimum import Registry, relax_to_minimum
-from hfauto.drivers.reaction_case import connection
 from hfauto.drivers.reaction_case.actions import Profile
 from hfauto.drivers.reaction_case.driver import HANDLERS, CaseRuntime, open_case
 from hfauto.drivers.reaction_case.paths import SCREEN_IMAGES, STRING_BEADS
 from hfauto.drivers.reaction_case.state import (
-    STRING_CHUNKS,
     Action,
     CaseRules,
     CaseState,
     Decision,
-    ReactionPathsPolicy,
     Seed,
     decide,
     record_profile,
@@ -49,30 +46,9 @@ EXHAUSTED = Decision(Action.COMPLETE, "attempts_exhausted", R.CaseOutcome.UNRESO
 ACAC = Path(__file__).resolve().parents[3] / "configs" / "systems" / "xyz" / "acac"
 
 
-class HigherOrderQM(fakes.FakeQM):  # every freq job also reports a second imaginary mode
-    def frequencies(self, mol, method, **kw):
-        ev = super().frequencies(mol, method, **kw)
-        nu = sorted(ev.frequencies_cm1)
-        return ev.model_copy(update={"frequencies_cm1": (nu[0], -200.0, *nu[2:]),
-                                     "imaginary_modes": (*ev.imaginary_modes, OFF_AXIS)})
-
-
-class OffAxisQM(fakes.FakeQM):  # every freq job's one imaginary mode moves H off the A-H-B axis
-    def frequencies(self, *args, **kw):
-        return super().frequencies(*args, **kw).model_copy(update={"imaginary_modes": (OFF_AXIS,)})
-
-
 class FailingSaddle(fakes.FakeSaddle):  # a failure without a last frame
     def refine(self, seed, method, **kw):
         return Failure(kind=FailureKind.NONZERO_EXIT, reason="scripted")
-
-
-class StalledSaddle(fakes.FakeSaddle):  # NWChem at maxiter: a Failure with the last frame
-    def refine(self, seed, method, **kw):
-        self.calls.append("refine")
-        last = fakes.write_geometry(self.root, f"last{len(self.calls)}.xyz", seed.xyz.symbols,
-                                    seed.xyz.coords + 0.01)
-        return Failure(kind=FailureKind.GEOMETRY_MAXITER, reason="maxiter", final=last)
 
 
 class NoOpt(fakes.FakeQM):  # every optimization fails at maxiter
@@ -149,16 +125,9 @@ def act(ctx, state, action, reason="test"):
     return HANDLERS[action](ctx, state, Decision(action, reason))
 
 
-def qrc_step(ctx) -> float:
-    """The largest atomic displacement of the latest QRC's + side from its TS."""
-    side = ctx.work.calcs[ctx.work.connection.side_calcs[0]]
-    moved = ctx.coords(side.start) - ctx.coords(ctx.work.ts_freq.final)
-    return float(np.linalg.norm(moved, axis=1).max())
-
-
 def test_one_barrierless_string_closes_the_case(tmp_path) -> None:
     ctx, state = case_ctx(tmp_path, fakes.flat_uphill())
-    state = act(ctx, state, Action.FIND_PATH, "no_dft_path")
+    state = act(ctx, state, Action.FIND_PATH, "dft_path")
     assert (state.screen.verdict, state.screen.source, state.path_runs) == (
         "barrierless", "string", 1)
     assert ctx.rt.path.calls == ["find_path:pes"] and not state.seeds
@@ -167,27 +136,21 @@ def test_one_barrierless_string_closes_the_case(tmp_path) -> None:
 
 
 def test_one_chunk_per_call_and_the_next_one_continues_the_last_path(tmp_path) -> None:
-    """U5-P4: a chunk is classified at once and its peak seeds the saddle search; once its seeds
-    fail, the next chunk starts from its path, up to string_chunks while attempts are left."""
+    """U5-P4 / G3-P2: a chunk is classified at once and its peak seeds the saddle search; once
+    its seed fails, the next chunk starts from its path while attempts are left."""
     ctx, state = case_ctx(tmp_path, fakes.double_well(), saddle=FailingSaddle(tmp_path, None))
-    ctx.rt = replace(ctx.rt, path=DriftingPath(tmp_path, ctx.rt.qm.pes, ["single"] * 3))
-    ctx.rules = replace(ctx.rules, budget=ReactionPathsPolicy(max_saddle_attempts=STRING_CHUNKS))
-    state = act(ctx, state, Action.FIND_PATH, "no_dft_path")
+    ctx.rt = replace(ctx.rt, path=DriftingPath(tmp_path, ctx.rt.qm.pes, ["single"] * 2))
+    state = act(ctx, state, Action.FIND_PATH, "dft_path")
     first = ctx.work.path.frames
     assert ctx.rt.path.calls == ["find_path:single"] and state.seeds[0].source == "path_hei"
-    for runs in (2, 3):
-        state = act(ctx, state, Action.REFINE_SADDLE)  # its peak fails
-        assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "next_chunk")
-        state = act(ctx, state, Action.FIND_PATH, "next_chunk")
-        assert state.path_runs == runs and len(ctx.rt.path.calls) == runs
+    state = act(ctx, state, Action.REFINE_SADDLE)  # its peak fails
+    assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "dft_path")
+    state = act(ctx, state, Action.FIND_PATH, "dft_path")
+    assert state.path_runs == 2 and len(ctx.rt.path.calls) == 2
     seam = ctx.frames(ctx.rt.path.initial[1])  # the 1st chunk's path, true minima at its ends
     assert all(np.allclose(x, y, atol=1e-4) for x, y in zip(seam, first, strict=True))
     state = act(ctx, state, Action.REFINE_SADDLE)
-    for attempts in (STRING_CHUNKS, STRING_CHUNKS + 1):  # the attempts, then the chunks used
-        rules = replace(ctx.rules, budget=ReactionPathsPolicy(max_saddle_attempts=attempts))
-        assert decide(ctx.case, state, rules).reason == "attempts_exhausted"
-    two = replace(state, path_runs=2, saddle_attempts=2)  # the default budget: no 3rd chunk
-    assert decide(ctx.case, two, CaseRules(screen=False)).reason == "attempts_exhausted"
+    assert decide(ctx.case, state, ctx.rules) == EXHAUSTED  # the default budget: no 3rd chunk
 
 
 def test_a_string_gets_the_dft_minima_back_and_its_images_aligned(tmp_path) -> None:
@@ -213,161 +176,30 @@ def test_first_string_chunk_starts_from_an_idpp_without_rigid_jumps(tmp_path, sy
     assert rms == pytest.approx([mapped_rmsd(x, y) for x, y in pairwise(frames)], abs=1e-6)
 
 
-def test_saddle_hessians_validation_and_qrc_on_a_double_well(tmp_path, monkeypatch) -> None:
-    ctx, state = case_ctx(tmp_path, fakes.double_well())
-    state = act(ctx, state, Action.FIND_PATH)
-    seeds, n_freq = state.seeds, ctx.rt.qm.calls.count("frequencies")
-    ctx.log = (logged := []).append
-    ctx.rt = replace(ctx.rt, screen_qm=(xtb := HigherOrderQM(tmp_path, ctx.rt.qm.pes)))
-    state = act(ctx, state, Action.REFINE_SADDLE)  # xTB whenever there is one, 2 negative modes too
-    assert state.last_saddle == "converged" and xtb.calls == ["frequencies"]
-    assert ctx.rt.qm.calls.count("frequencies") == n_freq and ctx.rt.saddle.calls == ["refine"]
-    ctx.rt = replace(ctx.rt, screen_qm=None)  # else DFT
-    state = act(ctx, replace(state, seeds=seeds), Action.REFINE_SADDLE)
-    assert ctx.rt.qm.calls.count("frequencies") == n_freq + 1 and state.saddle_attempts == 2
-    notes = [r["note"] for r in logged if "saddle_hessian" in r["note"]]
-    assert notes == ["saddle_hessian:xtb:rho", "saddle_hessian:dft:rho"]
-    state = act(ctx, state, Action.VALIDATE_TS)  # a separate freq job on the saddle
-    assert state.ts_check == "ok" and state.claim.imag_cm1 < -50 and not state.claim.notes
-    assert state.claim.freq_calc != state.claim.saddle_calc
-    state = act(ctx, state, Action.CONNECT)
-    claim, first = ctx.work.connection, qrc_step(ctx)
-    assert state.connection == "elementary" and set(claim.minima) == set(ctx.case.minima)
-    assert ctx.rt.qm.calls[-2:] == ["optimize+init_hessian"] * 2  # both sides: the TS Hessian
-    assert len(set(claim.side_calcs)) == 2 == ctx.rt.map[-1] and "minus_is_image" not in str(logged)
-    state = act(ctx, replace(state, connection=None), Action.CONNECT)  # 2nd amplitude: × 2
-    assert qrc_step(ctx) == pytest.approx(2 * first, abs=1e-6)
-    monkeypatch.setattr(connection, "BOUNDS_A", (0.03, 0.05))  # the first one is capped
-    state, amplitudes = replace(state, connection_attempts=0), []
-    for _ in range(2):  # C19: × 2, then clipped, so the 2nd amplitude equals the 1st
-        state = act(ctx, replace(state, connection=None), Action.CONNECT)
-        amplitudes.append((state.connection, qrc_step(ctx)))
-    assert amplitudes == [("elementary", pytest.approx(0.05, abs=1e-6))] * 2
-
-
-def test_a_symmetric_ts_optimizes_one_qrc_side_and_carries_its_image(tmp_path) -> None:
-    """CA-1b: at the F-H-F TS the minus start is the plus start with F1 and F2 exchanged, so
-    only the plus side is optimized; its image is the minus side's own optimum as labelled and
-    makes a degenerate step with distinct sides, both claimed by the one optimization."""
-    pes = fakes.symmetric_double_well()
-    ctx, state = case_ctx(tmp_path, pes)
-    freq = ctx.work.ts_freq = ctx.rt.qm.frequencies(pes.molecule("ts"), DFT)
-    starts = displace(pes.points["ts"], np.asarray(freq.imaginary_modes[0]), 0.1)
-    (plus, minus), (x_plus, x_minus) = connection._sides(ctx, freq, starts, 1)
-    alone = ctx.coords(ctx.rt.qm.optimize(ctx.mol(starts[1]), DFT, init_hessian=freq).final)
-    assert plus is minus and mapped_rmsd(x_minus, alone) < 1e-3
-    assert mapped_equivalent(pes.symbols, x_plus, x_minus)  # H at F2, H at F1: one basin
-    jobs, ctx.log = len(ctx.rt.qm.calls), (logged := []).append
-    state = act(ctx, state, Action.CONNECT)
-    assert ctx.rt.qm.calls[jobs:] == ["optimize+init_hessian"] and state.connection == "degenerate"
-    assert len(set(ctx.work.connection.side_calcs)) == 1 == ctx.rt.map[-1]
-    assert {"note": "qrc1:minus_is_image"} in logged
-
-
-def test_a_qrc_side_in_a_new_basin_is_registered_from_its_own_optimization(tmp_path) -> None:
-    """K5: the converged QRC side toward the intermediate is the new minimum's opt; registering
-    it adds only its freq job, no second optimization."""
-    pes = fakes.triple_well()
-    ctx, state = case_ctx(tmp_path, pes)
-    ctx.work.ts_freq, jobs = ctx.rt.qm.frequencies(pes.molecule("ts1"), DFT), len(ctx.rt.qm.calls)
-    state, claim = act(ctx, state, Action.CONNECT), ctx.work.connection
-    assert ctx.rt.qm.calls[jobs:] == ["optimize+init_hessian"] * 2 + ["frequencies"]
-    (well,) = ctx.work.minima.values()
-    assert state.connection == "reassigned" and well.minimum_id in claim.minima
-    assert well.opt_calc in claim.side_calcs
-
-
-def test_a_higher_order_saddle_is_pushed_once_and_refined_from_its_ts_hessian(tmp_path):
-    """U6-P3: the reaction mode is the negative mode along ρ; the most negative other one
-    pushes the saddle once by the energy target, and the TS freq is the seed's Hessian."""
-    ctx, state = case_ctx(tmp_path, fakes.double_well())
-    state = act(ctx, act(ctx, state, Action.FIND_PATH), Action.REFINE_SADDLE)
-    x = ctx.coords(ctx.work.saddle.final)
-    ctx.rt = replace(ctx.rt, qm=HigherOrderQM(tmp_path, ctx.rt.qm.pes))
-    state = act(ctx, state, Action.VALIDATE_TS)
-    seed = state.seeds[0]
-    assert (state.last_saddle, state.ts_check, seed.source) == ("failed", None,
-                                                                "higher_order_retry")
-    assert seed.hessian.task == "freq" and seed.mode == seed.hessian.imaginary_modes[0]
-    push = (ctx.coords(seed.geometry) - x).ravel()  # H along y: the second mode
-    assert np.flatnonzero(np.abs(push) > 1e-9).tolist() == [4]
-    assert BOUNDS_A[0] < abs(push[4]) < BOUNDS_A[1]
-    decision = decide(ctx.case, state, ctx.rules)
-    assert decision == Decision(Action.REFINE_SADDLE, "seed:higher_order_retry")
-    ctx.log = (logged := []).append
-    jobs = ctx.rt.qm.calls.count("frequencies"), len(ctx.rt.screen_qm.calls)
-    state = act(ctx, state, Action.REFINE_SADDLE)  # within 0.5 Å of the TS freq: no new Hessian
-    assert state.last_saddle == "converged" and state.saddle_attempts == 2
-    assert [r["note"] for r in logged] == ["saddle_hessian:ts_freq:mode"]
-    assert (ctx.rt.qm.calls.count("frequencies"), len(ctx.rt.screen_qm.calls)) == jobs
-
-
-def test_a_saddle_whose_mode_leaves_the_bond_change_gets_no_qrc(tmp_path) -> None:
-    """G1-P2: chi on the labelled ends' bonds (F-H-F: one basin); H off the axis gets no QRC."""
-    ctx, state = case_ctx(tmp_path, fakes.symmetric_double_well())
-    state = act(ctx, act(ctx, state, Action.FIND_PATH), Action.REFINE_SADDLE)
-    ctx.rt, ctx.log = replace(ctx.rt, qm=OffAxisQM(tmp_path, ctx.rt.qm.pes)), (logged := []).append
-    state = act(ctx, state, Action.VALIDATE_TS)
-    assert logged == [{"note": "ts_rejected:not_reaction_mode"}] and state.saddle_attempts == 1
-    assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "next_chunk")
-
-
-def test_a_stalled_saddle_restarts_once_from_its_last_frame(tmp_path) -> None:
-    """U6-P6 / R3: maxiter queues the last frame as the next seed, searched with a fresh
-    Hessian and not counted, so the last attempt still restarts; a used budget then ends the
-    case without a string."""
-    ctx, state = case_ctx(tmp_path, fakes.double_well(), saddle=StalledSaddle(tmp_path, None))
-    ts = fakes.write_geometry(tmp_path, "ts.xyz", ("N", "H", "O"), ctx.rt.qm.pes.points["ts"])
-    last = replace(state, seeds=(Seed(ts, "discovery_ts"),), saddle_attempts=1)
-    state = act(ctx, last, Action.REFINE_SADDLE)
-    restart = state.seeds[0]  # no mode: rho at its own frame
-    assert (restart.source, restart.mode, state.saddle_attempts, state.last_saddle) == (
-        "saddle_restart", None, 2, "failed")
-    assert np.allclose(ctx.coords(restart.geometry), ctx.rt.qm.pes.points["ts"] + 0.01)
-    decision = decide(ctx.case, state, ctx.rules)
-    assert decision == Decision(Action.REFINE_SADDLE, "seed:saddle_restart")
-    xtb = ctx.rt.screen_qm.calls.count("frequencies")
-    state = act(ctx, state, Action.REFINE_SADDLE)  # an xTB Hessian at the last frame
-    assert ctx.rt.screen_qm.calls.count("frequencies") == xtb + 1
-    assert not state.seeds and state.saddle_attempts == 2  # restarted once, not counted
-    assert decide(ctx.case, state, ctx.rules) == EXHAUSTED
-
-
-def test_a_failed_shortcut_seed_goes_on_to_the_screen_path_once(tmp_path) -> None:
-    """R4: the low-level TS's seed goes first (one DFT SP there, no NEB); once it fails, SCREEN
-    runs the xTB NEB and DFT SPs (not the shortcut again) before any string."""
+def test_failed_shortcut_seeds_go_on_to_the_screen_path_once(tmp_path) -> None:
+    """R4 / G8-P7: every low-level TS of the pair whose xTB freq confirms its mode gets one DFT
+    SP (in one batch, no NEB) and a three-point verdict; the single-step ones seed in order.
+    Once they have failed, SCREEN runs the xTB NEB and DFT SPs (not the shortcut again)."""
     ctx, state = case_ctx(tmp_path, fakes.double_well(), saddle=FailingSaddle(tmp_path, None))
-    ts = fakes.write_geometry(tmp_path, "ts.xyz", ("N", "H", "O"), ctx.rt.qm.pes.points["ts"])
-    ctx.case, ctx.rules = ctx.case.model_copy(update={"low_level_ts": ts}), CaseRules()
+    pes, ctx.log, ctx.rules = ctx.rt.qm.pes, (logged := []).append, CaseRules()
+    near = pes.points["ts"] + [[0, 0, 0], [0.02, 0, 0], [0, 0, 0]]
+    ts, well, near = (fakes.write_geometry(tmp_path, f"{n}.xyz", pes.symbols, x) for n, x in
+                      (("ts", pes.points["ts"]), ("well", pes.points["reactant"]), ("near", near)))
+    ctx.case = ctx.case.model_copy(update={"low_level_ts": (ts, well, near)})  # well: no TS mode
     energies = ctx.rt.qm.calls.count("energy")
     state = act(ctx, state, Action.SCREEN)
-    assert [s.source for s in state.seeds] == ["discovery_ts"] and not state.neb_done
-    assert state.screen.verdict == "single" and ctx.rt.qm.calls.count("energy") == energies + 1
-    state = act(ctx, state, Action.REFINE_SADDLE)
+    assert [s.geometry for s in state.seeds] == [ts, near] and not state.neb_done
+    assert {s.source for s in state.seeds} == {"discovery_ts"} and state.screen.verdict == "single"
+    assert ctx.rt.qm.calls.count("energy") == energies + 2 and ctx.rt.map == [2]
+    assert {"note": "low_level_ts_rejected"} in logged
+    for attempts in (1, 2):
+        state = act(ctx, state, Action.REFINE_SADDLE)
+        assert state.saddle_attempts == attempts
     assert decide(ctx.case, state, ctx.rules) == Decision(Action.SCREEN, "screen")
     state = act(ctx, state, Action.SCREEN)
     assert state.neb_done and ctx.rt.screen_path.calls == ["find_path:pes"]
-    assert ctx.rt.qm.calls.count("energy") == energies + 1 + SCREEN_IMAGES - 2
-    state = act(ctx, state, Action.REFINE_SADDLE)  # the NEB's seed fails too
+    assert ctx.rt.qm.calls.count("energy") == energies + 2 + SCREEN_IMAGES - 2
     assert decide(ctx.case, state, ctx.rules) == EXHAUSTED
-
-
-@pytest.mark.parametrize("screen,seeds,action", [
-    (True, 0, Action.SCREEN), (False, 0, Action.FIND_PATH), (False, 1, Action.REFINE_SADDLE)])
-def test_a_saddle_without_an_imaginary_mode_is_a_failed_attempt(tmp_path, screen, seeds, action):
-    """G3-P1: a saddle search that converged onto a minimum (the reactant) is rejected like any
-    other saddle: no well is relaxed from it, and SCREEN, a string or the next seed goes on."""
-    ctx, state = case_ctx(tmp_path, fakes.double_well())
-    ctx.rules, ctx.log = CaseRules(screen=screen), (logged := []).append
-    ctx.work.saddle = ctx.rt.qm.optimize(ctx.mol(ctx.ends[0]), DFT)
-    seed = Seed(ctx.work.saddle.final, "path_hei")
-    state = replace(state, seeds=(seed,) * seeds, saddle_attempts=1, last_saddle="converged")
-    jobs = len(ctx.rt.qm.calls)
-    state = act(ctx, state, Action.VALIDATE_TS)
-    assert logged == [{"note": "ts_rejected:no_imaginary_mode"}]
-    assert ctx.rt.qm.calls[jobs:] == ["frequencies"] and state.claim is None
-    assert (state.last_saddle, state.ts_check, state.saddle_attempts) == ("failed", None, 1)
-    assert decide(ctx.case, state, ctx.rules).action is action
 
 
 def test_reaction_direction_is_a_ts_mode_rho_or_a_coordinate(tmp_path):
@@ -439,7 +271,7 @@ def test_a_barrierless_profile_is_densified_beside_its_highest_node(tmp_path, bu
     ctx, _ = case_ctx(tmp_path, fakes.flat_uphill())
     a, b = ctx.ends
     frames = [a + t * (b - a) for t in np.linspace(0.0, 1.0, 7)]
-    inner = [ctx.sp(x) for x in frames[1:-1]]
+    inner = ctx.sps(frames[1:-1])
     k = 1 + int(np.argmax(inner))
     mids = [0.5 * (frames[i] + frames[i + 1]) for i in (k - 1, k)]
     ctx.rt = replace(ctx.rt, qm=Bumped(tmp_path, ctx.rt.qm.pes, mids[1], bump))
@@ -472,7 +304,7 @@ def test_a_well_that_is_an_endpoint_leaves_its_peak_once(tmp_path, kcal, verdict
     ctx, state = case_ctx(tmp_path, fakes.double_well(), saddle=FailingSaddle(tmp_path, None))
     a, b = ctx.ends  # the well (node 2) relaxes back into the reactant
     frames = [a + t * (b - a) for t in np.linspace(0.0, 1.0, len(kcal))]
-    ctx.work.path = Profile(frames, tuple(e * K for e in kcal))
+    ctx.work.path = Profile(frames, tuple(e * K for e in kcal), "string")
     state = record_profile(state, R.BarrierVerdict(verdict="intermediate", source="string"))
     state = act(ctx, state, Action.VALIDATE_INTERMEDIATE, "path_intermediate")
     assert state.intermediate == "same_as_endpoint" and state.screen.verdict == verdict
@@ -481,7 +313,7 @@ def test_a_well_that_is_an_endpoint_leaves_its_peak_once(tmp_path, kcal, verdict
         x = ctx.coords(state.seeds[0].geometry)
         assert np.allclose(x, frames[5] + 0.25 * (frames[6] - frames[5]), atol=1e-4)
         state = act(ctx, state, Action.REFINE_SADDLE)  # U6-P6: its failure adds no seed again
-        assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "next_chunk")
+        assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "dft_path")
 
 
 def test_a_failed_well_relaxation_is_no_result_and_seeds_the_peak(tmp_path) -> None:
@@ -491,7 +323,7 @@ def test_a_failed_well_relaxation_is_no_result_and_seeds_the_peak(tmp_path) -> N
     ctx.rt, ctx.log = replace(ctx.rt, qm=NoOpt(tmp_path, ctx.rt.qm.pes)), (logged := []).append
     a, b = ctx.ends
     frames = [a + t * (b - a) for t in np.linspace(0.0, 1.0, 7)]
-    ctx.work.path = Profile(frames, tuple(e * K for e in (0, 2, 0.5, 3, 6, 9, 10)))
+    ctx.work.path = Profile(frames, tuple(e * K for e in (0, 2, 0.5, 3, 6, 9, 10)), "string")
     state = record_profile(state, R.BarrierVerdict(verdict="intermediate", source="string"))
     state = act(ctx, state, Action.VALIDATE_INTERMEDIATE, "path_intermediate")
     assert (state.intermediate, state.screen.verdict) == ("relax_failed", "intermediate")

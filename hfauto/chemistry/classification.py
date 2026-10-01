@@ -1,8 +1,9 @@
-"""Terminal classification of a reaction case and its split into child steps (design §7.3)."""
+"""Terminal classification of a reaction case, its split into child steps and the record of a
+child that is not driven (design §7.3)."""
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 import numpy as np
 
@@ -28,6 +29,11 @@ class Verdict(Protocol):
 
     @property
     def reason(self) -> str: ...
+
+
+class _Undriven(NamedTuple):
+    outcome: CaseOutcome
+    reason: str
 
 
 def _oriented(case: ReactionRecord, connected: tuple[str, str]) -> tuple[str, str]:
@@ -65,6 +71,19 @@ def finalize(
         update |= {"source": "reassigned", "degenerate": False,
                    "minima": _oriented(case, connection.minima)}
     return case.model_copy(update=update)
+
+
+def undriven(case: ReactionRecord, reason: str, like: ReactionRecord | None = None
+             ) -> ReactionRecord:
+    """A split child recorded without a drive, so without a job or a log: with ``like``, a
+    driven case of its case key (G8-P7, ``same_as:<its id>``), that case's outcome and claims,
+    a reassigned one adopting the minima its TS connects (``finalize``); else UNRESOLVED
+    (G8-P3, ``split_depth``)."""
+    if like is None or like.outcome is None:
+        return finalize(case, _Undriven(CaseOutcome.UNRESOLVED, reason), barrier=None,
+                        claim=None, connection=None)
+    return finalize(case, _Undriven(like.outcome, reason), barrier=like.barrier,
+                    claim=like.saddle, connection=like.connection)
 
 
 def _child(parent: ReactionRecord, index: int, minima: tuple[str, str],

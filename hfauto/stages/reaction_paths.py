@@ -4,21 +4,24 @@ The monomer states of the system's compositions (thermo.monomer_states) make an 
 separated reactant side (chemistry.hypotheses). Engines have no defaults here; the pipeline YAML
 names them (``engines`` and ``screen``). A hypothesis has ``policy.walltime_h`` in all: its split
 children run right after it, on its deadline, and see its calculations (a TS it validated for a
-child).
+child). A split child is not driven when a case of its case key (hypotheses.pair_key), run or
+queued, concludes: it takes that conclusion, ``same_as:<reaction_id>`` (G8-P7); a case that ends
+UNRESOLVED gives none, and the child is driven (with its own budget, as before G8-P7). Nor is a
+child deeper than ``max_split_depth``: UNRESOLVED ``split_depth`` (G8-P3). Neither has a job or a
+log.
 """
 
 from __future__ import annotations
 
-import json
-import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 from typing import ClassVar, cast
 
 from hfauto.backends.protocols import Capability, PathEngine, QMEngine, SaddleRefiner
-from hfauto.chemistry.hypotheses import select
+from hfauto.chemistry.classification import undriven
+from hfauto.chemistry.hypotheses import CaseKey, pair_key, select
 from hfauto.chemistry.thermo import monomer_states
 from hfauto.core.evidence import Evidence
-from hfauto.core.ids import path_token
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import Deadline
 from hfauto.core.records import (
@@ -30,7 +33,12 @@ from hfauto.core.records import (
     SpeciesRecord,
 )
 from hfauto.drivers.minimum import Registry
-from hfauto.drivers.reaction_case.driver import CaseResult, CaseRuntime, drive_case
+from hfauto.drivers.reaction_case.driver import (
+    CaseResult,
+    CaseRuntime,
+    drive_case,
+    reaction_artifact,
+)
 from hfauto.drivers.reaction_case.state import CaseRules, ReactionPathsPolicy
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
@@ -85,25 +93,65 @@ def _calcs(artifacts: Iterable[Artifact]) -> dict[str, Evidence]:
     return {a.artifact_id: a.payload for a in artifacts if isinstance(a.payload, Evidence)}
 
 
-def _drive(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline: Deadline
-           ) -> CaseResult:
-    """drive_case; an exception leaves only this case UNRESOLVED (``error:<type>``)."""
-    try:
-        return drive_case(case, rt, rules, deadline)
-    except Exception as exc:
-        if os.environ.get("HFAUTO_STRICT") == "1":
-            raise
-        reason = f"error:{type(exc).__name__}"
-        folder = rt.case_dir / path_token(case.reaction_id)
-        folder.mkdir(parents=True, exist_ok=True)
-        entry = {"action": "error", "reason": reason, "detail": str(exc)[:500]}
-        with (folder / "log.jsonl").open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(entry, sort_keys=True) + "\n")
-        record = case.model_copy(update={"outcome": CaseOutcome.UNRESOLVED, "reasons": (reason,),
-                                         "log": f"cases/{folder.name}/log.jsonl"})
-        artifact = Artifact(artifact_id=record.reaction_id, type=ArtifactType.REACTION,
-                            payload=record, parents=tuple(m for m in record.minima if m))
-        return CaseResult(record, (), (artifact,))
+Item = tuple[ReactionRecord, int, Deadline | None]  # a case, its split depth, its deadline
+
+
+@dataclass
+class _Book:
+    """The cases of the stage and what they emit (a job shared by cases is emitted once). A
+    split child whose case key a case has takes that case's conclusion (G8-P7), waiting for a
+    queued one; a failure to conclude (UNRESOLVED) is no result to share, so the child is then
+    driven, as a child of a new key is, up to ``max_depth`` (deeper: UNRESOLVED, G8-P3)."""
+
+    rt: CaseRuntime
+    max_depth: int
+    first: dict[CaseKey, str] = field(default_factory=dict)  # key -> its first case to drive
+    done: dict[str, ReactionRecord] = field(default_factory=dict)
+    waiting: list[Item] = field(default_factory=list)  # children of a key still queued
+    artifacts: dict[str, Artifact] = field(default_factory=dict)
+
+    def key(self, case: ReactionRecord) -> CaseKey | None:
+        """The case key of a case between two DFT minima; None for a blocked one."""
+        a, b = (self.rt.minima.get(m) for m in case.minima)
+        return None if a is None or b is None else pair_key(a[0], b[0])
+
+    def queue(self, cases: Sequence[ReactionRecord]) -> None:
+        """Cases to drive: each takes its key unless an earlier one has it."""
+        for case in cases:
+            if (key := self.key(case)) is not None:
+                self.first.setdefault(key, case.reaction_id)
+
+    def emit(self, result: CaseResult, depth: int, deadline: Deadline) -> list[Item]:
+        """A driven case's artifacts; the split children of ``result`` to drive now."""
+        self.done[result.reaction.reaction_id] = result.reaction
+        self.artifacts.update((a.artifact_id, a) for a in result.artifacts)
+        self.rt.calcs.update(_calcs(result.artifacts))
+        return [i for child in result.children for i in self._child((child, depth + 1, deadline))]
+
+    def waited(self) -> list[Item]:
+        """The waiting children, once every queued case has been driven."""
+        items, self.waiting = self.waiting, []
+        return [i for item in items for i in self._child(item)]
+
+    def _child(self, item: Item) -> list[Item]:
+        child, depth, _ = item
+        key = self.key(child)
+        case_id = None if key is None else self.first.get(key)
+        if case_id is not None:
+            like = self.done.get(case_id)
+            if like is None:
+                self.waiting.append(item)
+                return []
+            if like.outcome is not CaseOutcome.UNRESOLVED:
+                return self._record(undriven(child, f"same_as:{case_id}", like))
+        if depth > self.max_depth:
+            return self._record(undriven(child, "split_depth"))
+        self.queue([child])
+        return [item]
+
+    def _record(self, record: ReactionRecord) -> list[Item]:
+        self.artifacts[record.reaction_id] = reaction_artifact(record)
+        return []
 
 
 class ReactionPathsStage:
@@ -133,17 +181,15 @@ class ReactionPathsStage:
         )
         if config.reaction_ids is not None:
             cases = [c for c in cases if c.reaction_id in config.reaction_ids]
-        # serial (§7.1), a stack: split children (up to max_split_depth) run next, on the
-        # deadline of their hypothesis; a hypothesis' own deadline starts when it does
-        stack: list[tuple[ReactionRecord, int, Deadline | None]] = [
-            (case, 0, None) for case in reversed(cases)]
-        artifacts: dict[str, Artifact] = {}  # a job shared by cases is emitted once
+        # serial (§7.1), a stack: split children run next (one waiting for a queued case of
+        # its key: once the stack is empty), on the deadline of their hypothesis; a
+        # hypothesis' own deadline starts when it does
+        book = _Book(case_rt, budget.max_split_depth)
+        book.queue(cases)
+        stack: list[Item] = [(case, 0, None) for case in reversed(cases)]
         while stack:
             case, depth, deadline = stack.pop()
             deadline = deadline or rt.deadline(3600.0 * budget.walltime_h)
-            result = _drive(case, case_rt, rules, deadline)
-            artifacts.update((a.artifact_id, a) for a in result.artifacts)
-            case_rt.calcs.update(_calcs(result.artifacts))
-            if depth < budget.max_split_depth:
-                stack += [(child, depth + 1, deadline) for child in reversed(result.children)]
-        return list(artifacts.values())
+            stack += reversed(book.emit(drive_case(case, case_rt, rules, deadline), depth, deadline))
+            stack = stack or list(reversed(book.waited()))
+        return list(book.artifacts.values())

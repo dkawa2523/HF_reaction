@@ -16,7 +16,7 @@ from hfauto.chemistry.interpolation import align_sequential, idpp, resample
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
 from hfauto.core.records import BarrierVerdict
 from hfauto.drivers.reaction_case import state as case_state
-from hfauto.drivers.reaction_case.actions import Ctx, Profile, peak_seed, xtb_freq
+from hfauto.drivers.reaction_case.actions import Ctx, Profile, peak_seeds, xtb_freq
 from hfauto.drivers.reaction_case.state import CaseState, Decision, Seed
 
 SCREEN_IMAGES = 11  # SCREEN's NEB images including both ends
@@ -40,19 +40,23 @@ def _xtb_ts_mode(ctx: Ctx, coords: np.ndarray) -> tuple[float, ...] | None:
     return tuple(freq.imaginary_modes[0])  # ordered by frequency
 
 
-def _shortcut(ctx: Ctx, geometry: Geometry) -> tuple[BarrierVerdict, Seed | None] | None:
-    """Step 1: a low-level TS already known (discovery / mode-follow): three points."""
-    x = ctx.coords(geometry)
-    mode = _xtb_ts_mode(ctx, x)
-    if mode is None:
-        ctx.note("low_level_ts_rejected")
-        return None
-    e_ts = ctx.sp(x)
-    if e_ts is None:
-        return None
-    verdict = barrier_verdict((ctx.energies[0], e_ts, ctx.energies[1]), source="screen",
-                              policy=ctx.rules.gates)
-    return verdict, Seed(geometry, "discovery_ts", mode)
+def _shortcut(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]] | None:
+    """Step 1: the low-level TSs already known for this pair of states (discovery /
+    mode-follow), in order. Each whose xTB freq confirms its mode gets a DFT SP and a
+    three-point verdict; the single-step ones seed the saddle search in that order, under the
+    first one's verdict. None without a single-step one."""
+    seeds = []
+    for geometry in ctx.case.low_level_ts:
+        if (mode := _xtb_ts_mode(ctx, ctx.coords(geometry))) is None:
+            ctx.note("low_level_ts_rejected")
+        else:
+            seeds.append(Seed(geometry, "discovery_ts", mode))
+    energies = ctx.sps([ctx.coords(s.geometry) for s in seeds]) if seeds else []
+    verdicts = [(barrier_verdict((ctx.energies[0], e, ctx.energies[1]), source="screen",
+                                 policy=ctx.rules.gates), seed)
+                for seed, e in zip(seeds, energies, strict=True) if e is not None]
+    singles = [(verdict, seed) for verdict, seed in verdicts if verdict.verdict == "single"]
+    return (singles[0][0], tuple(seed for _, seed in singles)) if singles else None
 
 
 def _neb(ctx: Ctx, frames: list[np.ndarray]) -> tuple[list[np.ndarray], Geometry | None]:
@@ -69,23 +73,23 @@ def _neb(ctx: Ctx, frames: list[np.ndarray]) -> tuple[list[np.ndarray], Geometry
     return align_sequential(ctx.frames(neb.images)), neb.ts
 
 
-def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
+def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]]:
     """Steps 2-3: the NEB from the IDPP between the DFT minima, DFT SPs on its interior; a single
     peak seeds at the NEB's TS when its xTB freq confirms it, else at the DFT peak."""
     try:
         frames, ts = _neb(ctx, idpp(ctx.symbols, *ctx.ends, SCREEN_IMAGES))
     except ValueError as exc:
-        return _unavailable(f"idpp:{exc}"), None
+        return _unavailable(f"idpp:{exc}"), ()
     inner = ctx.sps(frames[1:-1])
     if any(e is None for e in inner):
-        return _unavailable("screen_single_point"), None
+        return _unavailable("screen_single_point"), ()
     verdict = ctx.verdict(frames, [e for e in inner if e is not None], "screen")
     if verdict.verdict != "single":
-        return verdict, None
+        return verdict, ()
     mode = None if ts is None else _xtb_ts_mode(ctx, ctx.coords(ts))
     if ts is not None and mode is not None:
-        return verdict, Seed(ts, "screen_ts", mode)
-    return verdict, peak_seed(ctx, "screen_hei", "screen_hei")
+        return verdict, (Seed(ts, "screen_ts", mode),)
+    return verdict, peak_seeds(ctx, "screen_hei")
 
 
 def _moved(x: np.ndarray, bond: tuple[int, int], fragment: Collection[int], r: float
@@ -97,7 +101,7 @@ def _moved(x: np.ndarray, bond: tuple[int, int], fragment: Collection[int], r: f
     return y
 
 
-def _scan(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
+def _scan(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]]:
     """An association (design X4): the separated monomers → the adduct along a relaxed scan of
     the formed bond (i, j), from r_P + SCAN_REACH_A inwards (r_P: the adduct's). The first point
     is the adduct with the fragment holding j moved out along i→j, each next one the previous
@@ -119,31 +123,28 @@ def _scan(ctx: Ctx) -> tuple[BarrierVerdict, Seed | None]:
         if isinstance(opt, Failure):
             ctx.note(f"scan{k}:{opt.kind.value}")
             return BarrierVerdict(verdict="unavailable", source="scan",
-                                  reasons=("scan_point",)), None
+                                  reasons=("scan_point",)), ()
         guess, x = ctx.keep(opt), ctx.coords(opt.final)
         frames.append(x)
         energies.append(opt.energy_hartree)
     frames = align_sequential([*frames, adduct])
-    ctx.work.path = Profile([frames[0], *frames], (ctx.energies[0], *energies, ctx.energies[1]))
+    ctx.work.path = Profile([frames[0], *frames], (ctx.energies[0], *energies, ctx.energies[1]),
+                            "scan")
     verdict = barrier_verdict(ctx.work.path.energies, source="scan", policy=ctx.rules.gates)
-    single = verdict.verdict == "single"
-    return verdict, peak_seed(ctx, "scan_hei", "path_hei") if single else None
+    return verdict, peak_seeds(ctx, "scan_hei") if verdict.verdict == "single" else ()
 
 
 def screen(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """Barrier pre-check (chem 16): an association's scan; else first the shortcut from a
-    low-level TS, the low-level path when there is none, it is not a single step, or its seed
-    has failed (a second SCREEN)."""
-    if ctx.case.monomers:
-        found, state = _scan(ctx), replace(state, neb_done=True)
-    else:
-        ts = ctx.case.low_level_ts
-        found = None if ts is None or state.screen is not None else _shortcut(ctx, ts)
-        if found is None or found[0].verdict != "single":
-            found, state = _screen_path(ctx), replace(state, neb_done=True)
-    verdict, seed = found
+    """Barrier pre-check (chem 16): an association's scan; else first the shortcut from the
+    low-level TSs, the low-level path when none gives a single step or once their seeds have
+    failed (a second SCREEN)."""
+    found = None if ctx.case.monomers or state.screen is not None else _shortcut(ctx)
+    if found is None:
+        run = _scan if ctx.case.monomers else _screen_path
+        found, state = run(ctx), replace(state, neb_done=True)
+    verdict, seeds = found
     ctx.note(f"{verdict.source}:{verdict.verdict}:{','.join(verdict.reasons)}")
-    return case_state.record_profile(state, verdict, seed)
+    return case_state.record_profile(state, verdict, seeds)
 
 
 def _initial_path(ctx: Ctx, beads: int, name: str) -> FileRef | None:
@@ -175,5 +176,5 @@ def find_path(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
         return replace(state, path_runs=state.path_runs + 1)
     frames = align_sequential([ctx.ends[0], *ctx.frames(run.images)[1:-1], ctx.ends[1]])
     verdict = ctx.verdict(frames, run.energies_hartree[1:-1], "string")
-    seed = peak_seed(ctx, f"{run_name}_hei", "path_hei") if verdict.verdict == "single" else None
-    return case_state.record_profile(state, verdict, seed)
+    seeds = peak_seeds(ctx, f"{run_name}_hei") if verdict.verdict == "single" else ()
+    return case_state.record_profile(state, verdict, seeds)

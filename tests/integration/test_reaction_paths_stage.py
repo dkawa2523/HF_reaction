@@ -10,14 +10,22 @@ import pytest
 
 from hfauto.backends.protocols import Capability as Cap
 from hfauto.chemistry.xyz import composition_key
+from hfauto.core.ids import species_artifact_id
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
 from hfauto.core.records import ArtifactType as T
 from hfauto.core.records import CaseOutcome as O
-from hfauto.core.records import DiscoveryRecord, ReactionRecord, ReactionTrial, SpeciesRecord
+from hfauto.core.records import (
+    DiscoveryRecord,
+    MinimumRecord,
+    ReactionRecord,
+    ReactionTrial,
+    SpeciesRecord,
+)
 from hfauto.core.system import ReactionInput, SpeciesInput, SystemConfig
 from hfauto.drivers.minimum import Registry, calc_id, relax_to_minimum
-from hfauto.stages import reaction_paths
+from hfauto.drivers.reaction_case import driver
+from hfauto.drivers.reaction_case.state import Action
 from hfauto.stages.reaction_paths import ReactionPathsConfig, ReactionPathsStage
 
 pytestmark = pytest.mark.integration
@@ -106,28 +114,38 @@ def test_declared_reaction_becomes_a_typed_elementary_step(tmp_run, fake_runtime
     assert (tmp_run / "stage" / rx.log).read_text().count("\n") >= 5
 
 
-def test_a_case_that_raises_is_unresolved_and_the_next_case_runs(
+def test_a_case_that_raises_keeps_what_it_registered_and_the_next_case_runs(
         tmp_run, fake_runtime, monkeypatch) -> None:
-    real = reaction_paths.drive_case
+    """G3-P4: an exception right after _register (rx's well on the triple-well screen path)
+    leaves rx UNRESOLVED (error:<type>) and still emits the minimum, species and calculations it
+    registered (rx2 joins that basin without a freq, so the species and freq are rx's own); the
+    next case runs. HFAUTO_STRICT=1 re-raises."""
+    validate = driver.HANDLERS[Action.VALIDATE_INTERMEDIATE]
 
-    def drive_case(case, rt, rules, deadline):
-        if case.reaction_id == "rx":
+    def validate_then_raise(ctx, state, decision):
+        state = validate(ctx, state, decision)
+        if ctx.case.reaction_id == "rx":
             raise KeyError("Te")
-        return real(case, rt, rules, deadline)
+        return state
 
-    monkeypatch.setattr(reaction_paths, "drive_case", drive_case)
-    pes, again = fakes.double_well(), ReactionInput(id="rx2", reactant="reactant", product="product")
+    monkeypatch.setitem(driver.HANDLERS, Action.VALIDATE_INTERMEDIATE, validate_then_raise)
+    pes, again = fakes.triple_well(), ReactionInput(id="rx2", reactant="reactant",
+                                                    product="product")
     system = SYSTEM.model_copy(update={"reactions": [*SYSTEM.reactions, again]})
     view = dft_view(tmp_run, pes)[0]
     with pytest.raises(KeyError):  # HFAUTO_STRICT=1 re-raises
         run_stage(fake_runtime, tmp_run, pes, view, system=system)
     monkeypatch.delenv("HFAUTO_STRICT")
-    reactions = run_stage(fake_runtime, tmp_run, pes, view, system=system)[0]
+    reactions, arts, _ = run_stage(fake_runtime, tmp_run, pes, view, system=system)
     rx = reactions["rx"]
     assert rx.outcome is O.UNRESOLVED and rx.reasons == ("error:KeyError",)
-    assert json.loads((tmp_run / "stage" / rx.log).read_text()) == {
-        "action": "error", "reason": "error:KeyError", "detail": "'Te'"}
-    assert reactions["rx2"].outcome is O.ELEMENTARY_STEP
+    log = (tmp_run / "stage" / rx.log).read_text().splitlines()
+    assert json.loads(log[-1]) == {"action": "error", "reason": "error:KeyError", "detail": "'Te'"}
+    out = {a.artifact_id: a.payload for a in arts}
+    [well] = [m for m in out.values() if isinstance(m, MinimumRecord)]
+    assert well.species_id.startswith("spc_rx_")  # registered by rx
+    assert {species_artifact_id(well.species_id), well.opt_calc, well.freq_calc} <= set(out)
+    assert reactions["rx2"].outcome is O.MULTI_STEP
 
 
 @pytest.mark.parametrize("pes,points,outcome", [
@@ -171,7 +189,7 @@ def test_split_children_run_on_the_rest_of_their_hypothesis_walltime(tmp_run,
 def test_a_saddle_search_that_falls_into_a_well_goes_on_to_the_screen_path(tmp_run,
                                                                           fake_runtime) -> None:
     """G3-P1: a saddle without an imaginary mode is a failed attempt like any rejected saddle;
-    the intermediate comes from the screen profile's well (row 12), not from the saddle."""
+    the intermediate comes from the screen profile's well (row 11), not from the saddle."""
     pes = fakes.triple_well()
     view, source = dft_view(tmp_run, pes)
     ts = fakes.write_geometry(tmp_run, "ts1.xyz", pes.symbols, pes.points["ts1"])
@@ -180,7 +198,10 @@ def test_a_saddle_search_that_falls_into_a_well_goes_on_to_the_screen_path(tmp_r
     view.artifacts.append(Artifact(artifact_id="d1", type=T.DISCOVERY, payload=found))
     reactions, _, _ = run_stage(fake_runtime, tmp_run, pes, view,  # seeded by the shortcut
                                 saddle=CollapsingSaddle(tmp_run, pes), max_split_depth=0)
-    assert reactions["rx"].outcome is O.MULTI_STEP and "rx_split1" not in reactions
+    assert reactions["rx"].outcome is O.MULTI_STEP
+    children = [reactions[f"rx_split{i}"] for i in (1, 2)]  # G8-P3: recorded, not driven
+    assert [(c.outcome, c.reasons, c.log) for c in children] == [
+        (O.UNRESOLVED, ("split_depth",), None)] * 2
     log = (tmp_run / "stage" / reactions["rx"].log).read_text()
     assert '"ts_rejected:no_imaginary_mode"' in log and '"reason": "path_intermediate"' in log
     assert '"saddle_collapsed"' not in log
@@ -205,9 +226,29 @@ def test_a_ts_joining_an_endpoint_to_a_new_basin_splits_and_its_child_replays_it
     assert (first.ts_calc, second.ts_calc) == (first.saddle.saddle_calc, None)
     assert [first.outcome, second.outcome] == [O.ELEMENTARY_STEP] * 2
     log = [json.loads(line) for line in (tmp_run / "stage" / first.log).read_text().splitlines()]
-    assert [e["action"] for e in log if "action" in e] == ["validate_ts", "connect", "complete"]
+    assert [e["action"] for e in log if "action" in e] == ["validate_and_connect", "complete"]
     replayed = (first.saddle.freq_calc, *first.connection.side_calcs)
     assert [qm.jobs[c] for c in replayed] == [2, 2, 2]  # the parent's jobs, run again
+
+
+def test_a_split_child_takes_the_result_of_a_queued_case_of_its_state_pair(
+        tmp_run, fake_runtime) -> None:
+    """G8-P7: rx splits at the triple well's intermediate; its child R -> I has the states of
+    the declared ri, queued after rx, so it is not driven and takes ri's result (same_as:ri);
+    I -> P is driven."""
+    pes, names = fakes.triple_well(), {**ENDS, "intermediate": "intermediate"}
+    view, _ = dft_view(tmp_run, pes, names)
+    system = SystemConfig(
+        system_id="t", species=[SpeciesInput(id=n, role="endpoint", xyz=Path(f"{n}.xyz"))
+                                for n in names],
+        reactions=[*SYSTEM.reactions,
+                   ReactionInput(id="ri", reactant="reactant", product="intermediate")])
+    reactions = run_stage(fake_runtime, tmp_run, pes, view, system=system)[0]
+    ri, (first, second) = reactions["ri"], (reactions[f"rx_split{i}"] for i in (1, 2))
+    assert (reactions["rx"].outcome, ri.outcome) == (O.MULTI_STEP, O.ELEMENTARY_STEP)
+    assert (first.outcome, first.reasons, first.log) == (ri.outcome, ("same_as:ri",), None)
+    assert (first.saddle, first.connection) == (ri.saddle, ri.connection)
+    assert second.outcome is O.ELEMENTARY_STEP and second.log is not None
 
 
 def test_walltime_low_level_ts_shortcut_and_negative_discoveries_do_not_veto(

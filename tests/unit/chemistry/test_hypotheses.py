@@ -1,6 +1,7 @@
 """Reaction hypotheses (design §8.2): priority, degeneracy on basin structures (declared and
-discovered), undeclared pairs only with a bond change (CH-07), TS lending, R6, a discovery's
-own ends (X2: never a basin representative's labelling) and associations (X4)."""
+discovered), undeclared pairs only with a bond change (CH-07), one hypothesis per case key with
+every distinct TS of it (G8-P7), R6, a discovery's own ends (X2: never a basin representative's
+labelling) and associations (X4)."""
 
 from __future__ import annotations
 
@@ -95,11 +96,11 @@ def test_declared_reaction_comes_first_and_borrows_the_discovery_ts():
     assert rec.minima == ("m_hcn", "m_hnc") and rec.endpoints == ("hcn", "hnc")
     assert rec.reactants[0].composition_id == rec.products[0].composition_id == "CHN_q0_m1"
     assert rec.coordinate == (term,) and not rec.torsional and not rec.degenerate
-    assert rec.low_level_ts == hnc.geometry  # d2 vetoes nothing
+    assert rec.low_level_ts == (hnc.geometry,)  # d2 vetoes nothing
 
     [auto] = select(basins(*minima), [hcn, hnc], found, [], load)
     assert auto.source == "discovery" and auto.reaction_id.startswith("rxn_discovery_")
-    assert auto.low_level_ts == hnc.geometry
+    assert auto.low_level_ts == (hnc.geometry,)
     assert select(basins(*minima), [hcn, hnc], found, [], load, window_kcal=10.0) == []
 
 
@@ -155,13 +156,13 @@ def test_a_bond_exchanging_discovery_within_one_basin_is_a_degenerate_hypothesis
     assert (rec.source, rec.minima, rec.endpoints) == ("discovery", ("d_xch", "d_xch"),
                                                        ("xch_src", "xch_prod"))
     assert rec.degenerate and not rec.torsional
-    assert (rec.low_level_ts, rec.ts_calc) == (ts, None)
+    assert (rec.low_level_ts, rec.ts_calc) == ((ts,), None)
 
     [dft] = select(basins(basin), [source, swapped], [saddle("mf", "d_xch", "xch_prod")], [], load)
-    assert (dft.source, dft.low_level_ts, dft.ts_calc) == ("mode_follow", None, "calc_saddle")
+    assert (dft.source, dft.low_level_ts, dft.ts_calc) == ("mode_follow", (), "calc_saddle")
     [xtb] = select(basins(screen, basin), [source, swapped],
                    [saddle("mf", "s_xch", "xch_prod", ts_calc=None)], [], load)
-    assert (xtb.low_level_ts, xtb.ts_calc) == (swapped.geometry, None)  # an xTB saddle
+    assert (xtb.low_level_ts, xtb.ts_calc) == ((swapped.geometry,), None)  # an xTB saddle
 
 
 def test_an_undeclared_torsion_or_enantiomerization_is_no_hypothesis():
@@ -188,10 +189,10 @@ def test_a_declared_inversion_borrows_the_verified_saddle_of_its_basin():
     follow = saddle("mf_inv", "m_inv", "inv_down")
     assert select(basin, [up, down], [follow], [], load) == []
     [rec] = select(basin, [up, down], [follow], [inversion], load)
-    assert (rec.reaction_id, rec.ts_calc, rec.low_level_ts) == ("inv", "calc_saddle", None)
+    assert (rec.reaction_id, rec.ts_calc, rec.low_level_ts) == ("inv", "calc_saddle", ())
     explored = product("nt2_inv", "m_inv", "inv_down", ts=up.geometry)
     [rec] = select(basin, [up, down], [follow, explored], [inversion], load)
-    assert (rec.ts_calc, rec.low_level_ts) == ("calc_saddle", up.geometry)
+    assert (rec.ts_calc, rec.low_level_ts) == ("calc_saddle", (up.geometry,))
 
 
 def test_a_discovery_mapped_onto_its_source_is_no_hypothesis():
@@ -257,6 +258,32 @@ def test_an_undeclared_pair_needs_a_bond_change():
     assert [(r.minima, r.torsional) for r in records] == [(("m_fhn", "m_far"), False)]
 
 
+def test_one_hypothesis_per_state_pair_holds_every_distinct_ts_of_it():
+    """G8-P7 (W3/VAL7 S6): two discoveries reach two basins of one product state (H on N) from
+    H on F. They make one hypothesis, the first's, which holds both distinct TSs in priority
+    order; a third TS in one basin with the first adds none. Declared reactions of that state
+    pair keep their own records and each takes every TS."""
+    fh = species("g_fh", "FHN", [[0.0, 0, 0], [1.04, 0, 0], [2.28, 0, 0]])
+    hn = [species("g_hn1", "FHN", [[0.0, 0, 0], [1.40, 0, 0], [2.28, 0, 0]]),
+          species("g_hn2", "FHN", [[0.0, 0, 0], [1.50, 0.2, 0], [2.45, 0, 0]])]
+    ts = [species(f"g_ts{k}", "FHN", x).geometry for k, x in enumerate((
+        [[0.0, 0, 0], [1.22, 0, 0], [2.28, 0, 0]], [[0.0, 0, 0], [1.25, 0.4, 0], [2.40, 0, 0]],
+        [[0.0, 0, 0], [1.23, 0.01, 0], [2.28, 0, 0]]))]
+    minima = basins(minimum("g_mfh", "g_fh").model_copy(update={"state_label": "FH+N"}),
+                    *(minimum(f"g_m{s.species_id[2:]}", s.species_id).model_copy(
+                        update={"state_label": "HN+F"}) for s in hn))
+    found = [product(f"g_d{k}", "g_mfh", sid, ts=t)
+             for k, (sid, t) in enumerate(zip(("g_hn1", "g_hn2", "g_hn2"), ts, strict=True))]
+
+    [rec] = select(minima, [fh, *hn], found, [], load)
+    assert (rec.minima, rec.low_level_ts) == (("g_mfh", "g_mhn1"), (ts[0], ts[1]))
+    declared = [ReactionInput(id="fwd", reactant="g_fh", product="g_hn1"),
+                ReactionInput(id="back", reactant="g_hn2", product="g_fh")]
+    out = select(minima, [fh, *hn], found, declared, load)
+    assert [(r.reaction_id, r.low_level_ts) for r in out] == [("fwd", (ts[0], ts[1])),
+                                                              ("back", (ts[0], ts[1]))]
+
+
 def test_a_relaxation_seed_kept_at_dft_runs_to_its_collapse_basin():
     """R6 (S6): the seed (H at F) collapsed at screen into H at N and represents that basin. Its
     own DFT job (seed_species_id) kept the seed state: one hypothesis, seed -> collapse, with no
@@ -276,7 +303,7 @@ def test_a_relaxation_seed_kept_at_dft_runs_to_its_collapse_basin():
     [rec] = select(minima, [seed, own], [relax], [], load)
     assert (rec.source, rec.minima, rec.endpoints) == ("discovery", ("d_seed", "d_lost"),
                                                        ("spc_relax_seed", "seed"))
-    assert not rec.torsional and (rec.low_level_ts, rec.ts_calc) == (None, None)
+    assert not rec.torsional and (rec.low_level_ts, rec.ts_calc) == ((), None)
     assert select(minima, [seed, own], [relax], [], load, max_per_composition=0) == []
     joined = basin.model_copy(update={"members": ("seed", "spc_relax_seed")})
     assert select([(lost, collapsed), (joined, collapsed)], [seed, own], [relax], [], load) == []
@@ -333,7 +360,7 @@ def test_a_mode_follow_hypothesis_runs_between_its_side_species():
                    load)
     assert (rec.source, rec.minima, rec.endpoints) == ("mode_follow", ("m_one", "m_two"),
                                                        ("t_mf1", "t_mf2"))
-    assert (rec.ts_calc, rec.low_level_ts, rec.torsional) == ("calc_saddle", None, False)
+    assert (rec.ts_calc, rec.low_level_ts, rec.torsional) == ("calc_saddle", (), False)
 
 
 # CH3OO (C O O H H H) and CH3·O2, the O2 moved 1.5 A out along C-O (C...O 2.95 A)

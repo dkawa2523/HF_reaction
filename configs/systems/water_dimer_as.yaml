@@ -1,7 +1,7 @@
 # The S22 Cs water dimer and the same dimer with its acceptor H labels swapped: acceptor
 # switching, whose saddle lies about 0.5-0.6 kcal/mol above the minimum at CCSD(T)/CBS
 # (Tschumper 2002), near the 1.0 kcal/mol resolution: recorded as is ('single': |imag freq|
-# and rows 8/11). Fake-pass check: both ends settle in one Cs basin, degenerate (not same_basin).
+# and row 8). Fake-pass check: both ends settle in one Cs basin, degenerate (not same_basin).
 system_id: water_dimer_as
 species:
   - {id: dimer_a, xyz: xyz/water_dimer_as/reactant.xyz, role: endpoint}

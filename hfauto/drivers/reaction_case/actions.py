@@ -1,7 +1,7 @@
-"""Reaction-case context and the saddle and TS actions (design §7.3; the path actions are in
-``paths``, the connection and intermediate actions in ``connection``). Jobs run through the
-capability Protocols and so the JobStore (idempotent); an action returns the next CaseState and
-keeps the evidence behind it (saddle, TS freq, claims, new basins) in ``Work``."""
+"""Reaction-case context, the saddle search and the TS checks (design §7.3; the path actions
+are in ``paths``, VALIDATE_AND_CONNECT and the intermediate action in ``connection``). Jobs run
+through the capability Protocols and so the JobStore (idempotent); an action returns the next
+CaseState and keeps the evidence behind it (saddle, TS freq, claims, new basins) in ``Work``."""
 
 from __future__ import annotations
 
@@ -39,6 +39,7 @@ from hfauto.core.records import (
     ConnectionClaim,
     CoordinateTerm,
     MinimumRecord,
+    ProfileSource,
     ReactionRecord,
     SaddleClaim,
     SpeciesRecord,
@@ -49,13 +50,16 @@ from hfauto.drivers.reaction_case.state import CaseRules, CaseState, Decision, S
 if TYPE_CHECKING:
     from hfauto.drivers.reaction_case.driver import CaseRuntime
 
+MAX_DEPTH = 2  # continuations per fresh seed: a push whose search stalls still restarts
+
 
 class Profile(NamedTuple):
-    """A DFT profile between the DFT minima: its frames and energies, the minima's at its ends
-    (SCREEN's NEB or IDPP, or a string)."""
+    """A DFT profile between the DFT minima: its frames and energies, the minima's at its ends,
+    and what made it (SCREEN's NEB or IDPP, a string, or an association's scan)."""
 
     frames: list[np.ndarray]
     energies: tuple[float, ...]
+    source: ProfileSource
 
 
 @dataclass
@@ -64,7 +68,7 @@ class Work:
 
     path: Profile | None = None  # the latest DFT profile (CaseState.screen), FIND_PATH's start
     saddle: Evidence | None = None
-    ts_freq: Evidence | None = None
+    depth: int = 0  # the saddle's continuation depth (Seed.depth of the search that found it)
     connection: ConnectionClaim | None = None
     intermediate: tuple[MinimumRecord, SpeciesRecord] | None = None  # basin, structure reached
     split_ts: tuple[int, str] | None = None  # (split child, saddle calc) it validates (GEN-05)
@@ -107,9 +111,6 @@ class Ctx:
         self.work.calcs[calc_id(ev)] = ev
         return ev
 
-    def sp(self, coords: np.ndarray) -> float | None:
-        return self.sps([coords])[0]
-
     def sps(self, frames: Sequence[np.ndarray]) -> list[float | None]:
         """DFT SPs at ``frames``, independent jobs run at once (CaseRuntime.map); kept and
         noted in order."""
@@ -143,7 +144,7 @@ class Ctx:
         of the two segments beside the highest interior node, where a barrier the nodes step
         over would rise (nodes lie ~0.2 A apart, so the midpoints stay near the path)."""
         energies = [self.energies[0], *inner, self.energies[1]]
-        self.work.path = Profile(frames, tuple(energies))
+        self.work.path = Profile(frames, tuple(energies), source)
         verdict = barrier_verdict(energies, source=source, policy=self.rules.gates)
         if verdict.verdict != "barrierless":
             return verdict
@@ -155,7 +156,7 @@ class Ctx:
                                   reasons=("midpoint_single_point",))
         frames = [*frames[:k], mids[0], frames[k], mids[1], *frames[k + 1:]]
         energies = [*energies[:k], low, energies[k], high, *energies[k + 1:]]
-        self.work.path = Profile(frames, tuple(energies))
+        self.work.path = Profile(frames, tuple(energies), source)
         verdict = barrier_verdict(energies, source=source, policy=self.rules.gates)
         self.note(f"{source}_midpoints:{verdict.verdict}")
         return verdict
@@ -183,14 +184,15 @@ class Ctx:
         return next(r for r, _ in self.rt.minima.values() if r.basin_id == basin_id)
 
 
-def peak_seed(ctx: Ctx, name: str, source: Literal["screen_hei", "path_hei"]) -> Seed | None:
-    """The highest peak detected on the latest profile, refined by a parabola."""
+def peak_seeds(ctx: Ctx, name: str) -> tuple[Seed, ...]:
+    """The highest peak detected on the latest profile, refined by a parabola (none without):
+    a screen_hei seed on SCREEN's profile, else a path_hei one."""
     path = ctx.work.path
     peaks = () if path is None else profile.interior_maxima(path.energies, ctx.resolution)
     if path is None or not peaks:
-        return None
+        return ()
     _, _, x = profile.hei(path.frames, path.energies, max(peaks, key=path.energies.__getitem__))
-    return Seed(ctx.geometry(name, x), source)
+    return (Seed(ctx.geometry(name, x), "screen_hei" if path.source == "screen" else "path_hei"),)
 
 
 def xtb_freq(ctx: Ctx, coords: np.ndarray) -> Evidence | None:
@@ -212,31 +214,52 @@ def _seed_hessian(ctx: Ctx, seed: Seed, x: np.ndarray) -> tuple[str, Evidence | 
     return "dft", ctx.rt.qm.frequencies(ctx.mol(x), ctx.rt.method, deadline=ctx.deadline)
 
 
-def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """The front seed's reaction direction and initial Hessian → saddle.refine with only that
-    direction negative. A search stalled at maxiter restarts once from its last frame with a
-    fresh Hessian: a new front seed that is not counted (the attempts count per case, a split
-    child starts from 0; only the walltime deadline is shared). A new search drops the claim
-    and connection verdict of an earlier TS whose sides joined one basin (row 8)."""
-    rt, seed = ctx.rt, state.seeds[0]
-    counted = int(seed.source != "saddle_restart")
-    state = replace(state, seeds=state.seeds[1:], saddle_attempts=state.saddle_attempts + counted,
-                    last_saddle="failed", ts_check=None, claim=None, connection=None)
-    x = ctx.coords(seed.geometry)
+def _search(ctx: Ctx, seed: Seed) -> Evidence | Failure:
+    """saddle.refine from ``seed`` with only its reaction direction negative in its initial
+    Hessian."""
+    rt, x = ctx.rt, ctx.coords(seed.geometry)
     kind, direction = ctx.direction(x, seed)
     source, hessian = _seed_hessian(ctx, seed, x)
     if isinstance(hessian, Failure):
         ctx.note(f"saddle_hessian:{hessian.kind.value}")
-        return state
+        return hessian
     ctx.note(f"saddle_hessian:{source}:{kind}")
     result = rt.saddle.refine(ctx.mol(x), rt.method, hessian=hessian, mode=tuple(direction),
                               deadline=ctx.deadline)
     if isinstance(result, Failure):
         ctx.note(f"saddle:{result.kind.value}:{result.reason}")
-        if result.final is None or seed.source == "saddle_restart":
-            return state
-        return replace(state, seeds=(Seed(result.final, "saddle_restart"), *state.seeds))
-    ctx.work.saddle = result
+    return result
+
+
+def _restart(ctx: Ctx, seed: Seed, stalled: Failure) -> Seed | None:
+    """A search stalled at maxiter goes on from its last frame with a fresh Hessian, one
+    continuation deeper (up to MAX_DEPTH) and before the walltime, unless that frame lies more
+    than a resolution above the latest DFT profile's maximum (G1-P3): a continuous path bounds
+    the saddle from above, so the search has climbed past the barrier it was to find. A stalled
+    search stored without its energy is not bounded."""
+    path, energy = ctx.work.path, stalled.energy_hartree
+    if stalled.final is None or seed.depth >= MAX_DEPTH or ctx.deadline.expired():
+        return None
+    if energy is not None and path is not None and energy > max(path.energies) + ctx.resolution:
+        ctx.note(f"saddle:above_path_bound:{path.source}")
+        return None
+    return replace(seed, geometry=stalled.final, mode=None, hessian=None, depth=seed.depth + 1)
+
+
+def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
+    """The front seed → a saddle search, restarted once within the attempt when it stalls
+    (``_restart``). Every seed counts one attempt (per case: a split child starts from 0; only
+    the walltime deadline is shared). A new search drops the claim and connection verdict of an
+    earlier TS whose sides joined one basin or state (row 8)."""
+    seed = state.seeds[0]
+    state = replace(state, seeds=state.seeds[1:], saddle_attempts=state.saddle_attempts + 1,
+                    last_saddle="failed", claim=None, connection=None)
+    result = _search(ctx, seed)
+    if isinstance(result, Failure) and (restart := _restart(ctx, seed, result)) is not None:
+        seed, result = restart, _search(ctx, restart)
+    if isinstance(result, Failure):
+        return state
+    ctx.work.saddle, ctx.work.depth = result, seed.depth
     return replace(state, last_saddle="converged")
 
 
@@ -250,14 +273,15 @@ def mode_amplitude(ctx: Ctx, freq: Evidence, index: int) -> float:
 def _pushed(ctx: Ctx, freq: Evidence, x: np.ndarray, name: str) -> Seed:
     """A higher-order saddle pushed once along its most negative mode other than the reaction
     mode (the imaginary mode of maximal overlap with ρ); its verified freq is the new seed's
-    Hessian and its reaction mode the seed's mode."""
+    Hessian and its reaction mode the seed's mode, one continuation deeper than the saddle."""
     _, direction = ctx.direction(x)
     r = max(range(len(freq.imaginary_modes)),
             key=lambda i: overlap(np.asarray(freq.imaginary_modes[i]), direction))
     other = 1 if r == 0 else 0  # imaginary modes are ordered by frequency
     step = mode_amplitude(ctx, freq, other)
     pushed, _ = displace(x, np.asarray(freq.imaginary_modes[other]), step)
-    return Seed(ctx.geometry(name, pushed), "higher_order_retry", freq.imaginary_modes[r], freq)
+    return Seed(ctx.geometry(name, pushed), "higher_order_retry", freq.imaginary_modes[r], freq,
+                depth=ctx.work.depth + 1)
 
 
 def _reaction_mode(ctx: Ctx, freq: Evidence, x: np.ndarray) -> Gate:
@@ -269,32 +293,33 @@ def _reaction_mode(ctx: Ctx, freq: Evidence, x: np.ndarray) -> Gate:
     return reaction_mode_character(freq.imaginary_modes[0], x, formed | broken, gradient)
 
 
-def validate_ts(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """Separate DFT freq on the saddle → is_first_order_saddle, reaction_mode_character (a
-    rejected saddle, one without an imaginary mode included, stays a counted attempt and gets no
-    QRC) and spin_ok. A stationary point with -saddle_cm1 < ν < -noise_cm1 is accepted as a TS:
-    χ and QRC decide whether it is a TS of this case."""
+def validate_ts(ctx: Ctx, state: CaseState) -> CaseState:
+    """Separate DFT freq on the saddle → is_first_order_saddle, reaction_mode_character and
+    spin_ok: the claim of an accepted TS, its freq kept. A rejected saddle, one without an
+    imaginary mode included, stays a counted attempt and gets no QRC; a higher-order one is
+    pushed while its depth allows. A stationary point with -saddle_cm1 < ν < -noise_cm1 is
+    accepted as a TS: χ and QRC decide whether it is a TS of this case."""
     rt, saddle, gates = ctx.rt, ctx.work.saddle, ctx.rules.gates
+    state = replace(state, last_saddle="failed")
     if saddle is None:
-        return replace(state, last_saddle="failed")
+        return state
     x = ctx.coords(saddle.final)
     freq = rt.qm.frequencies(ctx.mol(x), rt.method, scf_guess=saddle, deadline=ctx.deadline)
     if isinstance(freq, Failure):
         ctx.note(f"ts_freq:{freq.kind.value}")
-        return replace(state, last_saddle="failed")
+        return state
     gate = is_first_order_saddle(freq, saddle=saddle, policy=gates)
     if gate and not (mode := _reaction_mode(ctx, freq, x)):
         ctx.note(f"ts_rejected:{','.join(mode.reasons)}")
-        return replace(state, last_saddle="failed")
+        return state
     if gate:
-        ctx.work.ts_freq = ctx.keep(freq)
-        notes = (*gate.notes, *spin_ok(freq, gates).reasons)
-        claim = SaddleClaim(saddle_calc=calc_id(ctx.keep(saddle)), freq_calc=calc_id(freq),
+        freq_calc, notes = calc_id(ctx.keep(freq)), (*gate.notes, *spin_ok(freq, gates).reasons)
+        claim = SaddleClaim(saddle_calc=calc_id(ctx.keep(saddle)), freq_calc=freq_calc,
                             imag_cm1=min(freq.frequencies_cm1 or (0.0,)),
                             energy_hartree=freq.energy_hartree, notes=notes)
-        return replace(state, ts_check="ok", claim=claim, connection_attempts=0)
+        return replace(state, last_saddle=None, claim=claim)
     ctx.note(f"ts_rejected:{','.join(gate.reasons)}")
-    if "higher_order" in gate.reasons:
+    if "higher_order" in gate.reasons and ctx.work.depth < MAX_DEPTH:
         seed = _pushed(ctx, freq, x, f"retry{state.saddle_attempts}")
-        return replace(state, last_saddle="failed", seeds=(seed, *state.seeds))
-    return replace(state, last_saddle="failed")
+        return replace(state, seeds=(seed, *state.seeds))
+    return state

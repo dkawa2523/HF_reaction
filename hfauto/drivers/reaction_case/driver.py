@@ -4,6 +4,7 @@ seen only through ``hfauto.backends.protocols``; the stage builds the CaseRuntim
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -96,6 +97,11 @@ def open_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline:
     )
 
 
+def reaction_artifact(record: ReactionRecord) -> Artifact:
+    return Artifact(artifact_id=record.reaction_id, type=ArtifactType.REACTION, payload=record,
+                    parents=tuple(m for m in record.minima if m))
+
+
 def _artifacts(record: ReactionRecord, work: actions.Work) -> tuple[Artifact, ...]:
     out = [Artifact(artifact_id=k, type=ArtifactType.CALCULATION, payload=ev)
            for k, ev in work.calcs.items()]
@@ -103,18 +109,15 @@ def _artifacts(record: ReactionRecord, work: actions.Work) -> tuple[Artifact, ..
                      payload=s) for s in work.species.values()]
     out += [Artifact(artifact_id=m.minimum_id, type=ArtifactType.MINIMUM, payload=m,
                      parents=(m.opt_calc, m.freq_calc)) for m in work.minima.values()]
-    out.append(Artifact(artifact_id=record.reaction_id, type=ArtifactType.REACTION,
-                        payload=record, parents=tuple(m for m in record.minima if m)))
-    return tuple(out)
+    return (*out, reaction_artifact(record))
 
 
 Handler = Callable[[actions.Ctx, CaseState, Decision], CaseState]
 HANDLERS: dict[Action, Handler] = {
     Action.SCREEN: paths.screen,
     Action.REFINE_SADDLE: actions.refine_saddle,
-    Action.VALIDATE_TS: actions.validate_ts,
+    Action.VALIDATE_AND_CONNECT: connection.validate_and_connect,
     Action.FIND_PATH: paths.find_path,
-    Action.CONNECT: connection.connect,
     Action.VALIDATE_INTERMEDIATE: connection.validate_intermediate,
 }
 
@@ -122,7 +125,10 @@ HANDLERS: dict[Action, Handler] = {
 def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline: Deadline
                ) -> CaseResult:
     """Loop decide → action until ``deadline`` (the hypothesis', shared by its split children);
-    a re-run replays finished jobs from the JobStore."""
+    a re-run replays finished jobs from the JobStore. An exception leaves only this case
+    UNRESOLVED (``error:<type>``; HFAUTO_STRICT=1 re-raises) with the evidence in hand and the
+    artifacts it added, so the minima, species and calculations it registered are emitted.
+    Registry writes happen on the case thread; rt.map runs only engine calls."""
     folder = rt.case_dir / path_token(case.reaction_id)
     folder.mkdir(parents=True, exist_ok=True)
     log_path = folder / "log.jsonl"
@@ -135,33 +141,42 @@ def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline
     minima = tuple(rt.minima[m][0] if m in rt.minima else None for m in case.minima)
     state = CaseState(minima=(minima[0], minima[1]),
                       last_saddle="converged" if case.ts_calc else None)
-    if case.ts_calc:  # validated first (row 10); a failed gate goes on to SCREEN
+    if case.ts_calc:  # validated first (row 9); a failed gate goes on to SCREEN
         log({"note": f"ts_calc:{case.ts_calc}"})
     ctx: actions.Ctx | None = None
-    while True:
-        state = replace(state, expired=deadline.expired())
-        decision = decide(case, state, rules)
-        log({"action": decision.action.value, "reason": decision.reason,
-             "outcome": decision.outcome.value if decision.outcome else None})
-        if decision.outcome is not None:
-            break
-        ctx = ctx or open_case(case, rt, rules, deadline, folder, log)
-        state = HANDLERS[decision.action](ctx, state, decision)
+    children: tuple[ReactionRecord, ...] = ()
+    try:
+        while True:
+            state = replace(state, expired=deadline.expired())
+            decision = decide(case, state, rules)
+            log({"action": decision.action.value, "reason": decision.reason,
+                 "outcome": decision.outcome.value if decision.outcome else None})
+            if decision.outcome is not None:
+                break
+            ctx = ctx or open_case(case, rt, rules, deadline, folder, log)
+            state = HANDLERS[decision.action](ctx, state, decision)
+        if decision.outcome is CaseOutcome.MULTI_STEP and ctx is not None:
+            children = _children(case, rt, ctx)
+    except Exception as exc:
+        if os.environ.get("HFAUTO_STRICT") == "1":
+            raise
+        decision = Decision(Action.COMPLETE, f"error:{type(exc).__name__}", CaseOutcome.UNRESOLVED)
+        log({"action": "error", "reason": decision.reason, "detail": str(exc)[:500]})
     work = ctx.work if ctx is not None else actions.Work()
     record = finalize(case, decision, barrier=state.screen, claim=state.claim,
                       connection=work.connection)
     record = record.model_copy(update={"log": f"cases/{folder.name}/log.jsonl"})
-    return CaseResult(record, _children(record, rt, ctx), _artifacts(record, work))
+    return CaseResult(record, children, _artifacts(record, work))
 
 
-def _children(record: ReactionRecord, rt: CaseRuntime, ctx: actions.Ctx | None
+def _children(case: ReactionRecord, rt: CaseRuntime, ctx: actions.Ctx
               ) -> tuple[ReactionRecord, ...]:
     """The steps R→I and I→P of a multi-step case, I in the atom order of the structure this
     case reached; the one whose ends a validated TS of this case joins validates it again (a
     JobStore replay) instead of searching."""
-    if record.outcome is not CaseOutcome.MULTI_STEP or ctx is None or not ctx.work.intermediate:
+    if not ctx.work.intermediate:
         return ()
     well, well_species = ctx.work.intermediate
     middle = _endpoint(rt, well.minimum_id, well_species.species_id)
-    return split(record, well, well_species, (ctx.raw[0], middle, ctx.raw[1]),
+    return split(case, well, well_species, (ctx.raw[0], middle, ctx.raw[1]),
                  ts=ctx.work.split_ts)
