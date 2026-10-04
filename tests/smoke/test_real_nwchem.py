@@ -102,15 +102,15 @@ def test_closed_shell_ccsd_t_and_the_wb97x_d3_level(real_engine):
     assert (ev.level.method, ev.level.dispersion, ev.level.grid) == ("wb97x-d3", None, "fine")
 
 
-def test_open_shell_ccsd_t_is_rohf_through_the_tce(real_engine):
-    """OH.: ROHF-CCSD(T)/def2-TZVPD through the TCE (G29; 30 s CPU on 4 ranks)."""
+def test_open_shell_ccsd_t_is_uhf_through_the_tce(real_engine):
+    """OH.: UHF-CCSD(T)/def2-TZVPD through the TCE (P0d)."""
     qm = real_engine(Capability.QM, "nwchem")
     ccsd_t = MethodSpec(id="ccsd-t_def2-tzvpd", kind="wft", wft_method="ccsd(t)",
                         basis="def2-tzvpd")
     ev = qm.energy(OH, ccsd_t)
     assert isinstance(ev, Evidence), ev
     assert (ev.level.method, ev.level.multiplicity, ev.s2) == ("ccsd(t)", 2, None)
-    assert ev.energy_hartree == pytest.approx(-75.640597872, abs=1e-6)
+    assert ev.energy_hartree == pytest.approx(-75.640465704893, abs=1e-6)
 
 
 def test_one_string_chunk_is_classified_as_it_stands_hcn_sto3g(real_engine, tmp_path):

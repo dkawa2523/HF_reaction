@@ -142,3 +142,21 @@ def test_panel_leaves_a_spin_contaminated_energy_out_of_the_spread():
     assert xfine.notes == "spin_contaminated:dE_rxn;spin_contaminated:dE_act"
     assert round(xfine.dE_rxn_min_kcal, 2) == 6.28 == round(xfine.dE_rxn_max_kcal, 2)
     assert {r.notes for r in doublet(ts_s2=1.71, policy=Policy(spin_tol=1.0))} == {""}
+
+
+def test_panel_counts_an_energy_on_its_freqs_spin_state_only():
+    """X3, one definition with the thermo stage: a value is spin-contaminated when its point's
+    freq fails spin_ok or the energy left that freq's <S2>. S5: the broken-symmetry complex
+    (freq 1.71) stays out at every level even where the SP passes spin_ok on another state
+    (0.759, the unflagged -83.15 of R2), and a clean freq with an SP on its state counts."""
+    def panel(freq_s2, sp_s2):
+        calcs = [calc("r", "R", -1.0, "fine", s2=freq_s2), calc("p", "P", -0.99, "fine", s2=0.76),
+                 calc("r2", "R", -1.0, "xfine", "mr", s2=sp_s2),
+                 calc("p2", "P", -1.01, "xfine", "mp", s2=0.76)]
+        rows = method_panel(calcs, [rxn("x")], minima={"mr": mini("mr", "r"),
+                                                       "mp": mini("mp", "p")}, policy=Policy())
+        return [r.notes for r in sorted(rows, key=lambda r: r.level)]
+
+    assert panel(1.71, 0.759) == ["spin_contaminated:dE_rxn"] * 2
+    assert panel(1.71, 1.735) == ["spin_contaminated:dE_rxn"] * 2
+    assert panel(0.7543, 0.7544) == ["", ""]

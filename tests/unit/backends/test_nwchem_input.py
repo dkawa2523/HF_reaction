@@ -71,11 +71,10 @@ def test_charge_multiplicity_dispersion_and_frame():
     default_tol = nw.render_frequencies(WATER, PBE0.model_copy(update={"scf_energy_tol": None}))
     assert "convergence energy 1.0e-07" in default_tol  # opt and freq share numerics
     other = PBE0.model_copy(update={"dispersion": "d3zero"})
-    setup = nw.Setup(cartesian=True, scratch_dir="/scr/job", restart_vectors=True,
-                     scf_rescue=True)
+    setup = nw.Setup(cartesian=True, scratch_dir="/scr/job", guess_basis="def2-svpd")
     cation = nw.render_energy(Molecule(WATER.xyz, 1, 2), other, setup)
     for key in ("charge 1", "mult 2", "odft", "disp vdw 3", "noautoz",
-                "scratch_dir /scr/job", "vectors input job.movecs\n  cgmin\nend"):
+                "scratch_dir /scr/job", f"disp vdw 3\n  vectors input {nw.GUESS} output job.movecs\nend"):
         assert key in cation
     for deck in (nw.render_optimize(WATER, PBE0), nw.render_saddle(WATER, PBE0),
                  nw.render_frequencies(WATER, PBE0),
@@ -85,18 +84,36 @@ def test_charge_multiplicity_dispersion_and_frame():
         assert "units angstrom nocenter noautosym" in deck
 
 
-def test_an_scf_rescue_is_cgmin_then_one_plain_scf_from_its_vectors():
-    """G2-P6: the plain SCF prints the <S2> cgmin does not, for every task that gives an
-    Evidence; a string (no <S2> in its PathProfile) runs cgmin only."""
-    rescue = nw.Setup(restart_vectors=True, scf_rescue=True)
+def test_an_scf_starts_from_its_parents_vectors_projected_from_another_basis():
+    """X3 (P0a): the parent's vectors are read as they are in the same basis (any case); from
+    another basis they are projected, that basis declared as "parent" next to the job's. The
+    output is named job.movecs: by default NWChem writes it over the input file, and a job
+    derived from this one found no job.movecs (every other point of the fresh S5 scan, W2)."""
+    same = nw.render_energy(WATER, PBE0, nw.Setup(guess_basis="def2-svpd"))
+    assert f"  vectors input {nw.GUESS} output job.movecs\nend" in same and "parent" not in same
+    projected = nw.render_frequencies(WATER, PBE0.model_copy(update={"basis": "def2-TZVPD"}),
+                                      nw.Setup(guess_basis="def2-svpd"))
+    assert ('basis spherical\n  * library def2-TZVPD\nend\nbasis "parent" spherical\n'
+            "  * library def2-svpd\nend\n") in projected
+    assert f"  vectors input project parent {nw.GUESS} output job.movecs\nend" in projected
+    for plain in (nw.render_energy(WATER, PBE0), nw.render_wft(WATER, CCSD_T)):
+        assert "vectors" not in plain and "parent" not in plain  # the atomic guess
+
+
+def test_an_scf_rescue_is_capped_cgmin_from_the_atomic_guess_then_one_plain_scf():
+    """X3 rungs 2 and 3 (P0a): cgmin from the atomic guess within CGMIN_MAXITER cycles, then
+    a plain SCF from its vectors that prints the <S2> cgmin does not, for every task that gives
+    an Evidence; a string (no <S2> in its PathProfile) runs cgmin only."""
+    rescue = nw.Setup(scf_rescue=True)
     tail = "\n\nunset dft:cgmin\n\ndft\n  vectors input job.movecs\nend\n\ntask dft energy\n"
     radical = Molecule(WATER.xyz, 1, 2)
     for render, task in ((nw.render_energy, "energy"), (nw.render_optimize, "optimize"),
                          (nw.render_frequencies, "frequencies"), (nw.render_saddle, "saddle")):
         for mol in (WATER, radical):
             deck = render(mol, PBE0, rescue)
-            assert "  vectors input job.movecs\n  cgmin\nend" in deck
+            assert "  iterations 40\n  disp vdw 4\n  cgmin\nend" in deck
             assert deck.endswith(f"task dft {task}{tail}") and deck.count("task ") == 2
+            assert deck.count("vectors input") == 1  # rung 3's only
         assert "cgmin" not in render(WATER, PBE0)
     string = nw.render_string(WATER, WATER, PBE0, rescue, nbeads=5)
     assert "  cgmin\nend" in string and string.endswith("task dft string\n")
@@ -116,23 +133,23 @@ def test_def2_writes_one_ecp_line_per_element_beyond_kr():
 
 
 def test_ccsd_t_single_point_and_hess_round_trip(tmp_path):
-    assert "scf\n  maxiter 100\nend" in nw.render_wft(WATER, CCSD_T)
-    ccsd = nw.render_wft(WATER, CCSD_T, nw.Setup(restart_vectors=True))
+    ccsd = nw.render_wft(WATER, CCSD_T)
+    assert "scf\n  maxiter 100\nend" in ccsd and "vectors" not in ccsd
     assert "task ccsd(t) energy" in ccsd and "dft" not in ccsd
     assert "ccsd\n  freeze 1\n  maxiter 50\nend" in ccsd  # O 1s
-    assert "scf\n  maxiter 100\n  vectors input job.movecs\nend" in ccsd
-    assert "nopen" not in ccsd and "rohf" not in ccsd and "tce" not in ccsd
+    assert "nopen" not in ccsd and "uhf" not in ccsd and "tce" not in ccsd
     h = np.arange(81.0).reshape(9, 9) * 1e-3
     (tmp_path / "job.hess").write_text(nw.hess_text(h + h.T))
     assert np.allclose(read_hess(tmp_path / "job.hess", 3), h + h.T, rtol=1e-10)
 
 
 @pytest.mark.parametrize(("multiplicity", "nopen"), [(2, 1), (3, 2)])
-def test_open_shell_ccsd_t_is_rohf_through_the_tce(multiplicity, nopen):
+def test_open_shell_ccsd_t_is_uhf_through_the_tce(multiplicity, nopen):
+    """P0d: the TCE's ROHF-(T) is not the standard one; its UHF-CCSD(T) (this deck) is."""
     radical = Molecule(WATER.xyz, 1, multiplicity)
     deck = nw.render_wft(radical, CCSD_T)
-    assert f"scf\n  rohf\n  nopen {nopen}\n  maxiter 100\nend" in deck
-    assert "tce\n  2eorb\n  2emet 13\n  ccsd(t)\n  freeze 1\nend" in deck
+    assert f"scf\n  uhf\n  nopen {nopen}\n  maxiter 100\nend" in deck
+    assert "tce\n  ccsd(t)\n  freeze 1\nend" in deck and "2eorb" not in deck
     assert deck.rstrip().endswith("task tce energy") and "\nccsd\n" not in deck
 
 

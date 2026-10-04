@@ -297,8 +297,8 @@ class FakeQM(_Surface):
 
 
 class FakeSaddle(_Surface):  # calls: "refine"; like NWChemSaddle: a Hessian within 0.5 Å,
-    def refine(self, seed, method, *, hessian: Evidence, mode  # the only negative mode
-               ) -> Evidence | Failure:  # followed, the last frame at maxiter
+    def refine(self, seed, method, *, hessian: Evidence, mode,  # the only negative mode
+               scf_guess: Evidence | None = None) -> Evidence | Failure:  # followed, the last frame at maxiter
         self.calls.append("refine")
         key = self._key(seed.fingerprint(), method.signature(), hessian.job_key,
                         np.round(np.ravel(mode), 6).tolist())

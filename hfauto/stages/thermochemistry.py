@@ -10,9 +10,9 @@ and moments are evaluated at, and m: with m = 2 G gains -RT ln 2, as the mirror 
 same basin or saddle, counted once. Species values are 1 atm; reactions get one record per
 standard state. G is the energy layer plus the thermal terms of the freq: with energy_method
 the sp whose parents name the subject (the later one in the view wins; without it G = None,
-energy_layer_missing), else the freq itself. The energy layer passes spin_ok like the freq.
-The blockers of a ReactionThermo are the only source of thermo_unavailable,
-mixed_level_of_theory and spin_contaminated.
+energy_layer_missing), else the freq itself. A subject is spin_contaminated unless its energy
+passes gates.energy_spin_ok (the method panel's definition too). The blockers of a ReactionThermo are the only source of
+thermo_unavailable, mixed_level_of_theory and spin_contaminated.
 
 A state is a composition and a topology.state_label. Its G (_state_G) is the lowest G of its
 spin-clean minima on one freq and energy LOT (fast conformer equilibria make one state); it fails
@@ -36,7 +36,7 @@ import numpy as np
 
 from hfauto.chemistry import symmetry
 from hfauto.chemistry import thermo as th
-from hfauto.chemistry.gates import same_pes, spin_ok
+from hfauto.chemistry.gates import energy_spin_ok, same_pes
 from hfauto.chemistry.xyz import hill_formula
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Level
@@ -78,7 +78,7 @@ class _Subject:
     state: State | None  # None for a TS
     notes: tuple[str, ...]  # of the MinimumRecord / SaddleClaim
     formula: tuple[str, int]  # (Hill formula, charge): finds a complex's monomers
-    contaminated: bool  # spin_contaminated in notes, or the energy layer fails spin_ok
+    contaminated: bool  # the freq fails spin_ok, or the energy layer is on another spin state
     layer_missing: bool  # energy_method set but no such sp
     sym: symmetry.Symmetry  # of the freq geometry
     modes: tuple[float, ...]  # th.thermal_modes
@@ -108,7 +108,7 @@ def _subjects(inputs: Manifest, method: MethodSpec | None, rt: StageRuntime
         sp_calc, sp = layer.get(sid, (None, freq))
         return _Subject(sid, calc, freq, sp_calc, sp, state, notes,
                         (hill_formula(freq.final.symbols), freq.level.charge),
-                        contaminated="spin_contaminated" in notes or not spin_ok(sp, rt.policy),
+                        contaminated=not energy_spin_ok(sp, freq, rt.policy),
                         layer_missing=method is not None and sp_calc is None, sym=sym,
                         modes=th.thermal_modes(xyz.symbols, sym, hessian, saddle=state is None))
 

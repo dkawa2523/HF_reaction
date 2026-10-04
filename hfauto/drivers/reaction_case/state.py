@@ -67,9 +67,10 @@ class CaseRules:
 @dataclass(frozen=True)
 class Seed:
     """A saddle search's start. Only a TS seed (screen_ts, discovery_ts, higher_order_retry)
-    carries its own imaginary ``mode``; ``hessian`` is a verified TS freq within HESSIAN_NEAR_A.
-    ``depth``: the continuations since a fresh seed (a push, or a restart from the last frame,
-    which keeps the source but neither mode nor Hessian, adds one)."""
+    carries its own imaginary ``mode``; ``hessian`` is a verified TS freq within HESSIAN_NEAR_A,
+    also the search's SCF guess. ``depth``: the continuations since a fresh seed (a push, or a
+    restart from the last frame, which keeps the source but neither mode nor Hessian, adds
+    one)."""
 
     geometry: Geometry
     source: Literal["discovery_ts", "screen_ts", "screen_hei", "path_hei", "higher_order_retry"]

@@ -3,6 +3,7 @@
 import json
 import re
 import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -176,24 +177,38 @@ def test_g32_a_saddle_at_maxiter_fails_with_its_last_frame_and_its_energy(golden
 
 def test_g34_an_scf_rescue_is_cgmin_then_one_plain_scf_that_prints_s2(golden, tmp_path):
     """G2-P6, the r6 P3c H3 bead through NWChemEngine: attempt_00 failed its SCF; attempt_01
-    (this deck, as render_energy writes it) converged with cgmin, then two plain SCF iterations
-    3.7e-8 Eh away printed <S2> 0.9861. The Evidence carries it, and spin_ok rejects the
-    contaminated doublet; a plain SCF that left cgmin's solution is no Evidence."""
+    (this deck; X3 now starts cgmin from the atomic guess, within 40 cycles) converged with
+    cgmin, then two plain SCF iterations 3.7e-8 Eh away printed <S2> 0.9861. The rescue is
+    judged on that plain SCF, never on cgmin (P0a): the Evidence carries its <S2> (spin_ok
+    rejects the contaminated doublet) when it reaches its parent's spin state; a plain SCF that
+    left cgmin's solution or the parent's state, or a rescue that did not converge, closes as
+    scf_unavailable."""
     deck, text = golden.text("nwchem/G34/h3_rescue.nw"), golden.text("nwchem/G34/h3_rescue.out")
     engine, task, work, result = _parse(golden, tmp_path, NWChemEngine, "energy",
                                         "G34/h3_rescue.out", {}, scf_rescue=True)
     setup = nw_in.Setup(scratch_dir=re.search(r"scratch_dir (\S+)", deck)[1], memory_mb=2000,
-                        restart_vectors=True, scf_rescue=True)
-    assert nw_in.render_energy(task.inputs["mol"], SVPD, setup) == deck
+                        scf_rescue=True)
+    atomic = deck.replace("  iterations 100\n", "  iterations 40\n").replace(
+        "  vectors input job.movecs\n  cgmin\n", "  cgmin\n")
+    assert nw_in.render_energy(task.inputs["mol"], SVPD, setup) == atomic != deck
     energies = nw.dft_energies(text)
     assert energies == pytest.approx((-1.548056627840, -1.548056664703), abs=1e-12)
     ev = engine.parse(task, work, result)
     assert isinstance(ev, Evidence) and ev.energy_hartree == energies[-1]
     assert ev.s2 == pytest.approx(0.9861) and spin_ok(ev).reasons == ("spin_contaminated",)
+    for parent_s2, reason in ((0.95, None), (0.7539, "scf_unavailable:spin_state")):
+        parent = ev.model_copy(update={"s2": parent_s2})
+        judged = engine.parse(replace(task, inputs={**task.inputs, "parent": parent}), work, result)
+        assert (judged == ev) if reason is None else (judged.kind, judged.reason) == (
+            Kind.SCF_NOT_CONVERGED, reason)
     off = text.replace("-1.548056664703", "-1.548156664703")  # 1e-4 Eh below cgmin's
     (work / STDOUT_NAME).write_text(off, encoding="utf-8")
     failure = engine.parse(task, work, result)
-    assert (failure.kind, failure.reason) == (Kind.INCOMPLETE_OUTPUT, "rescue_solution_changed")
+    assert (failure.kind, failure.reason) == (Kind.SCF_NOT_CONVERGED, "scf_unavailable:scf_noise")
+    (work / STDOUT_NAME).write_text(text + "\n Calculation failed to converge\n", encoding="utf-8")
+    stopped = engine.parse(task, work, CommandResult(1, False, 1.0, work / STDOUT_NAME,
+                                                     work / "stderr.txt"))
+    assert (stopped.kind, stopped.reason) == (Kind.SCF_NOT_CONVERGED, "scf_unavailable:scf")
 
 
 def test_final_xyz_numbering_atom_order_and_missing_d3(golden, tmp_path):
@@ -290,6 +305,42 @@ def test_ccsd_t_level_and_energy_rhf_ccsd_module_and_rohf_tce(golden, stem, mult
     assert level_mismatches(CCSD_T, level, version_pin="7.2.3") == []
     assert (level.charge, level.multiplicity) == (0, multiplicity)
     assert nw.total_energy(text) == pytest.approx(energy, abs=1e-9) and nw.s2(text) is None
+
+
+# Lines of /home/user/hfauto_r10/probe/P0d/ch3o_uhf.out (sha256 2ab14bd3c9c9...), CH3O.
+# UHF-CCSD(T)/def2-TZVPD through the TCE, the deck render_wft writes (P0d).
+_UHF_TCE = """\
+             Northwest Computational Chemistry Package (NWChem) 7.2.3
+  ao basis        = "ao basis"
+  functions       =   104
+  atoms           =     5
+  alpha electrons =     9
+  beta  electrons =     8
+  charge          =   0.00
+  wavefunction    = UHF
+
+ Summary of "ao basis" -> "ao basis" (spherical)
+ ------------------------------------------------------------------------------
+       Tag                 Description            Shells   Functions and Types
+ ---------------- ------------------------------  ------  ---------------------
+ C                         def2-tzvpd               13       37   6s3p3d1f
+ O                         def2-tzvpd               14       40   6s4p3d1f
+ H                         def2-tzvpd                5        9   3s2p
+
+ CCSD[T] total energy / hartree       =      -114.874770459222532
+ CCSD(T)  correction energy / hartree =        -0.012710846433504
+ CCSD(T) correlation energy / hartree =        -0.404282987575066
+ CCSD(T) total energy / hartree       =      -114.873944099508378
+"""
+
+
+def test_uhf_ccsd_t_level_and_energy():
+    """P0d: a UHF reference states no ``open shells``; alpha - beta electrons give the
+    multiplicity. Its total agrees with PySCF's UHF-CCSD(T) within 2.1e-7 Eh."""
+    level = nw.observe_level(_UHF_TCE)
+    assert level_mismatches(CCSD_T, level, version_pin="7.2.3") == []
+    assert (level.charge, level.multiplicity) == (0, 2) and nw.s2(_UHF_TCE) is None
+    assert nw.total_energy(_UHF_TCE) == pytest.approx(-114.873944099508, abs=1e-12)
 
 
 def test_g30_energy_layer_matches_its_method_file_with_m06_2x_d3_on_another_pes(golden):

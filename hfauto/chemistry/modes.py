@@ -1,4 +1,4 @@
-"""Displacements along normal modes, mode overlaps and mode-follow outcomes (§5.5).
+"""Displacements along normal modes and mode-follow outcomes (§5.5).
 
 A displacement off a stationary point is ``qrc_step`` (along one imaginary mode, at one energy
 target) or ``off_saddle`` (along the sum of the imaginary modes below a threshold, each by its
@@ -42,13 +42,6 @@ def displace(
     if step.shape != x.shape:
         raise ValueError("mode and coordinates differ in atom count")
     return x + step, x - step
-
-
-def overlap(a: np.ndarray, b: np.ndarray) -> float:
-    """|cos| between two displacement vectors (mode signs are arbitrary)."""
-
-    va, vb = np.asarray(a, dtype=float).ravel(), np.asarray(b, dtype=float).ravel()
-    return float(abs(va @ vb) / (np.linalg.norm(va) * np.linalg.norm(vb)))
 
 
 def amplitude(

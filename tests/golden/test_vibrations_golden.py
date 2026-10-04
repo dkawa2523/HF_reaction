@@ -5,7 +5,6 @@ import re
 import numpy as np
 import pytest
 
-from hfauto.chemistry.modes import overlap
 from hfauto.chemistry.vibrations import external_basis, projected_frequencies, shape_hessian
 from hfauto.chemistry.xyz import read_xyz
 
@@ -46,4 +45,5 @@ def test_g08_four_imaginary_modes_and_the_shaped_saddle_hessian(golden):
         shaped, _, _ = projected_frequencies(model, symbols, coords)
         values, vectors = np.linalg.eigh(model)
         assert np.count_nonzero(shaped < 0) == 1 == np.count_nonzero(values < -1e-8)
-        assert overlap(vectors[:, 0], mode - rigid @ (rigid.T @ mode)) == pytest.approx(1.0)
+        v, w = vectors[:, 0], mode - rigid @ (rigid.T @ mode)
+        assert abs(v @ w) / (np.linalg.norm(v) * np.linalg.norm(w)) == pytest.approx(1.0)

@@ -4,9 +4,9 @@ method panel.
 Imports only hfauto.core, hfauto.chemistry.gates and the standard library. Everything is a
 pure function over typed records except ``write_tables``. No confidence score is produced
 (design §5.4): a reaction is either rankable by ``gates.rankable`` or listed with its blockers; the
-method panel's dE_act spread is shown as columns, never as a blocker. A panel energy that fails
-``gates.spin_ok`` stays in its row, noted, and out of the spread (the thermo stage keeps such an
-energy out of the ranking).
+method panel's dE_act spread is shown as columns, never as a blocker. A spin-contaminated panel
+energy (``gates.energy_spin_ok``, the thermo stage's definition) stays in its row, noted, and
+out of the spread.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import astuple, dataclass, fields
 from pathlib import Path
 
-from hfauto.chemistry.gates import Policy, rankable, reaction_tier, spin_ok
+from hfauto.chemistry.gates import Policy, energy_spin_ok, rankable, reaction_tier
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Level
 from hfauto.core.manifest import Artifact
@@ -125,9 +125,11 @@ def _label(level: Level) -> str:
 
 
 def _deltas(
-    at: Mapping[str, Evidence], points: tuple[str, str, str | None], policy: Policy
+    at: Mapping[str, Evidence], freq: Mapping[str, Evidence],
+    points: tuple[str, str, str | None], policy: Policy
 ) -> tuple[float, float | None, tuple[str, ...]] | None:
-    """dE_rxn, dE_act (kcal/mol) and the names of those with an energy failing spin_ok."""
+    """dE_rxn, dE_act (kcal/mol) and the names of those with a spin-contaminated energy: its
+    point's freq fails gates.energy_spin_ok."""
     start, end, ts = points
     if start not in at or end not in at:
         return None
@@ -137,7 +139,7 @@ def _deltas(
     values = {name: (at[b].energy_hartree - at[a].energy_hartree) * HARTREE_TO_KCAL_MOL
               for name, (a, b) in pairs.items()}
     contaminated = tuple(name for name, pair in pairs.items()
-                         if not all(spin_ok(at[p], policy) for p in pair))
+                         if not all(energy_spin_ok(at[p], freq[p], policy) for p in pair))
     return values["dE_rxn"], values.get("dE_act"), contaminated
 
 
@@ -159,14 +161,13 @@ def _panel_rows(
     ]
 
 
-def _subject_energies(calculations: Sequence[Artifact], freq: Mapping[str, str]
+def _subject_energies(calculations: Sequence[Artifact], freq: Mapping[str, Evidence]
                       ) -> list[tuple[str, Evidence]]:
     """(subject, Evidence) in view order: each subject's freq calculation (the reference
-    level), then every sp calculation for each subject its parents name."""
-    evidence = {a.artifact_id: a.payload for a in calculations if isinstance(a.payload, Evidence)}
-    return [(s, evidence[c]) for s, c in freq.items() if c in evidence] + [
+    level), then every sp calculation for each subject with a freq its parents name."""
+    return list(freq.items()) + [
         (s, ev) for a in calculations if isinstance(ev := a.payload, Evidence) and ev.task == "sp"
-        for s in a.parents]
+        for s in a.parents if s in freq]
 
 
 def method_panel(
@@ -182,10 +183,12 @@ def method_panel(
     A stationary point is a subject of the sp stage (a minimum_id, or SaddleClaim.freq_calc
     for the TS): its reference energy comes from its freq calculation, the other levels from
     the sp calculations whose parents name it (the later one in the view wins). A value with
-    an energy that fails ``spin_ok(policy)`` is noted and left out of the min/max.
+    a spin-contaminated energy (_deltas) is noted and left out of the min/max.
     """
-    freq = {m.minimum_id: m.freq_calc for m in minima.values()} | {
+    evidence = {a.artifact_id: a.payload for a in calculations if isinstance(a.payload, Evidence)}
+    calcs = {m.minimum_id: m.freq_calc for m in minima.values()} | {
         r.saddle.freq_calc: r.saddle.freq_calc for r in reactions if r.saddle is not None}
+    freq = {s: evidence[c] for s, c in calcs.items() if c in evidence}
     energies: dict[str, dict[str, Evidence]] = defaultdict(dict)  # level key -> subject -> ev
     for subject, ev in _subject_energies(calculations, freq):
         energies[ev.level.full_key()][subject] = ev  # one key, one Level
@@ -194,7 +197,7 @@ def method_panel(
         points = (*reaction.minima, reaction.saddle.freq_calc if reaction.saddle else None)
         rows += _panel_rows(reaction.reaction_id, [
             (key, next(iter(at.values())).level, *d) for key, at in sorted(energies.items())
-            if (d := _deltas(at, points, policy)) is not None])
+            if (d := _deltas(at, freq, points, policy)) is not None])
     return rows
 
 

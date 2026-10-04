@@ -1,4 +1,5 @@
-"""reporting.validation on the golden manifest excerpts of VAL9/R2 runs (tests/golden G36-G39)
+"""reporting.validation on the golden manifest excerpts of VAL9/R2 runs and the W2 fresh S5 run
+(tests/golden G36-G39)
 and the integrity of validation/: the cases, their inputs and the BH76 references."""
 
 import gzip

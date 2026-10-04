@@ -84,14 +84,12 @@ def test_off_saddle_leaves_a_third_order_saddle_along_both_other_modes():
     assert np.allclose(step, modes.BOUNDS_A[1] * AXES[0])
 
 
-def test_displace_and_overlap():
+def test_displace():
     coords = np.zeros((2, 3))
     mode = np.array([[0.0, 0.0, 2.0], [0.0, 1.0, 0.0]])
     plus, minus = modes.displace(coords, mode, 0.1)
     assert np.linalg.norm(plus, axis=1).max() == pytest.approx(0.1)
     assert np.allclose(plus, -minus)
-    assert modes.overlap(mode, -mode) == pytest.approx(1.0)
-    assert modes.overlap([1.0, 0.0], [0.0, 1.0]) == 0.0
 
 
 @pytest.mark.parametrize(

@@ -71,6 +71,16 @@ class ScriptedSaddle(fakes.FakeSaddle):
                        energy_hartree=self.energy)
 
 
+class GuessedSaddle(fakes.FakeSaddle):  # records each search's SCF guess
+    def __init__(self, root, pes):
+        super().__init__(root, pes)
+        self.guesses = []
+
+    def refine(self, seed, method, *, scf_guess=None, **kw):
+        self.guesses.append(scf_guess)
+        return super().refine(seed, method, **kw)
+
+
 def seeded(ctx, state, depth=0, attempts=0):
     """The state with one seed at the double well's TS (no mode: ρ, the xTB Hessian)."""
     ts = ctx.geometry("ts", ctx.rt.qm.pes.points["ts"])
@@ -175,12 +185,16 @@ def test_a_saddle_without_an_imaginary_mode_is_a_failed_attempt(tmp_path, screen
 
 
 def test_a_saddle_whose_mode_leaves_the_bond_change_gets_no_qrc(tmp_path) -> None:
-    """G1-P2: chi on the labelled ends' bonds (F-H-F: one basin); H off the axis gets no QRC."""
+    """G1-P2: chi on the labelled ends' bond change (F-H-F: one basin); H off the axis gets no
+    QRC, its chi kept in the token."""
     ctx, state = case_ctx(tmp_path, fakes.symmetric_double_well())
     state = act(ctx, act(ctx, state, Action.FIND_PATH), Action.REFINE_SADDLE)
+    assert ctx.change() == (frozenset({(1, 2)}), frozenset({(0, 1)}))
     ctx.rt, ctx.log = replace(ctx.rt, qm=OffAxisQM(tmp_path, ctx.rt.qm.pes)), (logged := []).append
     state = act(ctx, state, Action.VALIDATE_AND_CONNECT)
-    assert logged == [{"note": "ts_rejected:not_reaction_mode"}] and state.saddle_attempts == 1
+    [note] = [r["note"] for r in logged]
+    assert note.startswith("ts_rejected:not_reaction_mode:") and float(note[-5:]) < 0.01
+    assert state.saddle_attempts == 1
     assert ctx.rt.qm.calls == ["frequencies"] and state.claim is None
     assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "dft_path")
 
@@ -188,11 +202,12 @@ def test_a_saddle_whose_mode_leaves_the_bond_change_gets_no_qrc(tmp_path) -> Non
 # restart, push and the continuation depth ------------------------------------------------------
 
 def test_a_higher_order_saddle_is_pushed_once_and_refined_from_its_ts_hessian(tmp_path):
-    """U6-P3: the reaction mode is the negative mode along ρ; the other modes below
+    """U6-P3: the reaction mode is the negative mode of largest χ; the other modes below
     -saddle_cm1 (here the second) push the saddle once by the energy target (modes.off_saddle),
-    and the TS freq is the seed's Hessian. The push is a counted attempt one continuation
-    deeper."""
-    ctx, state = case_ctx(tmp_path, fakes.double_well())
+    and the TS freq is the seed's Hessian and its search's SCF guess. The push is a counted
+    attempt one continuation deeper."""
+    pes = fakes.double_well()
+    ctx, state = case_ctx(tmp_path, pes, saddle=GuessedSaddle(tmp_path, pes))
     state = act(ctx, act(ctx, state, Action.FIND_PATH), Action.REFINE_SADDLE)
     x = ctx.coords(ctx.work.saddle.final)
     ctx.rt = replace(ctx.rt, qm=HigherOrderQM(tmp_path, ctx.rt.qm.pes))
@@ -212,7 +227,7 @@ def test_a_higher_order_saddle_is_pushed_once_and_refined_from_its_ts_hessian(tm
     assert state.last_saddle == "converged" and state.saddle_attempts == 2
     assert [r["note"] for r in logged] == ["saddle_hessian:ts_freq:mode"]
     assert (ctx.rt.qm.calls.count("frequencies"), len(ctx.rt.screen_qm.calls)) == jobs
-    assert ctx.work.depth == 1
+    assert ctx.work.depth == 1 and ctx.rt.saddle.guesses == [None, seed.hessian]
 
 
 def test_a_stalled_saddle_restarts_once_within_its_attempt(tmp_path) -> None:

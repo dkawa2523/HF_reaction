@@ -6,6 +6,11 @@ Evidence or PathProfile is returned only when the job terminated normally, the o
 Level matches the request (version pin, charge and multiplicity included), the echoed
 input geometry equals the input within 1e-4 Å and a driver job's last DFT gradient is at
 its final frame; anything else is a Failure.
+
+SCF provenance (design §7.1): a DFT job given ``scf_guess`` (its parent) starts from the
+parent's converged vectors, projected from the parent's basis when it differs. A failed SCF
+climbs the rest of the bounded ladder once (P0a): cgmin from the atomic guess, then one plain
+SCF that reads <S2> (_rescued), else ``scf_unavailable``; never from diverged vectors.
 """
 
 from __future__ import annotations
@@ -25,7 +30,7 @@ from hfauto.backends.nwchem import input as nw_in
 from hfauto.backends.nwchem import output as nw_out
 from hfauto.backends.protocols import Requirements
 from hfauto.chemistry.elements import atomic_number
-from hfauto.chemistry.gates import Policy, qrc_drop
+from hfauto.chemistry.gates import Policy, qrc_drop, same_spin_state
 from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian
 from hfauto.chemistry.xyz import (
     XYZ,
@@ -105,11 +110,21 @@ def _fixed_bond(mol: Molecule, bond: tuple[int, int, float] | None
     return {"fixed_bond": (i, j, r)}
 
 
-def _rescue_changed(text: str, level: Level) -> bool:
-    """The plain SCF after cgmin (input._task) ended more than the SCF noise away from cgmin's
-    energy: another solution than the one the job converged on."""
-    energies = nw_out.dft_energies(text)
-    return len(energies) < 2 or abs(energies[-1] - energies[-2]) > qrc_drop(level)
+def _unavailable(cause: str) -> Failure:
+    return Failure(kind=FailureKind.SCF_NOT_CONVERGED, reason=f"scf_unavailable:{cause}")
+
+
+def _rescued(task: Task, text: str, ev: Evidence) -> Evidence | Failure:
+    """Rungs 2 and 3 of the SCF ladder succeed on the plain SCF, never on cgmin's convergence:
+    it ends within the SCF noise (gates.qrc_drop) of cgmin's energy and, at its parent's
+    structure (sp, freq), on the parent's spin state (gates.same_spin_state). A driver job's
+    final structure is not its parent's: its <S2> may change (a bond breaking)."""
+    energies, parent = nw_out.dft_energies(text), task.inputs.get("parent")
+    if len(energies) < 2 or abs(energies[-1] - energies[-2]) > qrc_drop(ev.level):
+        return _unavailable("scf_noise")
+    if parent is not None and task.kind not in _DRIVER_JOBS and not same_spin_state(ev, parent):
+        return _unavailable("spin_state")
+    return ev
 
 
 def _final_gradient(text: str, final: XYZ) -> tuple[float, ...] | None:
@@ -123,22 +138,17 @@ def _final_gradient(text: str, final: XYZ) -> tuple[float, ...] | None:
     return None if shift > FRAME_TOL_A else tuple(map(float, block[1].ravel()))
 
 
-def _resumed(task: Task, workdir: Path, latest: Path | None, *, autoz: bool, rescue: bool
-             ) -> Task:
-    """The next attempt of ``task``: from ``latest`` (if any) without an initial Hessian, with
-    the old vectors and the driver Hessian (not after autoz: it is in internal coordinates);
-    Cartesian after autoz; cgmin after a DFT SCF failure."""
-    kept = (".movecs",) if autoz else (".movecs", ".drv.hess")
-    restart = [workdir / f"{NAME}{suffix}" for suffix in kept]
-    inputs = {**task.inputs, "restart": [p for p in restart if p.is_file()],
-              "cartesian": autoz or bool(task.inputs.get("cartesian")),
-              "scf_rescue": bool(task.inputs.get("scf_rescue"))
-              or (rescue and task.inputs["method"].kind == "dft")}
-    if latest is not None:
-        mol = task.inputs["mol"]
-        inputs |= {"mol": Molecule(read_xyz(latest), mol.charge, mol.multiplicity),
-                   "hessian": None}
-    return replace(task, inputs=inputs)
+def _resumed(task: Task, workdir: Path, latest: Path, *, autoz: bool) -> Task:
+    """The next attempt of a driver job from its ``latest`` frame without an initial Hessian,
+    with its converged vectors and (not after autoz: it is in internal coordinates) its driver
+    Hessian; Cartesian after autoz."""
+    movecs, hessian = (workdir / f"{NAME}{suffix}" for suffix in (".movecs", ".drv.hess"))
+    mol, method = task.inputs["mol"], task.inputs["method"]
+    return replace(task, inputs={
+        **task.inputs, "mol": Molecule(read_xyz(latest), mol.charge, mol.multiplicity),
+        "hessian": None, "cartesian": autoz or bool(task.inputs.get("cartesian")),
+        "vectors": (movecs, method.basis) if movecs.is_file() else None,
+        "drv_hessian": hessian if hessian.is_file() and not autoz else None})
 
 
 def _read(path: Path) -> str:
@@ -180,15 +190,27 @@ class _NWChem:
 
     # --- engine side -------------------------------------------------------------------
 
-    def _run(self, kind: str, payload: Mapping[str, Any], inputs: Mapping[str, Any]) -> Any:
+    def _run(self, kind: str, payload: Mapping[str, Any], inputs: Mapping[str, Any],
+             scf_guess: Evidence | None = None) -> Any:
+        """The job; ``scf_guess`` enters its key only when its vectors start a DFT SCF (a
+        CCSD(T) reference starts from the atomic guess)."""
         try:  # no all-electron deck for an element that needs an ECP
             nw_in.ecp(inputs["mol"].xyz.symbols, inputs["method"].basis)
         except ValueError as exc:
             return _invalid(str(exc))
+        if scf_guess is not None and inputs["method"].kind == "dft" and (
+                movecs := self._vectors(scf_guess)):
+            payload = {**payload, "scf_guess": scf_guess.job_key}
+            inputs = {**inputs, "parent": scf_guess, "vectors": (movecs, scf_guess.level.basis)}
         task = Task(engine=self.name, version_pin=self._site.version, kind=kind,
                     key_payload={"method": inputs["method"].signature(), **payload},
                     execution=self._site.execution, inputs=inputs)
         return self._jobs.run(task, self)
+
+    def _vectors(self, parent: Evidence) -> Path | None:
+        """The converged vectors of ``parent``'s job; None for another engine's Evidence."""
+        movecs = self._jobs.store.resolve(parent.output).with_name(f"{NAME}.movecs")
+        return movecs if movecs.is_file() else None
 
     def _hessian_file(self, freq: Evidence, mol: Molecule) -> Path | Failure:
         """The canonical .npy of a freq Evidence (any Level) computed at the same atoms in the
@@ -202,8 +224,10 @@ class _NWChem:
     # --- Adapter side ------------------------------------------------------------------
 
     def prepare(self, task: Task, workdir: Path) -> Command:
-        for source in task.inputs.get("restart", ()):
-            shutil.copyfile(source, workdir / Path(source).name)
+        if (vectors := task.inputs.get("vectors")) is not None:
+            shutil.copyfile(vectors[0], workdir / nw_in.GUESS)
+        if (drv_hessian := task.inputs.get("drv_hessian")) is not None:
+            shutil.copyfile(drv_hessian, workdir / f"{NAME}.drv.hess")
         if task.inputs.get("hessian") is not None:
             h = np.load(task.inputs["hessian"])
             if task.kind == "saddle":
@@ -225,6 +249,8 @@ class _NWChem:
         failure = nw_out.classify_failure(text, returncode=result.returncode,
                                           timed_out=result.timed_out)
         if failure is not None:
+            if failure.kind is FailureKind.SCF_NOT_CONVERGED and task.inputs.get("scf_rescue"):
+                return _unavailable("scf")
             stalled = task.kind == "saddle" and failure.kind is FailureKind.GEOMETRY_MAXITER
             latest = nw_out.final_xyz(workdir, task.inputs["mol"].xyz.symbols) if stalled else None
             return failure if latest is None else failure.model_copy(update={
@@ -237,22 +263,24 @@ class _NWChem:
         return self._evidence(task, workdir, text, level)
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
-        """A driver job continues from its latest frame with its old vectors (design §7.1):
-        after a timeout (and an opt's maxiter) with its driver Hessian; after an opt's autoz
-        failure in Cartesian coordinates without it (a fixed bond becomes a spring restraint,
+        """A DFT SCF failure runs rungs 2 and 3 of the SCF ladder (input._task) from the same
+        start and the atomic guess, once (jobs.LADDER); a WFT one is final. A driver job
+        continues from its latest frame (design §7.1): after a timeout (and an opt's maxiter)
+        with its vectors and driver Hessian; after an opt's autoz failure in Cartesian
+        coordinates with its vectors only (a fixed bond becomes a spring restraint,
         input._fixed). An autoz failure before the first frame, or of a saddle, restarts in
-        Cartesian coordinates from the same start. An SCF failure continues with the old
-        vectors (DFT: cgmin, then one plain SCF for <S2>, input._task)."""
+        Cartesian coordinates from the same start."""
+        if failure.kind is FailureKind.SCF_NOT_CONVERGED:
+            rescue = {**task.inputs, "scf_rescue": True, "vectors": None}
+            return replace(task, inputs=rescue) if task.inputs["method"].kind == "dft" else None
         autoz = failure.kind is FailureKind.INPUT_INVALID and failure.reason == "autoz"
-        rescue = failure.kind is FailureKind.SCF_NOT_CONVERGED
         symbols = task.inputs["mol"].xyz.symbols
         latest = nw_out.final_xyz(workdir, symbols) if task.kind in _DRIVER_JOBS else None
         if autoz and (latest is None or task.kind == "saddle"):
             return replace(task, inputs={**task.inputs, "cartesian": True})
-        continued = autoz or failure.kind in _CONTINUED.get(task.kind, ())
-        if not (rescue or (continued and latest is not None)):
+        if latest is None or not (autoz or failure.kind in _CONTINUED.get(task.kind, ())):
             return None
-        return _resumed(task, workdir, latest, autoz=autoz, rescue=rescue)
+        return _resumed(task, workdir, latest, autoz=autoz)
 
     def _scratch(self, workdir: Path) -> Path:
         return Path(self._site.scratch_dir or ".") / f"{workdir.parent.name[:16]}_{workdir.name}"
@@ -262,11 +290,11 @@ class _NWChem:
         if self._site.scratch_dir:
             self._scratch(workdir).mkdir(parents=True, exist_ok=True)
             scratch = self._scratch(workdir).as_posix()
-        restart = task.inputs.get("restart", ())
+        vectors = task.inputs.get("vectors")
         return nw_in.Setup(
             name=NAME, scratch_dir=scratch, memory_mb=task.execution.memory_mb_per_rank,
             cartesian=bool(task.inputs.get("cartesian")),
-            restart_vectors=any(Path(p).suffix == ".movecs" for p in restart),
+            guess_basis=None if vectors is None else vectors[1],
             scf_rescue=bool(task.inputs.get("scf_rescue")),
         )
 
@@ -310,8 +338,6 @@ class _NWChem:
             return _incomplete("no_energy")
         if s2 is None and level.multiplicity > 1 and task.inputs["method"].kind == "dft":
             return _incomplete("s2_not_reported")  # spin_ok would pass a missing <S2>
-        if task.inputs.get("scf_rescue") and _rescue_changed(text, level):
-            return _incomplete("rescue_solution_changed")
         start = self._geometry(write_xyz(start_mol.xyz, workdir / "start.xyz"))
         final, extra = start, dict[str, Any]()
         if task.kind in _DRIVER_JOBS:
@@ -327,10 +353,11 @@ class _NWChem:
             if isinstance(vibrations, Failure):
                 return vibrations
             extra.update(vibrations)
-        return Evidence(engine=task.engine, task=_TASK[task.kind], level=level, start=start,
-                        final=final, energy_hartree=energy, s2=s2,
-                        output=self._jobs.store.file_ref(workdir / STDOUT_NAME), job_key="",
-                        **extra)
+        ev = Evidence(engine=task.engine, task=_TASK[task.kind], level=level, start=start,
+                      final=final, energy_hartree=energy, s2=s2,
+                      output=self._jobs.store.file_ref(workdir / STDOUT_NAME), job_key="",
+                      **extra)
+        return _rescued(task, text, ev) if task.inputs.get("scf_rescue") else ev
 
     def _frequencies(self, workdir: Path, text: str, mol: Molecule) -> dict[str, Any] | Failure:
         """Projected frequencies from the job's own .hess (one vibrational block only)."""
@@ -364,41 +391,30 @@ class _NWChem:
 
 class NWChemEngine(_NWChem):
     """QM: DFT energy / optimize (also with a fixed bond) / frequencies; CCSD(T) energies
-    (ROHF-CCSD(T) for open shells)."""
+    (UHF-CCSD(T) for open shells)."""
 
     name: ClassVar[str] = "nwchem"
 
     def supports(self, method: MethodSpec) -> bool:
         return _dft_supported(method) or _wft_supported(method)
 
-    def _qm(self, kind: str, mol: Molecule, method: MethodSpec, *,
+    def _qm(self, kind: str, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None,
             payload: Mapping[str, Any] | None = None, **inputs: Any) -> Evidence | Failure:
         if not (_dft_supported(method) or (kind == "energy" and _wft_supported(method))):
             return _invalid(f"unsupported_method:{method.id}")
         return self._run(kind, {"molecule": mol.fingerprint(), **(payload or {})},
-                         {"mol": mol, "start": mol, "method": method, **inputs})
+                         {"mol": mol, "start": mol, "method": method, **inputs}, scf_guess)
 
     def energy(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None
                ) -> Evidence | Failure:
         """A CCSD(T) key names the frozen core when an atom beyond Kr makes it differ from the
-        old ``freeze atomic`` (input.frozen_core): no result of that deck is reused.
-        ``scf_guess`` (a profile point's end) starts the SCF from its converged vectors, so an
-        open-shell point stays on that end's SCF branch; it enters the key only when given."""
-        symbols = mol.xyz.symbols
-        ecp = method.kind == "wft" and any(atomic_number(s) > 36 for s in symbols)
-        payload = {"frozen_core": nw_in.frozen_core(symbols)} if ecp else {}
-        guess, restart = self._guess(scf_guess)
-        return self._qm("energy", mol, method, payload={**payload, **guess}, **restart)
-
-    def _guess(self, scf_guess: Evidence | None) -> tuple[dict[str, Any], dict[str, Any]]:
-        """(key payload, inputs) starting the SCF from the converged vectors of ``scf_guess``'s
-        job; empty when there is none (no job.movecs next to its output: another engine)."""
-        if scf_guess is None:
-            return {}, {}
-        movecs = self._jobs.store.resolve(scf_guess.output).with_name(f"{NAME}.movecs")
-        if not movecs.is_file():
-            return {}, {}
-        return {"scf_guess": scf_guess.job_key}, {"restart": [movecs]}
+        old ``freeze atomic`` (input.frozen_core), and an open shell's UHF reference (P0d): no
+        result of an older deck is reused."""
+        symbols, wft = mol.xyz.symbols, method.kind == "wft"
+        payload: dict[str, Any] = {"reference": "uhf"} if wft and mol.multiplicity > 1 else {}
+        if wft and any(atomic_number(s) > 36 for s in symbols):
+            payload["frozen_core"] = nw_in.frozen_core(symbols)
+        return self._qm("energy", mol, method, scf_guess=scf_guess, payload=payload)
 
     def optimize(self, mol: Molecule, method: MethodSpec, *,
                  init_hessian: Evidence | None = None,
@@ -409,9 +425,8 @@ class NWChemEngine(_NWChem):
         (vibrations.shape_hessian; why in input.render_optimize) unless it is a higher-order
         saddle's (two or more modes below -saddle_cm1), written as it is: from there the side
         must stay free to leave its other saddle directions (DME C2v seed: 29 steps as it is,
-        unconverged after 207 as the model). ``fixed_bond`` and ``scf_guess`` (a relaxed scan's
-        point and its predecessor) enter the job key only when given, so every other key is
-        unchanged."""
+        unconverged after 207 as the model). ``fixed_bond`` enters the job key only when
+        given."""
         hessian = None if init_hessian is None else self._hessian_file(init_hessian, mol)
         if isinstance(hessian, Failure):
             return hessian
@@ -421,18 +436,16 @@ class NWChemEngine(_NWChem):
         sha = init_hessian and init_hessian.hessian and init_hessian.hessian.sha256
         model = {} if init_hessian is None or sum(f < -_SADDLE_CM1 for f in (
             init_hessian.frequencies_cm1 or ())) >= 2 else {"hessian_model": "positive"}
-        guess, restart = self._guess(scf_guess)
-        return self._qm("optimize", mol, method,
-                        payload={"hessian": sha, **model, **fixed, **guess},
-                        hessian=hessian, **model, **fixed, **restart)
+        return self._qm("optimize", mol, method, scf_guess=scf_guess,
+                        payload={"hessian": sha, **model, **fixed},
+                        hessian=hessian, **model, **fixed)
 
     def frequencies(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None
                     ) -> Evidence | Failure:
-        """``scf_guess`` (the opt or saddle at mol) starts the SCF from its converged vectors, so
-        the freq stays on its electronic state: from scratch, the UKS OH···CH4 complex found the
-        other OH π component, 7.2e-5 Eh above its opt."""
-        guess, restart = self._guess(scf_guess)
-        return self._qm("frequencies", mol, method, payload=guess, **restart)
+        """From the atomic guess, the UKS OH···CH4 complex found the other OH π component,
+        7.2e-5 Eh above its opt: ``scf_guess`` (the opt or saddle at mol) keeps it on its
+        state."""
+        return self._qm("frequencies", mol, method, scf_guess=scf_guess)
 
 
 class NWChemSaddle(_NWChem):
@@ -444,7 +457,7 @@ class NWChemSaddle(_NWChem):
     name: ClassVar[str] = "nwchem_saddle"
 
     def refine(self, seed: Molecule, method: MethodSpec, *, hessian: Evidence,
-               mode: Sequence[float]) -> Evidence | Failure:
+               mode: Sequence[float], scf_guess: Evidence | None = None) -> Evidence | Failure:
         if not _dft_supported(method):
             return _invalid(f"unsupported_method:{method.id}")
         path = self._hessian_file(hessian, seed)
@@ -455,7 +468,7 @@ class NWChemSaddle(_NWChem):
                    hessian.hessian.sha256, "hessian_model": "negative_along_mode",
                    "mode": sha256_text(json.dumps((np.round(unit, 6) + 0.0).tolist()))}
         inputs = {"mol": seed, "start": seed, "method": method, "hessian": path, "mode": unit}
-        return self._run("saddle", payload, inputs)
+        return self._run("saddle", payload, inputs, scf_guess)
 
 
 class NWChemString(_NWChem):

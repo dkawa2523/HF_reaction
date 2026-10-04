@@ -1,5 +1,7 @@
-# Opt-in method-panel reference for small molecules (open shells: ROHF-CCSD(T) through the
-# TCE; not in the default panel).
+# Opt-in method-panel reference for small molecules, not in the default panel. Open shells:
+# UHF-CCSD(T) through the TCE (P0d: within 2.1e-7 Eh of PySCF; the TCE's ROHF-(T) is not the
+# standard Watts-Gauss-Bartlett one and is 0.1-0.2 kcal/mol off). Only points whose DFT freq
+# passes spin_ok get it (stages.single_point).
 id: ccsd-t_def2-tzvpd
 kind: wft
 wft_method: ccsd(t)

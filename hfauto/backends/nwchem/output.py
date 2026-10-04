@@ -41,8 +41,9 @@ _SCF = re.compile(r"Calculation failed to converge|SCF not converged")
 _GEOMETRY_MAXITER = re.compile("Failed to converge in maximum number of steps")
 _GRADIENT_ROW = re.compile(rf"^\s*\d+\s+[A-Za-z]\S*((?:\s+{_NUMBER}){{6}})\s*$")
 _DFT_ENERGY = r"Total DFT energy =\s+(\S+)"
-# the ccsd module (RHF) or the TCE (ROHF)
+# the ccsd module (RHF) or the TCE (UHF; ROHF before P0d)
 _CCSD_T = r"(?:Total CCSD\(T\) energy:|CCSD\(T\) total energy / hartree\s+=)\s+(\S+)"
+_UHF = re.compile(r"^\s*alpha electrons\s+=\s+(\d+)\n\s*beta\s+electrons\s+=\s+(\d+)", re.MULTILINE)
 
 
 def _number(token: str) -> float:
@@ -93,12 +94,16 @@ def _dft_level(text: str, observed_version: str) -> Level | None:
 
 
 def _ccsd_t_level(text: str, observed_version: str) -> Level | None:
+    """The state of the SCF reference: ``open shells`` of an RHF (or ROHF) one, alpha - beta
+    electrons of a UHF one."""
     charge = _last(r"^\s*charge\s+=\s+(\S+)", text)
-    open_shells = _last(r"^\s*open shells\s+=\s+(\d+)", text)
-    if charge is None or open_shells is None:
+    unpaired = _last(r"^\s*open shells\s+=\s+(\d+)", text)
+    if uhf := _UHF.findall(text):
+        unpaired = str(int(uhf[-1][0]) - int(uhf[-1][1]))
+    if charge is None or unpaired is None:
         return None
     return Level(program="nwchem", version=observed_version, method="ccsd(t)", basis=basis(text),
-                 charge=round(_number(charge)), multiplicity=int(open_shells) + 1)
+                 charge=round(_number(charge)), multiplicity=int(unpaired) + 1)
 
 
 def observe_level(text: str) -> Level | None:

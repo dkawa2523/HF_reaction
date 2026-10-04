@@ -4,7 +4,8 @@ Every deck writes the top-level ``charge``, the geometry in the input frame
 (``units angstrom nocenter noautosym``, plus ``noautoz`` for Cartesian coordinates after an
 autoz failure), a spherical basis with the def2-ECP of every element beyond Kr, at most
 SCF_MAXITER SCF cycles and, for DFT, xc / mult (``odft`` when open shell) / grid / energy
-convergence / dispersion. Gas phase only.
+convergence / dispersion. Gas phase only. A DFT SCF starts from GUESS when the engine gives
+one (_guess), else from the atomic guess.
 Optimizations and saddles never compute a Hessian: frequencies are a job of their own, and an
 initial Hessian is read from ``<name>.hess`` (``inhess 2``).
 """
@@ -25,6 +26,10 @@ OPT_MAXITER = 100
 SADDLE_MAXITER = 50
 STRING_MAXITER = 20
 SCF_MAXITER = 100  # NWChem 7.2.3 defaults: DFT 50, SCF 20
+# cgmin of the SCF ladder's rung 2; NWChem 7.2.3 raises it by 10 itself ("Disabled NR: increased
+# maxiter to 50"; P0a: the H···C2H4 complex converged in 31)
+CGMIN_MAXITER = 40
+GUESS = "guess.movecs"  # the vectors an SCF starts from, copied into the job directory
 INITIAL_PATH = "initial_path.xyz"  # xyz_path is read from permanent_dir (the job's cwd)
 # Eh/bohr²: NWChem 7.2.3 adds k (r - r0)² (r, r0 in bohr; not in "Total DFT energy"), so r
 # settles F/2k short of r0: 7e-4 Å at 0.05 Eh/bohr, the steepest CH3 + O2 scan force (a
@@ -45,8 +50,8 @@ class Setup:
     scratch_dir: str | None = None  # EngineSite.scratch_dir; permanent_dir is the cwd
     memory_mb: int = 1200  # per rank
     cartesian: bool = False  # noautoz: the continuation of an autoz failure
-    restart_vectors: bool = False  # start from <name>.movecs of the previous attempt
-    scf_rescue: bool = False  # after SCF_NOT_CONVERGED: cgmin, then one plain SCF (_task)
+    guess_basis: str | None = None  # GUESS's basis: the SCF starts from GUESS (_guess)
+    scf_rescue: bool = False  # rungs 2 and 3 of the SCF ladder (_task)
 
 
 _DEFAULT = Setup()
@@ -61,12 +66,30 @@ def _deck(setup: Setup, *blocks: Sequence[str], memory: str = "") -> str:
 
 
 def _task(setup: Setup, operation: str) -> tuple[list[str], ...]:
-    """``task dft <operation>``; after a cgmin rescue, one plain SCF from its vectors at the
-    same structure prints the <S2> cgmin does not (CH3: 2 iterations, 6e-9 Eh apart)."""
+    """``task dft <operation>``; rungs 2 and 3 of the SCF ladder (``scf_rescue``): cgmin from
+    the atomic guess (_dft), then one plain SCF from its vectors at the final structure, which
+    prints the <S2> cgmin does not (CH3: 2 iterations, 6e-9 Eh apart; P0a: 2-3 iterations, within
+    the CGMIN_MAXITER cycles it keeps)."""
     if not setup.scf_rescue:
         return ([f"task dft {operation}"],)
     return ([f"task dft {operation}"], ["unset dft:cgmin"],
             ["dft", f"  vectors input {setup.name}.movecs", "end"], ["task dft energy"])
+
+
+def _guess(method: MethodSpec, setup: Setup) -> tuple[list[str], list[str]]:
+    """(basis block, dft lines) that start the SCF from GUESS, its parent job's solution: read
+    as it is, or projected from the parent's basis (declared as "parent"; CH3O PBE0/def2-SVPD ->
+    M06-2X/def2-TZVPD in 2 iterations; HONO 5e-9 Eh from the atomic guess's solution, P0a).
+    The output is named: without it NWChem writes the converged vectors over GUESS, and a job
+    derived from this one would find no <name>.movecs and silently start from the atomic guess."""
+    parent = setup.guess_basis
+    if parent is None:
+        return [], []
+    output = f"output {setup.name}.movecs"
+    if parent.lower() == (method.basis or "").lower():
+        return [], [f"  vectors input {GUESS} {output}"]
+    return (['basis "parent" spherical', f"  * library {parent}", "end"],
+            [f"  vectors input project parent {GUESS} {output}"])
 
 
 def _geometry(xyz: XYZ, *, cartesian: bool, label: str = "", zcoord: Sequence[str] = ()
@@ -127,7 +150,7 @@ def _system(mol: Molecule, method: MethodSpec, setup: Setup, *, end: Molecule | 
     if end is not None:
         lines += _geometry(end.xyz, cartesian=setup.cartesian, label="endgeom")
     lines += [f"charge {mol.charge}", "basis spherical", f"  * library {method.basis}", "end"]
-    return lines + ecp(mol.xyz.symbols, method.basis)
+    return lines + _guess(method, setup)[0] + ecp(mol.xyz.symbols, method.basis)
 
 
 def _dft(mol: Molecule, method: MethodSpec, setup: Setup) -> list[str]:
@@ -139,11 +162,10 @@ def _dft(mol: Molecule, method: MethodSpec, setup: Setup) -> list[str]:
     if method.grid:
         lines.append(f"  grid {method.grid}")
     lines.append(f"  convergence energy {method.scf_energy_tol or DEFAULT_SCF_ENERGY_TOL:.1e}")
-    lines.append(f"  iterations {SCF_MAXITER}")
+    lines.append(f"  iterations {CGMIN_MAXITER if setup.scf_rescue else SCF_MAXITER}")
     if method.dispersion:
         lines.append(f"  disp vdw {_VDW[method.dispersion]}")
-    if setup.restart_vectors:
-        lines.append(f"  vectors input {setup.name}.movecs")
+    lines += _guess(method, setup)[1]
     if setup.scf_rescue:
         lines.append("  cgmin")
     return [*lines, "end"]
@@ -207,10 +229,12 @@ def render_string(start: Molecule, end: Molecule, method: MethodSpec, setup: Set
 
 
 def render_wft(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> str:
-    """CCSD(T) single point with the frozen core of frozen_core. Closed shells use the RHF
-    ``ccsd`` module (up to 50 iterations; default 20); open shells a high-spin ROHF reference
-    (``nopen`` = m - 1) and the TCE, with ``2eorb 2emet 13`` (without them CH3O./def2-TZVPD
-    exceeds 1200 MB/rank).
+    """CCSD(T) single point with the frozen core of frozen_core, its SCF from the atomic guess.
+    Closed shells use the RHF ``ccsd`` module (up to 50 iterations; default 20); open shells a
+    UHF reference (``nopen`` = m - 1) and the TCE (P0d): the TCE's ROHF-(T) is not the standard
+    Watts-Gauss-Bartlett one (ROHF eigenvalues as denominators, no f_ov term; 0.11 and 0.20
+    kcal/mol off for OH and CH3O), its UHF-CCSD(T) agrees with PySCF within 2.1e-7 Eh at about
+    the same cost. ``2eorb`` serves RHF and ROHF references only.
 
     Of the memory per rank, Global Arrays (the (T) amplitudes) get 70 % instead of the 50 % of
     ``memory total``: malonaldehyde/def2-TZVPD (227 functions) failed to allocate at ``total
@@ -219,12 +243,11 @@ def render_wft(mol: Molecule, method: MethodSpec, setup: Setup = _DEFAULT) -> st
     if method.kind != "wft" or method.wft_method is None:
         raise ValueError(f"method {method.id!r} is not a wave-function method")
     open_shell = mol.multiplicity > 1
-    scf = ["scf", *(["  rohf", f"  nopen {mol.multiplicity - 1}"] if open_shell else []),
-           f"  maxiter {SCF_MAXITER}",
-           *([f"  vectors input {setup.name}.movecs"] if setup.restart_vectors else []), "end"]
+    scf = ["scf", *(["  uhf", f"  nopen {mol.multiplicity - 1}"] if open_shell else []),
+           f"  maxiter {SCF_MAXITER}", "end"]
     freeze = f"  freeze {frozen_core(mol.xyz.symbols)}"
     if open_shell:
-        body, task = ["tce", "  2eorb", "  2emet 13", "  ccsd(t)", freeze, "end"], "tce"
+        body, task = ["tce", "  ccsd(t)", freeze, "end"], "tce"
     else:
         body, task = ["ccsd", freeze, "  maxiter 50", "end"], "ccsd(t)"
     mb = setup.memory_mb

@@ -1,6 +1,7 @@
 """Chemical pass/fail gates (design §5.4): the only place that turns Evidence into verdicts.
 
-Allowed imports: the standard library, numpy, hfauto.core and chemistry.profile.
+Allowed imports: the standard library, numpy, hfauto.core, chemistry.elements and
+chemistry.profile.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from typing import Literal
 
 import numpy as np
 
+from hfauto.chemistry.elements import mass
 from hfauto.chemistry.profile import classify
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Level
@@ -50,7 +52,10 @@ _DEFAULT = Policy()
 LOW_LEVEL_BARRIER_MAX_KCAL = 50.0  # explore's xTB barrier cap; the DFT stages judge the rest
 SCF_NOISE_FACTOR = 20.0  # x scf_tol: the SCF noise of an energy difference at one geometry
 QRC_MIN_DROP_HARTREE = 1.0e-5  # the floor of that noise (H2Te freq vs opt: 3.1e-6 Eh)
-REACTION_MODE_MIN = 0.3  # in the empty χ gap: saddles no case connected ≤ 0.02, TSs ≥ 0.57
+# in the empty mass-weighted χ gap (0.065, 0.63) over R2, VAL9, r7, M3 and W5
+# (validation/chi_table.py): rotor and association saddles ≤ 0.065, the S5 O-O cleavage
+# saddles 0.63-0.71, connected TSs ≥ 0.72
+REACTION_MODE_MIN = 0.3
 _PES_FIELDS = (
     "program", "version", "method", "basis", "dispersion",
     "charge", "multiplicity", "electronic_temperature_K",
@@ -58,7 +63,8 @@ _PES_FIELDS = (
 _STATE_FIELDS = ("charge", "multiplicity")
 _NUMERICS_FIELDS = ("grid", "scf_tol")
 RANKABLE_OUTCOMES = frozenset({*CONNECTED_OUTCOMES.values(), CaseOutcome.BARRIERLESS})
-Bonds = frozenset[tuple[int, int]]  # a labelled bond graph (topology.bonds)
+Bonds = frozenset[tuple[int, int]]  # labelled bonds (topology.bonds)
+Change = tuple[Bonds, Bonds]  # (formed, broken) between two labelled structures
 
 
 def _gate(reasons: Sequence[str], notes: Sequence[str] = ()) -> Gate:
@@ -105,6 +111,21 @@ def spin_ok(ev: Evidence, policy: Policy = _DEFAULT) -> Gate:
     return Gate(False, ("spin_contaminated",))
 
 
+def same_spin_state(ev: Evidence, ref: Evidence, policy: Policy = _DEFAULT) -> Gate:
+    """``ev`` (another job at ``ref``'s structure, any Level) is in ``ref``'s spin state: their
+    ⟨S²⟩ within spin_tol; not judged when either has none (a closed shell)."""
+    if ev.s2 is None or ref.s2 is None or abs(ev.s2 - ref.s2) <= policy.spin_tol:
+        return Gate(True)
+    return Gate(False, ("spin_state_mismatch",))
+
+
+def energy_spin_ok(energy: Evidence, freq: Evidence, policy: Policy = _DEFAULT) -> Gate:
+    """An energy at ``freq``'s structure is usable (not spin-contaminated): the freq passes
+    spin_ok and the energy is on the freq's spin state. Thermo and the method panel share it."""
+    gate = spin_ok(freq, policy)
+    return same_spin_state(energy, freq, policy) if gate else gate
+
+
 def _link_reasons(freq: Evidence, parent: Evidence) -> list[str]:
     """The freq job sits on the parent's final geometry, on the same PES incl. numerics, in the
     same SCF solution: an energy within qrc_drop of the parent's (a UKS freq may find another
@@ -144,33 +165,39 @@ def is_first_order_saddle(freq: Evidence, *, saddle: Evidence, policy: Policy = 
     return _gate(reasons, ("soft_secondary_mode",) if soft else ())
 
 
-def reaction_mode_chi(mode: Sequence[float], coords: np.ndarray, bonds: Bonds,
-                      gradient: np.ndarray | None = None) -> float | None:
-    """χ = ‖Q_Bᵀq̂‖ of the unit Cartesian imaginary mode q̂ (mass weighting removed): Q_B is an
-    orthonormal basis of the Wilson stretch vectors ∂r_ij/∂x of the hypothesis' changed bonds at
-    the saddle ``coords`` (SVD: a set of stretches can be linearly dependent). Without a changed
-    bond, |cos(q̂, ∇q)| of a declared coordinate q; None with neither."""
-    q = np.ravel(np.asarray(mode, dtype=float))
-    q = q / np.linalg.norm(q)
+def reaction_mode_chi(symbols: Sequence[str], mode: Sequence[float], coords: np.ndarray,
+                      bonds: Bonds, gradient: np.ndarray | None = None) -> float | None:
+    """χ = ‖QᵀL̂‖ in the mass-weighted metric that normal modes and the IRC are defined in: L̂
+    is the unit M^½q of the stored Cartesian mode q (itself M^-½L normalised, so nothing is
+    weighted twice) and Q an orthonormal basis (SVD: stretches can be linearly dependent) of
+    the mass-weighted Wilson stretch vectors M^-½ ∂r_ij/∂x of the changed ``bonds`` at
+    ``coords``. Without a changed bond, |cos(L̂, M^-½∇q)| of a declared coordinate q; None with
+    neither."""
+    inv_root = np.repeat([mass(s) for s in symbols], 3) ** -0.5
+    lw = np.ravel(np.asarray(mode, dtype=float)) / inv_root
+    lw /= np.linalg.norm(lw)
     if bonds:
-        x, b = np.reshape(coords, (-1, 3)), np.zeros((q.size, len(bonds)))
+        x, b = np.reshape(coords, (-1, 3)), np.zeros((lw.size, len(bonds)))
         for k, (i, j) in enumerate(sorted(bonds)):
             e = (x[i] - x[j]) / np.linalg.norm(x[i] - x[j])
             b[3 * i:3 * i + 3, k], b[3 * j:3 * j + 3, k] = e, -e
-        u, s, _ = np.linalg.svd(b, full_matrices=False)
-        return float(np.linalg.norm(u[:, s > 1e-8 * s[0]].T @ q))
+        u, s, _ = np.linalg.svd(inv_root[:, None] * b, full_matrices=False)
+        return float(np.linalg.norm(u[:, s > 1e-8 * s[0]].T @ lw))
     if gradient is None or not np.any(gradient):
         return None
-    return float(abs(q @ np.ravel(gradient)) / np.linalg.norm(gradient))
+    g = inv_root * np.ravel(gradient)
+    return float(abs(lw @ g) / np.linalg.norm(g))
 
 
-def reaction_mode_character(mode: Sequence[float], coords: np.ndarray, bonds: Bonds,
-                            gradient: np.ndarray | None = None) -> Gate:
+def reaction_mode_character(symbols: Sequence[str], mode: Sequence[float], coords: np.ndarray,
+                            bonds: Bonds, gradient: np.ndarray | None = None) -> Gate:
     """A first-order saddle is this hypothesis' TS only when its imaginary mode carries the
     hypothesis' bond change (or declared coordinate): χ ≥ REACTION_MODE_MIN, else
-    ``not_reaction_mode`` (a reorientation or rotor saddle). Not applied without either."""
-    chi = reaction_mode_chi(mode, coords, bonds, gradient)
-    return _gate(("not_reaction_mode",) if chi is not None and chi < REACTION_MODE_MIN else ())
+    ``not_reaction_mode:<χ>`` (a reorientation or rotor saddle). Not applied without either."""
+    chi = reaction_mode_chi(symbols, mode, coords, bonds, gradient)
+    if chi is None or chi >= REACTION_MODE_MIN:
+        return Gate(True)
+    return Gate(False, (f"not_reaction_mode:{chi:.3f}",))
 
 
 def barrier_verdict(
@@ -193,13 +220,15 @@ def _side_reasons(index: int, side: Evidence, ts: Evidence, drop: float) -> list
     return reasons
 
 
-def _bonds_exchanged(bond_sets: tuple[Bonds, ...] | None) -> bool:
-    """A degenerate step that changes bonds must show the two endpoints' labelled bond graphs on
-    its QRC sides; one without a bond change (inversion, torsion) is not judged by bonds."""
-    if bond_sets is None:
+def _bonds_exchanged(exchange: tuple[Change, Change] | None) -> bool:
+    """A degenerate step that changes bonds must make that change between its QRC sides, in
+    either direction: ``exchange`` is (the case ends' change, the sides' change), both banded
+    (topology.bond_changes). One without a bond change (inversion, torsion) is not judged by
+    bonds."""
+    if exchange is None or not any(exchange[0]):
         return True
-    reactant, product, *sides = bond_sets
-    return reactant == product or set(sides) == {reactant, product}
+    case, sides = exchange
+    return sides in (case, case[::-1])
 
 
 def _assignment(
@@ -232,16 +261,16 @@ def connection(
     *,
     degenerate: bool,
     sides_distinct: bool = True,
-    bond_sets: tuple[Bonds, ...] | None = None,
+    exchange: tuple[Change, Change] | None = None,
 ) -> tuple[Gate, ConnectionLabel]:
-    """Both QRC sides end below the TS in assigned basins. ``bond_sets`` are the labelled bond
-    graphs (R, P, side0, side1): a degenerate case whose ends differ in bonds needs exactly those
-    two graphs on its sides (a methyl rotation TS leaves the transferred proton in place)."""
+    """Both QRC sides end below the TS in assigned basins. A degenerate case whose ends differ
+    in bonds needs that change between its sides (``_bonds_exchanged``: a methyl rotation TS
+    leaves the transferred proton in place)."""
     drop = qrc_drop(ts_freq.level)
     reasons = [r for i, side in enumerate(sides) for r in _side_reasons(i, side, ts_freq, drop)]
     label, why = _assignment(
         assigned, expected, degenerate=degenerate, sides_distinct=sides_distinct,
-        bonds_exchanged=_bonds_exchanged(bond_sets),
+        bonds_exchanged=_bonds_exchanged(exchange),
     )
     if why is not None:
         reasons.append(why)

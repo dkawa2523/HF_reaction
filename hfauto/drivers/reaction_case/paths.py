@@ -10,14 +10,14 @@ from dataclasses import replace
 
 import numpy as np
 
-from hfauto.chemistry import topology
+from hfauto.chemistry import profile, topology
 from hfauto.chemistry.electronic_state import low_spin_coupled
 from hfauto.chemistry.gates import barrier_verdict, spin_ok
 from hfauto.chemistry.interpolation import align_sequential, idpp, resample
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
 from hfauto.core.records import BarrierVerdict
 from hfauto.drivers.reaction_case import state as case_state
-from hfauto.drivers.reaction_case.actions import Ctx, Profile, peak_seeds, xtb_freq
+from hfauto.drivers.reaction_case.actions import Ctx, Profile, xtb_freq
 from hfauto.drivers.reaction_case.state import CaseState, Decision, Seed
 
 SCREEN_IMAGES = 11  # SCREEN's NEB images including both ends
@@ -27,6 +27,17 @@ STRING_BEADS = 9  # DFT string beads including both ends
 # points step evenly to the adduct minimum, the last point.
 SCAN_REACH_A = 1.5
 SCAN_POINTS = 8
+
+
+def peak_seeds(ctx: Ctx, name: str) -> tuple[Seed, ...]:
+    """The highest peak detected on the latest profile, refined by a parabola (none without):
+    a screen_hei seed on SCREEN's profile, else a path_hei one."""
+    path = ctx.work.path
+    peaks = () if path is None else profile.interior_maxima(path.energies, ctx.resolution)
+    if path is None or not peaks:
+        return ()
+    _, _, x = profile.hei(path.frames, path.energies, max(peaks, key=path.energies.__getitem__))
+    return (Seed(ctx.geometry(name, x), "screen_hei" if path.source == "screen" else "path_hei"),)
 
 
 def _unavailable(reason: str) -> BarrierVerdict:
@@ -116,7 +127,7 @@ def _scan(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]]:
     longest point stands as the monomers' frame. A failed point leaves no profile: unavailable,
     no point dropped."""
     rt, adduct = ctx.rt, ctx.ends[1]
-    [(i, j)] = topology.bond_changes(ctx.symbols, *ctx.ends)[0]  # the one formed bond
+    [(i, j)] = ctx.change()[0]  # the one formed bond
     fragment = next(f for f in topology.fragments(ctx.symbols, ctx.ends[0]) if j in f)
     r_p = float(np.linalg.norm(adduct[j] - adduct[i]))
     ctx.note(f"scan:{i}-{j}:{r_p:.3f}+{SCAN_REACH_A}A:{SCAN_POINTS}_points")

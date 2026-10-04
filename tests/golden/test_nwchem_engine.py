@@ -1,8 +1,8 @@
 """NWChem engines through JobRunner with a stub executable that replays recorded outputs:
 G07 (HCN TS: level lines, vibrational block and .hess), G01 (two blocks), G13 (string) and
-G29 (OH. ROHF-CCSD(T)). A driver job prints a gradient block at its last frame and, with
-STUB_MAXITER in its environment, stops at maxiter; a deck with a zcoord block and STUB_AUTOZ
-fails in autoz (G33's message)."""
+G29 (OH. CCSD(T), recorded on a ROHF reference). A driver job prints a gradient block at its
+last frame and, with STUB_MAXITER in its environment, stops at maxiter; a deck with a zcoord
+block and STUB_AUTOZ fails in autoz (G33's message)."""
 
 import json
 import shutil
@@ -20,7 +20,7 @@ from hfauto.core.constants import BOHR_TO_ANGSTROM
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, PathProfile
 from hfauto.core.hashing import sha256_file, sha256_text
 from hfauto.core.method import EngineSite, MethodSpec
-from hfauto.execution.jobs import JobRunner, Task
+from hfauto.execution.jobs import LADDER, JobRunner, Task
 from hfauto.execution.jobstore import JobStore
 
 pytestmark = pytest.mark.golden
@@ -50,6 +50,8 @@ echo = "".join(f"{i:5d} {r.split()[0]} 1.0 {' '.join(r.split()[1:])}\n"
 print("".join(g07.splitlines(True)[:2]) + ' Geometry "geometry" -> ""\n'
       + " Output coordinates in angstroms\n" + echo + "".join(g07.splitlines(True)[13:50])
       + " Total DFT energy =  -93.166994283613\n")
+vectors = re.search(r"vectors input (?:project \S+ )?(\S+)(?: output (\S+))?", deck)
+Path((vectors.group(2) or vectors.group(1)) if vectors else "job.movecs").write_text("v")  # as NWChem
 if task == "dft frequencies":
     shutil.copyfile(here / "G07.hess", "job.hess")
     print(g07[g07.index("  Vibrational analysis"):g07.index(" Task  times")])
@@ -60,7 +62,7 @@ if task in ("dft optimize", "dft saddle"):
     frames = [atoms] * (3 if restarted else 1) + ([] if restarted else [moved])
     for n, rows in enumerate(frames):
         Path(f"final-{n:03d}.xyz").write_text(frame(rows))
-    Path("job.movecs").write_text("v"), Path("job.drv.hess").write_text("h")
+    Path("job.drv.hess").write_text("h")
     print(" DFT ENERGY GRADIENTS\n" + "".join(
         f"{i:4d} {r.split()[0]} " + " ".join(f"{float(v) / 0.529177210903:.6f}" for v in
                                              r.split()[1:]) + " 0.000010 0.000000 0.000000\n"
@@ -122,8 +124,8 @@ def test_frequencies_cache_and_input_checks(nwchem, golden):
 def test_a_freq_or_a_single_point_starts_from_the_converged_vectors_of_its_guess(nwchem, golden):
     """The freq at an opt's final structure reads the opt's job.movecs under its own key: it
     stays on the opt's electronic state (from scratch, the UKS OH···CH4 complex found the other
-    OH π component). G2-P1: so does a single point given a profile end; a single point without
-    a guess keeps its key."""
+    OH π component). X3: so does a single point at another basis (a layer or panel SP from its
+    freq), projected from the parent's; a single point without a guess keeps its key."""
     jobs, site = nwchem
     engine = NWChemEngine(jobs=jobs, site=site)
     opt = engine.optimize(_hcn_ts(golden), FINE)
@@ -134,13 +136,34 @@ def test_a_freq_or_a_single_point_starts_from_the_converged_vectors_of_its_guess
         first = jobs.store.attempt_dir(guided.job_key, 0)
         decks = [(jobs.store.attempt_dir(ev.job_key, 0) / "job.nw").read_text()
                  for ev in (guided, plain)]
-        assert "vectors input job.movecs" in decks[0] and "vectors input" not in decks[1]
-        assert (first / "job.movecs").read_text() == "v"  # the opt's vectors
+        assert "vectors input guess.movecs" in decks[0] and "vectors input" not in decks[1]
+        assert (first / "guess.movecs").read_text() == "v"  # the opt's vectors
     sp = {"method": FINE.signature(), "molecule": final.fingerprint()}
     keys = [jobs.store.key(Task(engine="nwchem", version_pin="7.2.3", kind="energy",
                                 key_payload=p, execution=site.execution))
             for p in (sp, {**sp, "scf_guess": opt.job_key})]
     assert keys == [plain.job_key, guided.job_key] and guided.task == "sp"
+    tzvpd = FINE.model_copy(update={"basis": "def2-tzvpd"})  # the stub's output is SVPD's
+    layer = engine.energy(final, tzvpd, scf_guess=opt)
+    deck = (jobs.store.attempt_dir(layer.job_key, 0) / "job.nw").read_text()
+    assert 'basis "parent" spherical\n  * library def2-svpd\nend' in deck
+    assert "  vectors input project parent guess.movecs output job.movecs\n" in deck
+
+
+def test_a_job_started_from_a_guess_still_leaves_vectors_for_the_next(nwchem, golden):
+    """A chain opt -> freq -> layer SP (and a scan's point -> next point): the stub writes the
+    vectors where NWChem does (the named output, else over the input file), so a job derived
+    from a guided job gets its guess too. Unnamed, every other S5 scan point fell back to the
+    atomic guess and onto another branch (fresh S5, W2)."""
+    jobs, site = nwchem
+    engine = NWChemEngine(jobs=jobs, site=site)
+    opt = engine.optimize(_hcn_ts(golden), FINE)
+    final = Molecule(read_xyz(jobs.store.resolve(opt.final.file)), 0, 1)
+    freq = engine.frequencies(final, FINE, scf_guess=opt)
+    sp = engine.energy(final, FINE, scf_guess=freq)
+    assert isinstance(freq, Evidence) and isinstance(sp, Evidence)
+    deck = (jobs.store.attempt_dir(sp.job_key, 0) / "job.nw").read_text()
+    assert "  vectors input guess.movecs output job.movecs\n" in deck
 
 
 def test_a_first_order_saddle_hessian_starts_a_minimization_as_its_positive_definite_model(
@@ -191,7 +214,7 @@ def test_a_scan_point_holds_its_bond_and_starts_from_the_previous_vectors(nwchem
     first = jobs.store.attempt_dir(point.job_key, 0)
     deck = (first / "job.nw").read_text()
     assert f"\n  zcoord\n    bond 1 3 {r:.4f} rc constant\n  end\nend\ncharge 0" in deck
-    assert "vectors input job.movecs" in deck and (first / "job.movecs").is_file()
+    assert "vectors input guess.movecs" in deck and (first / "guess.movecs").is_file()
     off = engine.optimize(mol, FINE, fixed_bond=(0, 2, r + 0.001))
     assert (off.kind, off.reason) == (FailureKind.INPUT_INVALID, "fixed_bond_mismatch")
     autoz = site.model_copy(update={"execution": site.execution.model_copy(
@@ -224,10 +247,11 @@ def test_double_hybrids_are_rejected_and_autoz_falls_back_to_cartesians(nwchem, 
     assert "noautosym noautoz" in (tmp_path / "job.nw").read_text()
 
 
-def test_an_scf_failure_continues_with_cgmin_for_any_dft_and_old_vectors_for_wft(nwchem,
-                                                                                tmp_path):
-    """G2-P6: one plain SCF after cgmin prints <S2> (input._task; the P3c H3 bead, G34), so
-    the rescue serves open-shell DFT too; WFT restarts from its old vectors."""
+def test_an_scf_failure_climbs_the_ladder_once_from_the_atomic_guess(nwchem, tmp_path):
+    """X3 (P0a): a DFT SCF failure, closed or open shell, runs rungs 2 and 3 once (cgmin from
+    the atomic guess, then a plain SCF for <S2>; input._task), never from the diverged vectors
+    nor from its parent's again; a WFT failure is final, and so is a failed rescue
+    (jobs.LADDER)."""
     jobs, site = nwchem
     engine, scf = NWChemEngine(jobs=jobs, site=site), Failure(kind=FailureKind.SCF_NOT_CONVERGED,
                                                                reason="scf")
@@ -235,43 +259,56 @@ def test_an_scf_failure_continues_with_cgmin_for_any_dft_and_old_vectors_for_wft
     (tmp_path / "job.movecs").write_text("v")
     ccsd_t = MethodSpec(id="ccsd-t", kind="wft", wft_method="ccsd(t)", basis="def2-tzvpd")
 
-    def retry(method: MethodSpec, charge: int, multiplicity: int) -> Task | None:
+    def retry(method: MethodSpec, charge: int, multiplicity: int, **inputs) -> Task | None:
         mol = Molecule(h3, charge, multiplicity)
         task = Task(engine="nwchem", version_pin="7.2.3", kind="energy", key_payload={},
-                    execution=site.execution, inputs={"mol": mol, "start": mol, "method": method})
+                    execution=site.execution,
+                    inputs={"mol": mol, "start": mol, "method": method, **inputs})
         return engine.continuation(task, tmp_path, scf)
 
-    closed, doublet, wft = retry(FINE, 1, 1), retry(FINE, 0, 2), retry(ccsd_t, 0, 2)
-    assert closed.inputs["scf_rescue"] and doublet.inputs["scf_rescue"]  # H3+ and P3c's H3
-    assert not wft.inputs["scf_rescue"] and wft.inputs["restart"] == [tmp_path / "job.movecs"]
+    closed = retry(FINE, 1, 1, vectors=(tmp_path / "parent.movecs", "def2-svpd"))
+    doublet = retry(FINE, 0, 2)
+    for rescue in (closed, doublet):  # H3+ from its parent's vectors, and P3c's H3
+        assert rescue.inputs["scf_rescue"] and rescue.inputs["vectors"] is None
+    assert retry(ccsd_t, 0, 2) is None and LADDER[FailureKind.SCF_NOT_CONVERGED] == 1
+    engine.prepare(closed, tmp_path)
+    deck = (tmp_path / "job.nw").read_text()
+    assert deck.count("vectors input") == 1 and "  cgmin\nend" in deck
+    assert not (tmp_path / "guess.movecs").exists()
 
 
-def test_open_shell_ccsd_t_is_a_rohf_tce_job_and_all_electron_iodine_is_rejected(nwchem,
-                                                                                 golden):
+def test_open_shell_ccsd_t_is_a_uhf_tce_job_and_all_electron_iodine_is_rejected(nwchem,
+                                                                                golden):
+    """P0d: an open shell's key names its UHF reference, so no ROHF-(T) result of the same
+    point is reused; a DFT parent given as scf_guess changes neither key nor deck (the atomic
+    guess). The stub replays G29 (a ROHF reference's output) for every TCE deck."""
     jobs, site = nwchem
     engine = NWChemEngine(jobs=jobs, site=site)
     ccsd_t = MethodSpec(id="ccsd-t", kind="wft", wft_method="ccsd(t)", basis="def2-tzvpd")
     symbols, coords = geometry_block(golden.text("nwchem/G29/oh_ccsdt.out"))
-    ev = engine.energy(Molecule(XYZ(list(symbols), coords), 0, 2), ccsd_t)
+    oh = Molecule(XYZ(list(symbols), coords), 0, 2)
+    parent = engine.frequencies(_hcn_ts(golden), FINE)  # any DFT job: never read for CCSD(T)
+    ev = engine.energy(oh, ccsd_t, scf_guess=parent)
     assert isinstance(ev, Evidence) and ev.task == "sp" and ev.s2 is None
     assert (ev.level.method, ev.level.multiplicity) == ("ccsd(t)", 2)
     assert ev.energy_hartree == pytest.approx(-75.640597871999560, abs=1e-9)
     deck = (jobs.store.attempt_dir(ev.job_key, 0) / "job.nw").read_text()
-    assert "  rohf\n  nopen 1\n" in deck and deck.rstrip().endswith("task tce energy")
+    assert "  uhf\n  nopen 1\n" in deck and deck.rstrip().endswith("task tce energy")
+    assert "vectors" not in deck and engine.energy(oh, ccsd_t) == ev
     hi = Molecule(XYZ(["H", "I"], np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.61]])), 0, 1)
     failure = engine.energy(hi, ccsd_t.model_copy(update={"basis": "cc-pVDZ"}))
     assert (failure.kind, failure.reason) == (FailureKind.INPUT_INVALID,
                                               "no_ecp_for_basis:cc-pVDZ:I")
-    assert (jobs.stats().hits, jobs.stats().misses) == (0, 1)
+    assert (jobs.stats().hits, jobs.stats().misses) == (1, 2)  # no iodine job ran
     keyed = engine.energy(hi, ccsd_t)  # the stub's DFT output fails it; only its key counts
 
-    def key(mol: Molecule, **extra: int) -> str:
+    def key(mol: Molecule, **extra: int | str) -> str:
         payload = {"method": ccsd_t.signature(), "molecule": mol.fingerprint(), **extra}
         return jobs.store.key(Task(engine="nwchem", version_pin="7.2.3", kind="energy",
                                    key_payload=payload, execution=site.execution))
 
-    oh = Molecule(XYZ(list(symbols), coords), 0, 2)
-    assert ev.job_key == key(oh)  # G6-P3: an ECP atom's key names its freeze 4 (I 4s4p)
+    assert ev.job_key == key(oh, reference="uhf") != key(oh)
+    # G6-P3: an ECP atom's key names its freeze 4 (I 4s4p)
     assert keyed.job_key == key(hi, frozen_core=4) and "\n  freeze 4\n" in (
         jobs.store.attempt_dir(keyed.job_key, 0) / "job.nw").read_text()
 
@@ -289,8 +326,8 @@ def test_timeout_continues_from_the_latest_frame(nwchem, golden):
     ev = NWChemEngine(jobs=jobs, site=site).optimize(mol, FINE)
     assert isinstance(ev, Evidence) and ev.task == "opt"
     second = jobs.store.attempt_dir(ev.job_key, 1)
-    assert (second / "job.drv.hess").is_file() and (second / "job.movecs").is_file()
-    assert "vectors input job.movecs" in (second / "job.nw").read_text()
+    assert (second / "job.drv.hess").is_file() and (second / "guess.movecs").is_file()
+    assert "vectors input guess.movecs" in (second / "job.nw").read_text()
     final = read_xyz(jobs.store.run_dir / ev.final.file.path)
     assert np.allclose(final.coords, mol.xyz.coords + 0.01, atol=1e-7)
     assert ev.gradient == pytest.approx([1e-5, 0.0, 0.0] * 3)  # at the final frame
@@ -324,6 +361,13 @@ def test_saddle_shapes_the_hessian_along_the_mode_and_always_follows_mode_1(nwch
     assert "  moddir 1" in deck and "inhess" not in deck and not (resumed / "job.hess").exists()
     other = saddle.refine(mol, FINE, hessian=freq, mode=freq.imaginary_modes[0])
     assert other.job_key != ts.job_key  # the mode is part of the job key
+    guided = saddle.refine(mol, FINE, hessian=freq, mode=mode, scf_guess=ts)  # X3: continued
+    keyed = jobs.store.key(Task(engine="nwchem_saddle", version_pin="7.2.3", kind="saddle",
+                                key_payload={**payload, "hessian_model": "negative_along_mode",
+                                             "scf_guess": ts.job_key},
+                                execution=site.execution))
+    first = jobs.store.attempt_dir(guided.job_key, 0)
+    assert guided.job_key == keyed and "vectors input guess.movecs" in (first / "job.nw").read_text()
 
 
 def test_a_saddle_at_maxiter_fails_with_its_last_frame_and_takes_a_hessian_nearby(nwchem,
@@ -372,18 +416,21 @@ def test_an_opt_autoz_failure_continues_from_its_latest_frame_in_cartesians(nwch
         return engine.continuation(task, first, failure)
 
     early = retry("optimize")
-    assert early.inputs["cartesian"] and early.inputs["mol"] is start and "restart" not in early.inputs
+    assert early.inputs["cartesian"] and early.inputs["mol"] is start
+    assert "vectors" not in early.inputs
     shutil.copyfile(golden.path("nwchem/G33/final-021.xyz"), first / "final-021.xyz")
     late, saddle = retry("optimize"), retry("saddle")
     assert saddle.inputs["cartesian"] and saddle.inputs["mol"] is start
-    assert late.inputs["cartesian"] and late.inputs["restart"] == [first / "job.movecs"]
-    assert late.inputs["hessian"] is None and late.inputs["start"] is start
+    assert late.inputs["cartesian"] and late.inputs["vectors"] == (first / "job.movecs",
+                                                                     FINE.basis)
+    assert late.inputs["drv_hessian"] is None and late.inputs["hessian"] is None
+    assert late.inputs["start"] is start
     assert np.allclose(late.inputs["mol"].xyz.coords, read_xyz(first / "final-021.xyz").coords)
     second = tmp_path / "attempt_01"
     second.mkdir()
     engine.prepare(late, second)
     deck = (second / "job.nw").read_text()
-    assert "noautosym noautoz" in deck and "vectors input job.movecs" in deck
+    assert "noautosym noautoz" in deck and "vectors input guess.movecs" in deck
     assert "inhess" not in deck and not (second / "job.drv.hess").exists()
 
 

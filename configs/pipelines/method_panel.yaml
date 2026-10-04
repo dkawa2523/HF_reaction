@@ -3,8 +3,10 @@
 # panel report. The panel is shown, not ranked on: method_panel.csv gives dE_rxn and dE_act at
 # every level, ranking.csv their dE_act min / max, and the ranking stays on the run's one
 # energy layer (thermo energy_method, M06-2X-D3(0)/def2-TZVPD).
+# Each panel SP starts from its point's freq SCF (projected to the panel basis) and counts as
+# spin-contaminated when the freq fails spin_ok or the SP leaves the freq's <S2>.
 # Calibration of small molecules: add ccsd-t_def2-tzvpd to methods (HCN / HONO take seconds
-# to minutes per point, CH3O. ROHF-CCSD(T) about 1 min on 4 ranks; five heavy atoms take about
+# to minutes per point, CH3O. UHF-CCSD(T) about 1 min on 4 ranks; five heavy atoms take about
 # 23 min per point on 4 ranks at 2,000 MB per rank: malonaldehyde, 227 basis functions).
 pipeline_id: method_panel
 stages:

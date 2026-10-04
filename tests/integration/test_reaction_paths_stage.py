@@ -42,7 +42,7 @@ FAKES = {(Cap.QM, "nwchem"): fakes.FakeQM, (Cap.PATH, "nwchem_string"): fakes.Fa
 
 
 class CollapsingSaddle(fakes.FakeSaddle):  # every saddle search falls into the intermediate
-    def refine(self, seed, method, *, hessian, mode):
+    def refine(self, seed, method, *, hessian, mode, scf_guess=None):
         key = self._key("collapse", seed.fingerprint())
         return self._evidence("saddle", seed, method, key, self._start(seed, key),
                               self.pes.points["intermediate"])
@@ -68,12 +68,12 @@ class FirstStepSaddle(fakes.FakeSaddle):
     """Every search that starts with H on the reactant's side of the triple well's intermediate
     (the R -> I step) stops without a last frame (no restart); the I -> P searches converge."""
 
-    def refine(self, seed, method, *, hessian, mode):
+    def refine(self, seed, method, *, hessian, mode, scf_guess=None):
         a, h, b = seed.xyz.coords
         if (h - 0.5 * (a + b)) @ (b - a) < 0:
             self.calls.append("refine:failed")
             return Failure(kind=FailureKind.GEOMETRY_MAXITER, reason="scripted")
-        return super().refine(seed, method, hessian=hessian, mode=mode)
+        return super().refine(seed, method, hessian=hessian, mode=mode, scf_guess=scf_guess)
 
 
 def dft_view(root, pes, points=ENDS):

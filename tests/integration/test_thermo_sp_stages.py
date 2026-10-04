@@ -1,4 +1,4 @@
-"""sp -> thermo with FakeQM and fake_species_thermo: energy layer (parents, label, spin),
+"""sp -> thermo with FakeQM and fake_species_thermo: energy layer (parents, label, spin state),
 band, association, mixed LOT, m = 2, the state G (lowest spin-clean minimum, closed when one
 lacks its energy layer) and dG_eff (submerged barrier, barrierless)."""
 
@@ -95,7 +95,9 @@ def _sp(inputs, rt):
 def test_sp_then_thermo(fake_runtime, tmp_run):
     inputs, rt, ev = _setup(fake_runtime, tmp_run)
     sp = _sp(inputs, rt)
-    assert any({"m_product", "m_p2"} <= set(a.parents) for a in sp)  # one geometry, one sp
+    p2 = next(a for a in sp if "m_p2" in a.parents)  # one geometry, but its own freq's SCF
+    assert p2.parents == ("m_p2",)
+    assert p2.payload.start.fingerprint == ev["product"].final.fingerprint
     view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, *sp]})
 
     plain = _thermo(view, rt)
@@ -113,11 +115,18 @@ def test_sp_then_thermo(fake_runtime, tmp_run):
     assert composite["rx1_298.15K_1atm"].energy_level == "xfake/tzvp"
     assert composite["rx1_298.15K_1atm"].blockers == ()
 
-    ts = calc_id(ev["ts"])  # U8-P8: a UKS-like sp far from <S^2> = 0 blocks like a freq would
-    spin = [a.model_copy(update={"payload": a.payload.model_copy(update={"s2": 0.75})})
-            if ts in a.parents else a for a in view.artifacts]
-    hot = _thermo(view.model_copy(update={"artifacts": spin}), rt, "tzvp")["rx1_298.15K_1atm"]
-    assert hot.blockers == ("spin_contaminated",) and hot.dG_eff_kcal is not None
+    ts = calc_id(ev["ts"])  # X3: the layer counts on its freq's spin state (S5's -83.15 row)
+
+    def spin(freq_s2, sp_s2):  # the TS freq's and its layer's <S2> (a singlet: S(S+1) = 0)
+        s2 = [a.model_copy(update={"payload": a.payload.model_copy(update={
+            "s2": freq_s2 if a.artifact_id == ts else sp_s2})})
+            if ts in (a.artifact_id, *a.parents) else a for a in view.artifacts]
+        return _thermo(view.model_copy(update={"artifacts": s2}), rt, "tzvp")["rx1_298.15K_1atm"]
+
+    assert spin(0.0, 0.05).blockers == ()
+    for left_its_state in (spin(0.0, 0.75), spin(1.0, 1.02)):  # another state; a BS freq
+        assert left_its_state.blockers == ("spin_contaminated",)
+        assert left_its_state.dG_eff_kcal is not None
 
     # S9: the sp layer was asked for, the TS has none -> fail closed
     view = inputs.model_copy(update={"artifacts": [
@@ -164,7 +173,7 @@ def test_an_association_refers_to_its_separated_monomers(fake_runtime, tmp_run):
                                     "outcome": R.CaseOutcome.BARRIERLESS})
     view = _relabel(inputs.model_copy(update={"artifacts": [*inputs.artifacts, *(
         Artifact(artifact_id=r.reaction_id, type=T.REACTION, payload=r) for r in (bound, flat))]}),
-        {"m_reactant": {"notes": ("spin_contaminated",)}})
+        {calc_id(ev["reactant"]): {"s2": 3.0}})  # the triplet complex's freq fails spin_ok
     out = _thermo(view, rt)
     G = {k: out[f"m_{k}_298.15K"].G_hartree for k in ("reactant", "product", "nh", "o")}
     dG_rxn = (G["product"] - G["nh"] - G["o"]) * HARTREE_TO_KCAL_MOL
@@ -189,15 +198,16 @@ def _relabel(view, updates):
     return view.model_copy(update={"artifacts": arts})
 
 
-def _lower_minima(ev, notes=()):
-    """One more reactant and O minimum, 1 kcal/mol lower each (m_low_reactant, m_low_o)."""
+def _lower_minima(ev, s2=None):
+    """One more reactant and O minimum, 1 kcal/mol lower each (m_low_reactant, m_low_o), their
+    freq's <S2> ``s2``."""
     arts = []
     for tag, composition in (("reactant", "HNO"), ("o", "o")):
         e = ev[tag].energy_hartree - 1 / HARTREE_TO_KCAL_MOL
-        low = ev[tag].model_copy(update={"job_key": f"low_{tag}", "energy_hartree": e})
+        low = ev[tag].model_copy(update={"job_key": f"low_{tag}", "energy_hartree": e, "s2": s2})
         arts += [Artifact(artifact_id=calc_id(low), type=T.CALCULATION, payload=low),
                  Artifact(artifact_id=f"m_low_{tag}", type=T.MINIMUM, payload=R.MinimumRecord(
-                     minimum_id=f"m_low_{tag}", basin_id=f"low_{tag}", notes=notes,
+                     minimum_id=f"m_low_{tag}", basin_id=f"low_{tag}",
                      composition_id=composition, species_id=tag, tier="dft", level_key="x",
                      opt_calc="o", freq_calc=calc_id(low), energy_hartree=0.0,
                      state_label=tag))]
@@ -209,16 +219,16 @@ def test_state_g_is_the_lowest_spin_clean_minimum_of_the_state(fake_runtime, tmp
     spin-contaminated minimum is no candidate."""
     inputs, rt, ev = _setup(fake_runtime, tmp_run)
 
-    def with_lower_minima(notes):
+    def with_lower_minima(s2):
         view = inputs.model_copy(update={"artifacts": [*inputs.artifacts,
-                                                       *_lower_minima(ev, notes)]})
+                                                       *_lower_minima(ev, s2)]})
         return _thermo(view, rt)["rx1_298.15K_1atm"]
 
-    before, clean = _thermo(inputs, rt)["rx1_298.15K_1atm"], with_lower_minima(())
+    before, clean = _thermo(inputs, rt)["rx1_298.15K_1atm"], with_lower_minima(None)
     assert clean.dG_act_kcal == pytest.approx(before.dG_act_kcal)  # seen from its own conformer
     assert clean.dG_eff_kcal == pytest.approx(before.dG_eff_kcal + 1.0)
     assert clean.dG_assoc_kcal == pytest.approx(before.dG_assoc_kcal + 1.0)
-    hot = with_lower_minima(("spin_contaminated",))
+    hot = with_lower_minima(0.75)  # singlets with a doublet's <S2>
     assert (hot.dG_eff_kcal, hot.dG_assoc_kcal, hot.blockers) == (
         pytest.approx(before.dG_eff_kcal), pytest.approx(before.dG_assoc_kcal), ())
 

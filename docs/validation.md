@@ -155,7 +155,7 @@ rank 2 の site での `--bind-to none` の修正(M4)より前の rank 2 の時�
 
 | 決めたこと | 根拠 |
 |---|---|
-| 反応モード性の下限 `REACTION_MODE_MIN` = 0.3 | 接続した TS 28 件は 0.571〜1.000(重原子の結合変化を含むものは ≥ 0.776)、接続しない一次の鞍点は ≤ 0.023(S6 の回転子、S5 の −72i)。最も近い棄却は S5 の CH2OOH• の領域の 0.22〜0.29(`M3/chi/`、`tools/chi.py`) |
+| 反応モード性の下限 `REACTION_MODE_MIN` = 0.3 | W2 から質量加重の χ(§11.2): 接続した TS 97 行は 0.727〜1.000、回転子・会合の鞍点 9 行は ≤ 0.0653、S5 の split2(O–O 開裂)は 0.635〜0.714。空白 (0.0653, 0.635) の中なので値は変えない(`validation/chi_table.py`)。それより前の Cartesian の χ では接続した TS 0.571〜1.000、S5 split2 は 0.22〜0.29 で棄却されていた(§3 の表の χ は Cartesian の値) |
 | ρ だけを負の曲率にした初期 Hessian | VAL7 の S6 の種のモデルは負の固有値 −0.0028、ρ との cos 0.345。新しいモデルは −0.2187、cos 1.000。S6 を 3 種 × rank 2・4 で流した 6 run がすべて引き抜きの TS に届いた(`M4/real/`) |
 | 原子の対応(basin の構造を WL クラスで端点の添字に並べる) | S6 の xTB の IRC の端は PBE0 の basin から 0.957 Å 離れ、元素だけで並べると結合変化が 8 本(IRC 自身は 4 本)。端の監査の不一致 6/17 → 0(`M1/audit/`) |
 | 結合変化の帯 `RESOLVED_A` = 0.1 Å | S19 の N···H は GFN2 と PBE0 で 0.15 Å 違う。帯でラベルだけが割れる組は 11 組、本物の結合変化は帯の外(最小は acac の O–H の +0.175 Å)(`S3/S3b/`) |
@@ -187,12 +187,13 @@ rank 2 の site での `--bind-to none` の修正(M4)より前の rank 2 の時�
 
 ## 10. 実証していないこと・残る課題
 
-- 層の SP の SCF(結果報告の残る課題 6): `h_c2h4` の H···C2H4 錯体(二重項)の M06-2X/def2-TZVPD の SP は、新しい run 2 回とも atomic guess と cgmin の救済の両方で収束しない(rc 1)。錯体の構造は 2 回で 1e-5 Å しか違わないが、救済の試行は 470 s と 1,851 s(`ga_iter_lsolve` の停滞が 86 回)で、run の QM 時間が 2.4 倍になった。層の SCF は freq の vectors から始めず、救済の試行には反復数のほかに上限がない。barrierless の順位(0.0)は変わらないが、順位の点で起きれば `thermo_unavailable` になる。
+- 層の SP の SCF(結果報告の残る課題 6): W2 で解消。`h_c2h4` の H···C2H4 錯体の M06-2X の SP は、射影の guess では発散し、救済の (2)(3) で ⟨S²⟩ 0.7506 に収束する(B1 の sp stage は 2,019 → 311 s。§11.2)。経路の節点の SP の救済は未確認。
+- ⟨S²⟩ の照合は、同じ多重度の別の空間状態を区別しない(S5 の qrc1_1。§11.2)。PBE0 の極小が励起の SCF 解にあることも検出しない。
 - TS の点群の揺らぎ(残る課題 8): ほぼ Cs の平らな TS の点群が run ごとに Cs と C1 で入れ替わり、δG_eff が RT ln 2 動く(S6: 5.54 と 5.93)。受理の許容は basin の基準のまま。
 - 決定表の行 7 は今のコードの実計算で通っていない。近道の種がすべて失敗した後の NEB、2 倍の振幅の 2 回目の QRC、ケースの例外の閉じ込めは単体テストだけ。
 - 極小の Newton の押し出しと TS の `higher_order:not_stationary` は単体テストとプローブだけ。再開の上限は QM なしの評価だけ。
 - 中点の密化が隠れた山を見つけた例はない。会合のスキャンの山から REFINE_SADDLE に進む分岐は単体テストだけ(DFT の山が 1 kcal/mol を超える会合が検証セットにない)。
-- 開殻: 両端の ⟨S²⟩ が違うプロファイル(2 つの guess)、実計算での `scf_branch_jump`、`spin_ok` を通る SCF の救済、四重項の CH3·O2 で AP がかからないこと。
+- 開殻: 両端の ⟨S²⟩ が違うプロファイル(2 つの guess)、実計算での `scf_branch_jump`、四重項の CH3·O2 で AP がかからないこと。
 - TS の停留性: 一次の鞍点の受理には停留性をかけていない(40 cm⁻¹ 未満の大振幅のモードでは二次モデルが成り立たない。acac の TS で 8.6e-3 Eh)。
 - 3 次以上の鞍点の `off_saddle`、`max_trials_per_source` の境界で同値の類を落とす規則は単体テストだけ。3 原子以上の直線分子の NT2 の開始構造は番号付けに依る。
 - 縮退転位の第 2 候補(ギ酸二量体 D2h)、陽イオン(HOC⁺)、遷移金属・Te を含む系の M06-2X の SP、ECP 原子を含む CCSD(T) の参照との比較。
@@ -209,3 +210,13 @@ rank 2 の site での `--bind-to none` の修正(M4)より前の rank 2 の時�
 - **多重度は必ず宣言**: 全 77 の同梱の化学種で宣言値は旧い暗黙の値と同じ。R2 の structures の SpeciesRecord 83 件(組成、多重度、状態ラベル、xyz の sha、指紋)は同一。基底状態の根拠: 三重項は O2(X³Σg⁻)だけ。二重項は CH3(X²A2″)、H(²S)、OH(X²Π)、CH3O/CH2OH、H3、H···C2H4 と C2H5。六重項は FeCl3(高スピン d⁵、⁶A1′)。ほかはすべて閉殻一重項(NH3、NMe3、HF、H2O、BH3、CH4、C2H4、CH3Cl、Cl⁻、I⁻ 錯体、ICl、SO2、H2Te、HCN/HNC、H2CO と trans-HCOH(三重項は約 25〜30 kcal/mol 上)、HONO、H2O2、エノール、シュウ酸、DME、錯体)。旧い暗黙の値が基底状態でなかった化学種はない(カルベン・ナイトレンは同梱していない)。
 - **検証を repo に**: `validation/check.py /home/user/hfauto_r9/VAL9/R2` は 41/41 PASS(`hono_walltime` は superseded)と DEVIATION 1 件(h_c2h4 の barrierless は BH76 行 33 の 2.0 kcal/mol(分離のゼロ)と矛盾。合格に数えない)。BH76 の部分集合は P0e のファイルそのもの(sha 一致)。実 HCN のテスト(`tests/smoke/test_real_known_endpoints.py`)は 68 s で合格し、smoke は 14 件。
 - **再生ゲート**: `validation/replay.py W1/replay_R2 --src VAL9/R2 --strict` と `W1/replay_VAL9 --src VAL9 --strict` はどちらも 40/40 PASS(新しいジョブ 0、記録は同一)。再生した run にも check.py は 40/40 PASS。統合で見つけた誤り: check.py は run dir のない case を MISSING と出すだけで rc 0 だった。superseded でなければ失敗にした(回帰テストあり)。
+
+### 11.2 W2(段階 1 の後半: χ の質量加重、SCF の来歴、UHF-CCSD(T)、基準 B1)
+
+- **χ(質量加重)**: `validation/chi_table.py /home/user/hfauto_r9/VAL9/R2 /home/user/hfauto_r9/VAL9 /home/user/hfauto_r7/VAL7 /home/user/hfauto_r9/M3/replay /home/user/hfauto_r9/M3/real /home/user/hfauto_r7/W5`(QM なし。証拠 `/home/user/hfauto_r10/W2/chi/all.txt`)で 154 行、一次の鞍点 113。接続した TS 97 行は 0.882〜1.000、ただし 2 行が 0.727(r7・W5 の S6 の多段の親 f9bc3a1cd8 を自分の 2 結合の変化で測ったもの)。回転子・会合の鞍点 9 行は 0.0054〜0.0653、S5 split2(O–O 開裂)は 6 行で 0.635〜0.714。事前の期待(接続 ≥ 0.88、split2 0.69〜0.72)とは 2 点で違うが、期待もしきい値も動かさず実測を記録した。`REACTION_MODE_MIN` 0.3 は空白 (0.0653, 0.635) の中にある。判定が変わるのは S5 split2 だけ(棄却 2 → 0。R2・VAL9・M3)。旧い r7・W5 の S6 の 790468f505(0.065、接続しない鞍点)は QRC でなく χ で棄却されるようになるが、結論は変わらない。縮退の判定(帯付きの変化の比較)は R2 の縮退の接続 16 件すべてで旧い 4 グラフの判定と同じ。
+- **等価な原子の付け替え(U6-P2)は棄却**: 実装して R2 で測ると、結合の組を変えた 2 件(S6 の Walden の ts_calc: χ 0.940 → 0.726、S10 のリレー: ≥ 0.88 → 0.692)はどちらも誤った等価原子を選んだ([roadmap.md](roadmap.md) 変更 19)。
+- **X3 を hfauto で**(`/home/user/hfauto_r10/W2/x3_p0a`、`W2/tools/x3_accept.py`): P0a の 5 点を R2 の freq を親にして流した。射影の deck(`vectors input project parent`)と出力の 'Orbital projection guess' はすべての (1) にあり、SP の鍵はすべて R2 と違う。⟨S²⟩ は親の類のまま(CH3O 0.7543 → 0.7544、S6 の TS 0.7578 → 0.7587、S5 の BS 錯体 1.7115 → 1.735 / 1.715 / 1.728、H···C2H4 錯体 0.7501 → 0.7506)。エネルギーは P0a の同じ段と ≤ 2.5e-9 Eh、HONO は atomic guess の解と 7.7e-9 Eh。H···C2H4 錯体は (1) が発散し(110 s)、(2) cgmin 31 回 + (3) で E −79.068928358 と P0a の (3) に 3.9e-10 Eh(合計 296 s。以前は救済が約 7.4k core-s 停滞)。ΔE_rxn(b3febc8052) は M06-2X −35.997、PBE0/TZVPD −34.386、ωB97X-D3 −34.714 kcal/mol(P0a −36.00 / −34.39 / −34.71)。CH3O の UHF-CCSD(T) は −114.873944099508 で P0d と 4e-13 Eh(鍵は `reference: uhf`)。
+- **基準 B1**(`validation/replay.py B1 --src /home/user/hfauto_r9/VAL9/R2`、`/home/user/hfauto_r10/B1`、比較 `/home/user/hfauto_r10/W2/b1_analysis.txt`): 40 case(`hono_walltime` は superseded)。sp より前の新しいジョブは S5 の paths の 12 件だけ(χ で split2 の鞍点を受理した。事前に挙げた変化)。DFT の SP 121 件はすべて射影の guess で新しい鍵。結論(outcome・順位・blocker・notes)の変化 0、δG_eff の差は最大 2.4e-3 kcal/mol。手法パネルの変化は事前に挙げたものだけ: S5 の BS 錯体の M06-2X ΔE_rxn −83.15 → −36.00(`spin_contaminated:dE_rxn` が付いた。以前は層の SP が ⟨S²⟩ 0.759 の別の解で spin_ok を通っていた)、CH3O の CCSD(T) ΔE‡ 33.37 → 33.47・ΔE_rxn −7.80 → −7.81(UHF)、h_c2h4 の M06-2X の行が加わった(錯体の層の SP が (2)(3) で収束し、sp stage は 2,019 → 311 s)。`check.py B1` は s5 以外 PASS(DEVIATION は h_c2h4 の 1 件で W1 と同じ)。s5 は R2 の経路の再生なので split2 は unresolved のまま: 1 本目の鞍点の QRC は両側が同じ basin(`same_state`)、2 本目は側が鞍点に落ちた(`unassigned_side`)。
+  - 事前の期待との違い: (a) h_c2h4 で「dG_assoc が出る」としたが、会合の ΔG_assoc は設計上 ΔG_rxn なので出ない。変わったのは錯体の G が `energy_layer_missing` でなくなったこと。(b) S5 の QRC の側 qrc1_1(CH3OO と同じ状態ラベルで、PBE0 では CH3OO の極小より 22.5 kcal/mol 上)の層の SP は、射影で freq の解に留まり atomic guess の解より 19.0 kcal/mol 上になった(⟨S²⟩ 0.754 と 0.756)。同じ多重度の別の空間状態(CH3OO• の Ã 状態は約 0.9 eV 上で、それと推測する)は ⟨S²⟩ では区別できない。この極小は状態の G の最小ではないので順位には効かない。
+- **S5 の新しい run**(`/home/user/hfauto_r10/W2/s5`、1 回): 会合は `scan:barrierless` 0.0、split1 elementary 46.85、**split2 は elementary_step(δG_eff 0.13、M06-2X ΔE‡ 1.93、PBE0 0.81)**で、O–O 開裂の対に答えた(1 本目の QRC は same_state、string の鞍点の QRC が 2 倍の振幅で両端を結んだ)。BS 錯体のパネルは M06-2X −36.00 で `spin_contaminated`。validation/cases.yaml の split2 を unresolved から elementary 0.13 に変えた(理由はこの χ の変更。境界の系なので VAL10 で 2 回流して確かめる)。golden の G37(cases の比較のテストが読む S5 の manifest)はこの run から作り直した。
+- **統合で見つけた誤り**: guess を渡したジョブの deck は `vectors input guess.movecs` だけで出力を名指ししておらず、NWChem は収束した vectors を guess.movecs に上書きして job.movecs を残さなかった。そのジョブを親にする次のジョブは guess を見つけられず、黙って atomic guess から始まっていた(鍵には scf_guess が入らない)。最初の S5 の新しい run(`W2/s5_before_vectors_fix`)では会合のスキャンの 1 点おきに guess が落ち、2.50 Å と 2.29 Å の点が二重項の枝(⟨S²⟩ 0.761、BS の枝より 22 kcal/mol 上)に跳んで会合が `unresolved_within_budget` になった。`output job.movecs` を書くように直し、偽の NWChem も NWChem と同じ場所に vectors を書くようにして回帰テストを足した。B1 は影響を受けない(B1 の SP の親は R2 の freq で、SP は末端。鍵も同じ)。直した後の S5 ではスキャンの 7 点のうち最初以外の 6 点が guess を持ち、⟨S²⟩ は 1.72 → 0.76 と単調で R2 と同じ。

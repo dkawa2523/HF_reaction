@@ -5,8 +5,11 @@ Energy layers for composite free energies and method panels (WFT methods include
 rule picks the targets: for every rankable reaction (gates' rankable outcomes), its TS and
 every dft minimum of its reactant and product states (the lowest-G reference of dG_eff) and
 of the monomer states of its composition (the separated reference). Each target is computed
-on the final geometry of its freq calculation; the calculation's parents are its subjects (a
-minimum_id, or SaddleClaim.freq_calc for a TS; several when subjects share one geometry).
+on the final geometry of its freq calculation, starting from that freq's SCF (scf_guess:
+design §7.1); the calculation's parents are its subjects (a minimum_id, or
+SaddleClaim.freq_calc for a TS; several when subjects share one freq). CCSD(T) runs only
+where the freq passes spin_ok: a broken-symmetry point has no single-reference state to
+correlate.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ from __future__ import annotations
 from typing import ClassVar, cast
 
 from hfauto.backends.protocols import Capability, QMEngine
-from hfauto.chemistry.gates import RANKABLE_OUTCOMES
+from hfauto.chemistry.gates import RANKABLE_OUTCOMES, spin_ok
 from hfauto.chemistry.thermo import State, monomer_states, participants
 from hfauto.chemistry.xyz import Molecule, hill_formula
 from hfauto.core.evidence import Evidence, Failure
@@ -76,10 +79,12 @@ class SinglePointStage:
         for method_id in cfg.methods:  # DFT and WFT jobs run serially
             method = rt.method(method_id)
             for subject, freq in subjects.items():
+                if method.kind == "wft" and not spin_ok(freq, rt.policy):
+                    continue
                 mol = Molecule(rt.load_xyz(freq.final), freq.level.charge,
                                freq.level.multiplicity)
-                artifact = _artifact(subject, method_id, engine.energy(mol, method))
-                if artifact.artifact_id in out:  # one geometry shared by several subjects
+                artifact = _artifact(subject, method_id, engine.energy(mol, method, scf_guess=freq))
+                if artifact.artifact_id in out:  # one freq shared by several subjects
                     parents = out[artifact.artifact_id].parents + artifact.parents
                     artifact = artifact.model_copy(update={"parents": parents})
                 out[artifact.artifact_id] = artifact

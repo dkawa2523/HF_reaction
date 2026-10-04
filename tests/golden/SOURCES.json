@@ -824,60 +824,54 @@
   "files": [
    {
     "golden": "manifests/s5_ch3_o2/dft/manifest.json",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/dft/manifest.json",
-    "source_sha256": "7736f9c571c9e95d80accc11af8e71b9eca452cc1e0d8b0891a0af2b29433b28",
+    "source": "/home/user/hfauto_r10/W2/s5/dft/manifest.json",
+    "source_sha256": "8fe22e28bd29b2ba717c13fce4d500810b35edd701516b1d8b04c28ce09f4617",
     "method": "copy"
    },
    {
     "golden": "manifests/s5_ch3_o2/paths/manifest.json.gz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/paths/manifest.json",
-    "source_sha256": "f10e8e01ca4f7acfc16556798cbe4b2e02479c53498ba0294cc3cbbec8f957b9",
+    "source": "/home/user/hfauto_r10/W2/s5/paths/manifest.json",
+    "source_sha256": "fdf4daf8429ce14ecd928ad32bb7d767c475e561bc2ad0ed7973586136d82eff",
     "method": "copy"
    },
    {
     "golden": "manifests/s5_ch3_o2/thermo/manifest.json",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/thermo/manifest.json",
-    "source_sha256": "a8ed7dd0eb94c0e9c961e648b4a1b4c9aed2ec76d335058d1740c3258eafebfe",
+    "source": "/home/user/hfauto_r10/W2/s5/thermo/manifest.json",
+    "source_sha256": "981d37bfd72eeee1a6751f0827db477a3ae911840670eb5057f8e744f58ef99a",
     "method": "copy"
    },
    {
     "golden": "manifests/s5_ch3_o2/jobs/07/0726fc38c63ff1d91c8eea78d07d172a19fb52879bf28470544793c9633389bc/attempt_00/final-002.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/07/0726fc38c63ff1d91c8eea78d07d172a19fb52879bf28470544793c9633389bc/attempt_00/final-002.xyz",
+    "source": "/home/user/hfauto_r10/W2/s5/jobs/07/0726fc38c63ff1d91c8eea78d07d172a19fb52879bf28470544793c9633389bc/attempt_00/final-002.xyz",
     "source_sha256": "a290073a32e5212f3e6c011e0315fe30d2881abc928737ff8a5fb2f528253ac5",
     "method": "copy"
    },
    {
-    "golden": "manifests/s5_ch3_o2/jobs/55/5563282b219dc6c10af29c247d9893475b826f31e9f769dce44c59bf22634526/attempt_00/final-033.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/55/5563282b219dc6c10af29c247d9893475b826f31e9f769dce44c59bf22634526/attempt_00/final-033.xyz",
-    "source_sha256": "385fbe89192d86af42e5e2ae4bd5927d65842551df00de545c87acc6bc736307",
-    "method": "copy"
-   },
-   {
     "golden": "manifests/s5_ch3_o2/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
+    "source": "/home/user/hfauto_r10/W2/s5/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
     "source_sha256": "f179dca13b67084168cf600dd4203de3d5927c890b9d11dbc7a42d6fc5b8c603",
     "method": "copy"
    },
    {
-    "golden": "manifests/s5_ch3_o2/jobs/9f/9f1e23c8477d40832488f2beeb8b5aa87b67217a7f4ab07d9cab13230e5fb5d9/attempt_00/final-028.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/9f/9f1e23c8477d40832488f2beeb8b5aa87b67217a7f4ab07d9cab13230e5fb5d9/attempt_00/final-028.xyz",
-    "source_sha256": "37aca3a40dec68aa4b08f916b4f014f15c0e698bcf3cdb9e3d08b0f48d613f16",
-    "method": "copy"
-   },
-   {
     "golden": "manifests/s5_ch3_o2/jobs/aa/aa2460c8f37361aad5f6686ac87a1e253db70469f34acf4a5575291a08815039/attempt_00/final-030.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/aa/aa2460c8f37361aad5f6686ac87a1e253db70469f34acf4a5575291a08815039/attempt_00/final-030.xyz",
-    "source_sha256": "e3aaf175037a435811187daefa3647ad4e617d06af2480a31b3a17a159f8492c",
+    "source": "/home/user/hfauto_r10/W2/s5/jobs/aa/aa2460c8f37361aad5f6686ac87a1e253db70469f34acf4a5575291a08815039/attempt_00/final-030.xyz",
+    "source_sha256": "ee16a04d5508a17bbb6a6c4d21366cd938f97932247da5aa781f698079920beb",
     "method": "copy"
    },
    {
     "golden": "manifests/s5_ch3_o2/jobs/ca/cabb8a0e1ddb76c61bd1128daf6330fc411310a87cb155d5eda090ef33393129/attempt_00/final-004.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/ca/cabb8a0e1ddb76c61bd1128daf6330fc411310a87cb155d5eda090ef33393129/attempt_00/final-004.xyz",
-    "source_sha256": "934bf078b47815c44dd8413673014c128d5f4d917d7a28788a77804bf2d640d0",
+    "source": "/home/user/hfauto_r10/W2/s5/jobs/ca/cabb8a0e1ddb76c61bd1128daf6330fc411310a87cb155d5eda090ef33393129/attempt_00/final-004.xyz",
+    "source_sha256": "f35f5902feec2eef304bc7c4bd884b73da1117e581306cf0725ce55bd104b79c",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s5_ch3_o2/jobs/ef/efd4262f97857f9d908e964aa985648d12257eea5102bb044a3dee491d7a8ead/attempt_00/final-029.xyz",
+    "source": "/home/user/hfauto_r10/W2/s5/jobs/ef/efd4262f97857f9d908e964aa985648d12257eea5102bb044a3dee491d7a8ead/attempt_00/final-029.xyz",
+    "source_sha256": "aa3888292e93dff9ab19b47d51cf85334fc3f710699dd04ce358d1f478ac2a2e",
     "method": "copy"
    }
   ],
-  "expect": "VAL9/R2 の S5(CH3 + O2、discover)の dft・paths・thermo の manifest と端の構造。会合 CH3 + O2 -> CH3O2 は barrierless 0.0(反応物の側は分離した単量体)、CH3O2 -> CH2O + HO は multi_step、split1 46.85、split2 は unresolved(dG_eff なし)",
+  "expect": "W2 の新しい run の S5(CH3 + O2、discover)の dft・paths・thermo の manifest と端点の構造。CH3 + O2 -> CH3O2 は barrierless 0.0、CH3O2 -> CH2O + HO は multi_step、split1 46.85、split2 は elementary 0.13(質量加重の χ で O-O 開裂の鞍点を受理。VAL9/R2 では unresolved)",
   "refs": [
    "platform-review-2 X7-7",
    "validation/cases.yaml"

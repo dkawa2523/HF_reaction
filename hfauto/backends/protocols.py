@@ -96,14 +96,16 @@ class EngineFactory(Protocol):
 
 @runtime_checkable
 class QMEngine(Engine, Protocol):
+    """``scf_guess`` (every method): the parent job, of the same atoms and electronic state at
+    any Level, whose converged SCF starts this one (projected when its basis differs; design
+    §7.1). An engine without SCF vectors, and a CCSD(T) reference, ignore it."""
+
     def energy(
         self,
         mol: Molecule,
         method: MethodSpec,
         *,
-        # a job of the same atoms, state and basis whose converged SCF starts this one (a
-        # profile point on its end's SCF branch); an engine without SCF vectors ignores it
-        scf_guess: Evidence | None = None,
+        scf_guess: Evidence | None = None,  # the freq at mol (a layer or panel SP), a path end
     ) -> Evidence | Failure: ...
 
     def optimize(
@@ -116,9 +118,7 @@ class QMEngine(Engine, Protocol):
         # (i, j, r): atoms i and j (0-based) held r Å apart, as mol already has them; an
         # engine without constraints fails INPUT_INVALID "constraint_unsupported"
         fixed_bond: tuple[int, int, float] | None = None,
-        # an opt of the same atoms and state whose converged SCF starts this one (a scan's
-        # previous point); an engine without SCF vectors ignores it
-        scf_guess: Evidence | None = None,
+        scf_guess: Evidence | None = None,  # a scan's previous point
     ) -> Evidence | Failure: ...
 
     def frequencies(
@@ -126,8 +126,7 @@ class QMEngine(Engine, Protocol):
         mol: Molecule,
         method: MethodSpec,
         *,
-        # the opt or saddle at mol whose converged SCF starts this one (same electronic state)
-        scf_guess: Evidence | None = None,
+        scf_guess: Evidence | None = None,  # the opt or saddle at mol
     ) -> Evidence | Failure: ...
 
 
@@ -154,6 +153,7 @@ class SaddleRefiner(Engine, Protocol):
         # freq Evidence (any Level) at seed or within 0.5 Å per atom of it (same atoms, frame)
         hessian: Evidence,
         mode: Sequence[float],  # reaction direction (3N): the only negative initial curvature
+        scf_guess: Evidence | None = None,  # as QMEngine's: a continued search's parent
     ) -> Evidence | Failure: ...  # maxiter: a Failure whose ``final`` is the last frame
 
 

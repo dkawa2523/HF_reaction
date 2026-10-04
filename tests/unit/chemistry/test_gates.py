@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 from hfauto.chemistry import gates as g
-from hfauto.chemistry.topology import bonds
+from hfauto.chemistry.elements import mass
+from hfauto.chemistry.topology import bond_changes
 from hfauto.chemistry.xyz import read_xyz
 from hfauto.core import records as r
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
@@ -87,36 +88,72 @@ def test_saddle_mode_rules():  # one negative eigenvalue of any size above the n
 
 
 AHB = np.array([[-1.4, 0.0, 0.0], [0.04, 0.0, 0.0], [1.4, 0.0, 0.0]])  # A-H broken, H-B formed
+NHO = ("N", "H", "O")
 AHB_BONDS = frozenset({(0, 1), (1, 2)})
+M_NHO = np.array([mass(s) for s in NHO])
 
 
 def test_reaction_mode_character_on_the_changed_bonds():
-    """G1-P2: chi = |Q_B^T q| on the orthonormalized stretches of the changed bonds."""
-    antisymmetric = np.array([1, 0, 0, -2, 0, 0, 1, 0, 0])  # A-H shortens as H-B stretches
-    h_alone = np.eye(9)[3]  # H moves along the axis, A and B stay: sqrt(2/3)
+    """U6-P1: chi = |Q^T L| in the mass-weighted metric of the normal modes: L = M^1/2 q of the
+    stored Cartesian mode q, Q spanning the stretches M^-1/2 b_k of the changed bonds."""
+    transfer = np.array([1, 0, 0, -2, 0, 0, 1, 0, 0]) / np.repeat(M_NHO, 3)  # M^-1 (b_HB - b_AH)
+    h_alone = np.eye(9)[3]  # H moves along the axis, A and B stay: off by its translation share
     rotation = np.cross([0.3, -0.2, 1.0], AHB + [0, 0.5, 0]).ravel()  # rigid, about any point
     bent = AHB + [[0, 0.5, 0], [0, 0, 0], [0, 0, 0]]
     rotor = (np.cross([0, 0, 1.0], bent - bent[1]) * [[1], [0], [0]]).ravel()  # A turns about H
-    chi = [g.reaction_mode_chi(-m, x, AHB_BONDS) for m, x in
-           ((antisymmetric, AHB), (h_alone, AHB), (rotation, AHB), (rotor, bent))]
-    assert chi[:2] == pytest.approx([1.0, np.sqrt(2 / 3)])
+    chi = [g.reaction_mode_chi(NHO, -m, x, AHB_BONDS) for m, x in
+           ((transfer, AHB), (h_alone, AHB), (rotation, AHB), (rotor, bent))]
+    assert chi[:2] == pytest.approx([1.0, np.sqrt(1.0 - M_NHO[1] / M_NHO.sum())])
     assert chi[2:] == pytest.approx([0.0, 0.0], abs=1e-12)
     ring = AHB_BONDS | {(0, 2)}  # three collinear stretches span two directions, not three
-    assert g.reaction_mode_chi(np.tile([1.0, 0, 0], 3), AHB, ring) == pytest.approx(0.0)
-    assert g.reaction_mode_character(h_alone, AHB, AHB_BONDS)
-    assert g.reaction_mode_character(rotor, bent, AHB_BONDS).reasons == ("not_reaction_mode",)
+    shift = np.tile([1.0, 0, 0], 3)  # a translation: orthogonal in either metric
+    assert g.reaction_mode_chi(NHO, shift, AHB, ring) == pytest.approx(0.0, abs=1e-12)
+    assert g.reaction_mode_character(NHO, h_alone, AHB, AHB_BONDS)
+    gate = g.reaction_mode_character(NHO, rotor, bent, AHB_BONDS)
+    assert gate.reasons == ("not_reaction_mode:0.000",)  # the value is kept in the token
+
+
+def test_a_light_atom_riding_on_a_heavy_stretch_keeps_chi_near_one():
+    """U6-P1 (S5 split2: 0.273 Cartesian, 0.712 mass-weighted): C-O stretches with an H riding
+    on C. Its H share is m_H/m_C^2 of the mass-weighted norm, so chi -> 1 as m_H/m_C -> 0; the
+    Cartesian metric counted the H motion like a heavy atom's (0.77 here)."""
+    symbols, x = ("C", "O", "H"), np.array([[0.0, 0, 0], [2.0, 0, 0], [-0.6, 0.9, 0]])
+    mc, mo, mh = (mass(s) for s in symbols)
+    stretch = np.array([1 / mc, 0, 0, -1 / mo, 0, 0, 1 / mc, 0, 0])
+    chi = g.reaction_mode_chi(symbols, stretch, x, frozenset({(0, 1)}))
+    share = 1 / mc + 1 / mo
+    assert chi == pytest.approx(np.sqrt(share / (share + mh / mc**2))) and chi > 0.97
+
+
+def test_chi_does_not_depend_on_how_equivalent_atoms_are_labelled():
+    """CH4 + OH, H1 transferred to O5: exchanging the labels of H1 and H3 in the structure, the
+    mode and the bond change together leaves chi unchanged."""
+    symbols = ("C", "H", "H", "H", "H", "O", "H")
+    x = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.6], [1.027, 0.0, -0.363], [-0.513, 0.889, -0.363],
+                  [-0.513, -0.889, -0.363], [0.0, 0.0, 3.0], [0.92, 0.0, 3.3]])
+    rho = np.zeros((7, 3))
+    rho[[0, 1, 5]] = [0, 0, -1], [0, 0, 2], [0, 0, -1]  # grad(r_CH1 - r_OH1)
+    mode = rho / np.array([mass(s) for s in symbols])[:, None]
+    swap = [0, 3, 2, 1, 4, 5, 6]
+    chi = g.reaction_mode_chi(symbols, mode.ravel(), x, frozenset({(0, 1), (1, 5)}))
+    swapped = g.reaction_mode_chi(symbols, mode[swap].ravel(), x[swap],
+                                  frozenset({(0, 3), (3, 5)}))
+    assert chi == pytest.approx(swapped) == pytest.approx(1.0)
+    labelled = g.reaction_mode_chi(symbols, mode[swap].ravel(), x[swap], frozenset({(0, 1), (1, 5)}))
+    assert labelled < g.REACTION_MODE_MIN  # on another H's labels: a lent TS needs its own ends
 
 
 def test_reaction_mode_character_without_a_bond_change():
-    """A declared coordinate only: |cos(q, grad q)|; with neither the gate is not applied."""
-    gradient = np.eye(9)[4]
-    mode = np.eye(9)[4] + np.eye(9)[1] * np.tan(np.radians(80))  # 80 degrees off the gradient
-    assert g.reaction_mode_chi(-mode, AHB, frozenset(), gradient) == pytest.approx(
-        np.cos(np.radians(80)))
-    assert g.reaction_mode_character(mode, AHB, frozenset(), gradient).reasons == (
-        "not_reaction_mode",)
-    assert g.reaction_mode_chi(mode, AHB, frozenset()) is None
-    assert g.reaction_mode_character(mode, AHB, frozenset(), np.zeros(9))
+    """A declared coordinate only: |cos| of L and M^-1/2 grad q; with neither the gate is not
+    applied."""
+    gradient = np.eye(9)[4]  # H along y
+    mode = np.eye(9)[4] + np.eye(9)[1] * np.tan(np.radians(80))  # A along y as well
+    expected = np.sqrt(M_NHO[1] / (M_NHO[1] + M_NHO[0] * np.tan(np.radians(80)) ** 2))
+    assert g.reaction_mode_chi(NHO, -mode, AHB, frozenset(), gradient) == pytest.approx(expected)
+    assert g.reaction_mode_character(NHO, mode, AHB, frozenset(), gradient).reasons == (
+        f"not_reaction_mode:{expected:.3f}",)
+    assert g.reaction_mode_chi(NHO, mode, AHB, frozenset()) is None
+    assert g.reaction_mode_character(NHO, mode, AHB, frozenset(), np.zeros(9))
 
 
 def test_same_pes_and_spin():
@@ -133,6 +170,29 @@ def test_same_pes_and_spin():
     assert g.spin_ok(ev(level=doublet, s2=0.90)).reasons == ("spin_contaminated",)
     assert g.spin_ok(ev(level=doublet, s2=0.90), g.Policy(spin_tol=0.2))
     assert g.spin_ok(ev())
+
+
+def test_same_spin_state_compares_two_jobs_at_one_structure():
+    """X3: across levels a state is matched by <S2> (the S5 complex: freq 1.71 broken-symmetry,
+    the layer SP 0.759 on another solution); a closed shell is not judged."""
+    doublet = LEVEL.model_copy(update={"multiplicity": 2})
+    freq = ev(level=doublet, s2=1.7115)
+    assert g.same_spin_state(ev("sp", level=doublet, s2=1.7352), freq)
+    assert g.same_spin_state(ev("sp", level=doublet, s2=0.759), freq).reasons == (
+        "spin_state_mismatch",)
+    assert g.same_spin_state(ev("sp", s2=0.759), freq, g.Policy(spin_tol=1.0))
+    assert g.same_spin_state(ev("sp"), freq) and g.same_spin_state(freq, ev())
+
+
+def test_energy_spin_ok_needs_a_clean_freq_and_the_same_state():
+    """One definition of a spin-contaminated energy for thermo and the method panel."""
+    doublet = LEVEL.model_copy(update={"multiplicity": 2})
+    clean, bs = ev(level=doublet, s2=0.7543), ev(level=doublet, s2=1.7115)
+    assert g.energy_spin_ok(ev("sp", level=doublet, s2=0.7544), clean)
+    assert g.energy_spin_ok(ev("sp", level=doublet, s2=1.7352), bs).reasons == (
+        "spin_contaminated",)  # the BS freq itself fails spin_ok
+    assert g.energy_spin_ok(ev("sp", level=doublet, s2=1.71), clean).reasons == (
+        "spin_state_mismatch",)
 
 
 DOWN = (E_TS - 1e-3, E_TS - 5e-3, E_TS - 1e-2)
@@ -182,18 +242,22 @@ def test_connection_assignment():
 
 
 def test_a_degenerate_proton_transfer_moves_the_proton():
-    """U6-P7 (S16 acac enol): the PT's QRC sides carry the two endpoints' bond graphs. A methyl
-    rotation TS connects the basin to itself through two rotamers of R, with the proton in
-    place: no degenerate PT."""
+    """U6-P7 (S16 acac enol): the PT's QRC sides differ by the case's bond change, in either
+    direction. A methyl rotation TS connects the basin to itself through two rotamers of R,
+    with the proton in place: no degenerate PT."""
     reactant, product = (read_xyz(ACAC / f"{name}.xyz") for name in ("reactant", "product"))
-    r_bonds, p_bonds = (bonds(reactant.symbols, end.coords) for end in (reactant, product))
-    assert r_bonds != p_bonds  # H10 on O2, then on O6
+    r, p = reactant.coords, product.coords
+    change = bond_changes(reactant.symbols, r, p)
+    assert change == (frozenset({(6, 10)}), frozenset({(2, 10)}))  # H10 from O2 to O6
+    none = (frozenset(), frozenset())
     kw = {"assigned": ("M", "M"), "expected": frozenset({"M"}), "degenerate": True}
-    pt, rotation = (r_bonds, p_bonds, p_bonds, r_bonds), (r_bonds, p_bonds, r_bonds, r_bonds)
-    assert connect(bond_sets=pt, **kw) == (g.Gate(True), "degenerate")
-    assert connect(bond_sets=rotation, **kw) == (g.Gate(False, ("bond_change_missing",)), "failed")
-    assert connect(bond_sets=(r_bonds,) * 4, **kw)[1] == "degenerate"  # inversion: no bond change
-    assert connect(bond_sets=rotation, assigned=("A", "B"))[1] == "elementary"  # not degenerate
+    for sides in ((r, p), (p, r)):
+        exchange = (change, bond_changes(reactant.symbols, *sides))
+        assert connect(exchange=exchange, **kw) == (g.Gate(True), "degenerate")
+    rotation = (change, none)
+    assert connect(exchange=rotation, **kw) == (g.Gate(False, ("bond_change_missing",)), "failed")
+    assert connect(exchange=(none, none), **kw)[1] == "degenerate"  # inversion: no bond change
+    assert connect(exchange=rotation, assigned=("A", "B"))[1] == "elementary"  # not degenerate
 
 
 def reaction(**kw) -> r.ReactionRecord:

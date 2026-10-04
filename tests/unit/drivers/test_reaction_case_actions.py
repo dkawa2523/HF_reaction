@@ -26,7 +26,6 @@ from hfauto.drivers.reaction_case.state import (
     CaseRules,
     CaseState,
     Decision,
-    Seed,
     decide,
     record_profile,
 )
@@ -201,16 +200,15 @@ def test_failed_shortcut_seeds_go_on_to_the_screen_path_once(tmp_path) -> None:
 
 
 def test_reaction_direction_is_a_ts_mode_rho_or_a_coordinate(tmp_path):
-    """G1-P1: a TS seed's own mode, else ρ = ∇(Σ_broken r − Σ_formed r) of the labelled ends (acac
+    """G1-P1: a TS seed's own mode, else ρ = ∇(Σ_broken r − Σ_formed r) of the bond change (acac
     PT); with no bond change the chord (NH3 inversion), the dihedral or the declared coordinate."""
     ctx, _ = case_ctx(tmp_path, fakes.double_well())
-    geo = ctx.rt.registry.minima[ctx.case.minima[0]][1]  # direction() reads only the seed's mode
-    kind, mode = ctx.direction(ctx.ends[0], Seed(geo, "screen_ts", OFF_AXIS))
+    kind, mode = ctx.direction(ctx.ends[0], OFF_AXIS)
     assert kind == "mode" and tuple(mode) == OFF_AXIS
     r, p = (xyz.read_xyz(ACAC / f"{end}.xyz") for end in ("reactant", "product"))
     ctx.symbols, a = list(r.symbols), np.asarray(r.coords)
     ctx.ends = (a, align_mapped(a, np.asarray(p.coords)))
-    kind, rho = ctx.direction(a, Seed(geo, "path_hei"))  # H10 from O2 to O6, no methyl rotor
+    kind, rho = ctx.direction(a)  # H10 from O2 to O6, no methyl rotor
     e2, e6 = ((a[10] - a[i]) / np.linalg.norm(a[10] - a[i]) for i in (2, 6))
     stretches = np.zeros((15, 3))
     stretches[[2, 6, 10]] = -e2, e6, e2 - e6  # ∇r(O2-H10) − ∇r(O6-H10)

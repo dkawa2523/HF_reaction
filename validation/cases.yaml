@@ -254,7 +254,9 @@ s5_ch3_o2:
     - {equation: CH3 + O2 -> CH3O2, outcome: barrierless_at_resolution, dG_eff: 0.0}
     - {equation: CH3O2 -> CH2O + HO, outcome: multi_step, dG_eff: null}
     - {equation: CH3O2 -> CH3O2, outcome: elementary_step, dG_eff: 46.85}  # split1
-    - {equation: CH3O2 -> CH2O + HO, outcome: unresolved_within_budget, dG_eff: null}  # split2
+    # split2: the mass-weighted χ accepts its O-O cleavage saddle (W2; fresh W2/s5, M06-2X dE‡
+    # 1.93). A replay of the R2 path (B1) stays unresolved_within_budget (docs/validation.md §11.2)
+    - {equation: CH3O2 -> CH2O + HO, outcome: elementary_step, dG_eff: 0.13}
 
 s6_oh_ch4:
   twice: true  # the near-Cs TS is Cs or C1 by run: dG_eff moves by RT ln 2

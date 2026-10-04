@@ -21,7 +21,8 @@ from hfauto.core.evidence import Evidence, Failure
 from hfauto.core.ids import species_id
 from hfauto.core.records import ConnectionClaim, MinimumRecord, SpeciesRecord
 from hfauto.drivers.minimum import calc_id, relax_to_minimum
-from hfauto.drivers.reaction_case.actions import Ctx, peak_seeds, validate_ts
+from hfauto.drivers.reaction_case.actions import Ctx, validate_ts
+from hfauto.drivers.reaction_case.paths import peak_seeds
 from hfauto.drivers.reaction_case.state import CaseState, Decision
 
 QRC_RETRY_FACTOR = 2.0  # the second QRC amplitude, capped at modes.BOUNDS_A[1]
@@ -178,11 +179,11 @@ def connect(ctx: Ctx, state: CaseState, freq: Evidence, attempt: int) -> CaseSta
             for i, (s, x) in enumerate(zip(sides, finals, strict=True)))
     first, second = _keys(ctx, (a, b), freq.energy_hartree)
     distinct = mapped_equivalent(ctx.symbols, *finals) if ctx.case.degenerate else True
-    bonds = tuple(topology.bonds(ctx.symbols, x) for x in (*ctx.ends, finals[1], finals[0]))
+    exchange = ctx.change(), topology.bond_changes(ctx.symbols, *finals)
     ends = frozenset(_key(ctx, r) for r in ctx.end_records())
     gate, label = connection(freq, sides, (first, second), ends,
                              degenerate=ctx.case.degenerate, sides_distinct=distinct,
-                             bond_sets=bonds)
+                             exchange=exchange)
     if label == "failed" or a is None or b is None:
         verdict = _rejected(gate.reasons, first == second, a, b)
         ctx.note(f"qrc{attempt}:{verdict}:{','.join(gate.reasons)}")

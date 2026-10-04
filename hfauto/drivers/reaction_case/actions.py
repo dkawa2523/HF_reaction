@@ -1,7 +1,8 @@
 """Reaction-case context, the saddle search and the TS checks (design §7.3; the path actions
-are in ``paths``, VALIDATE_AND_CONNECT and the intermediate action in ``connection``). Jobs run
-through the capability Protocols and so the JobStore (idempotent); an action returns the next
-CaseState and keeps the evidence behind it (saddle, TS freq, claims, new basins) in ``Work``."""
+and their seeds are in ``paths``, VALIDATE_AND_CONNECT and the intermediate action in
+``connection``). Jobs run through the capability Protocols and so the JobStore (idempotent); an
+action returns the next CaseState and keeps the evidence behind it (saddle, TS freq, claims, new
+basins) in ``Work``."""
 
 from __future__ import annotations
 
@@ -12,18 +13,20 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
 
-from hfauto.chemistry import profile, topology
+from hfauto.chemistry import topology
 from hfauto.chemistry.gates import (
-    Gate,
+    Change,
     barrier_verdict,
     is_first_order_saddle,
     reaction_mode_character,
+    reaction_mode_chi,
+    same_spin_state,
     spin_ok,
 )
 from hfauto.chemistry.geometry import declared_coordinate_gradient, most_changed_dihedral
 from hfauto.chemistry.identity import carry, mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
-from hfauto.chemistry.modes import off_saddle, overlap
+from hfauto.chemistry.modes import off_saddle
 from hfauto.chemistry.xyz import (
     XYZ,
     Molecule,
@@ -129,27 +132,30 @@ class Ctx:
     def _guesses(self, x: np.ndarray) -> list[tuple[Evidence | None, np.ndarray]]:
         """(scf_guess, structure) of each SP at ``x``: a closed shell's from scratch; an open
         shell's from the opt of the nearer DFT minimum, or of both when they differ in spin
-        coupling (``_ends_apart``). From scratch the middle frames of CH3· + O2 fell onto another
-        branch up to 28.9 kcal/mol high; an end's vectors passed directly reproduce the
-        frame-by-frame continuation within 5e-8 Eh, and the lower of the two ends' is
-        continuous. NWChem reads the vectors as stored, so x, aligned onto that end, goes into the
-        opt's atom order and frame as the end is carried onto it (identity.carry; ends[1] is
-        rotated onto ends[0]); energy and ⟨S²⟩ do not change."""
+        coupling (gates.same_spin_state: the broken-symmetry CH3···O2 complex 1.71, its adduct
+        0.754). From scratch the middle frames of CH3· + O2 fell onto another branch up to 28.9
+        kcal/mol high; an end's vectors passed directly reproduce the frame-by-frame
+        continuation within 5e-8 Eh, and the lower of the two ends' is continuous. NWChem reads
+        the vectors as stored, so x, aligned onto that end, goes into the opt's atom order and
+        frame as the end is carried onto it (identity.carry; ends[1] is rotated onto ends[0]);
+        energy and ⟨S²⟩ do not change."""
         if self.multiplicity == 1:
             return [(None, x)]
         opts, ends = self._end_opts(), self.ends
         near = int(mapped_rmsd(x, ends[1]) < mapped_rmsd(x, ends[0]))
+        apart = not same_spin_state(*opts, self.rules.gates)
         return [(opts[k], carry(self.symbols, self.coords(opts[k].final), ends[k],
                                 align_mapped(ends[k], x))[1])
-                for k in ((0, 1) if self._ends_apart() else (near,))]
+                for k in ((0, 1) if apart else (near,))]
 
     def end_records(self) -> tuple[MinimumRecord, MinimumRecord]:
         """The current Registry records of the case's DFT minima."""
         minima = self.rt.registry.minima
         return minima[self.case.minima[0]][0], minima[self.case.minima[1]][0]
 
-    def _end_opts(self) -> tuple[Evidence, ...]:
-        return tuple(self.rt.calcs[r.opt_calc] for r in self.end_records())
+    def _end_opts(self) -> tuple[Evidence, Evidence]:
+        a, b = self.end_records()
+        return self.rt.calcs[a.opt_calc], self.rt.calcs[b.opt_calc]
 
     def _end_s2(self) -> tuple[float | None, float | None]:
         """The DFT minima's ⟨S²⟩ (None: a closed shell)."""
@@ -158,11 +164,11 @@ class Ctx:
         a, b = self._end_opts()
         return a.s2, b.s2
 
-    def _ends_apart(self) -> bool:
-        """Whether the DFT minima differ in spin coupling: their ⟨S²⟩ more than spin_tol apart
-        (the broken-symmetry CH3···O2 complex 1.71, its adduct 0.754)."""
-        a, b = self._end_s2()
-        return a is not None and b is not None and abs(a - b) > self.rules.gates.spin_tol
+    def change(self) -> Change:
+        """(formed, broken) between the labelled case ends: the one bond change that ρ, χ, the
+        retry's mode and the degenerate QRC check share. A TS lent with other atom labels is
+        measured on it too (its lender's ends are not on the record)."""
+        return topology.bond_changes(self.symbols, *self.ends)
 
     def geometry(self, name: str, coords: np.ndarray) -> Geometry:
         return written_geometry(self.mol(coords).write(self.folder / f"{name}.xyz"),
@@ -224,14 +230,15 @@ class Ctx:
                                   reasons=("scf_branch_jump",))
         return barrier_verdict(energies, source=source, policy=self.rules.gates)
 
-    def direction(self, x: np.ndarray, seed: Seed | None = None) -> tuple[str, np.ndarray]:
+    def direction(self, x: np.ndarray, mode: Sequence[float] | None = None
+                  ) -> tuple[str, np.ndarray]:
         """(kind, 3N vector) of the reaction direction at ``x`` (design §7.3): a TS seed's own
-        imaginary mode; else ρ = ∇(Σ_broken r − Σ_formed r), the hypothesis's bond change
-        between the labelled case ends; with none, the gradient of the declared coordinate,
-        else of the most changed dihedral, else the chord between the ends aligned onto x."""
-        if seed is not None and seed.mode is not None:
-            return "mode", np.asarray(seed.mode)
-        formed, broken = topology.bond_changes(self.symbols, *self.ends)
+        imaginary ``mode``; else ρ = ∇(Σ_broken r − Σ_formed r) of the case's bond change; with
+        none, the gradient of the declared coordinate, else of the most changed dihedral, else
+        the chord between the ends aligned onto x."""
+        if mode is not None:
+            return "mode", np.asarray(mode)
+        formed, broken = self.change()
         if formed or broken:
             rho = [CoordinateTerm(kind="distance", atoms=bond,
                                   coefficient=1.0 if bond in broken else -1.0)
@@ -261,17 +268,6 @@ def branch_jump(energies: Sequence[float], s2: Sequence[float | None], tol: floa
     return outside and max(abs(at - before), abs(at - after)) > tol
 
 
-def peak_seeds(ctx: Ctx, name: str) -> tuple[Seed, ...]:
-    """The highest peak detected on the latest profile, refined by a parabola (none without):
-    a screen_hei seed on SCREEN's profile, else a path_hei one."""
-    path = ctx.work.path
-    peaks = () if path is None else profile.interior_maxima(path.energies, ctx.resolution)
-    if path is None or not peaks:
-        return ()
-    _, _, x = profile.hei(path.frames, path.energies, max(peaks, key=path.energies.__getitem__))
-    return (Seed(ctx.geometry(name, x), "screen_hei" if path.source == "screen" else "path_hei"),)
-
-
 def xtb_freq(ctx: Ctx, coords: np.ndarray) -> Evidence | None:
     """The xTB freq at ``coords``; None without a low-level engine or when it fails."""
     rt = ctx.rt
@@ -293,15 +289,16 @@ def _seed_hessian(ctx: Ctx, seed: Seed, x: np.ndarray) -> tuple[str, Evidence | 
 
 def _search(ctx: Ctx, seed: Seed) -> Evidence | Failure:
     """saddle.refine from ``seed`` with only its reaction direction negative in its initial
-    Hessian."""
+    Hessian; a push starts its SCF from its TS freq."""
     rt, x = ctx.rt, ctx.coords(seed.geometry)
-    kind, direction = ctx.direction(x, seed)
+    kind, direction = ctx.direction(x, seed.mode)
     source, hessian = _seed_hessian(ctx, seed, x)
     if isinstance(hessian, Failure):
         ctx.note(f"saddle_hessian:{hessian.kind.value}")
         return hessian
     ctx.note(f"saddle_hessian:{source}:{kind}")
-    result = rt.saddle.refine(ctx.mol(x), rt.method, hessian=hessian, mode=tuple(direction))
+    result = rt.saddle.refine(ctx.mol(x), rt.method, hessian=hessian, mode=tuple(direction),
+                              scf_guess=seed.hessian)
     if isinstance(result, Failure):
         ctx.note(f"saddle:{result.kind.value}:{result.reason}")
     return result
@@ -364,35 +361,28 @@ def _newton_start(ctx: Ctx, saddle: Evidence, freq: Evidence, x: np.ndarray) -> 
 
 def _retry(ctx: Ctx, saddle: Evidence, freq: Evidence, x: np.ndarray, name: str) -> Seed:
     """The seed after a higher-order verdict, one continuation deeper than the saddle: its
-    verified freq is the seed's Hessian and its reaction mode (the imaginary mode of maximal
-    overlap with ρ) the seed's mode. It starts at the saddle's Newton step when the second
-    imaginary mode is an artefact of a non-stationary point (_newton_start), else at the saddle
-    pushed once off its other modes below -saddle_cm1 (modes.off_saddle)."""
-    _, direction = ctx.direction(x)
-    r = max(range(len(freq.imaginary_modes)),
-            key=lambda i: overlap(np.asarray(freq.imaginary_modes[i]), direction))
+    verified freq is the seed's Hessian and its reaction mode (the imaginary mode of largest χ,
+    the TS gate's measure, on the case's bond change, else on its reaction direction) the
+    seed's mode. It starts at the saddle's Newton step when the second imaginary mode is an
+    artefact of a non-stationary point (_newton_start), else at the saddle pushed once off its
+    other modes below -saddle_cm1 (modes.off_saddle)."""
+    (formed, broken), (_, along), modes = ctx.change(), ctx.direction(x), freq.imaginary_modes
+    r = int(np.argmax([reaction_mode_chi(ctx.symbols, m, x, formed | broken, along) or 0.0
+                       for m in modes]))
     start = _newton_start(ctx, saddle, freq, x)
     if start is None:
         start = x + off_saddle(freq, ctx.symbols, below_cm1=ctx.rules.gates.saddle_cm1, keep=r)
-    return Seed(ctx.geometry(name, start), "higher_order_retry", freq.imaginary_modes[r], freq,
+    return Seed(ctx.geometry(name, start), "higher_order_retry", modes[r], freq,
                 depth=ctx.work.depth + 1)
 
 
-def _reaction_mode(ctx: Ctx, freq: Evidence, x: np.ndarray) -> Gate:
-    """The TS mode against this hypothesis: the bond change of the labelled case ends (never of
-    the QRC sides, which in a degenerate case show none), else the declared coordinate."""
-    formed, broken = topology.bond_changes(ctx.symbols, *ctx.ends)
-    terms = ctx.case.coordinate
-    gradient = declared_coordinate_gradient(terms, x) if terms else None
-    return reaction_mode_character(freq.imaginary_modes[0], x, formed | broken, gradient)
-
-
 def validate_ts(ctx: Ctx, state: CaseState) -> CaseState:
-    """Separate DFT freq on the saddle → is_first_order_saddle, reaction_mode_character and
-    spin_ok: the claim of an accepted TS, its freq kept. A rejected saddle, one without an
-    imaginary mode included, stays a counted attempt and gets no QRC; a higher-order one is
-    retried (_retry) while its depth allows. A stationary point with -saddle_cm1 < ν <
-    -noise_cm1 is accepted as a TS: χ and QRC decide whether it is a TS of this case."""
+    """Separate DFT freq on the saddle → is_first_order_saddle, reaction_mode_character (on the
+    case's bond change, else the declared coordinate) and spin_ok: the claim of an accepted
+    TS, its freq kept. A rejected saddle, one without an imaginary mode included, stays a
+    counted attempt and gets no QRC; a higher-order one is retried (_retry) while its depth
+    allows. A stationary point with -saddle_cm1 < ν < -noise_cm1 is accepted as a TS: χ and QRC
+    decide whether it is a TS of this case."""
     rt, saddle, gates = ctx.rt, ctx.work.saddle, ctx.rules.gates
     state = replace(state, last_saddle="failed")
     if saddle is None:
@@ -403,9 +393,11 @@ def validate_ts(ctx: Ctx, state: CaseState) -> CaseState:
         ctx.note(f"ts_freq:{freq.kind.value}")
         return state
     gate = is_first_order_saddle(freq, saddle=saddle, policy=gates)
-    if gate and not (mode := _reaction_mode(ctx, freq, x)):
-        ctx.note(f"ts_rejected:{','.join(mode.reasons)}")
-        return state
+    if gate:
+        terms, (formed, broken) = ctx.case.coordinate, ctx.change()
+        mode = reaction_mode_character(ctx.symbols, freq.imaginary_modes[0], x, formed | broken,
+                                       declared_coordinate_gradient(terms, x) if terms else None)
+        gate = replace(gate, ok=mode.ok, reasons=mode.reasons)
     if gate:
         freq_calc, notes = calc_id(ctx.keep(freq)), (*gate.notes, *spin_ok(freq, gates).reasons)
         claim = SaddleClaim(saddle_calc=calc_id(ctx.keep(saddle)), freq_calc=freq_calc,
