@@ -1,10 +1,11 @@
 """Static HTML report (design §4.1 #8, §7.4 ``report``): ``render(view, out_dir, load_xyz=)``.
 
-One self-contained page per view: a summary row per reaction (δG_eff, ΔE‡, ΔG‡, ν_imag,
-connection, outcome, blockers, the association quantities and the energy level), an inline-SVG
-energy diagram per reaction and the TS imaginary mode animated by 3Dmol.js. The module does not
-know the run layout: geometries are reached only through ``load_xyz``. Standard
-library, numpy and hfauto.core only; no plotting or templating package.
+One self-contained page per view: a summary row per reaction (δG_eff and its zero, ΔE‡, ΔG‡,
+ν_imag, connection, outcome, blockers, the association quantities and the energy level), the
+barrierless steps apart (capture-limited: no TST barrier, ΔG_rxn and ΔG_assoc only), an
+inline-SVG energy diagram per reaction and the TS imaginary mode animated by 3Dmol.js. The
+module does not know the run layout: geometries are reached only through ``load_xyz``.
+Standard library, numpy and hfauto.core only; no plotting or templating package.
 """
 
 from __future__ import annotations
@@ -19,7 +20,14 @@ import numpy as np
 from hfauto.chemistry.xyz import XYZ
 from hfauto.core.evidence import Geometry
 from hfauto.core.manifest import Manifest
-from hfauto.core.records import ArtifactType, RankRow, ReactionRecord, ReactionThermo, ReportRecord
+from hfauto.core.records import (
+    ArtifactType,
+    CaseOutcome,
+    RankRow,
+    ReactionRecord,
+    ReactionThermo,
+    ReportRecord,
+)
 
 THREEDMOL_JS = "https://cdn.jsdelivr.net/npm/3dmol@2.5.5/build/3Dmol-min.js"
 MODE_AMPLITUDE_A = 0.5  # largest atomic displacement of the animated imaginary mode (Å)
@@ -85,15 +93,19 @@ def _table(header: Sequence[str], rows: Iterable[Sequence[str]], numeric: set[in
     return f"<div class='wrap'><table><tr>{head}</tr>{body}</table></div>"
 
 
-def _levels(thermo: ReactionThermo) -> list[DiagramLevel]:
-    """Energy-diagram levels relative to the reactant; separated monomers sit at −ΔG_assoc."""
+def _levels(thermo: ReactionThermo, association: bool) -> list[DiagramLevel]:
+    """Energy-diagram levels relative to the reactant: the separated monomers sit at
+    −ΔG_assoc, but an association's reactant is its monomers and its complex sits at +ΔG_assoc."""
     g_known = any(v is not None for v in (thermo.dG_act_kcal, thermo.dG_rxn_kcal,
                                           thermo.dG_assoc_kcal))
     e_known = thermo.dE_act_kcal is not None or thermo.dE_rxn_kcal is not None
-    out: list[DiagramLevel] = []
-    if thermo.dG_assoc_kcal is not None:
-        out.append(("separated", None, -thermo.dG_assoc_kcal))
-    out.append(("reactant", 0.0 if e_known else None, 0.0 if g_known else None))
+    assoc, out = thermo.dG_assoc_kcal, []
+    if assoc is not None and not association:
+        out.append(("separated", None, -assoc))
+    out.append(("separated" if association else "reactant", 0.0 if e_known else None,
+                0.0 if g_known else None))
+    if assoc is not None and association:
+        out.append(("complex", None, assoc))
     for label, e, g in (("TS", thermo.dE_act_kcal, thermo.dG_act_kcal),
                         ("product", thermo.dE_rxn_kcal, thermo.dG_rxn_kcal)):
         if e is not None or g is not None:
@@ -186,10 +198,11 @@ def _summary_cells(reaction: ReactionRecord, t: ReactionThermo | None,
     rank = row.rank if row is not None else None
     dG_eff, dE_act, dG_act, assoc, vs_separated = map(_num, (None,) * 5 if t is None else (
         t.dG_eff_kcal, t.dE_act_kcal, t.dG_act_kcal, t.dG_assoc_kcal, t.dG_act_vs_separated_kcal))
+    zero = t.reference if t is not None and t.reference else _DASH
     return [
         f"<a href='#rxn-{rid}'>{rid}</a>",
         escape(reaction.outcome.value if reaction.outcome else _DASH),
-        _DASH if rank is None else str(rank), dG_eff, dE_act, dG_act,
+        _DASH if rank is None else str(rank), dG_eff, zero, dE_act, dG_act,
         _imag(saddle.imag_cm1) if saddle is not None else _DASH,
         _connection(reaction), assoc, vs_separated,
         escape(", ".join(blockers)) or _DASH,
@@ -197,17 +210,31 @@ def _summary_cells(reaction: ReactionRecord, t: ReactionThermo | None,
     ]
 
 
-_SUMMARY_HEADER = ("reaction", "outcome", "rank", "δG<sub>eff</sub>", "ΔE‡", "ΔG‡",
+_SUMMARY_HEADER = ("reaction", "outcome", "rank", "δG<sub>eff</sub>", "zero", "ΔE‡", "ΔG‡",
                    "ν<sub>imag</sub> (cm⁻¹)", "connection", "ΔG<sub>assoc</sub>",
                    "ΔG‡ vs separated", "blockers", "energy level")
-_THERMO_HEADER = ("T (K)", "state", "ΔE‡", "ΔE<sub>rxn</sub>", "δG<sub>eff</sub>", "ΔG‡",
-                  "ΔG<sub>rxn</sub>", "δG<sub>eff</sub> band", "ΔG<sub>assoc</sub>",
+_CAPTURE_HEADER = ("reaction", "ΔE<sub>rxn</sub>", "ΔG<sub>rxn</sub>", "ΔG<sub>assoc</sub>",
+                   "blockers", "energy level")
+_CAPTURE_INTRO = ("<h2>Barrierless steps</h2><p class='meta'>No TST barrier at resolution: an "
+                  "association is capture-limited, so these are not ranked by "
+                  "δG<sub>eff</sub>.</p>")
+_THERMO_HEADER = ("T (K)", "state", "ΔE‡", "ΔE<sub>rxn</sub>", "δG<sub>eff</sub>", "zero",
+                  "ΔG‡", "ΔG<sub>rxn</sub>", "δG<sub>eff</sub> band", "ΔG<sub>assoc</sub>",
                   "ΔG‡ vs separated", "blockers", "notes", "energy level")
 
 
+def _capture_cells(reaction: ReactionRecord, t: ReactionThermo | None) -> list[str]:
+    rid = escape(reaction.reaction_id)
+    values = (None,) * 3 if t is None else (t.dE_rxn_kcal, t.dG_rxn_kcal, t.dG_assoc_kcal)
+    return [f"<a href='#rxn-{rid}'>{rid}</a>", *map(_num, values),
+            escape(", ".join(t.blockers) if t else "") or _DASH,
+            escape(t.energy_level or _DASH) if t else _DASH]
+
+
 def _thermo_cells(t: ReactionThermo) -> list[str]:
-    values = (t.dE_act_kcal, t.dE_rxn_kcal, t.dG_eff_kcal, t.dG_act_kcal, t.dG_rxn_kcal)
-    return [f"{t.T_K:g}", t.standard_state, *map(_num, values), _band(t),
+    values = (t.dE_act_kcal, t.dE_rxn_kcal, t.dG_eff_kcal)
+    return [f"{t.T_K:g}", t.standard_state, *map(_num, values), t.reference or _DASH,
+            *map(_num, (t.dG_act_kcal, t.dG_rxn_kcal)), _band(t),
             _num(t.dG_assoc_kcal), _num(t.dG_act_vs_separated_kcal),
             escape(", ".join(t.blockers)) or _DASH, escape(", ".join(t.notes)) or _DASH,
             escape(t.energy_level or _DASH)]
@@ -224,14 +251,15 @@ def _section(reaction: ReactionRecord, thermo: Sequence[ReactionThermo],
     figures = []
     if shown is not None:
         caption = f"{shown.T_K:g} K, {shown.standard_state}"
-        figures.append(f"<figure>{_energy_svg(_levels(shown), caption)}"
+        levels = _levels(shown, bool(reaction.monomers))
+        figures.append(f"<figure>{_energy_svg(levels, caption)}"
                        f"<figcaption>Energy diagram ({escape(caption)})</figcaption></figure>")
     if xyz is not None and reaction.saddle is not None:
         figures.append(f"<figure><div class='mol' data-xyz='{escape(xyz)}'></div><figcaption>"
                        f"TS imaginary mode, ν = {_imag(reaction.saddle.imag_cm1)} cm⁻¹"
                        "</figcaption></figure>")
-    table = (_table(_THERMO_HEADER, map(_thermo_cells, thermo), set(range(2, 10))) if thermo
-             else "<p class='meta'>No reaction thermochemistry in this view.</p>")
+    table = (_table(_THERMO_HEADER, map(_thermo_cells, thermo), {2, 3, 4, *range(6, 11)})
+             if thermo else "<p class='meta'>No reaction thermochemistry in this view.</p>")
     return (f"<section id='rxn-{rid}'><h2>{rid}</h2><p class='meta'>{' · '.join(meta)}</p>"
             f"<div class='figs'>{''.join(figures)}</div>{table}</section>")
 
@@ -255,12 +283,20 @@ def render(view: Manifest, out_dir: Path, *, load_xyz: Callable[[Geometry], XYZ]
     shown = {r.reaction_id: _thermo_for(thermo[r.reaction_id], T, state) for r in reactions}
     modes = {r.reaction_id: _mode_xyz(view, r, load_xyz) for r in reactions}
 
-    summary = [_summary_cells(r, shown[r.reaction_id], rows.get(r.reaction_id)) for r in reactions]
+    capture = [r for r in reactions if r.outcome is CaseOutcome.BARRIERLESS]
+    summary = [_summary_cells(r, shown[r.reaction_id], rows.get(r.reaction_id))
+               for r in reactions if r.outcome is not CaseOutcome.BARRIERLESS]
     run = escape(view.run_id)
     intro = (f"<h1>hfauto report</h1><p class='meta'>run {run} · view of stage "
              f"{escape(view.stage_id)} · {len(reactions)} reaction(s) · energies in kcal/mol</p>")
-    body = [intro, _table(_SUMMARY_HEADER, summary, {2, 3, 4, 5, 6, 8, 9}) if reactions
-            else "<p>No reactions with an outcome in this view.</p>"]
+    body = [intro]
+    if summary:
+        body.append(_table(_SUMMARY_HEADER, summary, {2, 3, 5, 6, 7, 9, 10}))
+    if capture:
+        body += [_CAPTURE_INTRO, _table(_CAPTURE_HEADER, [
+            _capture_cells(r, shown[r.reaction_id]) for r in capture], {1, 2, 3})]
+    if not reactions:
+        body.append("<p>No reactions with an outcome in this view.</p>")
     body += [_section(r, thermo[r.reaction_id], shown[r.reaction_id], modes[r.reaction_id])
              for r in reactions]
     out = Path(out_dir)

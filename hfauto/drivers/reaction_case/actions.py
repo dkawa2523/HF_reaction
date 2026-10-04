@@ -9,14 +9,13 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from hfauto.chemistry import topology
 from hfauto.chemistry.gates import (
     Change,
-    barrier_verdict,
     is_first_order_saddle,
     reaction_mode_character,
     reaction_mode_chi,
@@ -27,6 +26,7 @@ from hfauto.chemistry.geometry import declared_coordinate_gradient, most_changed
 from hfauto.chemistry.identity import carry, mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.modes import off_saddle
+from hfauto.chemistry.profile import Point, Profile, Sample
 from hfauto.chemistry.xyz import (
     XYZ,
     Molecule,
@@ -37,11 +37,9 @@ from hfauto.chemistry.xyz import (
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
 from hfauto.core.records import (
-    BarrierVerdict,
     ConnectionClaim,
     CoordinateTerm,
     MinimumRecord,
-    ProfileSource,
     ReactionRecord,
     SaddleClaim,
     SpeciesRecord,
@@ -55,20 +53,12 @@ if TYPE_CHECKING:
 MAX_DEPTH = 2  # continuations per fresh seed: a push whose search stalls still restarts
 
 
-class Profile(NamedTuple):
-    """A DFT profile between the DFT minima: its frames and energies, the minima's at its ends,
-    and what made it (SCREEN's NEB or IDPP, a string, or an association's scan)."""
-
-    frames: list[np.ndarray]
-    energies: tuple[float, ...]
-    source: ProfileSource
-
-
 @dataclass
 class Work:
     """Evidence behind the CaseState and the artifacts the case adds."""
 
     path: Profile | None = None  # the latest DFT profile (CaseState.screen), FIND_PATH's start
+    sample: Sample | None = None  # its energy function at new nodes; None: Ctx.points
     saddle: Evidence | None = None
     depth: int = 0  # the saddle's continuation depth (Seed.depth of the search that found it)
     connection: ConnectionClaim | None = None
@@ -129,6 +119,11 @@ class Ctx:
                 found[i] = ev
         return found
 
+    def points(self, new: list[tuple[int, np.ndarray]]) -> list[Point | None]:
+        """The energy function (profile.Sample) of SCREEN's and a string's profile: ``sps``."""
+        return [None if ev is None else (ev.energy_hartree, ev.s2)
+                for ev in self.sps([x for _, x in new])]
+
     def _guesses(self, x: np.ndarray) -> list[tuple[Evidence | None, np.ndarray]]:
         """(scf_guess, structure) of each SP at ``x``: a closed shell's from scratch; an open
         shell's from the opt of the nearer DFT minimum, or of both when they differ in spin
@@ -157,7 +152,7 @@ class Ctx:
         a, b = self.end_records()
         return self.rt.calcs[a.opt_calc], self.rt.calcs[b.opt_calc]
 
-    def _end_s2(self) -> tuple[float | None, float | None]:
+    def end_s2(self) -> tuple[float | None, float | None]:
         """The DFT minima's ⟨S²⟩ (None: a closed shell)."""
         if self.multiplicity == 1:
             return None, None
@@ -182,54 +177,6 @@ class Ctx:
         images = read_xyz_trajectory(self.rt.resolve(ref))
         return [np.asarray(i.coords, dtype=float) for i in images]
 
-    def verdict(self, frames: list[np.ndarray], inner: Sequence[float],
-                source: Literal["screen", "string"], s2: Sequence[float | None] = ()
-                ) -> BarrierVerdict:
-        """Class of the sequence-aligned path ``frames`` between the DFT minima (``inner``: its
-        interior DFT energies, ``s2`` their ⟨S²⟩; a string's beads have none), kept as the
-        latest profile; its maximum bounds the saddle from above. A barrierless class is
-        accepted only after densifying: DFT SPs at the midpoints of the two segments beside the
-        highest interior node (nodes lie 0.04-0.30 Å apart, measured). A harmonic top hidden
-        between nodes h apart rises at most h²|E''|/8 above the higher one, and it lies beside
-        the highest node only on a unimodal profile: a hill hidden elsewhere is not looked for."""
-        energies, spins = [self.energies[0], *inner, self.energies[1]], list(s2)
-        self.work.path = Profile(frames, tuple(energies), source)
-        verdict = self.classify(energies, spins, source)
-        if verdict.verdict != "barrierless":
-            return verdict
-        k = 1 + int(np.argmax(inner))
-        mids = [0.5 * (frames[i] + frames[i + 1]) for i in (k - 1, k)]
-        low, high = self.sps(mids)
-        if low is None or high is None:
-            return BarrierVerdict(verdict="unavailable", source=source,
-                                  reasons=("midpoint_single_point",))
-
-        def splice(nodes: list, before: object, after: object, at: int = k) -> list:
-            return [*nodes[:at], before, nodes[at], after, *nodes[at + 1:]]  # beside node k
-
-        frames, energies = splice(frames, *mids), splice(energies, low.energy_hartree,
-                                                         high.energy_hartree)
-        spins = splice(spins, low.s2, high.s2, k - 1) if spins else []
-        self.work.path = Profile(frames, tuple(energies), source)
-        verdict = self.classify(energies, spins, source)
-        self.note(f"{source}_midpoints:{verdict.verdict}")
-        return verdict
-
-    def classify(self, energies: Sequence[float], s2: Sequence[float | None],
-                 source: Literal["screen", "string"]) -> BarrierVerdict:
-        """barrier_verdict of a profile from DFT minimum to DFT minimum (``s2``: its interior
-        points' ⟨S²⟩, none for a string's beads), unless the profile leaves its SCF branch: a
-        ``branch_jump`` against the minima's opts' ⟨S²⟩ and spin_tol, on every open-shell
-        profile with ⟨S²⟩ (SCREEN's, densified or not, and the shortcut's three points)
-        whatever the minima's spin coupling (both CH3·O2 minima of one run were
-        broken-symmetry, 1.7114 and 1.7637)."""
-        first, last = self._end_s2()
-        spins = [first, *(s2 or [None] * (len(energies) - 2)), last]
-        if branch_jump(energies, spins, self.rules.gates.spin_tol):
-            return BarrierVerdict(verdict="unavailable", source=source,
-                                  reasons=("scf_branch_jump",))
-        return barrier_verdict(energies, source=source, policy=self.rules.gates)
-
     def direction(self, x: np.ndarray, mode: Sequence[float] | None = None
                   ) -> tuple[str, np.ndarray]:
         """(kind, 3N vector) of the reaction direction at ``x`` (design §7.3): a TS seed's own
@@ -249,23 +196,6 @@ class Ctx:
                 topology.bonds(self.symbols, a), a, b):
             return "coordinate", declared_coordinate_gradient(terms, x)
         return "chord", (b - a).ravel()
-
-
-def branch_jump(energies: Sequence[float], s2: Sequence[float | None], tol: float) -> bool:
-    """Whether a profile's highest interior point lies on another SCF branch than its
-    neighbours: its ⟨S²⟩ outside theirs and more than ``tol`` (Policy.spin_tol) from one of
-    them. At a genuine radical TS the UKS contamination peaks smoothly, at most 0.022 above a
-    neighbour (H + H2 0.7674 beside 0.7565 and 0.7570, the OH + CH4 shortcut 0.7722 beside
-    0.7544 and 0.7500), and through the Coulson–Fischer region it changes monotonically (CH3 +
-    O2 1.7115 → 0.7545, its 0.80 kcal/mol hill at 1.5438 between 1.6261 and 1.4145); an SCF
-    branch jump moves it 0.77–0.95 (CH3 + O2 0.7604 beside 1.7114; from an atomic guess 0.7591
-    beside 1.7115, from mixed guesses 0.7697 beside 1.5438). An unobserved ⟨S²⟩ is no evidence."""
-    k = 1 + int(np.argmax(energies[1:-1]))
-    before, at, after = s2[k - 1:k + 2]
-    if before is None or at is None or after is None:
-        return False
-    outside = not min(before, after) <= at <= max(before, after)
-    return outside and max(abs(at - before), abs(at - after)) > tol
 
 
 def xtb_freq(ctx: Ctx, coords: np.ndarray) -> Evidence | None:

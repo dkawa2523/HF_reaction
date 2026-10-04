@@ -3,6 +3,7 @@ from dataclasses import astuple
 
 from hfauto.chemistry.gates import Policy
 from hfauto.core import records as rec
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, Geometry, Level
 from hfauto.core.manifest import Artifact
 from hfauto.reporting.summary import coverage, method_panel, rank_rows, write_tables
@@ -49,17 +50,18 @@ def test_ranks_follow_dg_eff_with_overlapping_bands_sharing_a_rank():
                                                              ("spin_contaminated",)),
               th("c", 1.0, T=500.0)]
     rows = rank_rows(reactions, thermo, 298.15, "1atm")
-    assert [(r.reaction_id, r.rank) for r in rows] == [  # a barrierless step ranks too
-        ("bl", 1), ("a", 2), ("b", 2), ("d", 4), ("c", 5), ("spin", None)]
+    assert [(r.reaction_id, r.rank) for r in rows] == [  # a barrierless step: capture-limited
+        ("a", 1), ("b", 1), ("d", 3), ("c", 4), ("bl", None), ("spin", None)]
     by_id = {r.reaction_id: r for r in rows}
-    assert by_id["bl"].blockers == () and by_id["spin"].blockers == ("spin_contaminated",)
+    assert by_id["bl"].blockers == ("outcome:barrierless_at_resolution",)
+    assert by_id["spin"].blockers == ("spin_contaminated",)
     assert by_id["a"].tier == "minima" and by_id["a"].band_kcal == (9.0, 11.0)
     assert by_id["d"].torsional and not by_id["a"].torsional  # a torsion stays ranked
     assert {(r.T_K, r.standard_state, r.dG_rxn_kcal) for r in rows} == {(298.15, "1atm", 1.0)}
     assert {r.energy_level for r in rows} == {"wb97x-d3/def2-tzvpd"}
     assert [r.rank for r in rank_rows(reactions, thermo, 298.15, "1M")] == [None] * 6
-    new = {"T_K", "standard_state", "dG_rxn_kcal", "dG_eff_kcal", "dG_act_vs_separated_kcal",
-           "torsional", "notes"}
+    new = {"T_K", "standard_state", "dG_rxn_kcal", "dG_eff_kcal", "reference",
+           "dG_act_vs_separated_kcal", "torsional", "notes"}
     old = rows[0].model_dump(exclude=new)
     assert rec.RankRow.model_validate(old).T_K is None  # a report row of an older manifest
 
@@ -160,3 +162,21 @@ def test_panel_counts_an_energy_on_its_freqs_spin_state_only():
     assert panel(1.71, 0.759) == ["spin_contaminated:dE_rxn"] * 2
     assert panel(1.71, 1.735) == ["spin_contaminated:dE_rxn"] * 2
     assert panel(0.7543, 0.7544) == ["", ""]
+
+
+def test_panel_reads_the_reactions_own_points():
+    """thermo.participants: an association's dE refer to its separated monomers (summed), as its
+    thermo does; a saddle of an unconnected outcome is no TS of the reaction."""
+    calcs = [calc("a", "A", -0.4, "fine"), calc("b", "B", -0.5, "fine"),
+             calc("c", "C", -1.0, "fine"), calc("p", "P", -0.95, "fine"),
+             calc("t", "T", -0.9, "fine")]
+    minima = {m: mini(m, c) for m, c in (("ma", "a"), ("mb", "b"), ("mc", "c"), ("mp", "p"))}
+    saddle = rec.SaddleClaim(saddle_calc="s", freq_calc="t", imag_cm1=-900.0, energy_hartree=-0.9)
+    assoc = rxn("assoc", minima=("mc", "mp"), monomers=("ma", "mb"), saddle=saddle)
+    lone = rxn("lone", rec.CaseOutcome.UNRESOLVED, minima=("mc", "mp"), saddle=saddle)
+    rows = {r.reaction_id: r for r in method_panel(calcs, [assoc, lone], minima=minima,
+                                                   policy=Policy())}
+    assert round(rows["assoc"].dE_rxn_kcal, 2) == round(-0.05 * HARTREE_TO_KCAL_MOL, 2)
+    assert abs(rows["assoc"].dE_act_kcal) < 1e-9  # the TS level with a + b
+    assert rows["lone"].dE_act_kcal is None
+    assert round(rows["lone"].dE_rxn_kcal, 2) == round(0.05 * HARTREE_TO_KCAL_MOL, 2)

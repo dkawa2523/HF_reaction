@@ -14,7 +14,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
-from hfauto.chemistry.thermo import monomer_states
+from hfauto.chemistry.thermo import declared_monomers
 from hfauto.chemistry.xyz import hill_formula
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.records import DiscoveryRecord, MinimumRecord, SpeciesRecord
@@ -38,14 +38,15 @@ def _reacting(candidates: Iterable[Candidate], species: Mapping[str, SpeciesReco
               system: SystemConfig) -> set[str]:
     """Compositions of the declared endpoints and of the always-kept candidates, plus the
     monomers of those complexes: the association and separated references of the thermo stage
-    (thermo.monomer_states)."""
+    (thermo.declared_monomers)."""
     ends = {species[s.id].composition_id for s in system.species
             if s.role == "endpoint" and s.id in species}
     reacting = ends | {c.composition_id for c in candidates if c.always}
-    monomers = monomer_states(species.values(), system.compositions)
+    monomers = declared_monomers(species.values(), system.compositions)
     formulas = {(hill_formula(s.geometry.symbols), s.charge) for s in species.values()
                 if s.composition_id in reacting}
-    return reacting | {state[0] for f in formulas for state, _ in monomers.get(f, ())}
+    return reacting | {composition for f in formulas for parts in monomers.get(f, ())
+                       for composition, _ in parts}
 
 
 def reacting_candidates(

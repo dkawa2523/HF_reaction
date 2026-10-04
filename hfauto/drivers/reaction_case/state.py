@@ -35,7 +35,7 @@ from hfauto.core.records import (
 
 
 class Action(StrEnum):
-    SCREEN = "screen"  # low-level path and DFT single points, or an association's scan
+    SCREEN = "screen"  # low-level TSs or path and DFT single points, or an association's scan
     REFINE_SADDLE = "refine_saddle"  # initial Hessian (xTB first, then DFT) -> saddle
     VALIDATE_AND_CONNECT = "validate_and_connect"  # TS freq -> gates -> QRC (two amplitudes)
     FIND_PATH = "find_path"  # DFT string, only without a usable seed or after saddle failure
@@ -85,15 +85,18 @@ class CaseState:
 
     ``minima`` (not in the §7.3 listing) holds the registry records of ``case.minima``, None when
     an endpoint has none: rows 1-3 need their basin and energy, which a ReactionRecord does not
-    carry. ``screen`` is the verdict of the latest DFT profile (SCREEN or string), which decides
-    rows 6, 10 and 12 and goes into the record. ``neb_done``: the low-level path of SCREEN ran
-    (after a shortcut, row 9 runs it once its seeds have failed), or an association's scan.
-    ``last_saddle``: a converged saddle awaits its checks, or the latest search or its checks
-    failed (None once a TS is accepted: its claim stands for it).
+    carry. ``screen`` is the verdict of the latest DFT profile (SCREEN's path or scan, or a
+    string), which decides rows 6, 10 and 12 and goes into the record. ``shortcut_done``: SCREEN
+    tried its shortcut from the low-level TSs (once; it gives seeds, never a verdict).
+    ``neb_done``: the low-level path of SCREEN ran (after the shortcut, row 9 runs it once its
+    seeds have failed), or an association's scan. ``last_saddle``: a converged saddle awaits its
+    checks, or the latest search or its checks failed (None once a TS is accepted: its claim
+    stands for it).
     """
 
     minima: tuple[MinimumRecord | None, MinimumRecord | None] = (None, None)
     screen: BarrierVerdict | None = None
+    shortcut_done: bool = False
     neb_done: bool = False
     seeds: tuple[Seed, ...] = ()  # unused seeds, consumed from the front
     saddle_attempts: int = 0
@@ -114,9 +117,9 @@ class Decision:
 
 def record_profile(state: CaseState, verdict: BarrierVerdict, seeds: tuple[Seed, ...] = ()
                    ) -> CaseState:
-    """A new DFT profile becomes the latest verdict; its seeds (its peak, or the low-level TSs
-    of SCREEN's shortcut) join only for a single-step profile (design §7.3), and the checks of an
-    earlier saddle no longer apply."""
+    """A new DFT profile becomes the latest verdict; its seeds (its peak or SCREEN's NEB TS)
+    join only for a single-step profile (design §7.3), and the checks of an earlier saddle no
+    longer apply."""
     seeds = (*state.seeds, *seeds) if verdict.verdict == "single" else state.seeds
     return replace(state, screen=verdict, seeds=seeds, last_saddle=None, intermediate=None,
                    path_runs=state.path_runs + int(verdict.source == "string"))
@@ -189,10 +192,9 @@ def _r08_saddle(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | 
 
 
 def _r09_screen(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
-    # the cheap low-level path comes before any string, also once a shortcut's seeds have
+    # the cheap low-level path comes before any string, also once the shortcut's seeds have
     # failed; an association's scan needs no low-level engine
-    fire = ((p.screen or bool(case.monomers)) and not s.neb_done
-            and (s.screen is None or not s.seeds))
+    fire = (p.screen or bool(case.monomers)) and not s.neb_done and not s.seeds
     return Decision(Action.SCREEN, "screen") if fire else None
 
 

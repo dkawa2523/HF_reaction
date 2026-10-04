@@ -1,6 +1,6 @@
 """reaction-paths stage (design §4.1, §8.2): hypotheses → ReactionCaseDriver, one case at a time.
 
-The monomer states of the system's compositions (thermo.monomer_states) make an association's
+The monomer states of the system's compositions (thermo.declared_monomers) make an association's
 separated reactant side (chemistry.hypotheses). Engines have no defaults here; the pipeline YAML
 names them (``engines`` and ``screen``). A hypothesis' split children run right after it, each
 with its own ``policy`` budget, and see its calculations (a TS it validated for a child). A split
@@ -19,7 +19,7 @@ from typing import ClassVar, cast
 from hfauto.backends.protocols import Capability, PathEngine, QMEngine, SaddleRefiner
 from hfauto.chemistry.classification import undriven
 from hfauto.chemistry.hypotheses import CaseKey, pair_key, select
-from hfauto.chemistry.thermo import monomer_states
+from hfauto.chemistry.thermo import declared_monomers
 from hfauto.core.evidence import Evidence
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.records import (
@@ -172,7 +172,7 @@ class ReactionPathsStage:
             [(m, opt.final) for m, opt in opts], list(species.values()),
             inputs.records(ArtifactType.DISCOVERY, DiscoveryRecord), rt.system.reactions,
             rt.load_xyz, window_kcal=rt.policy.reaction_window_kcal,
-            monomers=monomer_states(species.values(), rt.system.compositions),
+            monomers=declared_monomers(species.values(), rt.system.compositions),
             levels={m.minimum_id: opt.level for m, opt in opts if m.tier == "dft"},
         )
         if config.reaction_ids is not None:

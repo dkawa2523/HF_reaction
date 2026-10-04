@@ -288,9 +288,10 @@ def test_discovery_verdict_window_edges():
     assert verdict(rxn=45.0, reaction_window_kcal=50.0) is None
 
 
-def test_rankable():  # any dZPE; a barrierless outcome ranks by its dG_eff
+def test_rankable():  # any dZPE; a barrierless outcome is capture-limited, never ranked
     assert g.rankable(reaction(), thermo())
-    assert g.rankable(reaction(outcome=CaseOutcome.BARRIERLESS), thermo(1.0))
+    assert g.rankable(reaction(outcome=CaseOutcome.BARRIERLESS), thermo(1.0)).reasons == (
+        "outcome:barrierless_at_resolution",)
     assert not g.rankable(reaction(), thermo(blockers=("spin_contaminated",)))
     assert g.rankable(reaction(), None).reasons == ("thermo_record_missing",)
     lost = thermo(None, ("mixed_level_of_theory", "thermo_unavailable"))
@@ -309,14 +310,3 @@ def test_reaction_tier():
     assert g.reaction_tier(reaction(outcome=CaseOutcome.SAME_BASIN)) == "minima"
     assert g.reaction_tier(reaction(saddle=saddle)) == "saddle"
     assert g.reaction_tier(reaction(saddle=saddle, connection=link)) == "connected"
-
-
-def test_barrier_verdict_classifies_a_profile_between_the_dft_minima():
-    single = g.barrier_verdict((0.0, 2 * K, 3 * K, 1 * K, 0.5 * K), source="screen")
-    assert (single.verdict, single.source) == ("single", "screen")
-    well = g.barrier_verdict((0.0, 2 * K, 0.5 * K, 3 * K, 6 * K, 9 * K, 10 * K), source="string")
-    assert well.verdict == "intermediate"
-    flat = g.barrier_verdict((0.0, 0.2 * K, 0.4 * K, 0.5 * K), source="string")
-    assert (flat.verdict, flat.reasons) == ("barrierless", ())
-    none = g.barrier_verdict((0.0, 5 * K), source="screen")
-    assert (none.verdict, none.reasons) == ("unavailable", ("too_few_points",))

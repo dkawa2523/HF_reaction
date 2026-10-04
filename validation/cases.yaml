@@ -16,7 +16,8 @@
 # twice        a boundary system: a fresh validation runs it twice (<name> and <name>.2).
 # superseded   evidence only: no new run is made; the text names what replaces it.
 #
-# Expectations: the VAL9/R2 records (docs/validation.md §3, /home/user/hfauto_r9/VAL9/R2), the
+# Expectations: the VAL9/R2 records (docs/validation.md §3, /home/user/hfauto_r9/VAL9/R2) with the
+# changes recorded in docs/validation.md §11 (W3: a barrierless step has no dG_eff), the
 # tolerance 0.01 kcal/mol of docs/validation.md §3. Not cases: s9_undeclared and s9_conformers
 # (transition-metal DFT is unvalidated; a species without a multiplicity is now refused when the
 # system file loads).
@@ -54,12 +55,12 @@ formaldehyde:
 h2o_hf_inversion:
   chain: [{pipeline: known_endpoints, system: h2o_hf_inversion}]
   reactions:
-    - {equation: FH + H2O -> FH + H2O, outcome: barrierless_at_resolution, dG_eff: 0.0}
+    - {equation: FH + H2O -> FH + H2O, outcome: barrierless_at_resolution, dG_eff: null}
 
 water_dimer_as:
   chain: [{pipeline: known_endpoints, system: water_dimer_as}]
   reactions:
-    - {equation: H2O + H2O -> H2O + H2O, outcome: barrierless_at_resolution, dG_eff: 0.0}
+    - {equation: H2O + H2O -> H2O + H2O, outcome: barrierless_at_resolution, dG_eff: null}
 
 nh3_planar_seed:
   chain: [{pipeline: known_endpoints, system: nh3_planar_seed}]
@@ -147,7 +148,8 @@ s17_hf_dimer_swap:
 s18_h3_doublet:
   chain: [{pipeline: known_endpoints, system: h3_doublet}]
   reactions:
-    - {equation: H + H2 -> H + H2, outcome: degenerate_rearrangement, dG_eff: 12.71,
+    # W3: zero at the declared separated H + H2 (BH76 rows 47/48), no longer the complex (12.71)
+    - {equation: H + H2 -> H + H2, outcome: degenerate_rearrangement, dG_eff: 15.55,
        bh76: h_h2.forward}
 
 oxalic_two_step:
@@ -176,13 +178,13 @@ h_c2h4:
   reactions:
     # BH76 row 33 has a forward barrier of 2.0 kcal/mol; the PBE0 crest (+0.60) is below the
     # resolution: listed as a deviation, not a pass.
-    - {equation: C2H4 + H -> C2H5, outcome: barrierless_at_resolution, dG_eff: 0.0,
+    - {equation: C2H4 + H -> C2H5, outcome: barrierless_at_resolution, dG_eff: null,
        bh76: h_c2h4.forward}
 
 bh3_nh3:
   chain: [{pipeline: known_endpoints, system: bh3_nh3}]
   reactions:
-    - {equation: BH3 + H3N -> BH6N, outcome: barrierless_at_resolution, dG_eff: 0.0}
+    - {equation: BH3 + H3N -> BH6N, outcome: barrierless_at_resolution, dG_eff: null}
 
 nitromethane:
   chain:
@@ -251,7 +253,7 @@ s5_ch3_o2:
   twice: true  # split2 (CH2OOH -> CH2O + OH) ends near the boundary
   chain: [{pipeline: discover, system: ch3_o2}]
   reactions:
-    - {equation: CH3 + O2 -> CH3O2, outcome: barrierless_at_resolution, dG_eff: 0.0}
+    - {equation: CH3 + O2 -> CH3O2, outcome: barrierless_at_resolution, dG_eff: null}
     - {equation: CH3O2 -> CH2O + HO, outcome: multi_step, dG_eff: null}
     - {equation: CH3O2 -> CH3O2, outcome: elementary_step, dG_eff: 46.85}  # split1
     # split2: the mass-weighted χ accepts its O-O cleavage saddle (W2; fresh W2/s5, M06-2X dE‡
@@ -262,10 +264,12 @@ s6_oh_ch4:
   twice: true  # the near-Cs TS is Cs or C1 by run: dG_eff moves by RT ln 2
   chain: [{pipeline: discover, system: oh_ch4}]
   reactions:
-    - {equation: CH4 + HO -> CH3 + H2O, outcome: elementary_step, dG_eff: [5.5, 6.0],
+    # W3: zero at the separated OH + CH4 (10.39 at a C1 TS, 9.98 at Cs; complex zero 5.53/5.95)
+    - {equation: CH4 + HO -> CH3 + H2O, outcome: elementary_step, dG_eff: [9.95, 10.45],
        bh76: oh_ch4.forward}
     - {equation: CH3 + H2O -> CH4O + H, outcome: multi_step, dG_eff: null}
-    # split1 repeats the abstraction backwards (same_as): the band above plus its dG_rxn 15.05
-    - {equation: CH3 + H2O -> CH4 + HO, outcome: elementary_step, dG_eff: [20.55, 21.05],
+    # split1 repeats the abstraction backwards (same_as) from the lowest CH3···H2O conformer: W3's
+    # declared CH3 + H2O composition sampled one 0.60 kcal/mol below VAL9's (21.60 C1, 21.19 Cs)
+    - {equation: CH3 + H2O -> CH4 + HO, outcome: elementary_step, dG_eff: [21.15, 21.65],
        bh76: oh_ch4.reverse}
     - {equation: CH4 + HO -> CH4O + H, outcome: elementary_step, dG_eff: 44.83}  # split2

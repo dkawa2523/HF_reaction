@@ -2,10 +2,10 @@
   "schema_version": "hfauto.manifest.v2",
   "run_id": "h_c2h4",
   "stage_id": "paths",
-  "created_at": "2026-10-02T01:00:30+00:00",
+  "created_at": "2026-10-04T20:31:56+00:00",
   "artifacts": [
     {
-      "artifact_id": "calc_3567ab20a744020c",
+      "artifact_id": "calc_9fb94e05a83b8a3d",
       "type": "calculation",
       "parents": [],
       "status": "success",
@@ -27,10 +27,10 @@
         },
         "start": {
           "file": {
-            "path": "jobs/35/3567ab20a744020ce815a8b04f3add5a4ea7643d67e673ccc1f517ffcee8fe9a/attempt_00/start.xyz",
-            "sha256": "b230d7b360c2e09ce5535d9cee12aca72b8a3af8f3d75871c0d8152f3fa7e95e"
+            "path": "jobs/9f/9fb94e05a83b8a3da29b974514060107b648de92b1c7d1936874f25bc378659b/attempt_00/start.xyz",
+            "sha256": "07c6583cc00cc7375df652380b4d0974279168cf12c507f24e4e1eaa0922f00a"
           },
-          "fingerprint": "621cadb6eb4ea61a354b3d18a84148a015ed5d9fb0a3c3b8b0406b4eb72d358b",
+          "fingerprint": "e7bbef4c1c411e66b0887b87a541bfb7710ab61b9b6f6dfd5587b41162b51cb9",
           "symbols": [
             "C",
             "C",
@@ -43,10 +43,10 @@
         },
         "final": {
           "file": {
-            "path": "jobs/35/3567ab20a744020ce815a8b04f3add5a4ea7643d67e673ccc1f517ffcee8fe9a/attempt_00/final-012.xyz",
-            "sha256": "62760219cd357a6b5171f252a1bbb1fea3b84b75aa7c729d21a55008686365fa"
+            "path": "jobs/9f/9fb94e05a83b8a3da29b974514060107b648de92b1c7d1936874f25bc378659b/attempt_00/final-012.xyz",
+            "sha256": "dddcf781ec0aa07f54e1fed2cf72fe5ed2e678fe28c07e5417eb041830b1217f"
           },
-          "fingerprint": "183678b9ec0f1b129add7f2dba385f8bc952cbfdcc7be430d17bafc77af71798",
+          "fingerprint": "9438e642a9691e5d15d10e96257641c0fc4cefcf2251620a29868c2c5d394a49",
           "symbols": [
             "C",
             "C",
@@ -67,7 +67,7 @@
           0.0,
           0.001214,
           -0.000015,
-          -0.0,
+          0.0,
           0.000011,
           1e-6,
           9e-6,
@@ -82,20 +82,20 @@
           5e-6,
           -3e-6,
           0.00006,
-          -0.0,
+          0.0,
           -0.001215
         ],
         "s2": 0.7519,
         "output": {
-          "path": "jobs/35/3567ab20a744020ce815a8b04f3add5a4ea7643d67e673ccc1f517ffcee8fe9a/attempt_00/stdout.txt",
-          "sha256": "ed3c73b99a07cd0ec2a84433e96c49e66a98cf78a8bfd8166c87ca74c6bc97ae"
+          "path": "jobs/9f/9fb94e05a83b8a3da29b974514060107b648de92b1c7d1936874f25bc378659b/attempt_00/stdout.txt",
+          "sha256": "6621c52379063b1404596f87694cd9b725ea1356b587ae318131792d30a49565"
         },
-        "job_key": "3567ab20a744020ce815a8b04f3add5a4ea7643d67e673ccc1f517ffcee8fe9a"
+        "job_key": "9fb94e05a83b8a3da29b974514060107b648de92b1c7d1936874f25bc378659b"
       },
       "failure": null
     },
     {
-      "artifact_id": "calc_a2907b807acb1cde",
+      "artifact_id": "calc_b3de2613db7b0923",
       "type": "calculation",
       "parents": [],
       "status": "success",
@@ -117,10 +117,10 @@
         },
         "start": {
           "file": {
-            "path": "jobs/a2/a2907b807acb1cde75987aa0770c3050bbd111a07a0e7c669faf544ddbdcb1f1/attempt_00/start.xyz",
-            "sha256": "b476ec0e72c8aabbff109188dd92832342e9f9c130e9f54685c7990c1d9fa86c"
+            "path": "jobs/b3/b3de2613db7b09236dc079e2301d125d67949e88ff1db21e1a3342c27d192b07/attempt_00/start.xyz",
+            "sha256": "d84b760a89155390210fb4a0c89f7d2209a1292751c1fc3d5334f4676434b232"
           },
-          "fingerprint": "28e20f62ecf4debcd0b02c60d4cab2ad4dcc1a88c1d4deb304423262eb9c8ede",
+          "fingerprint": "126748e55ea73118056930c67cdd3326cec4c02a4eac0e7e1a95fa981b1c310a",
           "symbols": [
             "C",
             "C",
@@ -133,10 +133,10 @@
         },
         "final": {
           "file": {
-            "path": "jobs/a2/a2907b807acb1cde75987aa0770c3050bbd111a07a0e7c669faf544ddbdcb1f1/attempt_00/final-009.xyz",
-            "sha256": "39fa05084f5fb0a642011b65675198ed61a223bc1426979def55a780dfe89e41"
+            "path": "jobs/b3/b3de2613db7b09236dc079e2301d125d67949e88ff1db21e1a3342c27d192b07/attempt_00/final-009.xyz",
+            "sha256": "f695eb5a9818a44c46b9353f168a06ebed127ca9039b7d2693520acd1fa669e3"
           },
-          "fingerprint": "eeef05705922fab64c08e6b16edca68d30b731826432c862d7356133b825d00a",
+          "fingerprint": "ef56f295b062a11db2d56495e3497c27fe48befa3d7b6eea9b49bebee5d733b1",
           "symbols": [
             "C",
             "C",
@@ -147,7 +147,7 @@
             "H"
           ]
         },
-        "energy_hartree": -78.931004196053,
+        "energy_hartree": -78.931004196244,
         "frequencies_cm1": null,
         "n_external": null,
         "imaginary_modes": [],
@@ -172,20 +172,20 @@
           0.000018,
           7e-6,
           0.000066,
-          -0.0,
+          0.0,
           -0.001544
         ],
         "s2": 0.7553,
         "output": {
-          "path": "jobs/a2/a2907b807acb1cde75987aa0770c3050bbd111a07a0e7c669faf544ddbdcb1f1/attempt_00/stdout.txt",
-          "sha256": "fabff501bea3b392d8aadff0d36975cf99248da891a175bcdd525e0a6a283a1f"
+          "path": "jobs/b3/b3de2613db7b09236dc079e2301d125d67949e88ff1db21e1a3342c27d192b07/attempt_00/stdout.txt",
+          "sha256": "e3f90fd2ea921acbba9c5cacc853fa365c43dab100e5384d6a82666680c36728"
         },
-        "job_key": "a2907b807acb1cde75987aa0770c3050bbd111a07a0e7c669faf544ddbdcb1f1"
+        "job_key": "b3de2613db7b09236dc079e2301d125d67949e88ff1db21e1a3342c27d192b07"
       },
       "failure": null
     },
     {
-      "artifact_id": "calc_659a6d9f80463ab9",
+      "artifact_id": "calc_a600e5f5a9db519d",
       "type": "calculation",
       "parents": [],
       "status": "success",
@@ -207,10 +207,10 @@
         },
         "start": {
           "file": {
-            "path": "jobs/65/659a6d9f80463ab92e8c88bab884d6a3537052c069681333fdd525703de87b72/attempt_00/start.xyz",
-            "sha256": "4770eaddbdb0190453f02f042088a8506879a6d84d89f4742677ae7cb9471edf"
+            "path": "jobs/a6/a600e5f5a9db519d0d05cca7d7f770931abbfc4141152d15e79d8c648d6ac726/attempt_00/start.xyz",
+            "sha256": "f765977d2c44b9aa4ebd8634b4e15b124dea0a69d854f228c79fc5e88afb535c"
           },
-          "fingerprint": "2b9fc3d76c04369f80491fcf79a6b779796a9490d4476173bab1ff8eeeccf829",
+          "fingerprint": "eb83381da848c50d8028ebf6650aa3d3fb77f178576945b0f5237486de6bd214",
           "symbols": [
             "C",
             "C",
@@ -223,10 +223,10 @@
         },
         "final": {
           "file": {
-            "path": "jobs/65/659a6d9f80463ab92e8c88bab884d6a3537052c069681333fdd525703de87b72/attempt_00/final-007.xyz",
-            "sha256": "5ffeedcd4122e2fa56a8562792f11ebba5b3923a3996c0b4c591106b0fd194af"
+            "path": "jobs/a6/a600e5f5a9db519d0d05cca7d7f770931abbfc4141152d15e79d8c648d6ac726/attempt_00/final-007.xyz",
+            "sha256": "d9db75394f496b26393a0ffa355f564bb4e2b5814d89ab8f9736663ebeea257b"
           },
-          "fingerprint": "f39531fcfb6b197384efce81195b9a83e842a2fd714486ac684285fbb35d329e",
+          "fingerprint": "2d5cd006d371902c19f336970532df12142a6518c3bee128307d8e3d6d140dfa",
           "symbols": [
             "C",
             "C",
@@ -237,7 +237,7 @@
             "H"
           ]
         },
-        "energy_hartree": -78.930532473289,
+        "energy_hartree": -78.930532473231,
         "frequencies_cm1": null,
         "n_external": null,
         "imaginary_modes": [],
@@ -251,13 +251,13 @@
           -0.000051,
           4e-6,
           -5e-6,
-          3e-6,
+          2e-6,
           4e-6,
           5e-6,
-          2e-6,
+          3e-6,
           -5e-6,
           -2e-6,
-          0.000018,
+          0.000017,
           -5e-6,
           2e-6,
           0.000018,
@@ -267,15 +267,15 @@
         ],
         "s2": 0.7646,
         "output": {
-          "path": "jobs/65/659a6d9f80463ab92e8c88bab884d6a3537052c069681333fdd525703de87b72/attempt_00/stdout.txt",
-          "sha256": "ffe6531131514d88b6219ed6fecca594de6e33c54444b1a3a56ea6be8058fc40"
+          "path": "jobs/a6/a600e5f5a9db519d0d05cca7d7f770931abbfc4141152d15e79d8c648d6ac726/attempt_00/stdout.txt",
+          "sha256": "90e0f50159a2b7ad3f827241a91434736f59a16f6e6e0eaba8263c7a241cd36a"
         },
-        "job_key": "659a6d9f80463ab92e8c88bab884d6a3537052c069681333fdd525703de87b72"
+        "job_key": "a600e5f5a9db519d0d05cca7d7f770931abbfc4141152d15e79d8c648d6ac726"
       },
       "failure": null
     },
     {
-      "artifact_id": "calc_b9cbe59f56c6a1be",
+      "artifact_id": "calc_6734566d4618f182",
       "type": "calculation",
       "parents": [],
       "status": "success",
@@ -297,10 +297,10 @@
         },
         "start": {
           "file": {
-            "path": "jobs/b9/b9cbe59f56c6a1be60201bdbc2f449121ac8f12113945a4edb719b7a1d39e2cb/attempt_00/start.xyz",
-            "sha256": "23f9fff873b6a63fea90b40e19dbd34b29c66cf154ebbe905e86b0ad73455b77"
+            "path": "jobs/67/6734566d4618f182edddaecc17a0d51ee20eb5d0e9e992aa9a2a9c82fbcd3a09/attempt_00/start.xyz",
+            "sha256": "0e97d7cf2912cbcc9d099370aada51797c60aefb4469f495de742e2c92807ce7"
           },
-          "fingerprint": "f231ba4644b8737a052bad8bf54494959f151d15329e2ff457252a85a75c3cb5",
+          "fingerprint": "7189631b36f1e6b55699f837b3be92248500c518d7cc4e6b72f0952d98938e19",
           "symbols": [
             "C",
             "C",
@@ -313,10 +313,10 @@
         },
         "final": {
           "file": {
-            "path": "jobs/b9/b9cbe59f56c6a1be60201bdbc2f449121ac8f12113945a4edb719b7a1d39e2cb/attempt_00/final-006.xyz",
-            "sha256": "90a29d402edd82f19efcad71b92677d79877f757fab5fc0988fbbc39697181b2"
+            "path": "jobs/67/6734566d4618f182edddaecc17a0d51ee20eb5d0e9e992aa9a2a9c82fbcd3a09/attempt_00/final-006.xyz",
+            "sha256": "5a57eaf0fbe9e967f807d3d7b612dd82ca3a8eb95ba2b5b8a3bb43fdd203f022"
           },
-          "fingerprint": "539849ed8c36a12c431693b6a9bbb1d94904b54f5eee9ce259c32d23d04cb7bf",
+          "fingerprint": "fd6d843f01f207985cc62e0846fb654a9dd0a2d73731d872daf697b8d88513b8",
           "symbols": [
             "C",
             "C",
@@ -327,7 +327,7 @@
             "H"
           ]
         },
-        "energy_hartree": -78.931481185073,
+        "energy_hartree": -78.931481185105,
         "frequencies_cm1": null,
         "n_external": null,
         "imaginary_modes": [],
@@ -357,15 +357,15 @@
         ],
         "s2": 0.7854,
         "output": {
-          "path": "jobs/b9/b9cbe59f56c6a1be60201bdbc2f449121ac8f12113945a4edb719b7a1d39e2cb/attempt_00/stdout.txt",
-          "sha256": "ff894277dde9a5eceafcfcf509eeff733031622b38242b471e3cc450397f8448"
+          "path": "jobs/67/6734566d4618f182edddaecc17a0d51ee20eb5d0e9e992aa9a2a9c82fbcd3a09/attempt_00/stdout.txt",
+          "sha256": "6f4036f4243194c92e0e85bb65ce15c63ff5ed7708ff18e79a20fd9a84c14673"
         },
-        "job_key": "b9cbe59f56c6a1be60201bdbc2f449121ac8f12113945a4edb719b7a1d39e2cb"
+        "job_key": "6734566d4618f182edddaecc17a0d51ee20eb5d0e9e992aa9a2a9c82fbcd3a09"
       },
       "failure": null
     },
     {
-      "artifact_id": "calc_eec7738e989dca1e",
+      "artifact_id": "calc_d5e0579840f63103",
       "type": "calculation",
       "parents": [],
       "status": "success",
@@ -387,10 +387,10 @@
         },
         "start": {
           "file": {
-            "path": "jobs/ee/eec7738e989dca1e3d656648dd0ad4c6d86abf9e5fc6c49e1390a4d28e6655f1/attempt_00/start.xyz",
-            "sha256": "f2d4516357fbab406cb60c08211662c4a863f7997acb6498d17833cccf78505e"
+            "path": "jobs/d5/d5e0579840f6310311bcf3c43e4c685995319598d75bd4f836db0f9097e36460/attempt_00/start.xyz",
+            "sha256": "5ec94cff5ada4c7e0c0cb4cfe30a7fd7dbecc12e96d9b371d2ece1724f481fe3"
           },
-          "fingerprint": "ae1270d13d1d5beb4a9d5cabc2d48d86e47aa0bd82c80f2cd7f95138785abc64",
+          "fingerprint": "8dcb7cfb244c6d36b00231869aae7465aac2746f5ee9e0663236a5ad0e275268",
           "symbols": [
             "C",
             "C",
@@ -403,10 +403,10 @@
         },
         "final": {
           "file": {
-            "path": "jobs/ee/eec7738e989dca1e3d656648dd0ad4c6d86abf9e5fc6c49e1390a4d28e6655f1/attempt_00/final-007.xyz",
-            "sha256": "a1d22dd1c13e9074a6e7b1f784b6db257bf1b513697d846c392af670a41f9590"
+            "path": "jobs/d5/d5e0579840f6310311bcf3c43e4c685995319598d75bd4f836db0f9097e36460/attempt_00/final-007.xyz",
+            "sha256": "630048c0eb76b86cf8252bba821bc498915bd7ef476f5f99fab51792b8031a32"
           },
-          "fingerprint": "f37c37e38f04392e900822e4e378b503d54d4bfb53d5a7a3df682fb550a6f89a",
+          "fingerprint": "01e886c72e69d748d38ae9aefa823dc37b975cffe6901fafa4990c01d1ae7120",
           "symbols": [
             "C",
             "C",
@@ -417,7 +417,7 @@
             "H"
           ]
         },
-        "energy_hartree": -78.938226820971,
+        "energy_hartree": -78.938226820939,
         "frequencies_cm1": null,
         "n_external": null,
         "imaginary_modes": [],
@@ -427,12 +427,12 @@
           -0.0,
           -0.03065,
           -0.000039,
-          -0.0,
+          0.0,
           1e-6,
-          -8e-6,
+          -9e-6,
           0.0,
           6e-6,
-          -9e-6,
+          -8e-6,
           -0.0,
           6e-6,
           4e-6,
@@ -447,15 +447,15 @@
         ],
         "s2": 0.8027,
         "output": {
-          "path": "jobs/ee/eec7738e989dca1e3d656648dd0ad4c6d86abf9e5fc6c49e1390a4d28e6655f1/attempt_00/stdout.txt",
-          "sha256": "9b08062509c61954bffe811976edb46897e90f3d15a589ea9e9488852a7d58fe"
+          "path": "jobs/d5/d5e0579840f6310311bcf3c43e4c685995319598d75bd4f836db0f9097e36460/attempt_00/stdout.txt",
+          "sha256": "bcc6f0b5c4f0409503bad6cf9c94824bb0772d32d1b47bb7dc0b57ed87df50f4"
         },
-        "job_key": "eec7738e989dca1e3d656648dd0ad4c6d86abf9e5fc6c49e1390a4d28e6655f1"
+        "job_key": "d5e0579840f6310311bcf3c43e4c685995319598d75bd4f836db0f9097e36460"
       },
       "failure": null
     },
     {
-      "artifact_id": "calc_4a26eb0d4a864b1d",
+      "artifact_id": "calc_7f41e49f3165f43f",
       "type": "calculation",
       "parents": [],
       "status": "success",
@@ -477,10 +477,10 @@
         },
         "start": {
           "file": {
-            "path": "jobs/4a/4a26eb0d4a864b1d250c56ec63234257c060e108cc5450b06f877aa21df09bab/attempt_00/start.xyz",
-            "sha256": "d8b5860a350d9e77bfe6248901966e970bb8b606afa3b0a8c7003c33977db62d"
+            "path": "jobs/7f/7f41e49f3165f43f63548d2075064cea1675eef0bf36ba26509b8959e7d35ac4/attempt_00/start.xyz",
+            "sha256": "652c61a45ce4517c6655bc865cb3d648c6d0b158e7662588b6626e8fc1f9de17"
           },
-          "fingerprint": "c4c19efe3ff057b7e8e6b198d425eb0866b0c691e222dd39aa7764f30fc92188",
+          "fingerprint": "e68511ab60fe1eb4fcb25d4472a6e5218c38d2dc9747b50e5bf9f71718a4ba98",
           "symbols": [
             "C",
             "C",
@@ -493,10 +493,10 @@
         },
         "final": {
           "file": {
-            "path": "jobs/4a/4a26eb0d4a864b1d250c56ec63234257c060e108cc5450b06f877aa21df09bab/attempt_00/final-007.xyz",
-            "sha256": "d232f2265b0e8e2675ca5266f2215f119febcee814a20cf87b7d7349404d1486"
+            "path": "jobs/7f/7f41e49f3165f43f63548d2075064cea1675eef0bf36ba26509b8959e7d35ac4/attempt_00/final-007.xyz",
+            "sha256": "3f78fc11df748872539875d0785cf47a54632548448420ca5857e784cd7e4664"
           },
-          "fingerprint": "e03b25598b8b0682bdcde18cd883587e641a2a65c7f8f070122a4f5c189585e7",
+          "fingerprint": "3cfe37ddf5d481b8729cbb3c009b29564906e5dfa27c6677fd0ed35b752b7652",
           "symbols": [
             "C",
             "C",
@@ -507,18 +507,18 @@
             "H"
           ]
         },
-        "energy_hartree": -78.958009324736,
+        "energy_hartree": -78.958009325694,
         "frequencies_cm1": null,
         "n_external": null,
         "imaginary_modes": [],
         "hessian": null,
         "gradient": [
-          0.000043,
+          0.000042,
           -0.0,
           -0.064543,
           -0.000222,
-          -0.0,
-          0.000148,
+          0.0,
+          0.000147,
           -0.000086,
           0.000044,
           -0.000032,
@@ -531,21 +531,21 @@
           0.000033,
           3e-6,
           -0.000028,
-          0.000285,
+          0.000284,
           0.0,
           0.064515
         ],
         "s2": 0.7722,
         "output": {
-          "path": "jobs/4a/4a26eb0d4a864b1d250c56ec63234257c060e108cc5450b06f877aa21df09bab/attempt_00/stdout.txt",
-          "sha256": "c74bd966b40a6f47e98d565f8ac740ab9ac750648bf42f6dcdd63e24f3691fdb"
+          "path": "jobs/7f/7f41e49f3165f43f63548d2075064cea1675eef0bf36ba26509b8959e7d35ac4/attempt_00/stdout.txt",
+          "sha256": "bef7f06083bbe0ca30640ee571488c663fb12e5fb6c99cf1e4f1c4a67aac0dc6"
         },
-        "job_key": "4a26eb0d4a864b1d250c56ec63234257c060e108cc5450b06f877aa21df09bab"
+        "job_key": "7f41e49f3165f43f63548d2075064cea1675eef0bf36ba26509b8959e7d35ac4"
       },
       "failure": null
     },
     {
-      "artifact_id": "calc_c98ffcce63f2e968",
+      "artifact_id": "calc_c16b6d7f27a03060",
       "type": "calculation",
       "parents": [],
       "status": "success",
@@ -567,10 +567,10 @@
         },
         "start": {
           "file": {
-            "path": "jobs/c9/c98ffcce63f2e968a03d4a964b2a484135b330830db058e17b30ce00ea58c29c/attempt_00/start.xyz",
-            "sha256": "edbc718917ccbe683bbd6b64b95651414445dfdbd25717a2a5bcfe96a3e5515c"
+            "path": "jobs/c1/c16b6d7f27a030607441a15edf490303b38b914c4dfcd421eb2b838b4d49cc35/attempt_00/start.xyz",
+            "sha256": "c3d628d571109caade73d303fbdcf0ed9e5a06ce3be7fe457a49eda28a3e67b4"
           },
-          "fingerprint": "e41197b209a13abbad9dcd3229149cc9710821357cf8471606582919ecb37795",
+          "fingerprint": "4d879ad1839c96bf0601f9b2a432d434b9bc939c75f6d718008a4316bf8804df",
           "symbols": [
             "C",
             "C",
@@ -583,10 +583,10 @@
         },
         "final": {
           "file": {
-            "path": "jobs/c9/c98ffcce63f2e968a03d4a964b2a484135b330830db058e17b30ce00ea58c29c/attempt_00/final-004.xyz",
-            "sha256": "ae13f8b191396e13d33f0ff6997b3ca1263b0a3e46d8d38142677aff2e839fb5"
+            "path": "jobs/c1/c16b6d7f27a030607441a15edf490303b38b914c4dfcd421eb2b838b4d49cc35/attempt_00/final-004.xyz",
+            "sha256": "56242ad135abc39e2e8a989351dec3fa2fb266fdf8ee93e209ead432818b4106"
           },
-          "fingerprint": "5032d8acb8449751b92e55c7a1e88f757cfdaeb3315c3a697f95f22abd41d7a1",
+          "fingerprint": "bf0f2bc4ab507fb35adb6a464cead7d6144d0e29f3e9ef7845b8fdf2418e5d3f",
           "symbols": [
             "C",
             "C",
@@ -597,7 +597,7 @@
             "H"
           ]
         },
-        "energy_hartree": -78.985841701538,
+        "energy_hartree": -78.985841702342,
         "frequencies_cm1": null,
         "n_external": null,
         "imaginary_modes": [],
@@ -627,10 +627,146 @@
         ],
         "s2": 0.7571,
         "output": {
-          "path": "jobs/c9/c98ffcce63f2e968a03d4a964b2a484135b330830db058e17b30ce00ea58c29c/attempt_00/stdout.txt",
-          "sha256": "fb90d31f9d7ba6adaed87b0143b808caad76116232d4d139b88ba1a6682fb9c6"
+          "path": "jobs/c1/c16b6d7f27a030607441a15edf490303b38b914c4dfcd421eb2b838b4d49cc35/attempt_00/stdout.txt",
+          "sha256": "a87464009c8a320950ca75ba1a4379968c10f10d0f056e2edd471b98b512a4c2"
         },
-        "job_key": "c98ffcce63f2e968a03d4a964b2a484135b330830db058e17b30ce00ea58c29c"
+        "job_key": "c16b6d7f27a030607441a15edf490303b38b914c4dfcd421eb2b838b4d49cc35"
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "calc_80b5b2cd4364f43c",
+      "type": "calculation",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "calculation",
+        "engine": "nwchem",
+        "task": "sp",
+        "level": {
+          "program": "nwchem",
+          "version": "7.2.3",
+          "method": "pbe0",
+          "basis": "def2-svpd",
+          "dispersion": "d3bj",
+          "charge": 0,
+          "multiplicity": 2,
+          "grid": "fine",
+          "scf_tol": 1e-7,
+          "electronic_temperature_K": null
+        },
+        "start": {
+          "file": {
+            "path": "jobs/80/80b5b2cd4364f43c35d4bf267ccfa7c2b37734d052c6288d3cabd2c9a4f7b5a0/attempt_00/start.xyz",
+            "sha256": "906bc77924a97432ae1738d22e70f387b7c753b6a14b8560c1f3a47cc0ebff95"
+          },
+          "fingerprint": "8258501e6b9044ba7258d4bafb7c4771ecb5eb3b5edc63de051343f0915fcd21",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "final": {
+          "file": {
+            "path": "jobs/80/80b5b2cd4364f43c35d4bf267ccfa7c2b37734d052c6288d3cabd2c9a4f7b5a0/attempt_00/start.xyz",
+            "sha256": "906bc77924a97432ae1738d22e70f387b7c753b6a14b8560c1f3a47cc0ebff95"
+          },
+          "fingerprint": "8258501e6b9044ba7258d4bafb7c4771ecb5eb3b5edc63de051343f0915fcd21",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "energy_hartree": -78.930708941619,
+        "frequencies_cm1": null,
+        "n_external": null,
+        "imaginary_modes": [],
+        "hessian": null,
+        "gradient": null,
+        "s2": 0.7589,
+        "output": {
+          "path": "jobs/80/80b5b2cd4364f43c35d4bf267ccfa7c2b37734d052c6288d3cabd2c9a4f7b5a0/attempt_00/stdout.txt",
+          "sha256": "b9946bb9811c11a6a2055f63c7628b078abf7704b1f3012cc7fb65d3efeac67b"
+        },
+        "job_key": "80b5b2cd4364f43c35d4bf267ccfa7c2b37734d052c6288d3cabd2c9a4f7b5a0"
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "calc_0158ea9dece7ef7b",
+      "type": "calculation",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "calculation",
+        "engine": "nwchem",
+        "task": "sp",
+        "level": {
+          "program": "nwchem",
+          "version": "7.2.3",
+          "method": "pbe0",
+          "basis": "def2-svpd",
+          "dispersion": "d3bj",
+          "charge": 0,
+          "multiplicity": 2,
+          "grid": "fine",
+          "scf_tol": 1e-7,
+          "electronic_temperature_K": null
+        },
+        "start": {
+          "file": {
+            "path": "jobs/01/0158ea9dece7ef7b20135275028b343db2549f59b30f2149428902984cae5f5b/attempt_00/start.xyz",
+            "sha256": "07244a822d08fbb216bc4972e171456c54ca97391ae16f768611df67681de157"
+          },
+          "fingerprint": "01515c0ef10926e2ac5df67a5b242ed7de786f379f007958ceff883517dc6919",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "final": {
+          "file": {
+            "path": "jobs/01/0158ea9dece7ef7b20135275028b343db2549f59b30f2149428902984cae5f5b/attempt_00/start.xyz",
+            "sha256": "07244a822d08fbb216bc4972e171456c54ca97391ae16f768611df67681de157"
+          },
+          "fingerprint": "01515c0ef10926e2ac5df67a5b242ed7de786f379f007958ceff883517dc6919",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "energy_hartree": -78.930662478489,
+        "frequencies_cm1": null,
+        "n_external": null,
+        "imaginary_modes": [],
+        "hessian": null,
+        "gradient": null,
+        "s2": 0.7739,
+        "output": {
+          "path": "jobs/01/0158ea9dece7ef7b20135275028b343db2549f59b30f2149428902984cae5f5b/attempt_00/stdout.txt",
+          "sha256": "96a3bdd40aee966a0cedd334d6aba8b96b2093bca971718969c4f380dffb01fb"
+        },
+        "job_key": "0158ea9dece7ef7b20135275028b343db2549f59b30f2149428902984cae5f5b"
       },
       "failure": null
     },

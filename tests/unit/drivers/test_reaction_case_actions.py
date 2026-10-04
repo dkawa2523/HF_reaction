@@ -13,12 +13,13 @@ from hfauto.chemistry import xyz
 from hfauto.chemistry.geometry import declared_coordinate_gradient
 from hfauto.chemistry.identity import mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
+from hfauto.chemistry.profile import Profile
 from hfauto.core import records as R
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.method import MethodSpec
 from hfauto.drivers.minimum import Registry, relax_to_minimum
-from hfauto.drivers.reaction_case.actions import Profile
+from hfauto.drivers.reaction_case import paths
 from hfauto.drivers.reaction_case.driver import HANDLERS, CaseRuntime, open_case
 from hfauto.drivers.reaction_case.paths import SCREEN_IMAGES, STRING_BEADS
 from hfauto.drivers.reaction_case.state import (
@@ -175,8 +176,9 @@ def test_first_string_chunk_starts_from_an_idpp_without_rigid_jumps(tmp_path, sy
 
 def test_failed_shortcut_seeds_go_on_to_the_screen_path_once(tmp_path) -> None:
     """R4 / G8-P7: every low-level TS of the pair whose xTB freq confirms its mode gets one DFT
-    SP (in one batch, no NEB) and a three-point verdict; the single-step ones seed in order.
-    Once they have failed, SCREEN runs the xTB NEB and DFT SPs (not the shortcut again)."""
+    SP (in one batch, no NEB); those a resolution above both minima seed in order, with no
+    verdict (U5-P1). Once they have failed, SCREEN runs the xTB NEB and DFT SPs (not the
+    shortcut again)."""
     ctx, state = case_ctx(tmp_path, fakes.double_well(), saddle=FailingSaddle(tmp_path, None))
     pes, ctx.log, ctx.rules = ctx.rt.qm.pes, (logged := []).append, CaseRules()
     near = pes.points["ts"] + [[0, 0, 0], [0.02, 0, 0], [0, 0, 0]]
@@ -186,7 +188,8 @@ def test_failed_shortcut_seeds_go_on_to_the_screen_path_once(tmp_path) -> None:
     energies = ctx.rt.qm.calls.count("energy")
     state = act(ctx, state, Action.SCREEN)
     assert [s.geometry for s in state.seeds] == [ts, near] and not state.neb_done
-    assert {s.source for s in state.seeds} == {"discovery_ts"} and state.screen.verdict == "single"
+    assert {s.source for s in state.seeds} == {"discovery_ts"}
+    assert state.shortcut_done and state.screen is None
     assert ctx.rt.qm.calls.count("energy") == energies + 2 and ctx.rt.map == [2]
     assert {"note": "low_level_ts_rejected"} in logged
     for attempts in (1, 2):
@@ -271,7 +274,8 @@ def test_a_barrierless_profile_is_densified_beside_its_highest_node(tmp_path, bu
     k = 1 + int(np.argmax(inner))
     mids = [0.5 * (frames[i] + frames[i + 1]) for i in (k - 1, k)]
     ctx.rt = replace(ctx.rt, qm=Bumped(tmp_path, ctx.rt.qm.pes, mids[1], bump))
-    v = ctx.verdict(frames, inner, "string")
+    e = ctx.energies
+    v = paths.judged(ctx, Profile(frames, (e[0], *inner, e[1]), "string"), ctx.points)
     assert (v.verdict, v.source) == (verdict, "string") and ctx.rt.qm.calls == ["energy"] * 2
     assert v.reasons == (("midpoint_single_point",) if bump is None else ()) and ctx.rt.map[-1] == 2
     path = ctx.work.path
@@ -297,14 +301,23 @@ def test_screen_finds_the_intermediate_of_a_two_step_path(tmp_path) -> None:
     ((0, 2, 0.5, 3, 6, 12, 10), "intermediate", ["path_hei"]),  # the highest peak
 ])
 def test_a_well_that_is_an_endpoint_leaves_its_peak_once(tmp_path, kcal, verdict, seeds):
+    """U5-P1: the well (node 2) relaxes back into the reactant: the case goes on with the
+    profile from the well to the product, judged by profile.judge with the latest profile's
+    energy function (its new nodes beside node 5 asked by their node in the whole profile):
+    barrierless closes it, a single peak seeds the saddle search."""
     ctx, state = case_ctx(tmp_path, fakes.double_well(), saddle=FailingSaddle(tmp_path, None))
-    a, b = ctx.ends  # the well (node 2) relaxes back into the reactant
+    a, b = ctx.ends
     frames = [a + t * (b - a) for t in np.linspace(0.0, 1.0, len(kcal))]
-    ctx.work.path = Profile(frames, tuple(e * K for e in kcal), "string")
+    ctx.work.path, asked = Profile(frames, tuple(e * K for e in kcal), "string"), []
+    ctx.work.sample = lambda new: asked.extend(i for i, _ in new) or [(8.0 * K, None),
+                                                                      (9.5 * K, None)]
+    ctx.log = (logged := []).append
     state = record_profile(state, R.BarrierVerdict(verdict="intermediate", source="string"))
     state = act(ctx, state, Action.VALIDATE_INTERMEDIATE, "path_intermediate")
     assert state.intermediate == "same_as_endpoint" and state.screen.verdict == verdict
     assert [s.source for s in state.seeds] == seeds
+    assert asked == ([4, 5] if verdict == "barrierless" else [])
+    assert {"note": f"int0_1:end0:{'barrierless' if seeds == [] else 'single'}"} in logged
     if seeds:  # node 5, refined by the parabola a quarter step toward the product
         x = ctx.coords(state.seeds[0].geometry)
         assert np.allclose(x, frames[5] + 0.25 * (frames[6] - frames[5]), atol=1e-4)

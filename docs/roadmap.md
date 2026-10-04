@@ -8,10 +8,10 @@
 |---|---|---|
 | W1(1、must) | X7-1 予算は件数だけ、X7-2 の一部(外からの停止は incomplete・rc 1)、U3-P1 σ を対称操作から、X4-4 の must 部分(状態の G を閉じる)、U1-P1 多重度の宣言を必須に、X7-7 検証を repo に(cases.yaml、BH76 の参照、compare、replay) | 完了 |
 | W2(1、must) | U6-P1 χ の質量加重、U6-P2(1 つの結合変化の共有。付け替えは棄却)、U6-P6(押した探索の guess)、U6-P9、X3 SCF の来歴と救済の 3 段(P0a)、開殻 CCSD(T) は UHF 参照(P0d)。最後に再生の基準 B1 を作る | 完了(U5-P3a は W6、QRC の側の guess は W7 へ) |
-| W3(2、must) | X5-1 反応が読む点、X4-3 鎖と共通のゼロ(BH76 の分離のゼロ用に h3_doublet と oh_ch4 の単量体を宣言)、U5-P2 捕獲律速、U5-P1、U5-P7、U2-P2・U2-P4 | 未着手 |
+| W3(2、must) | X5-1 反応が読む点、X4-3 鎖と共通のゼロ(BH76 の分離のゼロ用に h3_doublet と oh_ch4 の単量体を宣言)、U5-P2 捕獲律速、U5-P1、U5-P7、U2-P2・U2-P4 | 完了(U5-P7 は測って不採用、U2-P4 は円錐と表の削除だけ、S5 split2 は新しい run で未達。変更 28〜37) |
 | W4(3、must) | U1-P3・U1-P2 正準のラベル、U4-P1 結合グラフの編集の列挙(電荷分離の規則は P0f)、U4-P2・U4-P4・U4-P7、U4-P3 DFT//xTB の窓、U3-P7 | 未着手 |
 | W5(4、should) | X1-2 停留性の認証、U3-P4、U6-P4、U5-P5、U5-P6、X2-2・X2-3 対称性の受理と電子準位、U7-P6、U1-P4、X7-2 の残り(rc 2、項目の閉じ込め)、X7-3、U9-P3、U9-P2(a)、エネルギー層の選び直し(BH76) | 未着手 |
-| W6(4、should) | X4-2 事実の登録簿(辺は自分のラベル付きの両端を持ち、貸された TS の χ をそれで測る: U5-P3a)、U5-P4、U8-P10・U8-P7・U8-P6、X5-3 層の経路の判定 | 未着手 |
+| W6(4、should) | X4-2 事実の登録簿(辺は自分のラベル付きの両端を持ち、貸された TS の χ をそれで測る: U5-P3a)、U5-P4(近道の TS を DFT SP の順に)、U8-P10・U8-P7・U8-P6、X5-3 層の経路の判定 | 未着手 |
 | W7(最後) | 鍵を変える基盤の変更を 1 回で移行(X7-6、U9-P10、X1-3、U0-P3、QRC の側の opt の `scf_guess`)、分割の仕組みの削除(X4-2 段階 2)、整理、VAL10 と BH76 の表 | 未着手 |
 
 ## 2. 計画の変更の記録
@@ -45,6 +45,17 @@
 25. (W2)χ の事前の期待(接続した TS ≥ 0.88、S5 split2 0.69〜0.72)に対し、実測は接続した TS 0.882〜1.000 のうち 2 行が 0.727(r7・W5 の S6 の多段の親 f9bc3a1cd8 を自分の 2 結合の変化で測ったもの)、S5 split2 は 0.635〜0.714。空白は (0.0653, 0.635) で、`REACTION_MODE_MIN` 0.3 はその中にあり変えない。期待値は動かさず、実測を記録した。
 26. (W2)層とパネルのスピンの定義は `gates.energy_spin_ok`(freq の spin_ok ∧ `same_spin_state`)1 つ。
 27. (W2)S5 の新しい run は split2(CH2OOH• → CH2O + OH)に elementary 0.13 で答えたので、cases.yaml の期待を unresolved から変えた(理由は χ。境界の系として VAL10 で 2 回確かめる)。R2 の経路の再生(B1)では unresolved のままで、`check.py B1` は s5 だけ FAIL になる。W6 の合格条件「split2 の対に答える」は、新しい run で保つことに読み替える。
+
+28. (W3)`thermo.monomer_states` を `declared_monomers`((Hill 式, 電荷) → 組成のリスト)にした。oh_ch4 が CH5O の組成を 2 つ宣言するため。会合と分離した点は、端の断片の状態ラベルが宣言した組成の単量体と一致するときだけ(`thermo.separated_states`)。
+29. (W3)barrierless は δG_eff を持たず、`RANKABLE_OUTCOMES` は connected の outcome だけ。会合でない barrierless(h2o_hf_inversion、water_dimer_as)も序数の外になる。cases.yaml のこれらの 5 行の dG_eff を 0.0 から null にした。
+30. (W3)`ReactionThermo.reference` と `RankRow.reference`、ranking.csv の `reference` 列を足した。分離した点がないか δG_eff がない行は空。
+31. (W3)手法パネルは電荷と多重度を除いた LOT で点を対応させ、自分の点(`thermo.participants`)を読む。TS は connected の outcome だけが持つので、B1 の S5 split2(unresolved)の dE_act のセルが空になる。
+32. (W3)補助の点(ΔG_assoc だけが読む R_sep と前駆錯体)の SP の失敗は artifact にしない(値が空になるだけ)。
+33. (W3)種の注記 `thermo_unavailable` を削除した(G = None と `energy_layer_missing` で足りる)。
+34. (W3)変更 1 は誤りだった。U2-P4 の接触 seed 1 つは U2-P1 を前提にし(レビュー §6)、接触の seed では S5・S6 の GFN2 の screen が失敗して両系の反応が消える。W3-3 は U2-P2 と円錐・元素の表の削除だけを入れ、`seeds_per_composition` と乱数を残した。U2-I1(錯体が screen の basin なしに explore・DFT に届く経路)ができたら再検討する。W4-2a・W4-2b の S5・S6 の出発点は、乱数の seed が screen で崩れた basin である。
+35. (W3)近道は種だけを出し、判定と ⟨S²⟩ の検査を持たない。DFT SP の順の並べ替えは W6-1(U5-P4)へ移した(今並べ替えると B1 の S6 の 2 つの TS の順と鍵が変わる)。種が待っている間は SCREEN を始めない(行 9)。
+36. (W3)U5-P7(pysisyphus の IDPP)は QM なしのプローブで測って採らなかった(平面の HONO で面内 177.8° の経路、作業ディレクトリへのログ)。
+37. (W3)cases.yaml の期待を理由とともに変えた([validation.md](validation.md) §11.3): h3_doublet 12.71 → 15.55 と S6 の引き抜き [5.5, 6.0] → [9.95, 10.45](ゼロが宣言した分離の単量体になった)、S6 split1 [20.55, 21.05] → [21.15, 21.65](宣言した CH3 + H2O の組成が G で 0.60 kcal/mol 低い錯体の配座を出した)、barrierless の 5 行は null(変更 29)。golden G36・G37・G39 を作り直した。S5 の split2 は W3 の新しい run で unresolved(QRC の側が鞍点に落ちた)だったが、期待は変えず未達として記録し、W5-1 と VAL10 で扱う。
 
 ## 3. 見送り
 

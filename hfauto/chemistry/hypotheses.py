@@ -20,8 +20,8 @@ state lost at screen) runs from the DFT basin of the seed's own job, while it ke
 state, to the DFT basin of its collapse basin; it offers no TS.
 
 A hypothesis that forms exactly one bond, between two fragments of its reactant, and breaks
-none, in a composition with monomer states (``thermo.monomer_states``) whose DFT minima lie on
-its level, is an association: its reactant side is the separated monomers
+none, whose reactant fragments are a declared composition's monomers
+(``thermo.separated_states``) with DFT minima on its level, is an association: its reactant side is the separated monomers
 (``ReactionRecord.monomers``), each the lowest DFT minimum of its state on the complex's level
 (charge and multiplicity aside), as a barrierless association has an asymptote, not a minimum,
 there. The complex stays ``minima[0]``: it identifies the hypothesis and gives the formed bond,
@@ -42,8 +42,8 @@ import numpy as np
 
 from hfauto.chemistry import identity, topology
 from hfauto.chemistry.gates import Policy, same_pes
-from hfauto.chemistry.thermo import Monomers, State
-from hfauto.chemistry.xyz import XYZ, composition_key, hill_formula
+from hfauto.chemistry.thermo import Monomers, State, separated_states
+from hfauto.chemistry.xyz import XYZ, composition_key
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Geometry, Level
 from hfauto.core.hashing import sha256_text
@@ -94,7 +94,7 @@ class _Pool:
     basin_of: dict[str, MinimumRecord]  # species id -> minimum holding it (DFT first)
     load: LoadXYZ
     window_kcal: float
-    monomers: Monomers  # thermo.monomer_states
+    monomers: Monomers  # thermo.declared_monomers
     levels: Mapping[str, Level]  # DFT minimum id -> the Level of its optimization
 
     def lowest(self, state: State, level: Level) -> MinimumRecord | None:
@@ -151,16 +151,15 @@ def _monomers(pool: _Pool, complex_: MinimumRecord, species: SpeciesRecord, x: n
     """The separated monomers of an association, each repeated by its count (module doc); ()
     for any other hypothesis. ``change``: (formed, broken) from the reactant ``x``."""
     (formed, broken), symbols = change, species.geometry.symbols
-    parts = pool.monomers.get((hill_formula(symbols), species.charge), [])
+    states = separated_states(XYZ(list(symbols), x), species.charge, pool.monomers)
     level = pool.levels.get(complex_.minimum_id)
-    if len(formed) != 1 or broken or not parts or level is None:
+    if len(formed) != 1 or broken or not states or level is None:
         return ()
     [(i, j)] = formed
     if any(i in f and j in f for f in topology.fragments(symbols, x)):
         return ()  # a ring closed within one fragment
-    found = [(pool.lowest(state, level), count) for state, count in parts]
-    monomers = tuple(m for m, count in found if m is not None for _ in range(count))
-    return monomers if all(m is not None for m, _ in found) else ()
+    found = [pool.lowest(state, level) for state in states]
+    return tuple(m for m in found if m is not None) if None not in found else ()
 
 
 def _separated(monomers: Sequence[MinimumRecord]) -> tuple[StoichTerm, ...]:
@@ -290,7 +289,7 @@ def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[S
     candidate of a case key (``pair_key``) no hypothesis has. Every hypothesis of a key then
     takes the TSs of all candidates of that key in priority order (``_lend``), also of one that
     is no hypothesis itself (an inversion's saddle). ``minima`` pairs every minimum (any tier)
-    with its optimized structure; ``monomers`` (thermo.monomer_states) and ``levels`` (DFT
+    with its optimized structure; ``monomers`` (thermo.declared_monomers) and ``levels`` (DFT
     minimum id -> its opt Level) find an association's separated monomers."""
     pool = _pool(minima, species, load_xyz, window_kcal, monomers, levels)
     records = [_declared(pool, r) for r in declared]

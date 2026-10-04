@@ -1,12 +1,14 @@
 """Report tables (design §8.2 report): ranking by dG_eff with ties, discovery coverage,
 method panel.
 
-Imports only hfauto.core, hfauto.chemistry.gates and the standard library. Everything is a
-pure function over typed records except ``write_tables``. No confidence score is produced
-(design §5.4): a reaction is either rankable by ``gates.rankable`` or listed with its blockers; the
-method panel's dE_act spread is shown as columns, never as a blocker. A spin-contaminated panel
-energy (``gates.energy_spin_ok``, the thermo stage's definition) stays in its row, noted, and
-out of the spread.
+Imports only hfauto.core, hfauto.chemistry and the standard library. Everything is a pure
+function over typed records except ``write_tables``. No confidence score is produced (design
+§5.4): a reaction is either rankable by ``gates.rankable`` or listed with its blockers (a
+barrierless outcome: capture-limited, by its dG_rxn); the method panel's dE_act spread is shown
+as columns, never as a blocker. The panel reads the reaction's own points (thermo.participants,
+the ones reaction_points gives dE from). A spin-contaminated panel energy
+(``gates.energy_spin_ok``, the thermo stage's definition) stays in its row, noted, and out of
+the spread.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from dataclasses import astuple, dataclass, fields
 from pathlib import Path
 
 from hfauto.chemistry.gates import Policy, energy_spin_ok, rankable, reaction_tier
+from hfauto.chemistry.thermo import Sides, participants, single_points
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Level
 from hfauto.core.manifest import Artifact
@@ -30,8 +33,9 @@ from hfauto.core.records import (
     ReactionThermo,
 )
 
-_FROM_THERMO = {"dG_eff_kcal", "dG_act_kcal", "dG_rxn_kcal", "dG_act_vs_separated_kcal",
-                "band_kcal", "energy_level", "notes"}  # RankRow fields from the ReactionThermo
+_FROM_THERMO = {"dG_eff_kcal", "reference", "dG_act_kcal", "dG_rxn_kcal",
+                "dG_act_vs_separated_kcal", "band_kcal", "energy_level",
+                "notes"}  # RankRow fields from the ReactionThermo
 
 
 @dataclass(frozen=True)
@@ -88,8 +92,8 @@ def _row(reaction: ReactionRecord, thermo: ReactionThermo | None, T: float | Non
 def rank_rows(reactions: Iterable[ReactionRecord], reaction_thermo: Iterable[ReactionThermo],
               T: float | None, state: str | None) -> list[RankRow]:
     """Rank the rankable reactions by dG_eff at (T, state), sharing a rank where sensitivity
-    bands overlap; the rest keep rank None. Reactions without an outcome are unprocessed
-    hypotheses and are not listed."""
+    bands overlap; the rest keep rank None (a barrierless step: capture-limited, with its
+    dG_rxn). Reactions without an outcome are unprocessed hypotheses and are not listed."""
     thermo = {t.reaction_id: t for t in reaction_thermo if (t.T_K, t.standard_state) == (T, state)}
     rows = [_row(r, thermo.get(r.reaction_id), T, state) for r in reactions
             if r.outcome is not None]
@@ -124,22 +128,20 @@ def _label(level: Level) -> str:
     return text if level.scf_tol is None else f"{text} scf={level.scf_tol:g}"
 
 
-def _deltas(
-    at: Mapping[str, Evidence], freq: Mapping[str, Evidence],
-    points: tuple[str, str, str | None], policy: Policy
-) -> tuple[float, float | None, tuple[str, ...]] | None:
-    """dE_rxn, dE_act (kcal/mol) and the names of those with a spin-contaminated energy: its
-    point's freq fails gates.energy_spin_ok."""
-    start, end, ts = points
-    if start not in at or end not in at:
+def _deltas(at: Mapping[str, Evidence], freq: Mapping[str, Evidence], sides: Sides,
+            policy: Policy) -> tuple[float, float | None, tuple[str, ...]] | None:
+    """dE_rxn, dE_act (kcal/mol) over the own points and the names of those with a
+    spin-contaminated energy: a point's freq fails gates.energy_spin_ok."""
+    reactant, product, ts = sides
+    if not all(i in at for i in (*reactant, *product)):
         return None
-    pairs = {"dE_rxn": (start, end)}
-    if ts is not None and ts in at:
-        pairs["dE_act"] = (start, ts)
-    values = {name: (at[b].energy_hartree - at[a].energy_hartree) * HARTREE_TO_KCAL_MOL
-              for name, (a, b) in pairs.items()}
-    contaminated = tuple(name for name, pair in pairs.items()
-                         if not all(energy_spin_ok(at[p], freq[p], policy) for p in pair))
+    pairs = {"dE_rxn": product, **({"dE_act": ts} if ts and all(t in at for t in ts) else {})}
+    start = sum(at[i].energy_hartree for i in reactant)
+    values = {name: (sum(at[i].energy_hartree for i in ids) - start) * HARTREE_TO_KCAL_MOL
+              for name, ids in pairs.items()}
+    contaminated = tuple(name for name, ids in pairs.items()
+                         if not all(energy_spin_ok(at[p], freq[p], policy)
+                                    for p in (*reactant, *ids)))
     return values["dE_rxn"], values.get("dE_act"), contaminated
 
 
@@ -161,13 +163,10 @@ def _panel_rows(
     ]
 
 
-def _subject_energies(calculations: Sequence[Artifact], freq: Mapping[str, Evidence]
-                      ) -> list[tuple[str, Evidence]]:
-    """(subject, Evidence) in view order: each subject's freq calculation (the reference
-    level), then every sp calculation for each subject with a freq its parents name."""
-    return list(freq.items()) + [
-        (s, ev) for a in calculations if isinstance(ev := a.payload, Evidence) and ev.task == "sp"
-        for s in a.parents if s in freq]
+def _lot(level: Level) -> str:
+    """A level of theory as a key, charge and multiplicity aside: separated monomers differ in
+    them from their complex by design (gates.same_pes(state=False))."""
+    return level.model_copy(update={"charge": 0, "multiplicity": 1}).full_key()
 
 
 def method_panel(
@@ -177,34 +176,38 @@ def method_panel(
     minima: Mapping[str, MinimumRecord],
     policy: Policy,
 ) -> list[PanelRow]:
-    """dE_rxn and dE_act of each reaction at every level with energies at its stationary
-    points, keyed by ``Level.full_key``.
+    """dE_rxn and dE_act of each reaction at every level with energies at its own points
+    (thermo.participants), keyed by the product's ``Level.full_key``.
 
-    A stationary point is a subject of the sp stage (a minimum_id, or SaddleClaim.freq_calc
-    for the TS): its reference energy comes from its freq calculation, the other levels from
-    the sp calculations whose parents name it (the later one in the view wins). A value with
-    a spin-contaminated energy (_deltas) is noted and left out of the min/max.
+    A point is a subject of the sp stage (a minimum_id, or SaddleClaim.freq_calc for the TS):
+    its reference energy comes from its freq calculation, the other levels from the sp
+    calculations whose parents name it (thermo.single_points: one per subject and level). A
+    value with a spin-contaminated energy (_deltas) is noted and left out of the min/max.
     """
     evidence = {a.artifact_id: a.payload for a in calculations if isinstance(a.payload, Evidence)}
     calcs = {m.minimum_id: m.freq_calc for m in minima.values()} | {
         r.saddle.freq_calc: r.saddle.freq_calc for r in reactions if r.saddle is not None}
     freq = {s: evidence[c] for s, c in calcs.items() if c in evidence}
-    energies: dict[str, dict[str, Evidence]] = defaultdict(dict)  # level key -> subject -> ev
-    for subject, ev in _subject_energies(calculations, freq):
-        energies[ev.level.full_key()][subject] = ev  # one key, one Level
+    energies: dict[str, dict[str, Evidence]] = defaultdict(dict)  # _lot -> subject -> ev
+    for (subject, _), (_, ev) in single_points(calculations).items():
+        if subject in freq:
+            energies[_lot(ev.level)][subject] = ev
+    for subject, ev in freq.items():  # the reference level, unless an sp is on it
+        energies[_lot(ev.level)].setdefault(subject, ev)
     rows: list[PanelRow] = []
     for reaction in reactions:
-        points = (*reaction.minima, reaction.saddle.freq_calc if reaction.saddle else None)
-        rows += _panel_rows(reaction.reaction_id, [
-            (key, next(iter(at.values())).level, *d) for key, at in sorted(energies.items())
-            if (d := _deltas(at, freq, points, policy)) is not None])
+        sides = participants(reaction)
+        product = sides[1][0]
+        found = [(at[product].level.full_key(), at[product].level, *d)
+                 for at in energies.values() if (d := _deltas(at, freq, sides, policy))]
+        rows += _panel_rows(reaction.reaction_id, sorted(found, key=lambda f: f[0]))
     return rows
 
 
 _RANK_HEADER = (
     "rank", "reaction_id", "outcome", "tier", "rankable", "T_K", "standard_state",
-    "energy_level", "dG_eff_kcal", "band_low_kcal", "band_high_kcal", "dG_act_kcal",
-    "dG_rxn_kcal", "dG_act_vs_separated_kcal", "torsional", "blockers", "notes",
+    "energy_level", "dG_eff_kcal", "reference", "band_low_kcal", "band_high_kcal",
+    "dG_act_kcal", "dG_rxn_kcal", "dG_act_vs_separated_kcal", "torsional", "blockers", "notes",
 )
 _PANEL_COLUMNS = ("dE_act_panel_min_kcal", "dE_act_panel_max_kcal")
 
@@ -212,8 +215,8 @@ _PANEL_COLUMNS = ("dE_act_panel_min_kcal", "dE_act_panel_max_kcal")
 def _rank_cells(row: RankRow) -> tuple[object, ...]:
     low, high = row.band_kcal or (None, None)
     return (row.rank, row.reaction_id, row.outcome.value, row.tier, row.rankable, row.T_K,
-            row.standard_state, row.energy_level, row.dG_eff_kcal, low, high, row.dG_act_kcal,
-            row.dG_rxn_kcal, row.dG_act_vs_separated_kcal, row.torsional,
+            row.standard_state, row.energy_level, row.dG_eff_kcal, row.reference, low, high,
+            row.dG_act_kcal, row.dG_rxn_kcal, row.dG_act_vs_separated_kcal, row.torsional,
             ";".join(row.blockers), ";".join(row.notes))
 
 

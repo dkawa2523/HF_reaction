@@ -1,8 +1,10 @@
 """SCREEN's relaxed scan of an association (design X4, G2-P4) on a fake constrained optimizer:
 the point order and count, each point from the previous optimum and its SCF, the profile from
-the separated monomers' energy sum, its verdicts and a failed point; the approximate spin
-projection of a low-spin-coupled pair's points (G2-P3). An open shell's profile SPs on its DFT
-minima's SCF branch and the branch-jump verdict on the r9 audit's real profiles (G2-P1)."""
+the separated monomers' energy sum, its verdicts (``profile.judge``: densified once when
+barrierless, unavailable on a branch jump) and a failed point; the approximate spin projection
+of a low-spin-coupled pair's points and new nodes (G2-P3). An open shell's profile SPs on its
+DFT minima's SCF branch, the branch-jump verdict on the r9 audit's real profiles (G2-P1), and
+the shortcut's three points, which only pick seeds (U5-P1)."""
 
 from pathlib import Path
 
@@ -12,6 +14,7 @@ import pytest
 from scipy.spatial.distance import pdist
 
 from hfauto.chemistry.gates import Policy
+from hfauto.chemistry.profile import Profile, branch_jump
 from hfauto.chemistry.xyz import XYZ, Molecule
 from hfauto.core import records as R
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
@@ -19,7 +22,6 @@ from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.method import MethodSpec
 from hfauto.drivers.minimum import Registry
 from hfauto.drivers.reaction_case import paths
-from hfauto.drivers.reaction_case.actions import branch_jump
 from hfauto.drivers.reaction_case.driver import HANDLERS, CaseRuntime, open_case
 from hfauto.drivers.reaction_case.paths import SCAN_POINTS, SCAN_REACH_A, projected
 from hfauto.drivers.reaction_case.state import Action, CaseRules, CaseState, Decision, decide
@@ -83,19 +85,26 @@ def bs_s2(r: float) -> float:  # a broken-symmetry pair's <S2>: 0.75 bonded, ~1.
 class ScanQM(fakes.FakeQM):
     """A constrained optimization at its fixed bond: H2 settles 0.01 A along z at every point
     (the free coordinates relax); ``fail`` scripts the point that fails. An open shell's points
-    are broken-symmetry (``bs_s2``); its SPs are the high-spin ones, repulsive, <S2> 3.76 but
-    ``dirty`` (that point's: 3.95)."""
+    are broken-symmetry (``bs_s2``; ``jump``: that point's 0.76, another SCF branch). An SP of
+    the case's multiplicity is the surface's, broken-symmetry like the points (``low``: its
+    guess and structure); one of higher multiplicity is the high-spin one (``high``),
+    repulsive, <S2> 3.76 but ``dirty`` (that SP's: 3.95)."""
 
-    def __init__(self, root, pes, fail=None, dirty=None):
+    def __init__(self, root, pes, multiplicity, fail=None, dirty=None, jump=None):
         super().__init__(root, pes)
-        self.points, self.results, self.fail, self.dirty, self.high = [], [], fail, dirty, []
+        self.points, self.results, self.high, self.low = [], [], [], []
+        self.multiplicity, self.fail, self.dirty, self.jump = multiplicity, fail, dirty, jump
 
     def energy(self, mol, method, *, scf_guess=None):
         x = np.array(mol.xyz.coords)
-        self.high.append((mol.multiplicity, x))
         r = float(np.linalg.norm(x[0] - x[1]))
+        ev = super().energy(mol, method, scf_guess=scf_guess)
+        if mol.multiplicity == self.multiplicity:
+            self.low.append((scf_guess, x))
+            return ev.model_copy(update={"s2": bs_s2(r) if mol.multiplicity > 1 else None})
+        self.high.append((mol.multiplicity, x))
         s2 = 3.95 if len(self.high) - 1 == self.dirty else 3.76
-        return super().energy(mol, method).model_copy(update={
+        return ev.model_copy(update={
             "energy_hartree": E_H + E_OH + 0.03 * np.exp(-2.0 * (r - R_P)), "s2": s2})
 
     def optimize(self, mol, method, *, init_hessian=None, fixed_bond=None, scf_guess=None):
@@ -106,7 +115,8 @@ class ScanQM(fakes.FakeQM):
         if len(self.points) - 1 == self.fail:
             return Failure(kind=FailureKind.GEOMETRY_MAXITER, reason="scripted", job_key=key)
         settled = mol.xyz.coords + [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.01]]
-        s2 = {"s2": bs_s2(fixed_bond[2])} if mol.multiplicity > 1 else {}
+        jumped = len(self.points) - 1 == self.jump
+        s2 = {"s2": 0.76 if jumped else bs_s2(fixed_bond[2])} if mol.multiplicity > 1 else {}
         self.results.append(self._evidence("opt", mol, method, key, self._start(mol, key),
                                            settled, **s2))
         return self.results[-1]
@@ -138,24 +148,32 @@ def context(root: Path, qm, minima, species, case, calcs=None):
 
 
 def association(root: Path, bump_kcal: float = 0.0, fail: int | None = None,
-                collapsed: bool = False, spins=(1, 1, 1), dirty: int | None = None):
+                collapsed: bool = False, spins=(1, 1, 1), dirty: int | None = None,
+                jump: int | None = None):
     """The case H0·OH (complex) -> H2O (adduct) with the separated H and OH as its monomers;
     ``collapsed``: the complex relaxed into the adduct's basin (minima[0] is the adduct's).
     ``spins``: the multiplicities of the pair, H and OH ((2, 2, 3) couples H and a triplet
-    partner to a doublet, as CH3 + O2)."""
+    partner to a doublet, as CH3 + O2); the pair's minima have opts of <S2> ``bs_s2``. ``jump``:
+    the scan point on another SCF branch."""
     pes = fakes.PES(SYMBOLS, lambda x: energy(x, bump_kcal), {})
-    found = {mid: minimum(root, mid, symbols, x, e, m) for mid, symbols, x, e, m in (
-        ("m_complex", SYMBOLS, APART, energy(APART, bump_kcal), spins[0]),
-        ("m_adduct", SYMBOLS, WATER, E_H + E_OH - D_E, spins[0]),
-        ("m_h", ("H",), [[0.0, 0, 0]], E_H, spins[1]),
-        ("m_oh", ("O", "H"), [[0.0, 0, 0], [0.97, 0, 0]], E_OH, spins[2]))}
+    found = {mid: minimum(root, mid, symbols, x, e, m, f"opt_{mid}")
+             for mid, symbols, x, e, m in (
+                 ("m_complex", SYMBOLS, APART, energy(APART, bump_kcal), spins[0]),
+                 ("m_adduct", SYMBOLS, WATER, E_H + E_OH - D_E, spins[0]),
+                 ("m_h", ("H",), [[0.0, 0, 0]], E_H, spins[1]),
+                 ("m_oh", ("O", "H"), [[0.0, 0, 0], [0.97, 0, 0]], E_OH, spins[2]))}
+    calcs = {f"opt_{mid}": fakes.FakeQM(root, pes).energy(Molecule(XYZ(list(SYMBOLS), x), 0,
+                                                                   spins[0]), DFT).model_copy(
+        update={"task": "opt", "s2": bs_s2(float(np.linalg.norm(x[1] - x[0])))
+                if spins[0] > 1 else None}) for mid, x in (("m_complex", APART),
+                                                           ("m_adduct", WATER))}
     minima = {mid: m for mid, (_, m) in found.items()}
     first = "m_adduct" if collapsed else "m_complex"
     case = R.ReactionRecord(reaction_id="assoc", reactants=(), products=(), source="declared",
                             minima=(first, "m_adduct"), endpoints=("m_complex", "m_adduct"),
                             monomers=("m_h", "m_oh"))
-    ctx, notes = context(root, ScanQM(root, pes, fail, dirty), minima,
-                       {mid: s for mid, (s, _) in found.items()}, case)
+    ctx, notes = context(root, ScanQM(root, pes, spins[0], fail, dirty, jump), minima,
+                         {mid: s for mid, (s, _) in found.items()}, case, calcs)
     return ctx, CaseState(minima=(minima[first][0], minima["m_adduct"][0])), notes
 
 
@@ -164,7 +182,9 @@ def test_the_scan_runs_from_the_separated_monomers_inwards_to_the_adduct(tmp_pat
     SCAN_POINTS - 1 constrained points, the first moved out of the adduct (H0 stays, the OH
     fragment translates rigidly), each next from the previous optimum and its SCF. The profile
     starts at the separated monomers' energy sum, not the complex's, and ends at the adduct; a
-    monotonic one is barrierless and completes the case."""
+    monotonic one is barrierless once one new node, the SP at the midpoint beside its highest
+    node (the longest point: none toward the monomers' sum standing on its frame), started from
+    that point's SCF, confirms it; it completes the case."""
     ctx, state, notes = association(tmp_path)
     assert ctx.energies == (E_H + E_OH, E_H + E_OH - D_E)
     assert decide(ctx.case, state, ctx.rules) == SCREEN
@@ -181,14 +201,17 @@ def test_the_scan_runs_from_the_separated_monomers_inwards_to_the_adduct(tmp_pat
     assert np.allclose(first[0], ctx.ends[1][0])
     assert [x[2, 2] for x in starts] == pytest.approx([0.01 * k for k in range(7)])
     assert [p[1] for p in points] == [None, *results[:-1]]  # the previous point's SCF
-    path = ctx.work.path
-    assert len(path.frames) == len(path.energies) == SCAN_POINTS + 1
-    assert path.energies == (E_H + E_OH, *(ev.energy_hartree for ev in results),
-                             E_H + E_OH - D_E)
+    path, [(guess, mid)] = ctx.work.path, ctx.rt.qm.low
+    assert len(path.frames) == len(path.energies) == SCAN_POINTS + 2
+    assert path.energies == (E_H + E_OH, results[0].energy_hartree, energy(mid, 0.0),
+                             *(ev.energy_hartree for ev in results[1:]), E_H + E_OH - D_E)
     assert np.allclose(path.frames[0], path.frames[1])  # the longest point stands for the monomers
+    assert np.allclose(path.frames[2], 0.5 * (path.frames[1] + path.frames[3]))
+    assert guess is results[0] and pdist(mid) == pytest.approx(pdist(path.frames[2]))
     assert state.screen == R.BarrierVerdict(verdict="barrierless", source="scan")
     assert state.neb_done and not state.seeds and state.path_runs == 0
     assert f"scan:0-1:{R_P:.3f}+1.5A:8_points" in notes and "scan:barrierless:" in notes
+    assert notes.count("scan_midpoints:barrierless") == 1
     assert decide(ctx.case, state, ctx.rules) == Decision(
         Action.COMPLETE, "scan:barrierless", R.CaseOutcome.BARRIERLESS)
 
@@ -242,22 +265,33 @@ def test_the_approximate_spin_projection() -> None:
     assert projected(e_bs, 0.75, e_hs, 3.75, 0.5) == e_bs
 
 
+def ap(x: np.ndarray) -> float:
+    """ScanQM's projected doublet at ``x``: its broken-symmetry SP with its quartet."""
+    r = float(np.linalg.norm(x[0] - x[1]))
+    return projected(energy(x, 0.0), bs_s2(r), E_H + E_OH + 0.03 * np.exp(-2.0 * (r - R_P)),
+                     3.76, 0.5)
+
+
 def test_a_low_spin_coupled_scan_is_spin_projected_point_by_point(tmp_path) -> None:
     """G2-P3: H + a triplet partner as a doublet: a quartet SP at each point's structure, AP
     energies on the scan points only (the monomers' sum and the adduct keep theirs), the verdict
-    on them; a point whose quartet is itself contaminated keeps its BS energy, noted."""
+    on them; a point whose quartet is itself contaminated keeps its BS energy, noted. The new
+    node of the barrierless profile has the same energy function: its broken-symmetry SP from
+    the point before it and its quartet."""
     ctx, state, notes = association(tmp_path, spins=(2, 2, 3), dirty=2)
     state = HANDLERS[Action.SCREEN](ctx, state, SCREEN)
-    qm = ctx.rt.qm
-    assert [m for m, _ in qm.high] == [4] * 7 and "scan:ap:4" in notes
+    qm, path = ctx.rt.qm, ctx.work.path
+    assert [m for m, _ in qm.high] == [4] * 8 and "scan:ap:4" in notes
     assert all(np.allclose(x, ctx.coords(bs.final)) for (_, x), bs in zip(qm.high, qm.results))
-    sps = [ev for ev in ctx.work.calcs.values() if ev.task == "sp"]
-    assert len(sps) == 7 and "scan2:ap_skipped:s2=3.95" in notes
+    sps = [ev for ev in ctx.work.calcs.values() if ev.task == "sp"]  # the new node's 2 last
+    assert len(sps) == 7 + 2 and "scan2:ap_skipped:s2=3.95" in notes
     expected = [projected(bs.energy_hartree, bs.s2, hs.energy_hartree, hs.s2, 0.5)
-                for bs, hs in zip(qm.results, sps, strict=True)]
+                for bs, hs in zip(qm.results, sps[:7], strict=True)]
     expected[2] = qm.results[2].energy_hartree
-    path = ctx.work.path
-    assert path.energies == pytest.approx((E_H + E_OH, *expected, E_H + E_OH - D_E))
+    [(guess, mid)] = qm.low
+    assert guess is qm.results[0] and "scan_mid:ap:4" in notes
+    assert path.energies == pytest.approx((E_H + E_OH, expected[0], ap(mid), *expected[1:],
+                                           E_H + E_OH - D_E))
     assert all(e < bs.energy_hartree for e, bs in zip(path.energies[1:3], qm.results))
     assert state.screen == R.BarrierVerdict(verdict="barrierless", source="scan")
 
@@ -266,10 +300,21 @@ def test_a_low_spin_coupled_scan_is_spin_projected_point_by_point(tmp_path) -> N
 def test_no_projection_without_a_low_spin_coupling(tmp_path, spins) -> None:
     """The quartet declared for H + a triplet is the high-spin coupling, a doublet of H and a
     closed shell has one open-shell monomer, a closed-shell pair none: no SP, BS energies."""
-    ctx, state, notes = association(tmp_path, spins=spins)
+    ctx, state, notes = association(tmp_path, bump_kcal=4.0, spins=spins)  # no new node
     HANDLERS[Action.SCREEN](ctx, state, SCREEN)
     assert not ctx.rt.qm.high and not any(n and n.startswith("scan:ap") for n in notes)
     assert ctx.work.path.energies[1:-1] == tuple(ev.energy_hartree for ev in ctx.rt.qm.results)
+
+
+@pytest.mark.parametrize("jump,verdict", [(2, "unavailable"), (None, "single")])
+def test_a_scan_hill_off_its_scf_branch_has_no_class(tmp_path, jump, verdict) -> None:
+    """U5-P1: the scan's profile is judged like any other: its only hill (the bump at the third
+    point) with that point's <S2> on another branch (0.76 between 1.68 and 1.43) is
+    unavailable, so it seeds nothing; on its branch it is a single step."""
+    ctx, state, _ = association(tmp_path, bump_kcal=4.0, spins=(2, 2, 1), jump=jump)
+    state = HANDLERS[Action.SCREEN](ctx, state, SCREEN)
+    assert state.screen.verdict == verdict and bool(state.seeds) is (jump is None)
+    assert state.screen.reasons == (("scf_branch_jump",) if jump is not None else ())
 
 
 @pytest.mark.parametrize("profile", [VAL7_S5_SCREEN, ATOMIC, MIXED])
@@ -358,7 +403,8 @@ def test_only_an_open_shell_starts_its_sps_from_the_nearer_minimum(tmp_path) -> 
     rms = [float(np.sqrt(np.mean((near_b - end) ** 2))) for end in (ctx.raw[1], ctx.ends[1])]
     assert rms[0] < 0.2 and rms[1] > 0.5
     ctx.rt.qm.sps.clear()
-    ctx.verdict(frames, [0.0] * 4, "screen", [0.754] * 4)  # flat: barrierless, densified
+    flat = Profile(frames, (0.0,) * 6, "screen", (0.754,) * 6)  # barrierless, densified
+    paths.judged(ctx, flat, ctx.points)
     assert len(ctx.rt.qm.sps) == 2 and all(g is not None for g, _ in ctx.rt.qm.sps)
 
 
@@ -388,7 +434,8 @@ def test_a_branch_jump_leaves_the_profile_without_a_class(tmp_path, profile, ver
     broken-symmetry); a radical TS's smooth <S2> peak is no jump."""
     ctx, _, _ = radical(tmp_path, **ends(profile))
     energies, s2 = profile
-    v = ctx.verdict(path(ctx, 11), [e * K for e in energies[1:-1]], "screen", s2[1:-1])
+    v = paths.judged(ctx, Profile(path(ctx, 11), tuple(e * K for e in energies), "screen", s2),
+                     ctx.points)
     assert v.verdict == verdict and len(ctx.work.path.energies) == 11
     assert v.reasons == (("scf_branch_jump",) if verdict == "unavailable" else ())
 
@@ -398,27 +445,29 @@ def test_the_densified_profile_is_judged_with_its_midpoints_s2(tmp_path) -> None
     node (as the atomic guess's 0.7591 beside 1.7115) leaves the densified profile unavailable."""
     ctx, _, notes = radical(tmp_path, s2_ends=(1.7115, 1.65), e_ends=(0.0, -4.0 * K),
                             script=[(-0.2 * K, 0.7591), (-1.5 * K, 1.66)])
-    v = ctx.verdict(path(ctx), [e * K for e in (-1.0, -2.0, -3.0)], "screen",
-                    (1.6785, 1.6261, 1.5439))
+    profile = Profile(path(ctx), tuple(e * K for e in (0.0, -1.0, -2.0, -3.0, -4.0)), "screen",
+                      (1.7115, 1.6785, 1.6261, 1.5439, 1.65))
+    v = paths.judged(ctx, profile, ctx.points)
     assert len(ctx.work.path.energies) == 7 and "screen_midpoints:unavailable" in notes
     assert v.reasons == ("scf_branch_jump",)
 
 
 @pytest.mark.parametrize("profile,seeded", [
     (S5_SHORTCUT, True), (S6_SHORTCUT, True),
-    (((0.0, 26.23, 0.40), (1.7114, 0.7604, 1.7637)), False)])  # VAL7 S5's maximum as a TS SP
-def test_the_shortcut_judges_its_three_points_with_s2(tmp_path, monkeypatch, profile, seeded):
-    """The shortcut's [minimum, TS SP, minimum] carries the TS SP's <S2>: S5's and S6's
-    low-level TSs seed the saddle search; a TS SP off the minima's branch seeds nothing."""
+    (((0.0, 26.23, 0.40), (1.7114, 0.7604, 1.7637)), True),  # VAL7 S5's maximum as a TS SP
+    (((0.0, 1.2, 0.40), (0.754, 0.754, 0.754)), False)])  # 0.8 above the higher minimum
+def test_the_shortcut_points_only_pick_seeds(tmp_path, monkeypatch, profile, seeded):
+    """U5-P1: the shortcut's [minimum, TS SP, minimum] is no profile: a low-level TS whose DFT
+    SP lies a resolution above both minima seeds the saddle search, its <S2> not judged
+    (S5's, S6's and VAL7 S5's maximum off the minima's branch); SCREEN keeps no verdict."""
     (e, s2) = profile
-    ctx, _, notes = radical(tmp_path, **ends(profile), script=[(e[1] * K, s2[1])])
+    ctx, _, _ = radical(tmp_path, **ends(profile), script=[(e[1] * K, s2[1])] * 2)
     monkeypatch.setattr(paths, "_xtb_ts_mode", lambda ctx, x: (1.0,) * 15)
     ts = ctx.geometry("ts", 0.5 * (ctx.ends[0] + ctx.ends[1]))
     ctx.case = ctx.case.model_copy(update={"low_level_ts": (ts,)})
-    out = paths._shortcut(ctx)
+    seeds = paths._shortcut(ctx)
     assert len(ctx.rt.qm.sps) == 1
+    assert [seed.source for seed in seeds] == ["discovery_ts"] * seeded
     if seeded:
-        assert out is not None and out[0].verdict == "single"
-        assert [seed.source for seed in out[1]] == ["discovery_ts"]
-    else:
-        assert out is None and "shortcut:scf_branch_jump" in notes
+        state = paths.screen(ctx, CaseState(), SCREEN)  # its SP again (the second script)
+        assert (state.screen, state.seeds, state.shortcut_done) == (None, seeds, True)

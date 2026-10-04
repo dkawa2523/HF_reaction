@@ -1,7 +1,8 @@
-"""Reaction-case path actions (design §7.3): SCREEN's low-level barrier pre-check, or an
-association's relaxed scan, and FIND_PATH's DFT string chunk. Each classifies a DFT profile
-between the DFT minima (an association: from its separated monomers, spin-projected for a
-low-spin-coupled pair) and may seed the saddle search at its peak."""
+"""Reaction-case path actions (design §7.3): SCREEN's shortcut from the low-level TSs, its
+low-level barrier pre-check or an association's relaxed scan, and FIND_PATH's DFT string chunk.
+Each DFT profile between the ends (an association: from its separated monomers, spin-projected
+for a low-spin-coupled pair) is judged by ``profile.judge`` and may seed the saddle search at
+its peak."""
 
 from __future__ import annotations
 
@@ -12,12 +13,13 @@ import numpy as np
 
 from hfauto.chemistry import profile, topology
 from hfauto.chemistry.electronic_state import low_spin_coupled
-from hfauto.chemistry.gates import barrier_verdict, spin_ok
-from hfauto.chemistry.interpolation import align_sequential, idpp, resample
+from hfauto.chemistry.gates import spin_ok
+from hfauto.chemistry.interpolation import align_mapped, align_sequential, idpp, resample
+from hfauto.chemistry.profile import Profile
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
 from hfauto.core.records import BarrierVerdict
 from hfauto.drivers.reaction_case import state as case_state
-from hfauto.drivers.reaction_case.actions import Ctx, Profile, xtb_freq
+from hfauto.drivers.reaction_case.actions import Ctx, xtb_freq
 from hfauto.drivers.reaction_case.state import CaseState, Decision, Seed
 
 SCREEN_IMAGES = 11  # SCREEN's NEB images including both ends
@@ -29,15 +31,25 @@ SCAN_REACH_A = 1.5
 SCAN_POINTS = 8
 
 
-def peak_seeds(ctx: Ctx, name: str) -> tuple[Seed, ...]:
-    """The highest peak detected on the latest profile, refined by a parabola (none without):
-    a screen_hei seed on SCREEN's profile, else a path_hei one."""
-    path = ctx.work.path
+def peak_seeds(ctx: Ctx, name: str, path: Profile | None = None) -> tuple[Seed, ...]:
+    """The highest peak detected on ``path`` (default: the latest profile), refined by a
+    parabola (none without): a screen_hei seed on SCREEN's profile, else a path_hei one."""
+    path = path or ctx.work.path
     peaks = () if path is None else profile.interior_maxima(path.energies, ctx.resolution)
     if path is None or not peaks:
         return ()
     _, _, x = profile.hei(path.frames, path.energies, max(peaks, key=path.energies.__getitem__))
     return (Seed(ctx.geometry(name, x), "screen_hei" if path.source == "screen" else "path_hei"),)
+
+
+def judged(ctx: Ctx, path: Profile, sample: profile.Sample) -> BarrierVerdict:
+    """``profile.judge`` of ``path``; the profile it was judged on (with its new nodes, noted)
+    and its energy function become the latest ones."""
+    verdict, ctx.work.path = profile.judge(path, ctx.rules.gates, sample)
+    ctx.work.sample = sample
+    if len(ctx.work.path.energies) > len(path.energies):
+        ctx.note(f"{path.source}_midpoints:{verdict.verdict}")
+    return verdict
 
 
 def _unavailable(reason: str) -> BarrierVerdict:
@@ -52,12 +64,11 @@ def _xtb_ts_mode(ctx: Ctx, coords: np.ndarray) -> tuple[float, ...] | None:
     return tuple(freq.imaginary_modes[0])  # ordered by frequency
 
 
-def _shortcut(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]] | None:
+def _shortcut(ctx: Ctx) -> tuple[Seed, ...]:
     """Step 1: the low-level TSs already known for this pair of states (discovery /
-    mode-follow), in order. Each whose xTB freq confirms its mode gets a DFT SP and a
-    three-point verdict [minimum, TS SP, minimum] (Ctx.classify: an open shell's with its
-    ⟨S²⟩); the single-step ones seed the saddle search in that order, under the first one's
-    verdict. None without a single-step one."""
+    mode-follow), in order. Each whose xTB freq confirms its mode gets a DFT SP; those lying at
+    least a resolution above both DFT minima seed the saddle search in that order. The three
+    points only pick the seeds: they are no profile and give no verdict."""
     seeds = []
     for geometry in ctx.case.low_level_ts:
         if (mode := _xtb_ts_mode(ctx, ctx.coords(geometry))) is None:
@@ -65,14 +76,9 @@ def _shortcut(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]] | None:
         else:
             seeds.append(Seed(geometry, "discovery_ts", mode))
     found = ctx.sps([ctx.coords(s.geometry) for s in seeds]) if seeds else []
-    verdicts = [(ctx.classify((ctx.energies[0], ev.energy_hartree, ctx.energies[1]), (ev.s2,),
-                              "screen"), seed)
-                for seed, ev in zip(seeds, found, strict=True) if ev is not None]
-    for verdict, _ in verdicts:
-        if "scf_branch_jump" in verdict.reasons:
-            ctx.note("shortcut:scf_branch_jump")
-    singles = [(verdict, seed) for verdict, seed in verdicts if verdict.verdict == "single"]
-    return (singles[0][0], tuple(seed for _, seed in singles)) if singles else None
+    top = max(ctx.energies) + ctx.resolution
+    return tuple(seed for seed, ev in zip(seeds, found, strict=True)
+                 if ev is not None and ev.energy_hartree >= top)
 
 
 def _neb(ctx: Ctx, frames: list[np.ndarray]) -> tuple[list[np.ndarray], Geometry | None]:
@@ -98,8 +104,10 @@ def _screen_path(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]]:
     inner = [ev for ev in ctx.sps(frames[1:-1]) if ev is not None]
     if len(inner) < len(frames) - 2:
         return _unavailable("screen_single_point"), ()
-    verdict = ctx.verdict(frames, [ev.energy_hartree for ev in inner], "screen",
-                          [ev.s2 for ev in inner])
+    (first, last), e = ctx.end_s2(), ctx.energies
+    verdict = judged(ctx, Profile(frames, (e[0], *(ev.energy_hartree for ev in inner), e[1]),
+                                  "screen", (first, *(ev.s2 for ev in inner), last)),
+                     ctx.points)
     if verdict.verdict != "single":
         return verdict, ()
     mode = None if ts is None else _xtb_ts_mode(ctx, ctx.coords(ts))
@@ -125,7 +133,8 @@ def _scan(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]]:
     point's (a broken-symmetry pair stays on its continuous branch). The profile is
     [ΣE(monomers), scan..., E(adduct)] (the scan points' energies by ``_projected``); the
     longest point stands as the monomers' frame. A failed point leaves no profile: unavailable,
-    no point dropped."""
+    no point dropped. A new node is the SP at the linear midpoint of two neighbours (a point of
+    the continuous path), started from the SCF of the one before it, and projected alike."""
     rt, adduct = ctx.rt, ctx.ends[1]
     [(i, j)] = ctx.change()[0]  # the one formed bond
     fragment = next(f for f in topology.fragments(ctx.symbols, ctx.ends[0]) if j in f)
@@ -143,11 +152,23 @@ def _scan(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]]:
         points.append(ctx.keep(opt))
         x = ctx.coords(opt.final)
         frames.append(x)
-    energies = _projected(ctx, frames, points)
-    frames = align_sequential([*frames, adduct])
-    ctx.work.path = Profile([frames[0], *frames], (ctx.energies[0], *energies, ctx.energies[1]),
-                            "scan")
-    verdict = barrier_verdict(ctx.work.path.energies, source="scan", policy=ctx.rules.gates)
+
+    def sample(new: list[tuple[int, np.ndarray]]) -> list[profile.Point | None]:
+        # node i >= 1 is scan point i - 1; its SCF is read in its own frame
+        sps = rt.map(lambda n: rt.qm.energy(ctx.mol(align_mapped(frames[n[0] - 1], n[1])),
+                                            rt.method, scf_guess=points[n[0] - 1]), new)
+        if failed := [ev for ev in sps if isinstance(ev, Failure)]:
+            ctx.note(f"scan_mid:{failed[0].kind.value}")
+            return [None] * len(new)
+        mids = [ctx.keep(ev) for ev in sps]
+        return list(zip(_projected(ctx, [x for _, x in new], mids, "scan_mid"),
+                        (ev.s2 for ev in mids), strict=True))
+
+    (_, s2_adduct), e = ctx.end_s2(), ctx.energies
+    nodes = align_sequential([*frames, adduct])
+    path = Profile([nodes[0], *nodes], (e[0], *_projected(ctx, frames, points, "scan"), e[1]),
+                   "scan", (None, *(ev.s2 for ev in points), s2_adduct))
+    verdict = judged(ctx, path, sample)
     return verdict, peak_seeds(ctx, "scan_hei") if verdict.verdict == "single" else ()
 
 
@@ -159,45 +180,47 @@ def projected(e_bs: float, s2_bs: float, e_hs: float, s2_hs: float, spin: float)
     return e_bs + alpha * (e_bs - e_hs)
 
 
-def _projected(ctx: Ctx, frames: list[np.ndarray], points: list[Evidence]) -> list[float]:
-    """The scan points' energies: those of a low-spin-coupled pair (CH3· + O2 as a
-    doublet, electronic_state.low_spin_coupled), broken-symmetry where the monomers separate,
-    are spin-projected (``projected``) with an SP of the high-spin coupling Σ(m_i − 1) + 1 at
-    each point's structure. A point whose high-spin SP fails or is itself contaminated (spin_ok)
-    keeps its broken-symmetry energy, noted ap_skipped. The monomers' sum and the adduct keep
-    theirs; spin_ok and the gates of stationary points and thermochemistry are untouched."""
+def _projected(ctx: Ctx, frames: list[np.ndarray], points: list[Evidence], name: str
+               ) -> list[float]:
+    """The energies of scan structures ``frames`` from their ``points``: those of a
+    low-spin-coupled pair (CH3· + O2 as a doublet, electronic_state.low_spin_coupled),
+    broken-symmetry where the monomers separate, are spin-projected (``projected``) with an SP
+    of the high-spin coupling Σ(m_i − 1) + 1 at each structure. One whose high-spin SP fails or
+    is itself contaminated (spin_ok) keeps its broken-symmetry energy, noted
+    ``<name><k>:ap_skipped``. The monomers' sum and the adduct keep theirs; spin_ok and the
+    gates of stationary points and thermochemistry are untouched."""
     rt, energies = ctx.rt, [ev.energy_hartree for ev in points]
     spins = [rt.species[rt.registry.minima[m][0].species_id].multiplicity
              for m in ctx.case.monomers]
     if not low_spin_coupled(spins, ctx.multiplicity):
         return energies
     high, spin = sum(m - 1 for m in spins) + 1, (ctx.multiplicity - 1) / 2
-    ctx.note(f"scan:ap:{high}")
+    ctx.note(f"{name}:ap:{high}")
     sps = rt.map(lambda x: rt.qm.energy(replace(ctx.mol(x), multiplicity=high), rt.method),
                  frames)
     for k, (bs, hs) in enumerate(zip(points, sps, strict=True)):
         if isinstance(hs, Failure):
-            ctx.note(f"scan{k}:ap_skipped:{hs.kind.value}")
+            ctx.note(f"{name}{k}:ap_skipped:{hs.kind.value}")
             continue
         ctx.keep(hs)
         if hs.s2 is None or bs.s2 is None or not spin_ok(hs, ctx.rules.gates):
-            ctx.note(f"scan{k}:ap_skipped:s2={hs.s2}")
+            ctx.note(f"{name}{k}:ap_skipped:s2={hs.s2}")
         else:
             energies[k] = projected(bs.energy_hartree, bs.s2, hs.energy_hartree, hs.s2, spin)
     return energies
 
 
 def screen(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """Barrier pre-check (design §7.3): an association's scan; else first the shortcut from the
-    low-level TSs, the low-level path when none gives a single step or once their seeds have
+    """Barrier pre-check (design §7.3): an association's scan; else first, once, the shortcut's
+    seeds from the low-level TSs, and the low-level path when it gives none or once they have
     failed (a second SCREEN)."""
-    found = None if ctx.case.monomers or state.screen is not None else _shortcut(ctx)
-    if found is None:
-        run = _scan if ctx.case.monomers else _screen_path
-        found, state = run(ctx), replace(state, neb_done=True)
-    verdict, seeds = found
+    if not ctx.case.monomers and not state.shortcut_done:
+        state = replace(state, shortcut_done=True)
+        if seeds := _shortcut(ctx):
+            return replace(state, seeds=(*state.seeds, *seeds))
+    verdict, seeds = (_scan if ctx.case.monomers else _screen_path)(ctx)
     ctx.note(f"{verdict.source}:{verdict.verdict}:{','.join(verdict.reasons)}")
-    return case_state.record_profile(state, verdict, seeds)
+    return case_state.record_profile(replace(state, neb_done=True), verdict, seeds)
 
 
 def _initial_path(ctx: Ctx, beads: int, name: str) -> FileRef | None:
@@ -228,6 +251,8 @@ def find_path(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
         ctx.note(f"{run_name}:{run.kind.value}")
         return replace(state, path_runs=state.path_runs + 1)
     frames = align_sequential([ctx.ends[0], *ctx.frames(run.images)[1:-1], ctx.ends[1]])
-    verdict = ctx.verdict(frames, run.energies_hartree[1:-1], "string")
+    e = ctx.energies
+    verdict = judged(ctx, Profile(frames, (e[0], *run.energies_hartree[1:-1], e[1]), "string"),
+                     ctx.points)
     seeds = peak_seeds(ctx, f"{run_name}_hei") if verdict.verdict == "single" else ()
     return case_state.record_profile(state, verdict, seeds)

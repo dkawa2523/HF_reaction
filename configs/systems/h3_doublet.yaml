@@ -1,7 +1,13 @@
 # S18 (review §6.1): doublet H + H2 -> H2 + H between collinear vdW complexes (abstraction).
+# The monomers H and H2 are the separated zero of the reaction chain (BH76 rows 47/48: the
+# barrier from separated H + H2), not an expectation.
 system_id: h3_doublet
 species:
+  - {id: h, smiles: "[H]", multiplicity: 2}
+  - {id: h2, smiles: "[H][H]", multiplicity: 1}
   - {id: rc, xyz: xyz/h3_doublet/r.xyz, multiplicity: 2, role: endpoint}
   - {id: pc, xyz: xyz/h3_doublet/p.xyz, multiplicity: 2, role: endpoint}
+compositions:
+  - {id: h_h2, components: {h: 1, h2: 1}}
 reactions:
   - {id: h_exchange, reactant: rc, product: pc}

@@ -68,9 +68,9 @@ def test_report_stage_writes_tables_from_a_fake_view(fake_runtime, tmp_run):
         ("failure_kind", "scf_not_converged", "1")}
     assert list(read["ranking.csv"][0]) == [
         "rank", "reaction_id", "outcome", "tier", "rankable", "T_K", "standard_state",
-        "energy_level", "dG_eff_kcal", "band_low_kcal", "band_high_kcal", "dG_act_kcal",
-        "dG_rxn_kcal", "dG_act_vs_separated_kcal", "torsional", "blockers", "notes",
-        "dE_act_panel_min_kcal", "dE_act_panel_max_kcal"]
+        "energy_level", "dG_eff_kcal", "reference", "band_low_kcal", "band_high_kcal",
+        "dG_act_kcal", "dG_rxn_kcal", "dG_act_vs_separated_kcal", "torsional", "blockers",
+        "notes", "dE_act_panel_min_kcal", "dE_act_panel_max_kcal"]
     ranked = read["ranking.csv"][0]
     assert ranked["energy_level"] == "wb97x/def2-tzvpd"
     assert (ranked["dG_eff_kcal"], ranked["band_low_kcal"], ranked["dG_act_kcal"]) == (

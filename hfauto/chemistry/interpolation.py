@@ -2,7 +2,10 @@
 
 IDPP (Smidstrup et al., JCP 140, 214106 (2014)): every image is pulled toward the linearly
 interpolated interatomic distances, S = Σ_{i<j} d⁻⁴ (d_target − d)², with nudged-elastic-band
-projection so images stay spread along the path.
+projection so images stay spread along the path. pysisyphus' ``interpolate.IDPP`` was measured
+in its place and not adopted (W3-2): it starts on the straight line without a kick, so planar
+cis/trans HONO inverts H-O-N in the plane (177.8°, the dihedral jumping 0 → 180°), and it
+writes its optimizer logs into the working directory.
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
   "schema_version": "hfauto.manifest.v2",
   "run_id": "h_c2h4",
   "stage_id": "dft",
-  "created_at": "2026-10-02T00:57:04+00:00",
+  "created_at": "2026-10-04T20:28:21+00:00",
   "artifacts": [
     {
       "artifact_id": "calc_26b3eadbcb59d9d5",
@@ -44,9 +44,9 @@
         "final": {
           "file": {
             "path": "jobs/26/26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a/attempt_00/final-007.xyz",
-            "sha256": "b19c37f5934f62fa5efc4d338a995c3db885f491a9c3696d39c3311e24b5e20a"
+            "sha256": "cb3ecb7966b9495e67687dbf5e9f5bf08c4769797ae025c8a7ccc8ef8bd25e47"
           },
-          "fingerprint": "0f1d8ec69983d6949f4411ef1522154afde9091507b50ff7345df27eb0bd7282",
+          "fingerprint": "6ac1464dea83552a51d174aaf4b67835af26356c928c7d0b201f315dc81684ac",
           "symbols": [
             "C",
             "C",
@@ -57,17 +57,17 @@
             "H"
           ]
         },
-        "energy_hartree": -79.002777961948,
+        "energy_hartree": -79.002777961894,
         "frequencies_cm1": null,
         "n_external": null,
         "imaginary_modes": [],
         "hessian": null,
         "gradient": [
           -0.00001,
-          0.0,
+          -0.0,
           3e-6,
           0.000047,
-          -0.0,
+          1e-6,
           -0.00001,
           -2e-6,
           0.000015,
@@ -82,20 +82,20 @@
           -7e-6,
           1e-6,
           -6e-6,
-          0.0,
+          -0.0,
           6e-6
         ],
         "s2": 0.7549,
         "output": {
           "path": "jobs/26/26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a/attempt_00/stdout.txt",
-          "sha256": "cfb13ebec7ab7b66da5eb40f0a1c8bcff73e7138fc7edad1033c89e0f39dad52"
+          "sha256": "be40c8c4c84b1125b3b2f25ff0087a86a84d28e965ae9dadfbbb1fb90dff6a4d"
         },
         "job_key": "26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a"
       },
       "failure": null
     },
     {
-      "artifact_id": "calc_4994510bc68e6e82",
+      "artifact_id": "calc_8556f01359186970",
       "type": "calculation",
       "parents": [],
       "status": "success",
@@ -117,10 +117,10 @@
         },
         "start": {
           "file": {
-            "path": "jobs/49/4994510bc68e6e822b6a2be5b2dd68569d9d8e38b72f5cb43af7ed8de210f73a/attempt_00/start.xyz",
-            "sha256": "97d0ebfc4e6cdece7d06ea422628b70c0e7c612362017ccae1871d413ae250f4"
+            "path": "jobs/85/8556f0135918697044fd64db798fdf038fcd7a52c7ccee8a44f937f4a8662683/attempt_00/start.xyz",
+            "sha256": "9dc2b9f96c59bbfdcc70e91c2af29eaadb01d02521c3f358eb2548ffc302304f"
           },
-          "fingerprint": "0f1d8ec69983d6949f4411ef1522154afde9091507b50ff7345df27eb0bd7282",
+          "fingerprint": "6ac1464dea83552a51d174aaf4b67835af26356c928c7d0b201f315dc81684ac",
           "symbols": [
             "C",
             "C",
@@ -133,10 +133,10 @@
         },
         "final": {
           "file": {
-            "path": "jobs/49/4994510bc68e6e822b6a2be5b2dd68569d9d8e38b72f5cb43af7ed8de210f73a/attempt_00/start.xyz",
-            "sha256": "97d0ebfc4e6cdece7d06ea422628b70c0e7c612362017ccae1871d413ae250f4"
+            "path": "jobs/85/8556f0135918697044fd64db798fdf038fcd7a52c7ccee8a44f937f4a8662683/attempt_00/start.xyz",
+            "sha256": "9dc2b9f96c59bbfdcc70e91c2af29eaadb01d02521c3f358eb2548ffc302304f"
           },
-          "fingerprint": "0f1d8ec69983d6949f4411ef1522154afde9091507b50ff7345df27eb0bd7282",
+          "fingerprint": "6ac1464dea83552a51d174aaf4b67835af26356c928c7d0b201f315dc81684ac",
           "symbols": [
             "C",
             "C",
@@ -147,37 +147,37 @@
             "H"
           ]
         },
-        "energy_hartree": -79.002778234562,
+        "energy_hartree": -79.00277823439,
         "frequencies_cm1": [
-          110.07065584511338,
-          480.54225291998347,
-          805.0791036138586,
-          961.825555273797,
-          1097.7130808231104,
-          1175.7782590456663,
-          1368.897355997424,
-          1438.3565409513008,
-          1448.9761311659508,
-          1462.3572830387095,
-          2987.9702676218512,
-          3082.4521812244584,
-          3135.633961808148,
-          3161.2290090509273,
-          3274.8702863990648
+          110.06683858829781,
+          480.540917782858,
+          805.0787796567686,
+          961.8251914610296,
+          1097.7135573670446,
+          1175.7780263963716,
+          1368.8972864529228,
+          1438.3563842822393,
+          1448.975992236345,
+          1462.3572448393631,
+          2987.9709850267523,
+          3082.4531686373607,
+          3135.63509828496,
+          3161.2296221679335,
+          3274.870860330953
         ],
         "n_external": 6,
         "imaginary_modes": [],
         "hessian": {
-          "path": "jobs/49/4994510bc68e6e822b6a2be5b2dd68569d9d8e38b72f5cb43af7ed8de210f73a/attempt_00/hessian.npy",
-          "sha256": "85de41b8911669dbca73768bfad8c48821a85b67d11a417f4a99a64058fffe7b"
+          "path": "jobs/85/8556f0135918697044fd64db798fdf038fcd7a52c7ccee8a44f937f4a8662683/attempt_00/hessian.npy",
+          "sha256": "66541b7cc06b41f6b2619ec2aee5f6318aeddf738226801c1bd2f60f72280ea2"
         },
         "gradient": null,
         "s2": 0.7549,
         "output": {
-          "path": "jobs/49/4994510bc68e6e822b6a2be5b2dd68569d9d8e38b72f5cb43af7ed8de210f73a/attempt_00/stdout.txt",
-          "sha256": "dddcc50813b872a0786d1ba91e7da38ab06834649473946db0088602a4fbf8b0"
+          "path": "jobs/85/8556f0135918697044fd64db798fdf038fcd7a52c7ccee8a44f937f4a8662683/attempt_00/stdout.txt",
+          "sha256": "db89df5dd87abcf02445e1002141de77983e549797a685c21653aeb8dbbca1c5"
         },
-        "job_key": "4994510bc68e6e822b6a2be5b2dd68569d9d8e38b72f5cb43af7ed8de210f73a"
+        "job_key": "8556f0135918697044fd64db798fdf038fcd7a52c7ccee8a44f937f4a8662683"
       },
       "failure": null
     },
@@ -232,7 +232,7 @@
             "H"
           ]
         },
-        "energy_hartree": -78.431190705157,
+        "energy_hartree": -78.431190705121,
         "frequencies_cm1": null,
         "n_external": null,
         "imaginary_modes": [],
@@ -260,7 +260,7 @@
         "s2": null,
         "output": {
           "path": "jobs/60/60b394348203e4b9d83710c7ecb9e179f49204ae20c164d088ebad00f80f291a/attempt_00/stdout.txt",
-          "sha256": "c36039453e2a6aaac1cced8446bc060ec4c6cb92e3c65b75772b5dc2e56180ec"
+          "sha256": "0f7219bbb9527ff612ea2b9621501a61258e4649ac6a65f824a64af4984fdf00"
         },
         "job_key": "60b394348203e4b9d83710c7ecb9e179f49204ae20c164d088ebad00f80f291a"
       },
@@ -317,32 +317,32 @@
             "H"
           ]
         },
-        "energy_hartree": -78.431191090701,
+        "energy_hartree": -78.431191091378,
         "frequencies_cm1": [
-          820.6813227312341,
-          969.8447244818792,
-          985.7150253791544,
-          1060.501353587988,
-          1216.2356066708278,
-          1362.4959515481517,
-          1437.508034123646,
-          1707.6854160085393,
-          3146.133124930062,
-          3162.2371504174193,
-          3235.9640960225834,
-          3261.4020942446473
+          820.6813220655848,
+          969.8447134482363,
+          985.7150036129971,
+          1060.501353272166,
+          1216.2356016634612,
+          1362.4959495623366,
+          1437.5080330135074,
+          1707.6854066001724,
+          3146.133122818892,
+          3162.2371429749437,
+          3235.9641009323477,
+          3261.402098612962
         ],
         "n_external": 6,
         "imaginary_modes": [],
         "hessian": {
           "path": "jobs/40/40effa2d44f1f1d2938eae63dffbf1f19b829cdd70fd21e94af8872587c62093/attempt_00/hessian.npy",
-          "sha256": "68060fcf74288561f060c6e01f96fcdf2f151969970beae977c2b5e000d9d5ae"
+          "sha256": "346ceffef0a2302eb3d74f880a2ae967d314702d2ae62ce940ac74cc73e1a98c"
         },
         "gradient": null,
         "s2": null,
         "output": {
           "path": "jobs/40/40effa2d44f1f1d2938eae63dffbf1f19b829cdd70fd21e94af8872587c62093/attempt_00/stdout.txt",
-          "sha256": "c4cb4fbdf5c6504de180b0293fc105e6920630519aebfef50d98f5a18ded4618"
+          "sha256": "594487d2da00592c028a3a880bdae30c2cfa8c6f20348b3ba9e0b47ad4227b77"
         },
         "job_key": "40effa2d44f1f1d2938eae63dffbf1f19b829cdd70fd21e94af8872587c62093"
       },
@@ -388,9 +388,9 @@
         "final": {
           "file": {
             "path": "jobs/22/2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd/attempt_00/final-013.xyz",
-            "sha256": "52657d2d58a71b2795c4fc8448047952fd0d7b92beeb847ebd84271d25c3cdcf"
+            "sha256": "5bd692ba8c5ce1456ba7d8f5af1c7f8b5160a59045d50bf1e49bc5a538c5e713"
           },
-          "fingerprint": "1e20f4f02db8d7fd37b79bd7ede9020d967bc874d6c3a7a231e0a45cf9825210",
+          "fingerprint": "bd04a1d5e2f63671a8f47ce29b154ef23911889747fa2787966296ee082a05c8",
           "symbols": [
             "C",
             "C",
@@ -401,17 +401,17 @@
             "H"
           ]
         },
-        "energy_hartree": -78.932180175346,
+        "energy_hartree": -78.932180175409,
         "frequencies_cm1": null,
         "n_external": null,
         "imaginary_modes": [],
         "hessian": null,
         "gradient": [
           -2e-6,
-          -0.0,
+          0.0,
           1e-6,
           -1e-6,
-          0.0,
+          -0.0,
           -0.0,
           1e-6,
           -2e-6,
@@ -432,14 +432,14 @@
         "s2": 0.7501,
         "output": {
           "path": "jobs/22/2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd/attempt_00/stdout.txt",
-          "sha256": "a037bd5de375466ab7063a2a3397053b374df6c8cc2d2206c8a85e7059b65837"
+          "sha256": "18fa6185e2d0bf21db3cc450b0c892e9c7f3abf46a13a41e11f54dc63b13052d"
         },
         "job_key": "2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd"
       },
       "failure": null
     },
     {
-      "artifact_id": "calc_60965dc350d38a90",
+      "artifact_id": "calc_3ee1bd2da160489e",
       "type": "calculation",
       "parents": [],
       "status": "success",
@@ -461,10 +461,10 @@
         },
         "start": {
           "file": {
-            "path": "jobs/60/60965dc350d38a9019eabae6a98686e7f1032c7c3cde305ec30df7c514c440d8/attempt_00/start.xyz",
-            "sha256": "47b24bf2ac6fde2d754e9073c9d3cb80d682c9eafa6bebc181c8575ea0c81d6d"
+            "path": "jobs/3e/3ee1bd2da160489e3f7d286e5ab33e39d877f1ca2eaed7fff71dd1b939b2fc82/attempt_00/start.xyz",
+            "sha256": "5c237efc6ac4a7e79d7dc5ace4d4db2d0a8505239c30adb424010907fdb5e6fe"
           },
-          "fingerprint": "1e20f4f02db8d7fd37b79bd7ede9020d967bc874d6c3a7a231e0a45cf9825210",
+          "fingerprint": "bd04a1d5e2f63671a8f47ce29b154ef23911889747fa2787966296ee082a05c8",
           "symbols": [
             "C",
             "C",
@@ -477,10 +477,10 @@
         },
         "final": {
           "file": {
-            "path": "jobs/60/60965dc350d38a9019eabae6a98686e7f1032c7c3cde305ec30df7c514c440d8/attempt_00/start.xyz",
-            "sha256": "47b24bf2ac6fde2d754e9073c9d3cb80d682c9eafa6bebc181c8575ea0c81d6d"
+            "path": "jobs/3e/3ee1bd2da160489e3f7d286e5ab33e39d877f1ca2eaed7fff71dd1b939b2fc82/attempt_00/start.xyz",
+            "sha256": "5c237efc6ac4a7e79d7dc5ace4d4db2d0a8505239c30adb424010907fdb5e6fe"
           },
-          "fingerprint": "1e20f4f02db8d7fd37b79bd7ede9020d967bc874d6c3a7a231e0a45cf9825210",
+          "fingerprint": "bd04a1d5e2f63671a8f47ce29b154ef23911889747fa2787966296ee082a05c8",
           "symbols": [
             "C",
             "C",
@@ -491,37 +491,37 @@
             "H"
           ]
         },
-        "energy_hartree": -78.932180258442,
+        "energy_hartree": -78.932180258363,
         "frequencies_cm1": [
-          35.32921320298349,
-          60.55025295208035,
-          111.37157723743772,
-          820.4421357964853,
-          970.0727834968899,
-          984.0400137530978,
-          1058.6881752107172,
-          1216.378305726248,
-          1362.06975146168,
-          1437.3251179656688,
-          1705.948464550162,
-          3146.2540249607664,
-          3162.303970392706,
-          3236.3405672949525,
-          3261.602186744458
+          35.32866247925923,
+          60.54963708779047,
+          111.37003582168374,
+          820.4421571418262,
+          970.0728273054491,
+          984.0400484757757,
+          1058.6881902985126,
+          1216.3783041303134,
+          1362.069750752446,
+          1437.3251266744169,
+          1705.9484404960615,
+          3146.2539470847755,
+          3162.3039194158214,
+          3236.3405021125036,
+          3261.602125358275
         ],
         "n_external": 6,
         "imaginary_modes": [],
         "hessian": {
-          "path": "jobs/60/60965dc350d38a9019eabae6a98686e7f1032c7c3cde305ec30df7c514c440d8/attempt_00/hessian.npy",
-          "sha256": "551b0f19414ec7144a3d18ea49aaf93ea8ced4bd457b734429cf4f7b6d372904"
+          "path": "jobs/3e/3ee1bd2da160489e3f7d286e5ab33e39d877f1ca2eaed7fff71dd1b939b2fc82/attempt_00/hessian.npy",
+          "sha256": "b2a69e4223306ac71819cc0c9dab03def13d45b7b263207d0864fa2bbfc13c4a"
         },
         "gradient": null,
         "s2": 0.7501,
         "output": {
-          "path": "jobs/60/60965dc350d38a9019eabae6a98686e7f1032c7c3cde305ec30df7c514c440d8/attempt_00/stdout.txt",
-          "sha256": "28cf55e21b5fb1c319b3ff27833ccb9edd120f44e018a8f6ba73d9a9bf6a4229"
+          "path": "jobs/3e/3ee1bd2da160489e3f7d286e5ab33e39d877f1ca2eaed7fff71dd1b939b2fc82/attempt_00/stdout.txt",
+          "sha256": "3252117d0d410be22f75f80904c6d8ad1cb7ad5b0571553c838ca1662017434e"
         },
-        "job_key": "60965dc350d38a9019eabae6a98686e7f1032c7c3cde305ec30df7c514c440d8"
+        "job_key": "3ee1bd2da160489e3f7d286e5ab33e39d877f1ca2eaed7fff71dd1b939b2fc82"
       },
       "failure": null
     },
@@ -579,7 +579,7 @@
         "s2": 0.75,
         "output": {
           "path": "jobs/02/02c67eb0d98b3416dce00d38d1227eb018278992f1e6ff4a3d4a40c248e68053/attempt_00/stdout.txt",
-          "sha256": "64cdb9111d95cd8192c408978371ec19cf42f9493599937cd86219ab910a818d"
+          "sha256": "53aadf3fc81289e54b16642e841e1638f5bd6177a5e570eb650647abd0d2b215"
         },
         "job_key": "02c67eb0d98b3416dce00d38d1227eb018278992f1e6ff4a3d4a40c248e68053"
       },
@@ -632,13 +632,13 @@
         "imaginary_modes": [],
         "hessian": {
           "path": "jobs/ac/ac17926a57df758cd26fd0fe51ed73e927ddf82cb1c62da5445f45e002827ece/attempt_00/hessian.npy",
-          "sha256": "5afad6ea697586feda5790e01ccacb02499ceece0be71554d96252bcfc7657a1"
+          "sha256": "0bb417065f788a40145fe1d1dca4a168d0f493c7b5040fea66c355a5ef79ac31"
         },
         "gradient": null,
         "s2": 0.75,
         "output": {
           "path": "jobs/ac/ac17926a57df758cd26fd0fe51ed73e927ddf82cb1c62da5445f45e002827ece/attempt_00/stdout.txt",
-          "sha256": "abfa2d00988d23b05520eac3259a9e1017768decd1c5667a6824aac66b3822f5"
+          "sha256": "a62e298103b1edcea740d964b6d4b33083994fb30f12a022fcf81c09c9e84f73"
         },
         "job_key": "ac17926a57df758cd26fd0fe51ed73e927ddf82cb1c62da5445f45e002827ece"
       },
@@ -658,8 +658,8 @@
         "tier": "dft",
         "level_key": "5a7804cb25cb0d66",
         "opt_calc": "calc_26b3eadbcb59d9d5",
-        "freq_calc": "calc_4994510bc68e6e82",
-        "energy_hartree": -79.002777961948,
+        "freq_calc": "calc_8556f01359186970",
+        "energy_hartree": -79.002777961894,
         "state_label": "C2H5_2e5536af",
         "members": [
           "adduct"
@@ -683,7 +683,7 @@
         "level_key": "ff60c3122547a3bb",
         "opt_calc": "calc_60b394348203e4b9",
         "freq_calc": "calc_40effa2d44f1f1d2",
-        "energy_hartree": -78.431190705157,
+        "energy_hartree": -78.431190705121,
         "state_label": "C2H4_9fad2bdd",
         "members": [
           "c2h4"
@@ -706,8 +706,8 @@
         "tier": "dft",
         "level_key": "5a7804cb25cb0d66",
         "opt_calc": "calc_2266f07f02931c2e",
-        "freq_calc": "calc_60965dc350d38a90",
-        "energy_hartree": -78.932180175346,
+        "freq_calc": "calc_3ee1bd2da160489e",
+        "energy_hartree": -78.932180175409,
         "state_label": "C2H4+H_68194baa",
         "members": [
           "complex"

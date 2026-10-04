@@ -6,9 +6,11 @@ import re
 import numpy as np
 import pytest
 
-from hfauto.chemistry.gates import barrier_verdict
+from hfauto.chemistry.gates import Policy
 from hfauto.chemistry.interpolation import idpp, min_interatomic_distance
+from hfauto.chemistry.profile import classify
 from hfauto.chemistry.xyz import read_xyz_trajectory
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 
 pytestmark = pytest.mark.golden
 
@@ -23,7 +25,8 @@ def g13_final_beads(golden) -> list[float]:
 def test_g13_string_is_barrierless_at_the_resolution(golden):
     """U5-P1 / U5-P4: the chunk is classified as it stands (its gmax rose 9.1e-4 -> 9.2e-3):
     the beads fall 0.93 kcal/mol with a 0.01 kcal/mol ripple, no hill and no well."""
-    assert barrier_verdict(g13_final_beads(golden), source="string").verdict == "barrierless"
+    resolution = Policy().resolution_kcal / HARTREE_TO_KCAL_MOL
+    assert classify(g13_final_beads(golden), resolution) == "barrierless"
 
 
 def test_g15_collided_path_versus_idpp(golden):

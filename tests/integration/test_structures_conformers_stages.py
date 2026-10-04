@@ -73,9 +73,13 @@ def test_structures_then_conformers(tmp_path, fake_runtime):
     out = ConformersStage().run(Manifest(run_id="r", stage_id="s", created_at="", artifacts=arts),
                                 ConformersConfig(engine="crest", method="gfn2", ewin_kcal=5.0), rt)
     got = sorted(a.payload.species_id for a in out if a.payload)  # tags: c/t/p = source
-    assert [k for k in got if not k.startswith("hf2_p")] == [  # +6.3 kcal/mol kept (c01); the
-        "hf_c00", "hono_c00", "hono_c01", "nh3_c00", "nh_c00", "nh_c01"]  # stop has no energy
-    assert len(got) > 6 and [a.artifact_id for a in out if a.failure] == ["conformers_hf2"]
+    # HONO: +6.3 kcal/mol kept (c01), the stop has no energy, and the input (c02) is output too:
+    # its state left with the stop
+    assert [k for k in got if not k.startswith("hf2_p")] == [
+        "hf_c00", "hono_c00", "hono_c01", "hono_c02", "nh3_c00", "nh_c00", "nh_c01"]
+    failed = {a.artifact_id: a.failure.reason for a in out if a.failure}
+    assert len(got) > 7 and failed.keys() == {"conformers_hf2", "conformers_hono"}
+    assert failed["conformers_hono"].startswith("input_state_lost:HNO2_")
     (first, on), (retry, again) = calls[:2]  # HONO retries once from the stop, same settings
     assert np.allclose(retry.xyz.coords, _proton_shift(first.xyz.coords)) and again == on
     assert (retry.charge, retry.multiplicity) == (first.charge, first.multiplicity) and not on.nci
@@ -102,6 +106,30 @@ def test_a_repeated_topology_stop_fails_and_the_stop_seeds_compositions(tmp_path
     assert len(calls) == 3 and calls[1][1] == calls[0][1] and calls[2][1].nci  # no second retry
     stop = _proton_shift(calls[0][0].xyz.coords)  # the lowest HONO seeds the composition
     assert np.allclose(calls[2][0].xyz.coords[:4], stop)
+
+
+def test_a_composition_whose_state_crest_lost_keeps_its_seeds(tmp_path, fake_runtime):
+    """rc 0, but no member carries the seeds' state label (the proton moved to N)."""
+    system = SystemConfig(system_id="t", species=_species(tmp_path, ("nh3", "hf")),
+                          compositions=[CompositionInput(id="nh", components={"nh3": 1, "hf": 1})])
+    arts = StructuresStage().run(Manifest(run_id="r", stage_id="s", created_at=""),
+                                 StructuresConfig(), fake_runtime(system, {}, stage_id="s"))
+
+    def search(mol, method, settings):  # atoms N H H H | H F
+        x = mol.xyz.coords.copy()
+        x[4] = x[0] + 1.03 * (x[5] - x[0]) / np.linalg.norm(x[5] - x[0])
+        moved = write_geometry(rt.run_dir, "f/nh4f.xyz", mol.xyz.symbols, x)
+        return ENSEMBLE(members=((moved, -10.0),))
+
+    rt = fake_runtime(system, {(Capability.CONFORMERS, "crest"): FakeConformers(search)},
+                      methods=GFN2, stage_id="c")
+    out = ConformersStage().run(Manifest(run_id="r", stage_id="s", created_at="", artifacts=arts),
+                                ConformersConfig(engine="crest", method="gfn2"), rt)
+    assert [(a.artifact_id, a.failure.kind) for a in out if a.failure] == [
+        ("conformers_nh", FailureKind.GATE_REJECTED)]
+    nh = sorted((a.payload.species_id, a.payload.source) for a in out
+                if a.payload and a.payload.species_id.startswith("nh_"))
+    assert [s for _, s in nh] == ["conformer"] + ["placement"] * 6  # CREST's member, the seeds
 
 
 def test_a_composition_takes_the_declared_or_the_only_coupled_multiplicity(tmp_path, fake_runtime):

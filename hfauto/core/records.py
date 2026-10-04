@@ -106,7 +106,7 @@ class CoordinateTerm(BaseModel):
 
 
 class BarrierVerdict(BaseModel):
-    """Class of the latest DFT profile (profile.classify), the DFT minima energies at its ends
+    """Class of the latest DFT profile (profile.judge), the DFT minima energies at its ends
     (an association's scan: the sum of the separated monomers' and the adduct's)."""
 
     model_config = _FROZEN
@@ -188,7 +188,7 @@ class SpeciesThermo(BaseModel):
     freq_calc: str
     energy_calc: str | None = None  # sp used for the composite energy
     T_K: float
-    G_hartree: float | None  # None means thermo_unavailable
+    G_hartree: float | None  # None: unavailable (notes say why, e.g. energy_layer_missing)
     H_hartree: float | None
     zpe_hartree: float | None
     settings_sha: str
@@ -205,11 +205,14 @@ class ReactionThermo(BaseModel):
     dE_rxn_kcal: float | None
     dG_act_kcal: float | None  # TST barrier seen from the reaction's own reactant minimum
     dG_rxn_kcal: float | None
-    dG_assoc_kcal: float | None = None
+    dG_assoc_kcal: float | None = None  # the precursor complex against its separated monomers
     dG_act_vs_separated_kcal: float | None = None
     band_kcal: tuple[float, float] | None = None  # dG_eff over the qs x cutoff variants
     blockers: tuple[str, ...] = ()
-    dG_eff_kcal: float | None = None  # the ranking quantity (chemistry.thermo.effective_barrier)
+    # the ranking quantity of a connected outcome (chemistry.thermo.chain_barrier); None for a
+    # barrierless one (capture-limited: no TST barrier)
+    dG_eff_kcal: float | None = None
+    reference: Literal["complex", "separated"] | None = None  # dG_eff's zero, with R_sep only
     energy_level: str | None = None  # method/basis of the energies, e.g. m06-2x-d3/def2-tzvpd
     notes: tuple[str, ...] = ()  # submerged_barrier
 
@@ -230,6 +233,7 @@ class RankRow(BaseModel):
     standard_state: str | None = None
     dG_rxn_kcal: float | None = None
     dG_eff_kcal: float | None = None
+    reference: Literal["complex", "separated"] | None = None
     dG_act_vs_separated_kcal: float | None = None
     torsional: bool = False
     energy_level: str | None = None

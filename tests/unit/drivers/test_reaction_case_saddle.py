@@ -22,10 +22,11 @@ from unit.drivers.test_reaction_case_actions import (
 from hfauto.chemistry import modes
 from hfauto.chemistry.identity import mapped_equivalent, mapped_rmsd
 from hfauto.chemistry.modes import BOUNDS_A, displace
+from hfauto.chemistry.profile import Profile
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.records import BarrierVerdict, CaseOutcome
 from hfauto.drivers.reaction_case import connection
-from hfauto.drivers.reaction_case.actions import MAX_DEPTH, Profile
+from hfauto.drivers.reaction_case.actions import MAX_DEPTH
 from hfauto.drivers.reaction_case.state import (
     Action,
     CaseRules,

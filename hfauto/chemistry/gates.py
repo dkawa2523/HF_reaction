@@ -1,7 +1,6 @@
 """Chemical pass/fail gates (design §5.4): the only place that turns Evidence into verdicts.
 
-Allowed imports: the standard library, numpy, hfauto.core, chemistry.elements and
-chemistry.profile.
+Allowed imports: the standard library, numpy, hfauto.core and chemistry.elements.
 """
 
 from __future__ import annotations
@@ -13,15 +12,11 @@ from typing import Literal
 import numpy as np
 
 from hfauto.chemistry.elements import mass
-from hfauto.chemistry.profile import classify
-from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Level
 from hfauto.core.records import (
     CONNECTED_OUTCOMES,
-    BarrierVerdict,
     CaseOutcome,
     ConnectionLabel,
-    ProfileSource,
     ReactionRecord,
     ReactionThermo,
 )
@@ -62,7 +57,8 @@ _PES_FIELDS = (
 )
 _STATE_FIELDS = ("charge", "multiplicity")
 _NUMERICS_FIELDS = ("grid", "scf_tol")
-RANKABLE_OUTCOMES = frozenset({*CONNECTED_OUTCOMES.values(), CaseOutcome.BARRIERLESS})
+# a TS whose QRC sides reached assigned minima: a barrierless outcome has no TST barrier
+RANKABLE_OUTCOMES = frozenset(CONNECTED_OUTCOMES.values())
 Bonds = frozenset[tuple[int, int]]  # labelled bonds (topology.bonds)
 Change = tuple[Bonds, Bonds]  # (formed, broken) between two labelled structures
 
@@ -200,18 +196,6 @@ def reaction_mode_character(symbols: Sequence[str], mode: Sequence[float], coord
     return Gate(False, (f"not_reaction_mode:{chi:.3f}",))
 
 
-def barrier_verdict(
-    energies: Sequence[float], *, source: ProfileSource, policy: Policy = _DEFAULT
-) -> BarrierVerdict:
-    """Class of a DFT profile with the two DFT minima energies at its ends (an association's
-    scan: the separated monomers' sum first), at resolution_kcal: a continuous path's maximum
-    bounds the saddle from above."""
-    if len(energies) < 3:
-        return BarrierVerdict(verdict="unavailable", source=source, reasons=("too_few_points",))
-    verdict = classify(energies, policy.resolution_kcal / HARTREE_TO_KCAL_MOL)
-    return BarrierVerdict(verdict=verdict, source=source)
-
-
 def _side_reasons(index: int, side: Evidence, ts: Evidence, drop: float) -> list[str]:
     """One QRC side on the TS's PES ends below E_TS - drop; its path there is not judged."""
     reasons = [f"side{index}:{r}" for r in same_pes(ts.level, side.level, numerics=True).reasons]
@@ -299,8 +283,9 @@ def discovery_verdict(
 
 
 def rankable(reaction: ReactionRecord, thermo: ReactionThermo | None) -> Gate:
-    """A rankable outcome and a thermo record without blockers. The thermo stage is the only
-    source of the blockers (thermo_unavailable, mixed_level_of_theory, spin_contaminated)."""
+    """A connected outcome and a thermo record without blockers. The thermo stage is the only
+    source of the blockers (thermo_unavailable, mixed_level_of_theory, spin_contaminated); a
+    barrierless outcome is reported apart (capture-limited), never in the ordinal ranking."""
     outcome = () if reaction.outcome in RANKABLE_OUTCOMES else (f"outcome:{reaction.outcome}",)
     facts = thermo.blockers if thermo is not None else ("thermo_record_missing",)
     return _gate([*outcome, *facts])

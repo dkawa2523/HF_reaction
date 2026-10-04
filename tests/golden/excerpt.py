@@ -2,9 +2,10 @@
 Usage: python tests/golden/excerpt.py [RUNS_DIR]. Each file's `method` names a rule below.
 Absolute sources (G25/G26, G27/G28, G29 and G31-G35: WSL job dirs under
 /home/user/hfauto_r6/m0/golden, /home/user/hfauto_r6/m1/golden, /home/user/hfauto_r6/SA/sac_golden,
-/home/user/hfauto_r7/VAL7, /home/user/hfauto_r6/SB/sba and /home/user/hfauto_r9/S1a, and G36,
-G38, G39: run files of /home/user/hfauto_r9/VAL9/R2, G37: of the W2 fresh S5 run
-/home/user/hfauto_r10/W2/s5) are read as they are; regenerate those on WSL."""
+/home/user/hfauto_r7/VAL7, /home/user/hfauto_r6/SB/sba and /home/user/hfauto_r9/S1a, and the
+case excerpts G36-G39: G38 from /home/user/hfauto_r9/VAL9/R2, G36 and G39 from the W3 fresh runs
+/home/user/hfauto_r10/W3/fresh, G37 from /home/user/hfauto_r10/W3/s5_w2_from_sp) are read as they
+are; regenerate those on WSL."""
 
 import gzip
 import hashlib

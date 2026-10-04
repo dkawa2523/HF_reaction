@@ -16,6 +16,7 @@ from hfauto.chemistry.gates import connection
 from hfauto.chemistry.geometry import declared_coordinate
 from hfauto.chemistry.identity import carry, is_image, mapped_equivalent, periodic_nearest
 from hfauto.chemistry.modes import qrc_step
+from hfauto.chemistry.profile import Profile
 from hfauto.chemistry.xyz import composition_key
 from hfauto.core.evidence import Evidence, Failure
 from hfauto.core.ids import species_id
@@ -241,20 +242,22 @@ def _two_steps(ctx: Ctx, state: CaseState, label: str, sides: tuple[Reached, Rea
     return replace(state, connection=None, claim=None, intermediate="distinct")
 
 
-def _with_peak(ctx: Ctx, state: CaseState, name: str) -> CaseState:
-    """The latest profile's highest peak joins the seeds."""
-    return replace(state, seeds=(*state.seeds, *peak_seeds(ctx, f"{name}_hei")))
-
-
-def _past_the_well(ctx: Ctx, state: CaseState, e: Sequence[float], name: str) -> CaseState:
-    """The well relaxed into an endpoint: barrierless when no interior point of the profile
-    (energies ``e``) rises a resolution above the higher end, else its highest peak seeds the
-    saddle search."""
-    v = state.screen
-    if v is not None and max(e[1:-1]) - max(e[0], e[-1]) < ctx.resolution:
-        return replace(state, screen=v.model_copy(update={"verdict": "barrierless",
-                                                          "reasons": ("well_is_endpoint",)}))
-    return _with_peak(ctx, state, name)
+def _past_the_well(ctx: Ctx, state: CaseState, path: Profile, w: int, end: int, name: str
+                   ) -> CaseState:
+    """The well (node ``w``) relaxed into end ``end``: the case goes on with the profile from
+    the other end to the well, judged like any profile (``profile.judge`` with its energy
+    function, densified when barrierless). Barrierless closes the case; otherwise its highest
+    peak seeds the saddle search."""
+    sample = ctx.work.sample or ctx.points
+    start, stop = (w, len(path.energies)) if end == 0 else (0, w + 1)
+    part = Profile(path.frames[start:stop], path.energies[start:stop], path.source,
+                   path.s2[start:stop])
+    verdict, part = profile.judge(part, ctx.rules.gates,
+                                  lambda new: sample([(i + start, x) for i, x in new]))
+    ctx.note(f"{name}:end{end}:{verdict.verdict}")
+    if verdict.verdict == "barrierless":
+        return replace(state, screen=verdict)
+    return replace(state, seeds=(*state.seeds, *peak_seeds(ctx, f"{name}_hei", part)))
 
 
 def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
@@ -271,11 +274,13 @@ def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> Cas
     name = f"int{state.saddle_attempts}_{state.path_runs}"
     well = _register(ctx, path.frames[w], name, "intermediate")
     if well is None:
-        ctx.note("int:relax_failed")
-        return _with_peak(ctx, replace(state, intermediate="relax_failed"), name)
+        ctx.note("int:relax_failed")  # the latest profile's highest peak seeds
+        return replace(state, intermediate="relax_failed",
+                       seeds=(*state.seeds, *peak_seeds(ctx, f"{name}_hei")))
     ends, legs = ctx.end_records(), (e[:w + 1], e[w:])  # the profile from the well to each end
-    if _key(ctx, well.record) in {_key(ctx, end) for end in ends} or any(
-            _as_end(ctx, well.record, end, leg) for end, leg in zip(ends, legs, strict=True)):
-        return _past_the_well(ctx, replace(state, intermediate="same_as_endpoint"), e, name)
+    for k, (end, leg) in enumerate(zip(ends, legs, strict=True)):
+        if _key(ctx, well.record) == _key(ctx, end) or _as_end(ctx, well.record, end, leg):
+            return _past_the_well(ctx, replace(state, intermediate="same_as_endpoint"), path,
+                                  w, k, name)
     ctx.work.intermediate = _member(ctx, well)
     return replace(state, intermediate="distinct")

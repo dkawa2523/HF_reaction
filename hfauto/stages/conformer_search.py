@@ -1,7 +1,7 @@
-"""conformers stage (design §4.1 #2, §8.2): conformer search of monomers, placement seeds and
-``--nci`` search of compositions, state labels and per state label the ``keep_per_state``
-lowest structures (no energy window and no own duplicate test: CREGEN's output is unique, and
-the screen stage selects).
+"""conformers stage (design §4.1 #2, §8.2): CREST conformer search of monomers, placement seeds
+and ``--nci`` search of compositions from seed00, state labels, and per state label the
+``keep_per_state`` lowest structures (no energy window and no own duplicate test: CREGEN's output
+is unique, and the screen stage selects).
 
 Small rigid monomers skip the search and pass their input through. A topology-change stop is kept
 as a ``crest_topology`` species and the search reruns once from that structure with the same
@@ -9,10 +9,12 @@ settings (a second stop fails). Compositions take the summed charge of their com
 declared multiplicity (or the only one spin coupling allows; otherwise INPUT_INVALID; a low-spin
 coupling such as CH3·O2 doublet is accepted, its singlet is not: ``composition_multiplicity``),
 and get ``--notopo`` on every atom: hfauto's state label decides the state, CREST only samples.
-When a search fails its input (monomer) or placement seeds (composition) are output instead
-(CREST 3.0.2 failed on CH3·O2, a low-spin pair whose doublet SCC does not converge in
-non-spin-polarized GFN2, and when its metadynamics did not converge). Users set quick, ewin_kcal, seeds_per_composition and keep_per_state; CREST threads come
-from the site.
+
+When no candidate carries the state label of the input (monomer) or of the seeds
+(composition), a failed search included, those structures are output as well and the reason is
+the item's Failure. Observed in VAL9 R2: CREST 3.0.2 failed on CH3·O2 (rc -11) and OH·CH4 (rc 1),
+whose seeds are therefore the output; the other five composition systems returned rc 0. Users
+set quick, ewin_kcal, seeds_per_composition and keep_per_state; CREST threads come from the site.
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from typing import ClassVar, Literal, cast
+
+from pydantic import PositiveInt
 
 from hfauto.backends import protocols as bp
 from hfauto.chemistry import placement
@@ -36,7 +40,6 @@ from hfauto.core.system import CompositionInput
 from hfauto.stages.spec import StageConfig, StageRuntime, StageSpec
 
 Source = Literal["conformer", "placement", "crest_topology"]
-Candidate = tuple[Geometry, float | None, Source]
 _TAG = {"conformer": "c", "placement": "p", "crest_topology": "t"}
 
 
@@ -45,25 +48,8 @@ class ConformersConfig(StageConfig):
     method: str
     quick: bool = True
     ewin_kcal: float = 6.0
-    seeds_per_composition: int = 6
+    seeds_per_composition: PositiveInt = 6  # seed00 starts CREST
     keep_per_state: int = 6
-
-
-@dataclass
-class _Item:
-    base: str  # species or composition id
-    parents: tuple[str, ...]
-    mol: Molecule
-    settings: bp.ConformerSettings
-    fallback: tuple[Candidate, ...]  # output when the search is skipped or fails
-    skip: bool = False
-
-
-@dataclass
-class _Found:
-    item: _Item
-    candidates: list[Candidate]
-    failure: Failure | None = None
 
 
 @dataclass(frozen=True)
@@ -75,25 +61,59 @@ class _Cand:
     label: str
 
 
+def _cand(geometry: Geometry, energy: float | None, source: Source, xyz: XYZ) -> _Cand:
+    return _Cand(geometry, energy, source, xyz, state_label(xyz.symbols, xyz.coords))
+
+
+@dataclass
+class _Item:
+    base: str  # species or composition id
+    parents: tuple[str, ...]
+    mol: Molecule
+    settings: bp.ConformerSettings
+    fallback: tuple[_Cand, ...]  # the input or the seeds: the declared state
+    skip: bool = False
+
+
+@dataclass
+class _Found:
+    item: _Item
+    candidates: list[_Cand]
+    failure: Failure | None = None
+
+
 def _failed(base: str, parents: tuple[str, ...], failure: Failure) -> Artifact:
     return Artifact(artifact_id=f"conformers_{base}", type=ArtifactType.SPECIES, parents=parents,
                     status="failed", failure=failure)
+
+
+def _crest(engine: bp.ConformerEngine, method: MethodSpec, load_xyz: Callable[[Geometry], XYZ],
+           item: _Item) -> tuple[list[_Cand], Failure | None]:
+    """The topology stops, then the members of the search (rerun once from the first stop)."""
+    result = engine.search(item.mol, method, item.settings)
+    cands: list[_Cand] = []
+    if isinstance(result, bp.ConformerEnsemble) and result.topology_stops:
+        cands += [_cand(g, None, "crest_topology", load_xyz(g)) for g in result.topology_stops]
+        stop = Molecule(cands[0].xyz, item.mol.charge, item.mol.multiplicity)
+        result = engine.search(stop, method, item.settings)
+    if isinstance(result, bp.ConformerEnsemble) and result.topology_stops:  # no second retry
+        result = Failure(kind=FailureKind.INCOMPLETE_OUTPUT, reason="topology_stop_repeated")
+    if isinstance(result, Failure):
+        return cands, result
+    return cands + [_cand(g, e, "conformer", load_xyz(g)) for g, e in result.members], None
 
 
 def _search(engine: bp.ConformerEngine, method: MethodSpec, load_xyz: Callable[[Geometry], XYZ],
             item: _Item) -> _Found:
     if item.skip:
         return _Found(item, list(item.fallback))
-    result, stops = engine.search(item.mol, method, item.settings), []
-    if isinstance(result, bp.ConformerEnsemble) and result.topology_stops:
-        stops = [(g, None, cast(Source, "crest_topology")) for g in result.topology_stops]
-        stop = Molecule(load_xyz(result.topology_stops[0]), item.mol.charge, item.mol.multiplicity)
-        result = engine.search(stop, method, item.settings)
-    if isinstance(result, bp.ConformerEnsemble) and result.topology_stops:  # no second retry
-        result = Failure(kind=FailureKind.INCOMPLETE_OUTPUT, reason="topology_stop_repeated")
-    if isinstance(result, Failure):
-        return _Found(item, stops + list(item.fallback), result)
-    return _Found(item, stops + [(g, e, cast(Source, "conformer")) for g, e in result.members])
+    cands, failure = _crest(engine, method, load_xyz, item)
+    declared = {c.label for c in item.fallback}
+    if all(c.label not in declared for c in cands):
+        cands += item.fallback
+        failure = failure or Failure(kind=FailureKind.GATE_REJECTED,
+                                     reason=f"input_state_lost:{','.join(sorted(declared))}")
+    return _Found(item, cands, failure)
 
 
 def _select(cands: list[_Cand], keep_per_state: int) -> list[_Cand]:
@@ -108,14 +128,10 @@ def _select(cands: list[_Cand], keep_per_state: int) -> list[_Cand]:
     return kept
 
 
-def _artifacts(found: _Found, rt: StageRuntime, cfg: ConformersConfig) -> list[Artifact]:
+def _artifacts(found: _Found, cfg: ConformersConfig) -> list[Artifact]:
     item, charge, mult = found.item, found.item.mol.charge, found.item.mol.multiplicity
     out = [] if found.failure is None else [_failed(item.base, item.parents, found.failure)]
-    cands = []
-    for geometry, energy, source in found.candidates:
-        xyz = rt.load_xyz(geometry)
-        cands.append(_Cand(geometry, energy, source, xyz, state_label(xyz.symbols, xyz.coords)))
-    for k, c in enumerate(_select(cands, cfg.keep_per_state)):
+    for k, c in enumerate(_select(found.candidates, cfg.keep_per_state)):
         record = SpeciesRecord(
             species_id=f"{item.base}_{_TAG[c.source]}{k:02d}",
             composition_id=composition_key(c.xyz.symbols, charge, mult), charge=charge,
@@ -132,7 +148,7 @@ def _monomer(sp: SpeciesRecord, rt: StageRuntime, cfg: ConformersConfig) -> _Ite
     settings = bp.ConformerSettings(quick=cfg.quick, ewin_kcal=cfg.ewin_kcal)
     return _Item(sp.species_id, (species_artifact_id(sp.species_id),),
                  Molecule(xyz, sp.charge, sp.multiplicity), settings,
-                 ((sp.geometry, None, "conformer"),),
+                 (_cand(sp.geometry, None, "conformer", xyz),),
                  skip=placement.is_small_rigid(xyz.symbols, xyz.coords))
 
 
@@ -142,27 +158,21 @@ def _monomers(species: dict[str, SpeciesRecord], rt: StageRuntime, cfg: Conforme
             if s.role == "monomer" and s.id in species]
 
 
-def _lowest(found: _Found, rt: StageRuntime) -> XYZ:
-    ranked = sorted(found.candidates,  # without energies a relaxed topology stop beats the input
-                    key=lambda c: (c[1] is None, c[2] != "crest_topology", c[1] or 0))
-    return rt.load_xyz((ranked or list(found.item.fallback))[0][0])
-
-
-def _seed_geometries(comp_id: str, seeds: list[XYZ], rt: StageRuntime) -> list[Geometry]:
-    folder = rt.stage_dir / "placement"
-    return [written_geometry(write_xyz(seed, folder / f"{comp_id}_seed{k:02d}.xyz"), rt.file_ref)
-            for k, seed in enumerate(seeds)]
+def _lowest(found: _Found) -> XYZ:
+    """The lowest candidate; without energies a relaxed topology stop beats the input."""
+    return min(found.candidates,
+               key=lambda c: (c.energy is None, c.source != "crest_topology", c.energy or 0)).xyz
 
 
 def _composition(comp: CompositionInput, species: dict[str, SpeciesRecord],
                  best: dict[str, XYZ], rt: StageRuntime, cfg: ConformersConfig
                  ) -> _Item | Artifact:
-    def reject(kind: FailureKind, reason: str) -> Artifact:
-        return _failed(comp.id, (), Failure(kind=kind, reason=reason))
+    def reject(reason: str) -> Artifact:
+        return _failed(comp.id, (), Failure(kind=FailureKind.INPUT_INVALID, reason=reason))
 
     missing = sorted(set(comp.components) - set(species))
     if missing:
-        return reject(FailureKind.INPUT_INVALID, f"missing_component:{','.join(missing)}")
+        return reject(f"missing_component:{','.join(missing)}")
     parts = sorted(((sid, best.get(sid) or rt.load_xyz(species[sid].geometry))
                     for sid, n in comp.components.items() for _ in range(n)),
                    key=lambda p: (-len(p[1].symbols), p[0]))
@@ -171,17 +181,17 @@ def _composition(comp: CompositionInput, species: dict[str, SpeciesRecord],
         mult = composition_multiplicity([species[sid].multiplicity for sid, _ in parts],
                                         comp.multiplicity)
     except ValueError as exc:
-        return reject(FailureKind.INPUT_INVALID, str(exc))
-    seeds = placement.seeds(parts[0][1], [xyz for _, xyz in parts[1:]],
-                            n_seeds=cfg.seeds_per_composition)
-    if not seeds:
-        return reject(FailureKind.GATE_REJECTED, "no_collision_free_seed")
-    geoms = _seed_geometries(comp.id, seeds, rt)
-    first = rt.load_xyz(geoms[0])
+        return reject(str(exc))
+    folder = rt.stage_dir / "placement"
+    seeds = []
+    for k, seed in enumerate(placement.seeds(parts[0][1], [xyz for _, xyz in parts[1:]],
+                                             n_seeds=cfg.seeds_per_composition)):
+        geometry = written_geometry(write_xyz(seed, folder / f"{comp.id}_seed{k:02d}.xyz"),
+                                    rt.file_ref)  # CREST starts from the coordinates as written
+        seeds.append(_cand(geometry, None, "placement", rt.load_xyz(geometry)))
     settings = bp.ConformerSettings(nci=True, quick=cfg.quick, ewin_kcal=cfg.ewin_kcal)
     parents = tuple(dict.fromkeys(species_artifact_id(sid) for sid, _ in parts))
-    return _Item(comp.id, parents, Molecule(first, charge, mult), settings,
-                 tuple((g, None, "placement") for g in geoms))
+    return _Item(comp.id, parents, Molecule(seeds[0].xyz, charge, mult), settings, tuple(seeds))
 
 
 class ConformersStage:
@@ -198,9 +208,9 @@ class ConformersStage:
                    if s.source == "input"}
         # the JobRunner core semaphore limits concurrent CREST jobs by the site threads
         found = rt.thread_map(search, _monomers(species, rt, cfg))
-        best = {f.item.base: _lowest(f, rt) for f in found}
+        best = {f.item.base: _lowest(f) for f in found}
         built = [_composition(c, species, best, rt, cfg) for c in rt.system.compositions]
         items = [b for b in built if isinstance(b, _Item)]
         found += rt.thread_map(search, items)
         failed = [b for b in built if isinstance(b, Artifact)]
-        return failed + [a for f in found for a in _artifacts(f, rt, cfg)]
+        return failed + [a for f in found for a in _artifacts(f, cfg)]

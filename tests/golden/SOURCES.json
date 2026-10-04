@@ -771,49 +771,97 @@
   "id": "G36",
   "files": [
    {
-    "golden": "manifests/s6_oh_ch4/dft/manifest.json",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/dft/manifest.json",
-    "source_sha256": "ea55904ef6f7c39be3e5757cf0de9d95220219bac24d7cbaa3d9ae5caeb27c46",
+    "golden": "manifests/s6_oh_ch4/dft/manifest.json.gz",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/dft/manifest.json",
+    "source_sha256": "7b05fb3269db4f86c30c5f22e20dcb5de6eda155e3586014a23852e36c7236b2",
     "method": "copy"
    },
    {
     "golden": "manifests/s6_oh_ch4/paths/manifest.json.gz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/paths/manifest.json",
-    "source_sha256": "ec7a854bf1773ab3efbd87c8a152946db4c4d26d66297c5878de803a53c50d3f",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/paths/manifest.json",
+    "source_sha256": "a078ef1914e5ee1ed3c68e18000f4bda4b7a4392747fb54775723a4e8e9b7ec5",
     "method": "copy"
    },
    {
     "golden": "manifests/s6_oh_ch4/thermo/manifest.json",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/thermo/manifest.json",
-    "source_sha256": "c863af563b4cb2f9cac5027cc742a428bf2c60226cb3d4d5437c5ccabfc76530",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/thermo/manifest.json",
+    "source_sha256": "9779c8175571104aade5f9c852823702ae1538ceaed17b9ccbde4d508f54fb51",
     "method": "copy"
    },
    {
-    "golden": "manifests/s6_oh_ch4/jobs/13/1344923f70b160d48bba7ac27a485c5dbc84027a2c3fd966517f84e04f4b98a2/attempt_00/final-046.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/jobs/13/1344923f70b160d48bba7ac27a485c5dbc84027a2c3fd966517f84e04f4b98a2/attempt_00/final-046.xyz",
-    "source_sha256": "b574cb7ecd8d9606bcec7fe9c33b5d1cf22c02f59a00a7ac9adc0a1a81b1d7ee",
+    "golden": "manifests/s6_oh_ch4/jobs/13/1344923f70b160d48bba7ac27a485c5dbc84027a2c3fd966517f84e04f4b98a2/attempt_00/final-045.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/13/1344923f70b160d48bba7ac27a485c5dbc84027a2c3fd966517f84e04f4b98a2/attempt_00/final-045.xyz",
+    "source_sha256": "5849c1699a77b424b5d97001c14146d2dde65acdacfc4ca519f3346cda5cc669",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/1f/1fc4bb1167ccad0c12cddf3e402d75c679f531991755272d1002673bc3e18023/attempt_00/final-002.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/1f/1fc4bb1167ccad0c12cddf3e402d75c679f531991755272d1002673bc3e18023/attempt_00/final-002.xyz",
+    "source_sha256": "9313f915d268170dc4263968a93c3ae1ec5b7c9a3b33d088d49b917e8e283a95",
     "method": "copy"
    },
    {
     "golden": "manifests/s6_oh_ch4/jobs/3c/3cf2fd985436364c896f218802d46fb5b0cdbda5734a39ed26f349ae95745ade/attempt_00/final-015.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/jobs/3c/3cf2fd985436364c896f218802d46fb5b0cdbda5734a39ed26f349ae95745ade/attempt_00/final-015.xyz",
-    "source_sha256": "dadc6dc8bbeeb7cb524019b525c892e0fc510762fadb688795448d13c76af370",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/3c/3cf2fd985436364c896f218802d46fb5b0cdbda5734a39ed26f349ae95745ade/attempt_00/final-015.xyz",
+    "source_sha256": "4a7906397e0f31c908f9a4d853c48e2037e74cc553e4920400ea43eca96738f8",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/41/411a1aab952fe0e68ff98e6591d459c1a87e7260dca3336cc6619aebfd6134a3/attempt_00/final-002.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/41/411a1aab952fe0e68ff98e6591d459c1a87e7260dca3336cc6619aebfd6134a3/attempt_00/final-002.xyz",
+    "source_sha256": "c341ec2e4b47e0005bfd656a06c1cbdb28cbc55ad1c057e97eb54178bec28573",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/6b/6bb966f43981aebf75db65dd08d73f24f9e15d4f147dec26ce59bc2c96497923/attempt_00/final-067.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/6b/6bb966f43981aebf75db65dd08d73f24f9e15d4f147dec26ce59bc2c96497923/attempt_00/final-067.xyz",
+    "source_sha256": "b39c6d9ee57951b00fe84217fe18cc07880c164cec15098a8efc07ea37a238c0",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
+    "source_sha256": "f179dca13b67084168cf600dd4203de3d5927c890b9d11dbc7a42d6fc5b8c603",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/a9/a92d432a89470debdf7d5d4ceec1e37159a1b65e6d09f2e37898e848f5131b0a/attempt_00/final-002.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/a9/a92d432a89470debdf7d5d4ceec1e37159a1b65e6d09f2e37898e848f5131b0a/attempt_00/final-002.xyz",
+    "source_sha256": "f232903aa288c188817f80c6a7169b275e54ac4fffe0e5cf8359d0c49dfe7bc9",
     "method": "copy"
    },
    {
     "golden": "manifests/s6_oh_ch4/jobs/b2/b251378326b0d147664991b342cf569bfbc331f7095ce7f86f5400f4eade198b/attempt_00/final-030.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/jobs/b2/b251378326b0d147664991b342cf569bfbc331f7095ce7f86f5400f4eade198b/attempt_00/final-030.xyz",
-    "source_sha256": "ca021d34d24303052c36432db229f52f26b52a2ad3aa85e4fb1cad809b850975",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/b2/b251378326b0d147664991b342cf569bfbc331f7095ce7f86f5400f4eade198b/attempt_00/final-030.xyz",
+    "source_sha256": "2d45042d884da6b4ac09d71bf6b7d2737639827ebbb9710880fb2c610ffe77fd",
     "method": "copy"
    },
    {
-    "golden": "manifests/s6_oh_ch4/jobs/c6/c648089d1b147d0ca0750ae5d9ea95168eab123b2d33bd103a376a3616c72123/attempt_00/final-029.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/jobs/c6/c648089d1b147d0ca0750ae5d9ea95168eab123b2d33bd103a376a3616c72123/attempt_00/final-029.xyz",
-    "source_sha256": "e925c5a19a1b8c9ed6221d9a437d1fc3207cf4234975f97e863f27d75960c928",
+    "golden": "manifests/s6_oh_ch4/jobs/bf/bf8be3f5aeb82ab005258d751ad3a169de24049f4e087cadb6ea887f75372c13/attempt_00/final-043.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/bf/bf8be3f5aeb82ab005258d751ad3a169de24049f4e087cadb6ea887f75372c13/attempt_00/final-043.xyz",
+    "source_sha256": "24a7653a49aa3f847c9664d7756827c3a3966f86a8f1719dac167a0f5cbf92f1",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/c7/c7db14e611f696c213121924d2f032b483ea7fa9c40dfbcfad5e04deac7ddc02/attempt_00/final-030.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/c7/c7db14e611f696c213121924d2f032b483ea7fa9c40dfbcfad5e04deac7ddc02/attempt_00/final-030.xyz",
+    "source_sha256": "5aee5a76a9d62b115b64e7cffcb9a55c70fa9638ffa9b9addca780a3f7f11780",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/d1/d1acb9af2728f118930377c5ec23535fab15abe0fb090a01baeaa720cd0269ac/attempt_00/final-034.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/d1/d1acb9af2728f118930377c5ec23535fab15abe0fb090a01baeaa720cd0269ac/attempt_00/final-034.xyz",
+    "source_sha256": "b5bb21a9fe3acaed97ffc37e7b3acbb4a823f45a407aa86c5858bca63fae2ab0",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/ef/ef761062821b7b2d80b34d87eaed9fb3e3628f69425abd76dd7ef0833b879182/attempt_00/final-015.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/ef/ef761062821b7b2d80b34d87eaed9fb3e3628f69425abd76dd7ef0833b879182/attempt_00/final-015.xyz",
+    "source_sha256": "b20a420de8d85e1faf83647b51368584e1b094aa7eaba885cffb53db08019ec8",
     "method": "copy"
    }
   ],
-  "expect": "VAL9/R2 の S6(OH + CH4、discover)の dft・paths・thermo の manifest と、反応の端の極小の最適化構造。validation/cases.yaml の s6_oh_ch4 の期待(引き抜き elementary 5.93 は 5.5〜6.0 の幅、multi_step の親、split1 は逆向きの引き抜き 20.98、split2 44.83)をすべて満たす",
+  "expect": "W3 の新しい run(/home/user/hfauto_r10/W3/fresh/s6_oh_ch4)の S6(OH + CH4、discover)の dft・paths・thermo の manifest と、極小の最適化構造。validation/cases.yaml の s6_oh_ch4 の期待(引き抜き elementary 10.39 は分離した OH + CH4 がゼロで 9.95〜10.45 の幅、multi_step の親、split1 は逆向きの引き抜き 21.60、split2 44.83)をすべて満たす",
   "refs": [
    "platform-review-2 X7-7",
    "validation/cases.yaml"
@@ -824,54 +872,72 @@
   "files": [
    {
     "golden": "manifests/s5_ch3_o2/dft/manifest.json",
-    "source": "/home/user/hfauto_r10/W2/s5/dft/manifest.json",
+    "source": "/home/user/hfauto_r10/W3/s5_w2_from_sp/dft/manifest.json",
     "source_sha256": "8fe22e28bd29b2ba717c13fce4d500810b35edd701516b1d8b04c28ce09f4617",
     "method": "copy"
    },
    {
     "golden": "manifests/s5_ch3_o2/paths/manifest.json.gz",
-    "source": "/home/user/hfauto_r10/W2/s5/paths/manifest.json",
+    "source": "/home/user/hfauto_r10/W3/s5_w2_from_sp/paths/manifest.json",
     "source_sha256": "fdf4daf8429ce14ecd928ad32bb7d767c475e561bc2ad0ed7973586136d82eff",
     "method": "copy"
    },
    {
     "golden": "manifests/s5_ch3_o2/thermo/manifest.json",
-    "source": "/home/user/hfauto_r10/W2/s5/thermo/manifest.json",
-    "source_sha256": "981d37bfd72eeee1a6751f0827db477a3ae911840670eb5057f8e744f58ef99a",
+    "source": "/home/user/hfauto_r10/W3/s5_w2_from_sp/thermo/manifest.json",
+    "source_sha256": "6dedd8f56e878539229a48b1c4671f1d8ba8ebeb9da159147d8410f0d37862a1",
     "method": "copy"
    },
    {
     "golden": "manifests/s5_ch3_o2/jobs/07/0726fc38c63ff1d91c8eea78d07d172a19fb52879bf28470544793c9633389bc/attempt_00/final-002.xyz",
-    "source": "/home/user/hfauto_r10/W2/s5/jobs/07/0726fc38c63ff1d91c8eea78d07d172a19fb52879bf28470544793c9633389bc/attempt_00/final-002.xyz",
+    "source": "/home/user/hfauto_r10/W3/s5_w2_from_sp/jobs/07/0726fc38c63ff1d91c8eea78d07d172a19fb52879bf28470544793c9633389bc/attempt_00/final-002.xyz",
     "source_sha256": "a290073a32e5212f3e6c011e0315fe30d2881abc928737ff8a5fb2f528253ac5",
     "method": "copy"
    },
    {
+    "golden": "manifests/s5_ch3_o2/jobs/10/10960793317a157eb5390819058e15aa8899a04af8ae4e192a5b0b2bc420c172/attempt_00/final-053.xyz",
+    "source": "/home/user/hfauto_r10/W3/s5_w2_from_sp/jobs/10/10960793317a157eb5390819058e15aa8899a04af8ae4e192a5b0b2bc420c172/attempt_00/final-053.xyz",
+    "source_sha256": "939b86d91cd61ae9b3367f598ebafb250a63be6f0df7d72c6746ab84f528d075",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s5_ch3_o2/jobs/55/5563282b219dc6c10af29c247d9893475b826f31e9f769dce44c59bf22634526/attempt_00/final-034.xyz",
+    "source": "/home/user/hfauto_r10/W3/s5_w2_from_sp/jobs/55/5563282b219dc6c10af29c247d9893475b826f31e9f769dce44c59bf22634526/attempt_00/final-034.xyz",
+    "source_sha256": "88ca542f5c87a6cf40d372c6e728d893ff35ab758f9e90c52423993093537adb",
+    "method": "copy"
+   },
+   {
     "golden": "manifests/s5_ch3_o2/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
-    "source": "/home/user/hfauto_r10/W2/s5/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
+    "source": "/home/user/hfauto_r10/W3/s5_w2_from_sp/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
     "source_sha256": "f179dca13b67084168cf600dd4203de3d5927c890b9d11dbc7a42d6fc5b8c603",
     "method": "copy"
    },
    {
+    "golden": "manifests/s5_ch3_o2/jobs/9d/9d8405f82e632a0e06fe3148690320989dc91c4bb7d63524c870d8e59aa1ccac/attempt_00/final-018.xyz",
+    "source": "/home/user/hfauto_r10/W3/s5_w2_from_sp/jobs/9d/9d8405f82e632a0e06fe3148690320989dc91c4bb7d63524c870d8e59aa1ccac/attempt_00/final-018.xyz",
+    "source_sha256": "f51d7692f675a53b00e4590554a48de8e9044e516c8b2bda0d3264fd1b026238",
+    "method": "copy"
+   },
+   {
     "golden": "manifests/s5_ch3_o2/jobs/aa/aa2460c8f37361aad5f6686ac87a1e253db70469f34acf4a5575291a08815039/attempt_00/final-030.xyz",
-    "source": "/home/user/hfauto_r10/W2/s5/jobs/aa/aa2460c8f37361aad5f6686ac87a1e253db70469f34acf4a5575291a08815039/attempt_00/final-030.xyz",
+    "source": "/home/user/hfauto_r10/W3/s5_w2_from_sp/jobs/aa/aa2460c8f37361aad5f6686ac87a1e253db70469f34acf4a5575291a08815039/attempt_00/final-030.xyz",
     "source_sha256": "ee16a04d5508a17bbb6a6c4d21366cd938f97932247da5aa781f698079920beb",
     "method": "copy"
    },
    {
     "golden": "manifests/s5_ch3_o2/jobs/ca/cabb8a0e1ddb76c61bd1128daf6330fc411310a87cb155d5eda090ef33393129/attempt_00/final-004.xyz",
-    "source": "/home/user/hfauto_r10/W2/s5/jobs/ca/cabb8a0e1ddb76c61bd1128daf6330fc411310a87cb155d5eda090ef33393129/attempt_00/final-004.xyz",
+    "source": "/home/user/hfauto_r10/W3/s5_w2_from_sp/jobs/ca/cabb8a0e1ddb76c61bd1128daf6330fc411310a87cb155d5eda090ef33393129/attempt_00/final-004.xyz",
     "source_sha256": "f35f5902feec2eef304bc7c4bd884b73da1117e581306cf0725ce55bd104b79c",
     "method": "copy"
    },
    {
     "golden": "manifests/s5_ch3_o2/jobs/ef/efd4262f97857f9d908e964aa985648d12257eea5102bb044a3dee491d7a8ead/attempt_00/final-029.xyz",
-    "source": "/home/user/hfauto_r10/W2/s5/jobs/ef/efd4262f97857f9d908e964aa985648d12257eea5102bb044a3dee491d7a8ead/attempt_00/final-029.xyz",
+    "source": "/home/user/hfauto_r10/W3/s5_w2_from_sp/jobs/ef/efd4262f97857f9d908e964aa985648d12257eea5102bb044a3dee491d7a8ead/attempt_00/final-029.xyz",
     "source_sha256": "aa3888292e93dff9ab19b47d51cf85334fc3f710699dd04ce358d1f478ac2a2e",
     "method": "copy"
    }
   ],
-  "expect": "W2 の新しい run の S5(CH3 + O2、discover)の dft・paths・thermo の manifest と端点の構造。CH3 + O2 -> CH3O2 は barrierless 0.0、CH3O2 -> CH2O + HO は multi_step、split1 46.85、split2 は elementary 0.13(質量加重の χ で O-O 開裂の鞍点を受理。VAL9/R2 では unresolved)",
+  "expect": "W2 の新しい S5 の run(CH3 + O2、discover)を W3 のコードで sp から取り直したもの(/home/user/hfauto_r10/W3/s5_w2_from_sp、新しいジョブ 0)の dft・paths・thermo の manifest と極小の構造。CH3 + O2 -> CH3O2 は barrierless で δG_eff を持たない(捕獲律速)、CH3O2 -> CH2O + HO は multi_step、split1 46.85、split2 は elementary 0.13",
   "refs": [
    "platform-review-2 X7-7",
    "validation/cases.yaml"
@@ -928,48 +994,48 @@
   "files": [
    {
     "golden": "manifests/h_c2h4/dft/manifest.json",
-    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/dft/manifest.json",
-    "source_sha256": "ee76b51d5646bbcb1eb354e3b607aeb521dea77029c47710fdd04b8e028dd4fe",
+    "source": "/home/user/hfauto_r10/W3/fresh/h_c2h4/dft/manifest.json",
+    "source_sha256": "6f673cf367889eebb61b4fc7cde7250118a2c5ed5886869a33710d1bd540e51c",
     "method": "copy"
    },
    {
     "golden": "manifests/h_c2h4/paths/manifest.json",
-    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/paths/manifest.json",
-    "source_sha256": "b6f469efcfc7bdc7719eaa1ca3e2f8f6e9ee94a15601d7649c5c234460fe8463",
+    "source": "/home/user/hfauto_r10/W3/fresh/h_c2h4/paths/manifest.json",
+    "source_sha256": "65eba624d110c9c4d07ab2ad07846cdb020b87a697a09cc66518a7c774b66441",
     "method": "copy"
    },
    {
     "golden": "manifests/h_c2h4/thermo/manifest.json",
-    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/thermo/manifest.json",
-    "source_sha256": "01329a06fc1012bf248f3df9aad1ffc7485e1437be9639fae078712bf1615eeb",
+    "source": "/home/user/hfauto_r10/W3/fresh/h_c2h4/thermo/manifest.json",
+    "source_sha256": "3769316738e5c5b74bdbe78ed0a148e00326afbcf5fe00568c254f40716e36b5",
     "method": "copy"
    },
    {
     "golden": "manifests/h_c2h4/jobs/02/02c67eb0d98b3416dce00d38d1227eb018278992f1e6ff4a3d4a40c248e68053/attempt_00/final-001.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/jobs/02/02c67eb0d98b3416dce00d38d1227eb018278992f1e6ff4a3d4a40c248e68053/attempt_00/final-001.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/h_c2h4/jobs/02/02c67eb0d98b3416dce00d38d1227eb018278992f1e6ff4a3d4a40c248e68053/attempt_00/final-001.xyz",
     "source_sha256": "1d01e9d9d8b67b6dee69a49de3dffd8b4d73eafdc27912d2922fb2955c27e8c1",
     "method": "copy"
    },
    {
     "golden": "manifests/h_c2h4/jobs/22/2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd/attempt_00/final-013.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/jobs/22/2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd/attempt_00/final-013.xyz",
-    "source_sha256": "52657d2d58a71b2795c4fc8448047952fd0d7b92beeb847ebd84271d25c3cdcf",
+    "source": "/home/user/hfauto_r10/W3/fresh/h_c2h4/jobs/22/2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd/attempt_00/final-013.xyz",
+    "source_sha256": "5bd692ba8c5ce1456ba7d8f5af1c7f8b5160a59045d50bf1e49bc5a538c5e713",
     "method": "copy"
    },
    {
     "golden": "manifests/h_c2h4/jobs/26/26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a/attempt_00/final-007.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/jobs/26/26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a/attempt_00/final-007.xyz",
-    "source_sha256": "b19c37f5934f62fa5efc4d338a995c3db885f491a9c3696d39c3311e24b5e20a",
+    "source": "/home/user/hfauto_r10/W3/fresh/h_c2h4/jobs/26/26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a/attempt_00/final-007.xyz",
+    "source_sha256": "cb3ecb7966b9495e67687dbf5e9f5bf08c4769797ae025c8a7ccc8ef8bd25e47",
     "method": "copy"
    },
    {
     "golden": "manifests/h_c2h4/jobs/60/60b394348203e4b9d83710c7ecb9e179f49204ae20c164d088ebad00f80f291a/attempt_00/final-004.xyz",
-    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/jobs/60/60b394348203e4b9d83710c7ecb9e179f49204ae20c164d088ebad00f80f291a/attempt_00/final-004.xyz",
+    "source": "/home/user/hfauto_r10/W3/fresh/h_c2h4/jobs/60/60b394348203e4b9d83710c7ecb9e179f49204ae20c164d088ebad00f80f291a/attempt_00/final-004.xyz",
     "source_sha256": "bee5d1b38a8d8824e5c2a20ac7bd98878d9c59b325750168d6213dad61cc0d33",
     "method": "copy"
    }
   ],
-  "expect": "VAL9/R2 の H + C2H4 の dft・paths・thermo の manifest と端の構造。会合は barrierless 0.0 で case の期待は満たすが、BH76 の行 33(前向きの障壁 2.0 kcal/mol、分離のゼロ)とのずれとして deviations に出る",
+  "expect": "W3 の新しい run(/home/user/hfauto_r10/W3/fresh/h_c2h4)の H + C2H4 の dft・paths・thermo の manifest と極小の構造。付加は barrierless で δG_eff を持たない(捕獲律速)。case の期待を満たし、BH76 の行 33(前向きの障壁 2.0 kcal/mol、分離のゼロ)とのずれとして deviations に出る",
   "refs": [
    "platform-review-2 X7-7",
    "validation/cases.yaml"

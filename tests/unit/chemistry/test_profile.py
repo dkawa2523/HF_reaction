@@ -1,9 +1,11 @@
-"""Path class and peak interpolation (design §5.5, CH-08)."""
+"""Path class, peak interpolation and the one profile judgement (design §5.5, CH-08, U5-P1)."""
 
 import numpy as np
 import pytest
 
 from hfauto.chemistry import profile as prof
+from hfauto.chemistry.gates import Policy
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 
 
 @pytest.mark.parametrize(
@@ -35,3 +37,52 @@ def test_hei_interpolates_parabola_and_coordinates_at_the_given_peak():
     assert prof.hei(frames[:5], two, 1)[0] == pytest.approx(1.1)  # toward the higher side
     with pytest.raises(ValueError, match="interior"):
         prof.hei(frames, energies, 0)
+
+
+K = 1.0 / HARTREE_TO_KCAL_MOL
+POLICY = Policy()  # resolution 1 kcal/mol, spin_tol 0.1
+
+
+def line(n):
+    return [np.array([[float(x), 0.0, 0.0]]) for x in range(n)]
+
+
+def test_judge_densifies_a_barrierless_profile_once_beside_its_highest_node():
+    """U5-P1: new nodes at the midpoints of the two segments beside the highest interior node,
+    asked by the node before each; a hill they find makes it a single step, judged once more
+    and never densified again; a failed one leaves it unavailable."""
+    path = prof.Profile(line(5), tuple(e * K for e in (0.0, 0.5, 0.8, 0.3, -1.0)), "string")
+    asked = []
+
+    def sample(new):
+        asked.extend((i, float(x[0, 0])) for i, x in new)
+        return [(0.9 * K, None), (2.0 * K, None)]
+
+    verdict, judged = prof.judge(path, POLICY, sample)
+    assert asked == [(1, 1.5), (2, 2.5)] and verdict.verdict == "single"
+    assert [float(x[0, 0]) for x in judged.frames] == [0, 1, 1.5, 2, 2.5, 3, 4]
+    assert judged.energies == tuple(e * K for e in (0.0, 0.5, 0.9, 0.8, 2.0, 0.3, -1.0))
+    assert prof.judge(path, POLICY)[0].verdict == "barrierless"  # without an energy function
+    failed, kept = prof.judge(path, POLICY, lambda new: [None] * len(new))
+    assert (failed.verdict, failed.reasons, kept) == ("unavailable", ("midpoint_single_point",),
+                                                      path)
+
+
+def test_judge_puts_no_node_in_a_segment_of_zero_length():
+    """An association's scan: the monomers' sum stands on the first scan frame, so only the
+    segment after its highest (first) point gets a node."""
+    frames = line(4)
+    path = prof.Profile([frames[0], *frames], tuple(e * K for e in (0, -0.2, -0.4, -2, -9)),
+                        "scan", (None, 1.7, 1.6, 1.2, 0.76))
+    verdict, judged = prof.judge(path, POLICY, lambda new: [(-0.3 * K, 1.65)] * len(new))
+    assert verdict.verdict == "barrierless" and len(judged.energies) == 6
+    assert judged.s2 == (None, 1.7, 1.65, 1.6, 1.2, 0.76)
+
+
+def test_judge_leaves_a_maximum_off_its_scf_branch_and_a_short_profile_unavailable():
+    s2 = (1.7114, 0.7604, 0.7651, 0.7547)  # VAL7 S5's maximum beside the minimum's branch
+    path = prof.Profile(line(4), tuple(e * K for e in (0.0, 26.0, 18.0, -35.0)), "screen", s2)
+    assert prof.judge(path, POLICY)[0].reasons == ("scf_branch_jump",)
+    assert prof.judge(path._replace(s2=()), POLICY)[0].verdict == "single"  # not observed
+    short = prof.Profile(line(2), (0.0, -1.0), "string")
+    assert prof.judge(short, POLICY)[0].reasons == ("too_few_points",)

@@ -1,7 +1,12 @@
 # S6 (review §6.1): OH. + CH4 complex (doublet) for the explore stage: H abstraction.
+# CH3 + H2O are the product side's monomers: the separated zero of the reverse reaction (BH76
+# row 46) and the product end of the chain; the composition is a real reaction partner pair.
 system_id: oh_ch4
 species:
   - {id: oh, xyz: xyz/oh_ch4/oh.xyz, multiplicity: 2}
   - {id: ch4, smiles: "C", multiplicity: 1}
+  - {id: ch3, smiles: "[CH3]", multiplicity: 2}
+  - {id: h2o, smiles: "O", multiplicity: 1}
 compositions:
   - {id: oh_ch4, components: {oh: 1, ch4: 1}}
+  - {id: ch3_h2o, components: {ch3: 1, h2o: 1}}

@@ -1,5 +1,6 @@
-"""sp targets (review U8-P4): only the points the ranking reads, per reaction outcome; each
-from its freq's SCF (X3), CCSD(T) only on spin-clean freqs."""
+"""sp targets (X5): the points thermo.reaction_points reads, per reaction outcome; each from its
+freq's SCF (X3), CCSD(T) only on spin-clean freqs; a failure on an auxiliary point only is no
+artifact."""
 
 from pathlib import Path
 
@@ -8,8 +9,10 @@ import pytest
 from fakes import FakeQM, double_well, fake_level, write_geometry
 
 from hfauto.backends.protocols import Capability
+from hfauto.chemistry.topology import state_label
+from hfauto.chemistry.xyz import geometry_fingerprint
 from hfauto.core import records as R
-from hfauto.core.evidence import Evidence
+from hfauto.core.evidence import Evidence, Failure, FailureKind
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
 from hfauto.core.system import CompositionInput, SpeciesInput, SystemConfig
@@ -19,22 +22,29 @@ from hfauto.stages.single_point import SinglePointConfig, SinglePointStage
 T, Out = R.ArtifactType, R.CaseOutcome
 DFT, BIG = (MethodSpec(id=b, kind="dft", functional="xfake", basis=b) for b in ("svp", "tzvp"))
 # minimum -> (symbols, composition_id, state_label, tier). The double well HNO is composition
-# c = NH + O of the system; c2 = NH + F (Hill FHN) is another one. r2 is a second conformer of
-# the reactant state, x another state of HNO.
+# c = NH + O of the system (its reactant's fragments); c2 = NH + F (Hill FHN) is another one. r2
+# is a second conformer of the reactant state, x another state of HNO.
+MONOMER = {k: (s, (1 + i) * np.eye(3)[: len(s)]) for i, (k, s) in enumerate(
+    (("nh", "NH"), ("o", "O"), ("f", "F")))}
+LABEL = {k: state_label(list(s), x) for k, (s, x) in MONOMER.items()}
 MINIMA = {"r": ("NHO", "HNO", "r", "dft"), "r2": ("NHO", "HNO", "r", "dft"),
           "p": ("NHO", "HNO", "p", "dft"), "x": ("NHO", "HNO", "x", "dft"),
-          "r_screen": ("NHO", "HNO", "r", "screen"), "nh": ("NH", "nh", "nh", "dft"),
-          "o": ("O", "o", "o", "dft"), "f": ("F", "f", "f", "dft")}
-REFERENCE = {"m_r", "m_r2", "m_nh", "m_o"}  # the reactant state and the monomers of c
+          "r_screen": ("NHO", "HNO", "r", "screen"), "nh": ("NH", "nh", LABEL["nh"], "dft"),
+          "o": ("O", "o", LABEL["o"], "dft"), "f": ("F", "f", LABEL["f"], "dft")}
+REFERENCE = {"m_r", "m_r2", "m_nh", "m_o"}  # the reactant state and its separated NH + O
 
 
 class SpQM(FakeQM):
     """Single points on any molecule (the monomers are off the double well) at 0 Eh; the key
-    names scf_guess, as NWChem's does for DFT."""
+    names scf_guess, as NWChem's does for DFT. ``fail``: geometries whose single point fails."""
+
+    fail: frozenset[str] = frozenset()
 
     def energy(self, mol, method, *, scf_guess=None):
         self.guesses.append(scf_guess)
         key = self._key("sp", mol.fingerprint(), method.signature(), scf_guess and scf_guess.job_key)
+        if geometry_fingerprint(mol.xyz.symbols, mol.xyz.coords) in self.fail:
+            return Failure(kind=FailureKind.SCF_NOT_CONVERGED, reason="scf")
         start = self._start(mol, key)
         return Evidence(engine=self.name, task="sp", level=fake_level(method, mol), start=start,
                         final=start, energy_hartree=0.0, output=start.file, job_key=key)
@@ -49,8 +59,8 @@ def _inputs(tmp_run: Path, outcome: Out | None) -> tuple[Manifest, dict[str, Evi
     ts = qm.frequencies(pes.molecule("ts"), DFT)
     for i, (k, (symbols, *_)) in enumerate(MINIMA.items()):
         if k not in freq:
-            geom = write_geometry(tmp_run, f"{k}.xyz", list(symbols),
-                                  (1 + i) * np.eye(3)[: len(symbols)])
+            x = MONOMER[k][1] if k in MONOMER else (1 + i) * np.eye(3)[: len(symbols)]
+            geom = write_geometry(tmp_run, f"{k}.xyz", list(symbols), x)
             external = {1: 3, 2: 5}.get(len(symbols), 6)  # an atom, a diatomic, the rest
             freq[k] = freq["r"].model_copy(update={
                 "start": geom, "final": geom, "job_key": k, "n_external": external,
@@ -66,7 +76,7 @@ def _inputs(tmp_run: Path, outcome: Out | None) -> tuple[Manifest, dict[str, Evi
         update={"minimum_id": "m_twin"})}))
     arts += [Artifact(artifact_id=k, type=T.SPECIES, payload=R.SpeciesRecord(
         species_id=k, composition_id=k, charge=0, multiplicity=1, geometry=freq[k].final,
-        source="input", state_label=k)) for k in ("nh", "o", "f")]
+        source="input", state_label=LABEL[k])) for k in MONOMER]
     term = (R.StoichTerm(composition_id="HNO", coefficient=1),)
     saddle = R.SaddleClaim(saddle_calc="s", freq_calc=calc_id(ts), imag_cm1=-900.0,
                            energy_hartree=0.0)
@@ -80,14 +90,14 @@ def _inputs(tmp_run: Path, outcome: Out | None) -> tuple[Manifest, dict[str, Evi
             calc_id(ts))
 
 
-def _run(fake_runtime, tmp_run, inputs, methods):
+def _run(fake_runtime, tmp_run, inputs, methods, fail=frozenset()):
     system = SystemConfig(
         system_id="s", species=[SpeciesInput(id=k, xyz=Path(f"{k}.xyz"), multiplicity=1)
-                                for k in ("nh", "o", "f")],
+                                for k in MONOMER],
         compositions=[CompositionInput(id="c", components={"nh": 1, "o": 1}),
                       CompositionInput(id="c2", components={"nh": 1, "f": 1})])
     qm = SpQM(tmp_run, double_well())
-    qm.guesses = []
+    qm.guesses, qm.fail = [], fail
     rt = fake_runtime(system, {(Capability.QM, "nwchem"): qm}, methods=methods)
     config = SinglePointConfig(engine="nwchem", methods=list(methods))
     return SinglePointStage().run(inputs, config, rt), qm.guesses
@@ -101,7 +111,7 @@ def _run(fake_runtime, tmp_run, inputs, methods):
     *((o, set()) for o in (Out.MULTI_STEP, Out.SAME_BASIN, Out.OUT_OF_WINDOW, Out.UNRESOLVED,
                            Out.BLOCKED, None)),
 ])
-def test_sp_computes_only_the_points_the_ranking_reads(fake_runtime, tmp_run, outcome, expected):
+def test_sp_computes_only_the_points_the_reactions_read(fake_runtime, tmp_run, outcome, expected):
     inputs, freq, ts = _inputs(tmp_run, outcome)
     out, guesses = _run(fake_runtime, tmp_run, inputs, {"tzvp": BIG})
     assert {"TS" if p == ts else p for a in out for p in a.parents} == expected
@@ -110,6 +120,20 @@ def test_sp_computes_only_the_points_the_ranking_reads(fake_runtime, tmp_run, ou
     assert all(guess is not None for guess in guesses)  # X3: each from its freq's SCF
     shared = [set(a.parents) for a in out if {"m_p", "m_twin"} & set(a.parents)]
     assert shared in ([], [{"m_p", "m_twin"}])  # one freq calculation, one sp
+
+
+def test_a_failure_on_an_auxiliary_point_only_is_no_artifact(fake_runtime, tmp_run):
+    """A barrierless step reads its own ends (dG_rxn); its separated NH + O give only dG_assoc:
+    their failed single points are left out, its product's stays a failed artifact."""
+    inputs, freq, _ = _inputs(tmp_run, Out.BARRIERLESS)
+    fail = frozenset(freq[m].final.fingerprint for m in ("m_nh", "m_o", "m_p"))
+    out, _ = _run(fake_runtime, tmp_run, inputs, {"tzvp": BIG}, fail)
+    failed = {p for a in out if a.status == "failed" for p in a.parents}
+    assert failed == {"m_p", "m_twin"} and {p for a in out for p in a.parents} == {
+        "m_r", "m_r2", "m_p", "m_twin"}
+    connected, _ = _run(fake_runtime, tmp_run, _inputs(tmp_run, Out.ELEMENTARY_STEP)[0],
+                        {"tzvp": BIG}, fail)  # with a TS, R_sep is a G_ref candidate
+    assert {"m_nh", "m_o"} <= {p for a in connected if a.status == "failed" for p in a.parents}
 
 
 def test_ccsd_t_runs_only_where_the_freq_passes_spin_ok(fake_runtime, tmp_run):

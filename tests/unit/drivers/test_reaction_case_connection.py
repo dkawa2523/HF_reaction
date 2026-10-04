@@ -16,6 +16,7 @@ from unit.drivers.test_reaction_case_actions import case_ctx as well_case
 from unit.drivers.test_reaction_case_saddle import HigherOrderQM
 
 from hfauto.chemistry.classification import finalize
+from hfauto.chemistry.profile import Profile
 from hfauto.chemistry.topology import bond_changes, bonds, state_label
 from hfauto.chemistry.xyz import composition_key
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
@@ -32,7 +33,6 @@ from hfauto.core.records import (
 )
 from hfauto.drivers.minimum import Registry, relax_to_minimum
 from hfauto.drivers.reaction_case import connection, driver
-from hfauto.drivers.reaction_case.actions import Profile
 from hfauto.drivers.reaction_case.state import (
     Action,
     CaseRules,

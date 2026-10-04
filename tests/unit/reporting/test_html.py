@@ -49,3 +49,34 @@ def test_a_view_without_reactions_still_gives_a_page(tmp_path):
     path = render(view(), tmp_path / "empty", load_xyz=xyz_loader(tmp_path))
     page = path.read_text(encoding="utf-8")
     assert page.startswith("<!doctype html>") and "No reactions" in page and "3Dmol" not in page
+
+
+def test_a_barrierless_step_is_listed_apart_with_its_dg_rxn(tmp_path):
+    """No TST barrier: the step leaves the summary (ranked by dG_eff) for the capture-limited
+    table, with dG_rxn and dG_assoc; the summary shows each dG_eff's zero. An association's
+    diagram starts at its separated monomers, its complex at +dG_assoc."""
+    def reaction(rid, outcome, monomers=()):
+        return rec.ReactionRecord(reaction_id=rid, reactants=(), products=(), minima=("a", "b"),
+                                  endpoints=("a", "b"), source="declared", outcome=outcome,
+                                  monomers=monomers)
+
+    def thermo(rid, **values):
+        return rec.ReactionThermo(reaction_id=rid, T_K=298.15, standard_state="1atm",
+                                  dE_act_kcal=None, dE_rxn_kcal=-20.0, dG_act_kcal=None,
+                                  dG_rxn_kcal=-12.5, **values)
+
+    page = render(view(*(Artifact(artifact_id=a.reaction_id, type=T.REACTION, payload=a) for a in (
+        reaction("cap", rec.CaseOutcome.BARRIERLESS, ("m1", "m2")),
+        reaction("step", rec.CaseOutcome.ELEMENTARY_STEP))),
+        Artifact(artifact_id="t1", type=T.REACTION_THERMO,
+                 payload=thermo("cap", dG_assoc_kcal=1.5)),
+        Artifact(artifact_id="t2", type=T.REACTION_THERMO,
+                 payload=thermo("step", dG_eff_kcal=10.4, reference="separated"))),
+        tmp_path / "out", load_xyz=xyz_loader(tmp_path)).read_text(encoding="utf-8")
+    summary, capture = page.split("<h2>Barrierless steps</h2>")
+    assert "#rxn-step" in summary and "#rxn-cap" not in summary
+    assert ">separated<" in summary and ">10.40<" in summary
+    table = capture.split("</table>")[0]
+    assert "#rxn-cap" in table and ">-12.50<" in table and ">1.50<" in table
+    cap = capture.split("<section id='rxn-cap'>")[1].split("</svg>")[0]
+    assert ">separated<" in cap and ">complex<" in cap and ">reactant<" not in cap

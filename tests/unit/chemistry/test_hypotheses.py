@@ -387,9 +387,12 @@ ETHANE = np.array([[0.0, 0, 0], [1.53, 0, 0], [-0.36, 1.03, 0], [-0.36, -0.51, 0
                    [-0.36, -0.51, -0.89], [1.89, -1.03, 0], [1.89, 0.51, 0.89],
                    [1.89, 0.51, -0.89]])
 CH3_CH3 = ETHANE + np.outer([0, 1, 0, 0, 0, 1, 1, 1], [1.5, 0, 0])
-MONOMERS = {("CH3O2", 0): [(("CH3", "CH3"), 1), (("O2", "O2"), 1)],  # thermo.monomer_states
-            ("C2H4O2", 0): [(("C2H4", "C2H4"), 1), (("O2", "O2"), 1)],
-            ("C2H6", 0): [(("CH3", "CH3"), 2)]}
+# monomer states as thermo.separated_states reads a complex's fragments (topology.state_label)
+CH3, O2, C2H4 = ((f, topology.state_label(list(s), x)) for f, s, x in (
+    ("CH3", "CHHH", CH3OO[[0, 3, 4, 5]]), ("O2", "OO", CH3OO[[1, 2]]),
+    ("C2H4", "CCHHHH", DIOXETANE[[0, 1, 4, 5, 6, 7]])))
+MONOMERS = {("CH3O2", 0): [(CH3, O2)], ("C2H4O2", 0): [(C2H4, O2)],  # thermo.declared_monomers
+            ("C2H6", 0): [(CH3, CH3)]}
 
 
 def level(multiplicity: int, basis: str = "def2-svpd") -> Level:
@@ -397,11 +400,11 @@ def level(multiplicity: int, basis: str = "def2-svpd") -> Level:
                  multiplicity=multiplicity)
 
 
-def monomer(mid: str, state: str, energy: float) -> r.MinimumRecord:
-    """A DFT minimum of a monomer state (its composition and state label: ``state``)."""
+def monomer(mid: str, state: tuple[str, str], energy: float) -> r.MinimumRecord:
+    """A DFT minimum of a monomer ``state`` (its composition and state label)."""
     species(mid, "H", [[0.0, 0.0, 0.0]])  # its structure is never read
-    return minimum(mid, mid, energy).model_copy(update={"composition_id": state,
-                                                        "state_label": state})
+    return minimum(mid, mid, energy).model_copy(update={"composition_id": state[0],
+                                                        "state_label": state[1]})
 
 
 def test_a_one_bond_formation_between_fragments_is_an_association():
@@ -417,8 +420,8 @@ def test_a_one_bond_formation_between_fragments_is_an_association():
         ("ch3ch3", "CCHHHHHH", CH3_CH3), ("c2h6", "CCHHHHHH", ETHANE))]
     pairs = [minimum(f"m_{e.species_id}", e.species_id, -1.0 - 0.01 * k)
              for k, e in enumerate(ends)]
-    parts = [monomer("m_ch3", "CH3", -0.5), monomer("m_ch3_tz", "CH3", -0.6),
-             monomer("m_o2", "O2", -0.4), monomer("m_c2h4", "C2H4", -0.3)]
+    parts = [monomer("m_ch3", CH3, -0.5), monomer("m_ch3_tz", CH3, -0.6),
+             monomer("m_o2", O2, -0.4), monomer("m_c2h4", C2H4, -0.3)]
     levels = {m.minimum_id: level(2) for m in pairs} | {
         "m_ch3": level(2), "m_ch3_tz": level(2, "def2-tzvpd"), "m_o2": level(3),
         "m_c2h4": level(1)}
@@ -455,7 +458,7 @@ def test_a_complex_that_relaxed_into_its_adduct_is_judged_on_its_own_structure()
     it stays an ordinary hypothesis."""
     ends = [species("cpx_in", "COOHHH", CH3_O2), species("add_in", "COOHHH", CH3OO)]
     adduct = minimum("m_add_in", "add_in", -1.1, members=("cpx_in",))
-    parts = [monomer("m_ch3", "CH3", -0.5), monomer("m_o2", "O2", -0.4)]
+    parts = [monomer("m_ch3", CH3, -0.5), monomer("m_o2", O2, -0.4)]
     levels = {"m_add_in": level(2), "m_ch3": level(2), "m_o2": level(3)}
     declared = [ReactionInput(id="assoc", reactant="cpx_in", product="add_in")]
     [rec] = select(basins(adduct, *parts), ends, [], declared, load, monomers=MONOMERS,

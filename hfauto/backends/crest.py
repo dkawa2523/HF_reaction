@@ -147,9 +147,7 @@ class CRESTEngine:
         return method.kind == "xtb" and method.gfn is not None and etemp_ok
 
     def search(self, mol: Molecule, method: MethodSpec, settings: ConformerSettings
-               ) -> ConformerEnsemble | Failure:
-        if not self.supports(method):
-            return Failure(kind=FailureKind.INPUT_INVALID, reason=f"crest cannot run {method.id!r}")
+               ) -> ConformerEnsemble | Failure:  # preflight checked supports(method)
         task = Task(
             engine=self.name, version_pin=self.site.version, kind="conformers",
             key_payload={"molecule": mol.fingerprint(), "method": method.signature(),

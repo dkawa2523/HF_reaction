@@ -1,4 +1,5 @@
-"""chemistry.thermo: textbook values and the fixed rule for negative modes."""
+"""chemistry.thermo: textbook values, the fixed rule for negative modes, and the points a
+reaction reads (one chain with a common zero)."""
 
 import importlib.metadata
 import math
@@ -8,33 +9,146 @@ import pytest
 
 from hfauto.chemistry import thermo as th
 from hfauto.chemistry.symmetry import Symmetry
+from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.vibrations import external_basis
+from hfauto.chemistry.xyz import XYZ
+from hfauto.core import records as R
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL as H2K
 from hfauto.core.constants import R_KCAL_MOL_K
+from hfauto.core.evidence import FileRef, Geometry
+from hfauto.core.system import CompositionInput
 
 RT = R_KCAL_MOL_K * 298.15
+OH = XYZ(["O", "H"], np.array([[0.0, 0, 0], [0, 0, 0.97]]))
+CH4 = XYZ(["C", "H", "H", "H", "H"], np.array(
+    [[0.0, 0, 0], [0.63, 0.63, 0.63], [-0.63, -0.63, 0.63], [-0.63, 0.63, -0.63],
+     [0.63, -0.63, -0.63]]))
+CH3 = XYZ(["C", "H", "H", "H"], CH4.coords[:4] * [1, 1, 0])
+H2O = XYZ(["O", "H", "H"], np.array([[0.0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]]))
 
 
-def test_standard_states_and_association():
+def _species(sid, xyz, multiplicity=1):
+    geo = Geometry(file=FileRef(path=f"{sid}.xyz", sha256="0"), fingerprint=sid,
+                   symbols=tuple(xyz.symbols))
+    return R.SpeciesRecord(species_id=sid, composition_id=sid.upper(), charge=0,
+                           multiplicity=multiplicity, geometry=geo, source="input",
+                           state_label=state_label(xyz.symbols, xyz.coords))
+
+
+def _complex(a: XYZ, b: XYZ, gap=3.0) -> XYZ:  # b moved along z clear of a
+    shift = a.coords[:, 2].max() - b.coords[:, 2].min() + gap
+    return XYZ(a.symbols + b.symbols, np.vstack([a.coords, b.coords + [0, 0, shift]]))
+
+
+def test_standard_states_per_molecule_count():
     assert th.standard_state_shift(1, 298.15, "1M") == pytest.approx(1.894, abs=1e-3)
-    bound, ts = -3.0 - 10 / H2K, -3.0 + 5 / H2K  # 10 kcal/mol below the separated monomers
-    assert th.association(bound, ts, [-1.0, -2.0], [1, 1], 298.15, "1atm") == pytest.approx(
-        (-10.0, 5.0))
-    assert th.association(bound, None, [-1.5], [2], 298.15, "1M")[0] == pytest.approx(
-        -10.0 - 1.894, abs=1e-3)  # dn = 1 - 2
+    assert th.standard_state_shift(2, 298.15, "1M") == pytest.approx(
+        2 * th.standard_state_shift(1, 298.15, "1M"))  # n molecules at one point
+    assert th.standard_state_shift(2, 298.15, "1atm") == 0.0
 
 
 @pytest.mark.parametrize(("G_ts", "G_P", "expected"), [
     (12.0, 3.0, 12.0),  # normal: the TS is the highest point
     (-0.5, 3.0, 3.0),  # dG_act < 0 (a submerged TS): the product state is the bottleneck
     (2.0, 5.0, 5.0),  # dG_act < dG_rxn: the TS lies below the product
-    (None, 4.0, 4.0),  # barrierless (or submerged): max(dG_rxn, 0)
+    (None, 4.0, 4.0),  # a submerged TS dropped out: max(dG_rxn, 0)
     (None, -6.0, 0.0),
 ])
-def test_effective_barrier_is_the_highest_point_above_the_reactant(G_ts, G_P, expected):
-    assert th.effective_barrier(G_ts, 0.0, G_P) == pytest.approx(expected)
-    assert th.effective_barrier(None if G_ts is None else G_ts - 7.0, -7.0, G_P - 7.0
-                                ) == pytest.approx(expected)  # relative to G_R
+def test_a_unimolecular_chain_is_the_highest_point_above_the_reactant(G_ts, G_P, expected):
+    for G_R in (0.0, -7.0):  # relative to G_R
+        chain = [(G_R, True), *(() if G_ts is None else [(G_ts + G_R, False)]), (G_P + G_R, True)]
+        assert th.chain_barrier(chain) == pytest.approx(expected)
+        assert th.chain_barrier(chain) == pytest.approx(  # the old effective barrier
+            max(G_R, G_P + G_R, G_R if G_ts is None else G_ts + G_R) - G_R)
+
+
+def test_the_chain_refers_to_the_lowest_well_before_each_point():
+    """S6: a complex 4.4 kcal/mol above its separated monomers (1 atm) reads the TS from the
+    monomers; an SN2-like bound complex keeps its own zero; a TS below the complex is no
+    bottleneck; a deep product well before an uphill dissociation counts from that well."""
+    assert th.chain_barrier([(0.0, True), (4.4, True), (10.4, False), (-10.6, True)]
+                            ) == pytest.approx(10.4)
+    assert th.chain_barrier([(0.0, True), (-5.2, True), (9.3, False), (-5.2, True),
+                             (0.0, True)]) == pytest.approx(14.5)
+    assert th.chain_barrier([(0.0, True), (-3.0, True), (-1.0, False), (-20.0, True)]
+                            ) == pytest.approx(2.0)
+    assert th.chain_barrier([(0.0, True), (5.0, False), (-20.0, True), (-2.0, True)]
+                            ) == pytest.approx(18.0)
+
+
+def test_declared_monomers_keep_every_composition_of_one_formula():
+    """oh_ch4 declares OH + CH4 and CH3 + H2O, both CH5O: neither replaces the other."""
+    spc = [_species("oh", OH, 2), _species("ch4", CH4), _species("ch3", CH3, 2),
+           _species("h2o", H2O)]
+    comps = [{"id": "a", "components": {"oh": 1, "ch4": 1}},
+             {"id": "b", "components": {"ch3": 1, "h2o": 1}},
+             {"id": "c", "components": {"h2o": 2}}, {"id": "lost", "components": {"x": 1, "oh": 1}},
+             {"id": "one", "components": {"oh": 1}}]
+    monomers = th.declared_monomers(spc, [CompositionInput.model_validate(c) for c in comps])
+    by_id = {s.species_id: (s.composition_id, s.state_label) for s in spc}
+    assert monomers == {("CH5O", 0): [(by_id["oh"], by_id["ch4"]), (by_id["ch3"], by_id["h2o"])],
+                        ("H4O2", 0): [(by_id["h2o"], by_id["h2o"])]}
+
+
+def test_separated_states_need_the_fragments_to_be_the_declared_monomers():
+    spc = [_species("oh", OH, 2), _species("ch4", CH4), _species("ch3", CH3, 2),
+           _species("h2o", H2O)]
+    monomers = th.declared_monomers(spc, [CompositionInput.model_validate({"id": "a", "components": {"oh": 1, "ch4": 1}}),
+                                          CompositionInput.model_validate({"id": "b", "components": {"ch3": 1, "h2o": 1}})])
+    by_id = {s.species_id: (s.composition_id, s.state_label) for s in spc}
+    reactant, product = _complex(CH4, OH), _complex(CH3, H2O)
+    assert th.separated_states(reactant, 0, monomers) == (by_id["oh"], by_id["ch4"])
+    assert th.separated_states(product, 0, monomers) == (by_id["ch3"], by_id["h2o"])
+    assert th.separated_states(reactant, -1, monomers) == ()  # another charge
+    bonded = XYZ(product.symbols, np.vstack([CH3.coords, H2O.coords + [0, 0, 1.4]]))
+    assert th.separated_states(bonded, 0, monomers) == ()  # C-O bonded: one fragment
+
+
+def _rx(minima=("r", "p"), outcome=R.CaseOutcome.ELEMENTARY_STEP, source="discovery", **kw):
+    saddle = R.SaddleClaim(saddle_calc="s", freq_calc="ts", imag_cm1=-900.0, energy_hartree=0.0)
+    return R.ReactionRecord(reaction_id="rx", reactants=(), products=(), minima=minima,
+                            endpoints=("a", "b"), source=source, outcome=outcome,
+                            saddle=saddle, **kw)
+
+
+STATES = {m: (m.upper(), m) for m in ("r", "p", "a", "b", "c", "d")}
+SEP = {"r": (STATES["a"], STATES["b"]), "p": (STATES["c"], STATES["d"])}
+
+
+def test_reaction_points_make_one_chain_with_its_separated_ends():
+    pts = th.reaction_points(_rx(), STATES, SEP)
+    assert pts.chain == (th.Point(SEP["r"], "r"), th.Point((STATES["r"],), "r"),
+                         th.Point((), "ts"), th.Point((STATES["p"],), "p"),
+                         th.Point(SEP["p"], "p"))
+    assert [len(p.states) for p in pts.chain] == [2, 1, 0, 1, 2]  # molecules (a TS: 1)
+    assert pts.own == (("r",), ("p",), ("ts",))
+    assert (pts.separated, pts.complex) == (pts.chain[0], pts.chain[1])
+    plain = th.reaction_points(_rx(), STATES, {})  # no declared monomers: [R, TS, P]
+    assert [p.subject for p in plain.chain] == ["r", "ts", "p"] and plain.separated is None
+
+
+def test_a_split_child_and_a_non_connected_outcome_have_no_chain_ends():
+    child = th.reaction_points(_rx(source="split"), STATES, SEP)  # inside its parent's chain
+    assert [p.subject for p in child.chain] == ["r", "ts", "p"]
+    assert child.separated is None and child.complex is None
+    flat = th.reaction_points(_rx(outcome=R.CaseOutcome.BARRIERLESS), STATES, SEP)
+    assert flat.chain == () and flat.own == (("r",), ("p",), ())  # no TS read
+    assert flat.complex == th.Point((STATES["r"],), "r")  # dG_assoc: an auxiliary point
+    lost = th.reaction_points(_rx(minima=("r", "")), STATES, SEP)
+    assert (lost.chain, lost.separated) == ((), None)
+
+
+def test_an_association_reads_its_monomers_and_its_complex_unless_it_collapsed():
+    """The monomers are the reactant side; the complex is R (a G_ref candidate) only where it
+    is a minimum of its own, not the adduct it relaxed into."""
+    assoc = _rx(monomers=("a", "b"), minima=("r", "p"))
+    pts = th.reaction_points(assoc, STATES, {})
+    assert pts.own == (("a", "b"), ("p",), ("ts",))
+    assert [p.subject for p in pts.chain] == ["r", "r", "ts", "p"]
+    assert pts.chain[0].states == (STATES["a"], STATES["b"]) and pts.complex == pts.chain[1]
+    collapsed = th.reaction_points(assoc.model_copy(update={"minima": ("p", "p")}), STATES, {})
+    assert [p.states for p in collapsed.chain] == [(STATES["a"], STATES["b"]), (), (STATES["p"],)]
+    assert collapsed.complex is None
 
 
 def test_a_chiral_structure_gains_minus_rt_ln2():  # m = 2 (HONO TS: 12.23 -> 11.82)

@@ -41,7 +41,7 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 
 ## 結果の読み方
 
-- 順位の量は δG_eff = max(G_TS, G_R, G_P) − G_R(kcal/mol)。G_R・G_P は反応物・生成物と同じ状態の DFT 極小の最小 G。障壁なし(`barrierless_at_resolution`)と ZPE で沈む障壁(注記 `submerged_barrier`)は max(ΔG_rxn, 0) で同じ表に並ぶ。qRRHO の扱いによる感度の幅が重なる反応は同順位。
+- 順位の量は δG_eff(kcal/mol)。反応は共通のゼロを持つ点の鎖 [分離した単量体?, R, TS, P, 分離した単量体?] で、δG_eff = max_k(G_k − それより前の最も低い井戸の G)。単分子の素過程では max(G_TS, G_R, G_P) − G_R で、G_R・G_P は反応物・生成物と同じ状態の DFT 極小の最小 G。分離した点は、端の断片が system で宣言した組成の単量体と一致するときだけ持ち、ゼロ(錯体か分離)は ranking.csv の `reference` に出る。ZPE で沈む障壁(注記 `submerged_barrier`)は TS を外した鎖の値。障壁なし(`barrierless_at_resolution`)は序数の順位に入れず、report.html の「Barrierless steps」(捕獲律速)に ΔG_rxn を出す。qRRHO の扱いによる感度の幅が重なる反応は同順位。
 - 既定の順位は M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD の G の序数として読む(ranking.csv の `energy_level` は `m06-2x-d3zero/def2-tzvpd`)。CCSD(T)/def2-TZVPD との差は障壁で平均 0.8、最大 1.8 kcal/mol(5 反応)、ΔE_rxn では平均 1.2、最大 2.3 で停留点レベルより良くない。1 kcal/mol 未満の差は序数を保証しない。鞍点の有無と PES の形は PBE0 で決まる。層の SP がない反応は `energy_layer_missing` で順位から外れ、PBE0 で代用しない。遷移金属・溶媒・多参照性の強い系は未検証。詳しくは [docs/design.md](docs/design.md) §7.3・§7.4。
 - 順位を付けない反応も outcome と blockers 付きで ranking.csv に載る。多段反応(`multi_step`)の親は順位を持たず、分割した子反応(`<id>_split<n>`)がそれぞれ並ぶ。判断の経過は `hfauto case` で見る。駆動しなかった子(同じ問いの結論を写した `same_as:<id>` と、分割の深さの上限の `split_depth`)は log を持たないので、`hfauto case` は `no case log` で終わる。
 

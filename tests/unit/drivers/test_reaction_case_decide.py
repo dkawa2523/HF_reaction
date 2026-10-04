@@ -37,8 +37,8 @@ def minimum(mid: str, basin: str, kcal: float = 0.0) -> r.MinimumRecord:
 MA, MB = minimum("ma", "A"), minimum("mb", "B", 10.0)
 BASE = CaseState(minima=(MA, MB))  # nothing done yet
 S = replace(BASE, screen=BV(verdict="single", source="screen"), neb_done=True)  # one peak
-SHORTCUT = replace(BASE, screen=BV(verdict="single", source="screen"), saddle_attempts=1,
-                   last_saddle="failed")  # the seed of a low-level TS has failed
+SHORTCUT = replace(BASE, shortcut_done=True, saddle_attempts=1,
+                   last_saddle="failed")  # the seed of a low-level TS has failed; no verdict
 STRING = BV(verdict="single", source="string")
 BLOCKED = Decision(A.BLOCKED, "endpoint_without_dft_minimum", C.BLOCKED)
 DFT_PATH = Decision(A.FIND_PATH, "dft_path")
@@ -187,9 +187,9 @@ def test_seeds_share_one_attempt_budget():
 
 
 def test_the_screen_path_runs_once_after_the_failed_shortcut_seeds():
-    """R4 / G8-P7: the shortcut's seeds (every low-level TS of the pair that gives a single
-    step) go first, in order; once they have failed, the low-level path runs before any string,
-    and never again."""
+    """R4 / G8-P7: the shortcut's seeds (the low-level TSs whose DFT SP lies at least one
+    resolution above both minima) go first, in order, and give no verdict; once they have
+    failed, the low-level path runs before any string, and never again."""
     seeded = replace(SHORTCUT, seeds=(SEED, OTHER_TS), saddle_attempts=0, last_saddle=None)
     assert decide(CASE, seeded, RULES) == Decision(A.REFINE_SADDLE, "seed:screen_ts")
     assert decide(CASE, SHORTCUT, RULES) == Decision(A.SCREEN, "screen")
