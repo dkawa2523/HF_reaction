@@ -46,7 +46,7 @@ from hfauto.core.evidence import (
     PathProfile,
 )
 from hfauto.core.hashing import sha256_text
-from hfauto.core.method import Deadline, EngineSite, MethodSpec, level_mismatches
+from hfauto.core.method import EngineSite, MethodSpec, level_mismatches
 from hfauto.execution.jobs import JobRunner, Task
 from hfauto.execution.process import STDOUT_NAME, Command, CommandResult, resolve_executable
 
@@ -180,8 +180,7 @@ class _NWChem:
 
     # --- engine side -------------------------------------------------------------------
 
-    def _run(self, kind: str, payload: Mapping[str, Any], inputs: Mapping[str, Any],
-             deadline: Deadline | None) -> Any:
+    def _run(self, kind: str, payload: Mapping[str, Any], inputs: Mapping[str, Any]) -> Any:
         try:  # no all-electron deck for an element that needs an ECP
             nw_in.ecp(inputs["mol"].xyz.symbols, inputs["method"].basis)
         except ValueError as exc:
@@ -189,7 +188,7 @@ class _NWChem:
         task = Task(engine=self.name, version_pin=self._site.version, kind=kind,
                     key_payload={"method": inputs["method"].signature(), **payload},
                     execution=self._site.execution, inputs=inputs)
-        return self._jobs.run(task, self, deadline=deadline)
+        return self._jobs.run(task, self)
 
     def _hessian_file(self, freq: Evidence, mol: Molecule) -> Path | Failure:
         """The canonical .npy of a freq Evidence (any Level) computed at the same atoms in the
@@ -372,15 +371,15 @@ class NWChemEngine(_NWChem):
     def supports(self, method: MethodSpec) -> bool:
         return _dft_supported(method) or _wft_supported(method)
 
-    def _qm(self, kind: str, mol: Molecule, method: MethodSpec, deadline: Deadline | None, *,
+    def _qm(self, kind: str, mol: Molecule, method: MethodSpec, *,
             payload: Mapping[str, Any] | None = None, **inputs: Any) -> Evidence | Failure:
         if not (_dft_supported(method) or (kind == "energy" and _wft_supported(method))):
             return _invalid(f"unsupported_method:{method.id}")
         return self._run(kind, {"molecule": mol.fingerprint(), **(payload or {})},
-                         {"mol": mol, "start": mol, "method": method, **inputs}, deadline)
+                         {"mol": mol, "start": mol, "method": method, **inputs})
 
-    def energy(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None,
-               deadline: Deadline | None = None) -> Evidence | Failure:
+    def energy(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None
+               ) -> Evidence | Failure:
         """A CCSD(T) key names the frozen core when an atom beyond Kr makes it differ from the
         old ``freeze atomic`` (input.frozen_core): no result of that deck is reused.
         ``scf_guess`` (a profile point's end) starts the SCF from its converged vectors, so an
@@ -389,7 +388,7 @@ class NWChemEngine(_NWChem):
         ecp = method.kind == "wft" and any(atomic_number(s) > 36 for s in symbols)
         payload = {"frozen_core": nw_in.frozen_core(symbols)} if ecp else {}
         guess, restart = self._guess(scf_guess)
-        return self._qm("energy", mol, method, deadline, payload={**payload, **guess}, **restart)
+        return self._qm("energy", mol, method, payload={**payload, **guess}, **restart)
 
     def _guess(self, scf_guess: Evidence | None) -> tuple[dict[str, Any], dict[str, Any]]:
         """(key payload, inputs) starting the SCF from the converged vectors of ``scf_guess``'s
@@ -404,8 +403,7 @@ class NWChemEngine(_NWChem):
     def optimize(self, mol: Molecule, method: MethodSpec, *,
                  init_hessian: Evidence | None = None,
                  fixed_bond: tuple[int, int, float] | None = None,
-                 scf_guess: Evidence | None = None,
-                 deadline: Deadline | None = None) -> Evidence | Failure:
+                 scf_guess: Evidence | None = None) -> Evidence | Failure:
         """``init_hessian`` may come from a nearby structure (a QRC or mode-follow side from its
         saddle, a low-level freq at a start). It is written as its positive-definite model
         (vibrations.shape_hessian; why in input.render_optimize) unless it is a higher-order
@@ -424,17 +422,17 @@ class NWChemEngine(_NWChem):
         model = {} if init_hessian is None or sum(f < -_SADDLE_CM1 for f in (
             init_hessian.frequencies_cm1 or ())) >= 2 else {"hessian_model": "positive"}
         guess, restart = self._guess(scf_guess)
-        return self._qm("optimize", mol, method, deadline,
+        return self._qm("optimize", mol, method,
                         payload={"hessian": sha, **model, **fixed, **guess},
                         hessian=hessian, **model, **fixed, **restart)
 
-    def frequencies(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None,
-                    deadline: Deadline | None = None) -> Evidence | Failure:
+    def frequencies(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None
+                    ) -> Evidence | Failure:
         """``scf_guess`` (the opt or saddle at mol) starts the SCF from its converged vectors, so
         the freq stays on its electronic state: from scratch, the UKS OH···CH4 complex found the
         other OH π component, 7.2e-5 Eh above its opt."""
         guess, restart = self._guess(scf_guess)
-        return self._qm("frequencies", mol, method, deadline, payload=guess, **restart)
+        return self._qm("frequencies", mol, method, payload=guess, **restart)
 
 
 class NWChemSaddle(_NWChem):
@@ -446,7 +444,7 @@ class NWChemSaddle(_NWChem):
     name: ClassVar[str] = "nwchem_saddle"
 
     def refine(self, seed: Molecule, method: MethodSpec, *, hessian: Evidence,
-               mode: Sequence[float], deadline: Deadline | None = None) -> Evidence | Failure:
+               mode: Sequence[float]) -> Evidence | Failure:
         if not _dft_supported(method):
             return _invalid(f"unsupported_method:{method.id}")
         path = self._hessian_file(hessian, seed)
@@ -457,7 +455,7 @@ class NWChemSaddle(_NWChem):
                    hessian.hessian.sha256, "hessian_model": "negative_along_mode",
                    "mode": sha256_text(json.dumps((np.round(unit, 6) + 0.0).tolist()))}
         inputs = {"mol": seed, "start": seed, "method": method, "hessian": path, "mode": unit}
-        return self._run("saddle", payload, inputs, deadline)
+        return self._run("saddle", payload, inputs)
 
 
 class NWChemString(_NWChem):
@@ -468,8 +466,7 @@ class NWChemString(_NWChem):
     result_type: type[BaseModel] = PathProfile
 
     def find_path(self, start: Molecule, end: Molecule, method: MethodSpec, *, images: int,
-                  initial_path: FileRef, deadline: Deadline | None = None
-                  ) -> PathProfile | Failure:
+                  initial_path: FileRef) -> PathProfile | Failure:
         if not _dft_supported(method):
             return _invalid(f"unsupported_method:{method.id}")
         if start.xyz.symbols != end.xyz.symbols or images < 3:
@@ -478,4 +475,4 @@ class NWChemString(_NWChem):
                    "initial_path": initial_path.sha256}
         inputs = {"mol": start, "start": start, "end": end, "method": method, "images": images,
                   "initial_path": self._jobs.store.resolve(initial_path)}
-        return self._run("string", payload, inputs, deadline)
+        return self._run("string", payload, inputs)

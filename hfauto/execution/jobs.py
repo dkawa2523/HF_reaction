@@ -17,7 +17,7 @@ from typing import Any, Protocol, TypeVar
 from pydantic import BaseModel, ConfigDict
 
 from hfauto.core.evidence import Failure, FailureKind
-from hfauto.core.method import MIN_ATTEMPT_S, Deadline, ExecutionSpec
+from hfauto.core.method import ExecutionSpec
 from hfauto.execution.jobstore import JobStore
 from hfauto.execution.process import Command, CommandResult, run_command
 
@@ -109,16 +109,14 @@ class JobRunner:
         self._misses = 0
         self._failures: Counter[str] = Counter()
 
-    def run(
-        self, task: Task, adapter: Adapter[T], *, deadline: Deadline | None = None
-    ) -> T | Failure:
+    def run(self, task: Task, adapter: Adapter[T]) -> T | Failure:
         """Result or Failure of ``task``; ``job_key`` is stamped on models that carry it."""
         key = self.store.key(task)
         with self.store.lock(key):
             result = self.store.load(key, adapter.result_type)
             hit = result is not None
             if result is None:
-                result = _stamp(self._execute(key, task, adapter, deadline), key)
+                result = _stamp(self._execute(key, task, adapter), key)
                 self.store.save(key, result)
         self._record(hit, result)
         return result
@@ -129,22 +127,14 @@ class JobRunner:
                 hits=self._hits, misses=self._misses, failures_by_kind=dict(self._failures)
             )
 
-    def _execute(
-        self, key: str, task: Task, adapter: Adapter[T], deadline: Deadline | None
-    ) -> T | Failure:
+    def _execute(self, key: str, task: Task, adapter: Adapter[T]) -> T | Failure:
         index = self.store.begin(key, task)
         used: Counter[FailureKind] = Counter()
         current = task
         while True:
             current = replace(current, execution=_shared(current.execution))
-            timeout_s = _attempt_timeout(current.execution, deadline)
-            if timeout_s is None:
-                return Failure(
-                    kind=FailureKind.BUDGET_EXHAUSTED,
-                    reason=f"less than {MIN_ATTEMPT_S:.0f} s of the deadline left",
-                )
             workdir = self.store.attempt_dir(key, index)
-            outcome = self._attempt(current, adapter, workdir, timeout_s)
+            outcome = self._attempt(current, adapter, workdir)
             if not isinstance(outcome, Failure):
                 return outcome
             following = _continue(current, adapter, workdir, outcome, used)
@@ -152,14 +142,12 @@ class JobRunner:
                 return outcome
             current, index = following, index + 1
 
-    def _attempt(
-        self, task: Task, adapter: Adapter[T], workdir: Path, timeout_s: float
-    ) -> T | Failure:
+    def _attempt(self, task: Task, adapter: Adapter[T], workdir: Path) -> T | Failure:
         workdir.mkdir(parents=True, exist_ok=True)
         cmd = adapter.prepare(task, workdir)
         with self._semaphore.reserve(task.execution.ranks * task.execution.threads):
             try:
-                result = run_command(cmd, timeout_s=timeout_s)
+                result = run_command(cmd, timeout_s=task.execution.timeout_s)
             except (FileNotFoundError, PermissionError) as exc:
                 return Failure(kind=FailureKind.EXECUTABLE_MISSING, reason=f"{cmd.argv[0]}: {exc}")
         try:
@@ -189,14 +177,6 @@ def _shared(execution: ExecutionSpec) -> ExecutionSpec:
         return execution
     return execution.model_copy(
         update={"ranks": share, "timeout_s": execution.timeout_s * execution.ranks / share})
-
-
-def _attempt_timeout(execution: ExecutionSpec, deadline: Deadline | None) -> float | None:
-    if deadline is None:
-        return execution.timeout_s
-    if deadline.expired():
-        return None
-    return min(execution.timeout_s, deadline.remaining())
 
 
 def _continue(

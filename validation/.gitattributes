@@ -1,0 +1,2 @@
+# Keep the BH76 copies byte-identical to their sources (bh76/SOURCES.json sha256).
+bh76/** -text

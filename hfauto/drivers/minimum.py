@@ -19,7 +19,7 @@ from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.vibrations import newton_step, stationarity_gap
 from hfauto.chemistry.xyz import XYZ, Molecule, composition_key
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, Geometry
-from hfauto.core.method import Deadline, MethodSpec
+from hfauto.core.method import MethodSpec
 from hfauto.core.records import MinimumRecord, SpeciesRecord
 
 if TYPE_CHECKING:
@@ -81,7 +81,6 @@ class _Ctx:
     load: LoadXYZ
     max_mode_follow: int
     gates: Policy
-    deadline: Deadline | None
     resolve: Resolve | None
 
     def molecule(self, xyz: XYZ) -> Molecule:
@@ -93,8 +92,7 @@ class _Ctx:
         soft whatever its frequencies, noted soft_imaginary_mode: noise_cm1 is numerical noise
         only at a stationary point."""
         xyz = self.load(opt.final)
-        freq = self.qm.frequencies(self.molecule(xyz), self.method, scf_guess=opt,
-                                   deadline=self.deadline)
+        freq = self.qm.frequencies(self.molecule(xyz), self.method, scf_guess=opt)
         if isinstance(freq, Failure):
             return freq
         gate = is_minimum(freq, opt=opt, policy=self.gates)
@@ -120,8 +118,7 @@ class _Ctx:
         opt (the engine writes it as its positive-definite model unless it is a higher-order
         saddle's; trust 0.3); None when either job fails."""
         xyz = XYZ(symbols=list(self.template.xyz.symbols), coords=coords)
-        opt = self.qm.optimize(self.molecule(xyz), self.method, init_hessian=source.freq,
-                               deadline=self.deadline)
+        opt = self.qm.optimize(self.molecule(xyz), self.method, init_hessian=source.freq)
         if isinstance(opt, Failure):
             return None
         point = self.frequencies(opt)
@@ -211,7 +208,6 @@ def relax_to_minimum(
     opt: Evidence | None = None,
     max_mode_follow: int = 2,
     gates: Policy = _GATES,
-    deadline: Deadline | None = None,
     load_xyz: LoadXYZ | None = None,
     resolve: Resolve | None = None,
 ) -> MinimumOutcome:
@@ -224,10 +220,9 @@ def relax_to_minimum(
     load = load_xyz or (known.load_xyz if known is not None else None)
     if load is None:
         raise ValueError("relax_to_minimum needs load_xyz or a known Registry")
-    ctx = _Ctx(mol, method, qm, load, max_mode_follow, gates, deadline, resolve)
+    ctx = _Ctx(mol, method, qm, load, max_mode_follow, gates, resolve)
     history = ["opt" if opt is None else "opt:reused"]
-    done = opt if opt is not None else qm.optimize(
-        mol, method, init_hessian=init_hessian, deadline=deadline)
+    done = opt if opt is not None else qm.optimize(mol, method, init_hessian=init_hessian)
     if isinstance(done, Failure):
         return _failed(history, done)
     if known is not None:

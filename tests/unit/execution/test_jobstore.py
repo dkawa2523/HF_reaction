@@ -54,7 +54,7 @@ def test_restores_result_type_and_checks_file_shas(tmp_path):
 def test_failures_are_remembered_unless_retried(tmp_path):
     store = JobStore(tmp_path / "jobs")
     key = store.key(_task())
-    for kind in set(FailureKind) - {FailureKind.TIMEOUT, FailureKind.BUDGET_EXHAUSTED}:
+    for kind in set(FailureKind) - {FailureKind.TIMEOUT}:
         store.save(key, Failure(kind=kind, reason="r"))
         assert store.load(key, Out) == Failure(kind=kind, reason="r")
     frame = store.attempt_dir(key, 2) / "last.xyz"  # a saddle search stopped at maxiter
@@ -70,12 +70,11 @@ def test_failures_are_remembered_unless_retried(tmp_path):
     assert store.load(key, Out) is None
 
 
-def test_wall_clock_failures_are_never_stored(tmp_path):
+def test_timeouts_are_never_stored(tmp_path):
     store = JobStore(tmp_path / "jobs")
     key = store.key(_task())
-    for kind in (FailureKind.TIMEOUT, FailureKind.BUDGET_EXHAUSTED):
-        store.save(key, Failure(kind=FailureKind.INPUT_INVALID, reason="autoz"))
-        store.save(key, Failure(kind=kind, reason="wall clock"))  # clears the old record
-        assert store.load(key, Out) is None
-        assert not (store.job_dir(key) / "result.json").exists()
+    store.save(key, Failure(kind=FailureKind.INPUT_INVALID, reason="autoz"))
+    store.save(key, Failure(kind=FailureKind.TIMEOUT, reason="timeout"))  # clears the old record
+    assert store.load(key, Out) is None
+    assert not (store.job_dir(key) / "result.json").exists()
 

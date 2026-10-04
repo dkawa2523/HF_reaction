@@ -1,0 +1,311 @@
+{
+  "schema_version": "hfauto.manifest.v2",
+  "run_id": "s5_ch3_o2",
+  "stage_id": "thermo",
+  "created_at": "2026-10-02T04:50:54+00:00",
+  "artifacts": [
+    {
+      "artifact_id": "species_thermo_min_ch3_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_ch3_5a7804cb",
+        "calc_535506db109d0452",
+        "calc_4a5aa41e6a677d12"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_ch3_5a7804cb",
+        "freq_calc": "calc_535506db109d0452",
+        "energy_calc": "calc_4a5aa41e6a677d12",
+        "T_K": 298.15,
+        "G_hartree": -39.81229771594697,
+        "H_hartree": -39.79020486488412,
+        "zpe_hartree": 0.029733268003748946,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_ch3_o2_p00_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_ch3_o2_p00_5a7804cb",
+        "calc_40ccc94723dbfd58",
+        "calc_f3fe7ecf72d40ea5"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_ch3_o2_p00_5a7804cb",
+        "freq_calc": "calc_40ccc94723dbfd58",
+        "energy_calc": "calc_f3fe7ecf72d40ea5",
+        "T_K": 298.15,
+        "G_hartree": -190.19373584007147,
+        "H_hartree": -190.16327885915402,
+        "zpe_hartree": 0.043177464319042694,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_o2_2fbb137e_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_o2_2fbb137e",
+        "calc_cdcea687c9cf75ea",
+        "calc_4e2dd76c4d9f343d"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_o2_2fbb137e",
+        "freq_calc": "calc_cdcea687c9cf75ea",
+        "energy_calc": "calc_4e2dd76c4d9f343d",
+        "T_K": 298.15,
+        "G_hartree": -150.34401231160308,
+        "H_hartree": -150.32076532015208,
+        "zpe_hartree": 0.003999495894164972,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_spc_disc_trial_e4ce72fe74a7b66e_nt2_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_spc_disc_trial_e4ce72fe74a7b66e_nt2_5a7804cb",
+        "calc_5ca082f96d1ddc7f"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_spc_disc_trial_e4ce72fe74a7b66e_nt2_5a7804cb",
+        "freq_calc": "calc_5ca082f96d1ddc7f",
+        "energy_calc": null,
+        "T_K": 298.15,
+        "G_hartree": null,
+        "H_hartree": null,
+        "zpe_hartree": null,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": [
+          "thermo_unavailable",
+          "energy_layer_missing"
+        ]
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_spc_relax_ch3_o2_p00_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_spc_relax_ch3_o2_p00_5a7804cb",
+        "calc_c84bb5f38e49c937",
+        "calc_b3b095b56271c3d7"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_spc_relax_ch3_o2_p00_5a7804cb",
+        "freq_calc": "calc_c84bb5f38e49c937",
+        "energy_calc": "calc_b3b095b56271c3d7",
+        "T_K": 298.15,
+        "G_hartree": -190.0743086090177,
+        "H_hartree": -190.03621395349026,
+        "zpe_hartree": 0.03477010291964976,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": [
+          "spin_contaminated"
+        ]
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_spc_rxn_discovery_1acecb5874_qrc1_0_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_spc_rxn_discovery_1acecb5874_qrc1_0_5a7804cb",
+        "calc_e923864b4fb993ba",
+        "calc_6d4f04604cae72fd"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_spc_rxn_discovery_1acecb5874_qrc1_0_5a7804cb",
+        "freq_calc": "calc_e923864b4fb993ba",
+        "energy_calc": "calc_6d4f04604cae72fd",
+        "T_K": 298.15,
+        "G_hartree": -190.1733380828164,
+        "H_hartree": -190.14159932524004,
+        "zpe_hartree": 0.04098837346616059,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_spc_rxn_discovery_1acecb5874_qrc1_1_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_spc_rxn_discovery_1acecb5874_qrc1_1_5a7804cb",
+        "calc_e3f66b56a50f669e",
+        "calc_b3fb9c220b801936"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_spc_rxn_discovery_1acecb5874_qrc1_1_5a7804cb",
+        "freq_calc": "calc_e3f66b56a50f669e",
+        "energy_calc": "calc_b3fb9c220b801936",
+        "T_K": 298.15,
+        "G_hartree": -190.19058414152244,
+        "H_hartree": -190.16043190481733,
+        "zpe_hartree": 0.042685675837292464,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_calc_bd482c7a2a3fad37_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "calc_bd482c7a2a3fad37",
+        "calc_c026c53d6658566e"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "calc_bd482c7a2a3fad37",
+        "freq_calc": "calc_bd482c7a2a3fad37",
+        "energy_calc": "calc_c026c53d6658566e",
+        "T_K": 298.15,
+        "G_hartree": -190.11907295131425,
+        "H_hartree": -190.08917456096358,
+        "zpe_hartree": 0.03643025052580106,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "reaction_thermo_rxn_discovery_1acecb5874_298.15K_1atm",
+      "type": "reaction_thermo",
+      "parents": [
+        "rxn_discovery_1acecb5874"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "reaction_thermo",
+        "reaction_id": "rxn_discovery_1acecb5874",
+        "T_K": 298.15,
+        "standard_state": "1atm",
+        "dE_act_kcal": null,
+        "dE_rxn_kcal": null,
+        "dG_act_kcal": null,
+        "dG_rxn_kcal": null,
+        "dG_assoc_kcal": -23.485051931709204,
+        "dG_act_vs_separated_kcal": null,
+        "band_kcal": null,
+        "blockers": [
+          "thermo_unavailable",
+          "mixed_level_of_theory"
+        ],
+        "dG_eff_kcal": null,
+        "energy_level": null,
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "reaction_thermo_rxn_discovery_1acecb5874_split1_298.15K_1atm",
+      "type": "reaction_thermo",
+      "parents": [
+        "rxn_discovery_1acecb5874_split1"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "reaction_thermo",
+        "reaction_id": "rxn_discovery_1acecb5874_split1",
+        "T_K": 298.15,
+        "standard_state": "1atm",
+        "dE_act_kcal": 50.8825595087746,
+        "dE_rxn_kcal": 14.677701028339968,
+        "dG_act_kcal": 46.85167005607308,
+        "dG_rxn_kcal": 12.79978592719477,
+        "dG_assoc_kcal": -23.485051931709204,
+        "dG_act_vs_separated_kcal": 23.366618124363878,
+        "band_kcal": [
+          46.79105300442112,
+          46.88309903378428
+        ],
+        "blockers": [],
+        "dG_eff_kcal": 46.85167005607308,
+        "energy_level": "m06-2x-d3zero/def2-tzvpd",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "reaction_thermo_rxn_discovery_1acecb5874_split2_298.15K_1atm",
+      "type": "reaction_thermo",
+      "parents": [
+        "rxn_discovery_1acecb5874_split2"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "reaction_thermo",
+        "reaction_id": "rxn_discovery_1acecb5874_split2",
+        "T_K": 298.15,
+        "standard_state": "1atm",
+        "dE_act_kcal": null,
+        "dE_rxn_kcal": null,
+        "dG_act_kcal": null,
+        "dG_rxn_kcal": null,
+        "dG_assoc_kcal": -10.685266004514432,
+        "dG_act_vs_separated_kcal": null,
+        "band_kcal": null,
+        "blockers": [
+          "thermo_unavailable",
+          "mixed_level_of_theory"
+        ],
+        "dG_eff_kcal": null,
+        "energy_level": null,
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "reaction_thermo_rxn_discovery_b3febc8052_298.15K_1atm",
+      "type": "reaction_thermo",
+      "parents": [
+        "rxn_discovery_b3febc8052"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "reaction_thermo",
+        "reaction_id": "rxn_discovery_b3febc8052",
+        "T_K": 298.15,
+        "standard_state": "1atm",
+        "dE_act_kcal": null,
+        "dE_rxn_kcal": -37.18143740743669,
+        "dG_act_kcal": null,
+        "dG_rxn_kcal": -23.485051931709204,
+        "dG_assoc_kcal": null,
+        "dG_act_vs_separated_kcal": null,
+        "band_kcal": [
+          0.0,
+          0.0
+        ],
+        "blockers": [],
+        "dG_eff_kcal": 0.0,
+        "energy_level": "m06-2x-d3zero/def2-tzvpd",
+        "notes": []
+      },
+      "failure": null
+    }
+  ]
+}

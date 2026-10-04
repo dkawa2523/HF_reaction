@@ -9,4 +9,4 @@
 # explore.
 system_id: sn2_cl_d3h
 species:
-  - {id: sn2_d3h, xyz: xyz/sn2_cl_d3h.xyz, charge: -1}
+  - {id: sn2_d3h, xyz: xyz/sn2_cl_d3h.xyz, charge: -1, multiplicity: 1}

@@ -1,5 +1,5 @@
-"""Electronic state of the input: supported elements, the spin declaration, electron-count
-parity, and the multiplicity of a composition from its components."""
+"""Electronic state of the input: supported elements, electron-count parity of the declared
+multiplicity, and the multiplicity of a composition from its components."""
 
 from __future__ import annotations
 
@@ -7,25 +7,15 @@ from collections.abc import Iterable
 
 from hfauto.chemistry.elements import ELEMENTS
 
-# d-block (Sc–Zn, Y–Cd, La, Hf–Hg): neither RDKit radicals nor the xyz default give the spin.
-_D_BLOCK = frozenset((*range(21, 31), *range(39, 49), 57, *range(72, 81)))
 
-
-def check_electronic_state(symbols: Iterable[str], charge: int, multiplicity: int, *,
-                           declared: bool = True) -> None:
-    """Raise ValueError for an element outside the table (``unsupported_element``), a species
-    with a d-block element whose multiplicity was not declared (``declare_multiplicity``), or a
-    multiplicity the electron count cannot have."""
+def check_electronic_state(symbols: Iterable[str], charge: int, multiplicity: int) -> None:
+    """Raise ValueError for an element outside the table (``unsupported_element``) or a
+    declared multiplicity (>= 1, ``SpeciesInput``) the electron count cannot have."""
 
     names = list(symbols)
     unsupported = sorted({name for name in names if name not in ELEMENTS})
     if unsupported:
         raise ValueError(f"unsupported_element:{','.join(unsupported)}")
-    metals = sorted({name for name in names if ELEMENTS[name].z in _D_BLOCK})
-    if metals and not declared:
-        raise ValueError(f"declare_multiplicity: d-block element(s) {','.join(metals)}")
-    if multiplicity < 1:
-        raise ValueError(f"Multiplicity must be positive, got {multiplicity}")
     electron_count = sum(ELEMENTS[name].z for name in names) - charge
     unpaired = multiplicity - 1
     if electron_count < unpaired or (electron_count - unpaired) % 2:

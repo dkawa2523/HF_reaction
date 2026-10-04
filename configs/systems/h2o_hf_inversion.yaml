@@ -4,7 +4,7 @@
 # dG_eff 0. Fake-pass checks: both minima pyramidal (> 20 deg); the reason is not well_is_endpoint.
 system_id: h2o_hf_inversion
 species:
-  - {id: h2o_hf_plus, xyz: xyz/h2o_hf_inversion/plus.xyz, role: endpoint}
-  - {id: h2o_hf_minus, xyz: xyz/h2o_hf_inversion/minus.xyz, role: endpoint}
+  - {id: h2o_hf_plus, xyz: xyz/h2o_hf_inversion/plus.xyz, multiplicity: 1, role: endpoint}
+  - {id: h2o_hf_minus, xyz: xyz/h2o_hf_inversion/minus.xyz, multiplicity: 1, role: endpoint}
 reactions:
   - {id: h2o_hf_inversion, reactant: h2o_hf_plus, product: h2o_hf_minus}

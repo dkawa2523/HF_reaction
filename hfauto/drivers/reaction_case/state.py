@@ -1,13 +1,14 @@
 """Reaction-case state and the pure decision table (design §7.3).
 
-``decide`` evaluates the 14 rows of ``ROWS`` from the top and returns the first decision.  The
+``decide`` evaluates the 13 rows of ``ROWS`` from the top and returns the first decision.  The
 driver accumulates ``CaseState`` in memory; actions only change the state, never the table.
-Rows 4-6 complete a case from evidence already in hand and so come before the walltime (row 7);
-every row after it starts a computation or gives up. A saddle without an imaginary mode is a
-failed attempt like any rejected saddle: an intermediate comes only from a profile's well
-(row 11) or a QRC side (row 5). An association (``ReactionRecord.monomers``) is asked from its
-separated monomers: SCREEN runs its relaxed scan, with or without a low-level engine (row 10),
-and no string runs (row 13: a string joins two minima, and the monomers' end is none).
+Rows 4-6 complete a case from evidence already in hand; every row after them starts a
+computation or gives up, bounded by counts only (``ReactionPathsPolicy``). A saddle without an
+imaginary mode is a failed attempt like any rejected saddle: an intermediate comes only from a
+profile's well (row 10) or a QRC side (row 5). An association (``ReactionRecord.monomers``) is
+asked from its separated monomers: SCREEN runs its relaxed scan, with or without a low-level
+engine (row 9), and no string runs (row 12: a string joins two minima, and the monomers' end is
+none).
 """
 
 from __future__ import annotations
@@ -44,12 +45,11 @@ class Action(StrEnum):
 
 
 class ReactionPathsPolicy(BaseModel):
-    """The budget (pipeline ``policy:``). max_saddle_attempts counts per case (a split child
-    starts from 0; a stalled search's restart is part of its attempt); a hypothesis and its split
-    children share only the walltime_h deadline."""
+    """The budget (pipeline ``policy:``), counts only: max_saddle_attempts per case (a split
+    child starts from 0; a stalled search's restart is part of its attempt) and the split depth
+    below a hypothesis."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    walltime_h: float = 6.0
     max_saddle_attempts: int = 2
     max_split_depth: int = 2
 
@@ -85,14 +85,13 @@ class CaseState:
     ``minima`` (not in the §7.3 listing) holds the registry records of ``case.minima``, None when
     an endpoint has none: rows 1-3 need their basin and energy, which a ReactionRecord does not
     carry. ``screen`` is the verdict of the latest DFT profile (SCREEN or string), which decides
-    rows 6, 11 and 13 and goes into the record. ``neb_done``: the low-level path of SCREEN ran
-    (after a shortcut, row 10 runs it once its seeds have failed), or an association's scan.
+    rows 6, 10 and 12 and goes into the record. ``neb_done``: the low-level path of SCREEN ran
+    (after a shortcut, row 9 runs it once its seeds have failed), or an association's scan.
     ``last_saddle``: a converged saddle awaits its checks, or the latest search or its checks
     failed (None once a TS is accepted: its claim stands for it).
     """
 
     minima: tuple[MinimumRecord | None, MinimumRecord | None] = (None, None)
-    expired: bool = False
     screen: BarrierVerdict | None = None
     neb_done: bool = False
     seeds: tuple[Seed, ...] = ()  # unused seeds, consumed from the front
@@ -175,24 +174,20 @@ def _r06_barrierless(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decisi
     return None
 
 
-def _r07_walltime(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
-    return _complete(CaseOutcome.UNRESOLVED, "walltime") if s.expired else None
-
-
-def _r08_connection(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r07_connection(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     if s.connection in ("same_basin", "same_state") and _attempts_left(s, p):
-        return None  # a saddle of another process (sides in one basin or key): search on (10-13)
+        return None  # a saddle of another process (sides in one basin or key): search on (9-12)
     return None if s.connection is None else _complete(CaseOutcome.UNRESOLVED, "connection_failed")
 
 
-def _r09_saddle(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r08_saddle(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     # a converged saddle (a ts_calc case: from the start) is checked and, as a TS, connected
     if s.last_saddle == "converged":
         return Decision(Action.VALIDATE_AND_CONNECT, "saddle_converged")
     return None
 
 
-def _r10_screen(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r09_screen(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     # the cheap low-level path comes before any string, also once a shortcut's seeds have
     # failed; an association's scan needs no low-level engine
     fire = ((p.screen or bool(case.monomers)) and not s.neb_done
@@ -200,7 +195,7 @@ def _r10_screen(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | 
     return Decision(Action.SCREEN, "screen") if fire else None
 
 
-def _r11_intermediate(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r10_intermediate(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     if s.screen is not None and s.screen.verdict == "intermediate" and s.intermediate is None:
         return Decision(Action.VALIDATE_INTERMEDIATE, "path_intermediate")  # the lowest well
     return None
@@ -210,17 +205,17 @@ def _attempts_left(s: CaseState, p: CaseRules) -> bool:
     return s.saddle_attempts < p.budget.max_saddle_attempts
 
 
-def _r12_seed(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r11_seed(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     if s.seeds and _attempts_left(s, p):
         return Decision(Action.REFINE_SADDLE, f"seed:{s.seeds[0].source}")
     return None
 
 
-def _r13_find_path(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r12_find_path(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     """A DFT string (none for an association): the first one, or the next chunk from where the
     latest string stopped once its seeds have failed. A string runs only while its peak seed can
     still be refined, and only after every earlier string's seed was tried: a string that left
-    no seed ends the case (row 14)."""
+    no seed ends the case (row 13)."""
     v, runs = s.screen, s.path_runs
     fire = (_attempts_left(s, p) and runs <= s.saddle_attempts and not case.monomers
             and (not runs or (v is not None and v.source == "string"
@@ -228,17 +223,17 @@ def _r13_find_path(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision
     return Decision(Action.FIND_PATH, "dft_path") if fire else None
 
 
-def _r14_exhausted(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
+def _r13_exhausted(case: ReactionRecord, s: CaseState, p: CaseRules) -> Decision | None:
     return _complete(CaseOutcome.UNRESOLVED, "attempts_exhausted")
 
 
 ROWS: tuple[Row, ...] = (
     _r01_endpoints, _r02_same_basin, _r03_window, _r04_connected, _r05_distinct,
-    _r06_barrierless, _r07_walltime, _r08_connection, _r09_saddle, _r10_screen,
-    _r11_intermediate, _r12_seed, _r13_find_path, _r14_exhausted,
+    _r06_barrierless, _r07_connection, _r08_saddle, _r09_screen, _r10_intermediate,
+    _r11_seed, _r12_find_path, _r13_exhausted,
 )
 
 
 def decide(case: ReactionRecord, state: CaseState, rules: CaseRules) -> Decision:
-    """First matching row of the table (pure, no IO); row 14 always matches."""
+    """First matching row of the table (pure, no IO); row 13 always matches."""
     return next(d for row in ROWS if (d := row(case, state, rules)) is not None)

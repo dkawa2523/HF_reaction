@@ -6,7 +6,7 @@ import pytest
 from pydantic import BaseModel
 
 from hfauto.core.evidence import Failure, FailureKind, FileRef
-from hfauto.core.method import Deadline, ExecutionSpec
+from hfauto.core.method import ExecutionSpec
 from hfauto.execution.jobs import JobRunner, JobStats, Task, thread_map
 from hfauto.execution.jobstore import JobStore
 from hfauto.execution.process import Command
@@ -100,12 +100,8 @@ def test_ladder_limits_and_failure_memory(tmp_path):
     assert isinstance(retry.run(_task(BAD, BAD, OK), adapter), Failure) and _runs(tmp_path) == 6
 
 
-def test_wall_clock_failures_rerun_and_missing_executable(tmp_path):
+def test_timeouts_rerun_and_missing_executable(tmp_path):
     runner, adapter = _setup(tmp_path)
-    task = _task(OK)
-    out = runner.run(task, adapter, deadline=Deadline.after(30))
-    assert out.kind is FailureKind.BUDGET_EXHAUSTED and _runs(tmp_path) == 0
-    assert isinstance(runner.run(task, adapter, deadline=Deadline.after(3600)), Out)
     before, slow = runner.stats(), _task(SLOW, name="slow", timeout_s=0.5)  # no continuation
     assert [runner.run(slow, adapter).kind for _ in range(2)] == [FailureKind.TIMEOUT] * 2
     assert runner.stats().since(before) == JobStats(misses=2, failures_by_kind={"timeout": 2})

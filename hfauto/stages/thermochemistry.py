@@ -15,7 +15,8 @@ The blockers of a ReactionThermo are the only source of thermo_unavailable,
 mixed_level_of_theory and spin_contaminated.
 
 A state is a composition and a topology.state_label. Its G (_state_G) is the lowest G of its
-spin-clean minima on one freq and energy LOT (fast conformer equilibria make one state). dG_eff
+spin-clean minima on one freq and energy LOT (fast conformer equilibria make one state); it fails
+closed (None, thermo_unavailable) when one of them lacks its G, e.g. its energy layer. dG_eff
 (thermo.effective_barrier) refers to the reactant's and the product's state, dG_assoc to the
 monomers' states on the complex's LOT; the TS drops out, with the note submerged_barrier, when
 its forward or reverse dE0 = dE + dZPE is <= 0. An association's reactant side is its separated
@@ -142,14 +143,22 @@ def _same_level(subs: Sequence[_Subject], *, state: bool = True) -> bool:
         same_pes(*[s.energy.level for s in subs], state=state))
 
 
+def _members(state: State | None, ref: _Subject, subjects: dict[str, _Subject]
+             ) -> list[_Subject]:
+    """The spin-clean minima of ``state`` on the LOT of ``ref`` (charge and multiplicity aside):
+    its freq LOT and, for a minimum with its energy layer, its energy LOT."""
+    return [s for s in subjects.values()
+            if s.state == state and not s.contaminated
+            and same_pes(ref.freq.level, s.freq.level, state=False)
+            and (s.layer_missing or same_pes(ref.energy.level, s.energy.level, state=False))]
+
+
 def _state_G(state: State | None, ref: _Subject, subjects: dict[str, _Subject], table: Table
              ) -> float | None:
-    """The G of ``state``: the lowest G of its spin-clean minima on the freq and energy LOT of
-    ``ref`` (charge and multiplicity aside); None without one."""
-    G = [g for s in subjects.values()
-         if s.state == state and not s.contaminated and _same_level([ref, s], state=False)
-         and (g := table[s.id].G_hartree) is not None]
-    return min(G, default=None)
+    """The G of ``state``: the lowest G of its members; None without one or when a member
+    lacks its G (energy_layer_missing): a missing conformer may be the lowest."""
+    G = [table[s.id].G_hartree for s in _members(state, ref, subjects)]
+    return None if not G or None in G else min(cast(list[float], G))
 
 
 def _association(names: tuple[str, ...], subjects: dict[str, _Subject], monomers: Monomers,
@@ -169,10 +178,15 @@ def _association(names: tuple[str, ...], subjects: dict[str, _Subject], monomers
                           [n for _, n in parts], T, state)
 
 
-def _blockers(names: Sequence[str], subs: Sequence[_Subject], table: Table, *, state: bool
+def _blockers(names: Sequence[str], subjects: dict[str, _Subject], table: Table, *, state: bool
               ) -> tuple[str, ...]:
+    """thermo_unavailable when a G the reaction reads is missing: a participant's, or that of a
+    member of a participant's state (_state_G)."""
+    subs = [subjects[p] for p in names if p in subjects]
+    read = [*names, *(m.id for s in subs if s.state is not None
+                      for m in _members(s.state, s, subjects))]
     hits = {
-        "thermo_unavailable": any(p not in table or table[p].G_hartree is None for p in names),
+        "thermo_unavailable": any(p not in table or table[p].G_hartree is None for p in read),
         "mixed_level_of_theory": not _same_level(subs, state=state),
         "spin_contaminated": any(s.contaminated for s in subs),
     }
@@ -272,7 +286,7 @@ def _reaction(rx: ReactionRecord, subjects: dict[str, _Subject], monomers: Monom
         dG_assoc_kcal=assoc, dG_act_vs_separated_kcal=vs_separated,
         band_kcal=None if None in band else (min(cast(list[float], band)),
                                              max(cast(list[float], band))),
-        blockers=_blockers(ids, subs, table, state=not rx.monomers), dG_eff_kcal=band[0],
+        blockers=_blockers(ids, subjects, table, state=not rx.monomers), dG_eff_kcal=band[0],
         energy_level=_energy_level(subs), notes=("submerged_barrier",) if submerged else (),
     )
 

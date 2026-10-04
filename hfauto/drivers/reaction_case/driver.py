@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -19,7 +19,7 @@ from hfauto.chemistry.xyz import XYZ
 from hfauto.core.evidence import Evidence, FileRef, Geometry
 from hfauto.core.ids import path_token, species_artifact_id
 from hfauto.core.manifest import Artifact
-from hfauto.core.method import Deadline, MethodSpec
+from hfauto.core.method import MethodSpec
 from hfauto.core.records import (
     ArtifactType,
     CaseOutcome,
@@ -72,8 +72,8 @@ def _endpoint(rt: CaseRuntime, minimum_id: str, species_id: str) -> np.ndarray:
     return member_coords(basin.symbols, basin.coords, record.species_id, species_id, own.coords)
 
 
-def open_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline: Deadline,
-              folder: Path, log: Callable[[dict[str, object]], None]) -> actions.Ctx:
+def open_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, folder: Path,
+              log: Callable[[dict[str, object]], None]) -> actions.Ctx:
     """The case context; a given DFT stationary point (``ts_calc``) is its saddle. An
     association's reactant energy is its separated monomers' sum."""
     first, reactant = rt.species[case.endpoints[0]], case.monomers or case.minima[:1]
@@ -83,7 +83,7 @@ def open_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline:
            else _endpoint(rt, case.minima[0], case.endpoints[0]),
            _endpoint(rt, case.minima[1], case.endpoints[1]))
     return actions.Ctx(
-        case=case, rt=rt, rules=rules, deadline=deadline, folder=folder,
+        case=case, rt=rt, rules=rules, folder=folder,
         symbols=list(first.geometry.symbols), charge=first.charge,
         multiplicity=first.multiplicity, raw=raw, ends=(raw[0], align_mapped(raw[0], raw[1])),
         energies=(sum(rt.registry.minima[m][0].energy_hartree for m in reactant),
@@ -117,9 +117,8 @@ HANDLERS: dict[Action, Handler] = {
 }
 
 
-def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline: Deadline
-               ) -> CaseResult:
-    """Loop decide → action until ``deadline`` (the hypothesis', shared by its split children);
+def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules) -> CaseResult:
+    """Loop decide → action until a terminal decision (the table is bounded by its counts);
     a re-run replays finished jobs from the JobStore. An exception leaves only this case
     UNRESOLVED (``error:<type>``; HFAUTO_STRICT=1 re-raises) with the evidence in hand and the
     artifacts it added, so the minima, species and calculations it registered are emitted.
@@ -136,19 +135,18 @@ def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules, deadline
     a, b = (rt.registry.minima.get(m) for m in case.minima)
     state = CaseState(minima=(a[0] if a else None, b[0] if b else None),
                       last_saddle="converged" if case.ts_calc else None)
-    if case.ts_calc:  # validated first (row 9); a failed gate goes on to SCREEN
+    if case.ts_calc:  # validated first (row 8); a failed gate goes on to SCREEN
         log({"note": f"ts_calc:{case.ts_calc}"})
     ctx: actions.Ctx | None = None
     children: tuple[ReactionRecord, ...] = ()
     try:
         while True:
-            state = replace(state, expired=deadline.expired())
             decision = decide(case, state, rules)
             log({"action": decision.action.value, "reason": decision.reason,
                  "outcome": decision.outcome.value if decision.outcome else None})
             if decision.outcome is not None:
                 break
-            ctx = ctx or open_case(case, rt, rules, deadline, folder, log)
+            ctx = ctx or open_case(case, rt, rules, folder, log)
             state = HANDLERS[decision.action](ctx, state, decision)
         if decision.outcome is CaseOutcome.MULTI_STEP and ctx is not None:
             children = _children(case, rt, ctx)

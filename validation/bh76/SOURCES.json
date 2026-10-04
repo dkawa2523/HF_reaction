@@ -1,0 +1,146 @@
+{
+ "doc": "Origin of validation/bh76: verbatim copies (sha256 of the source and of the copy are equal). The raw sources stay in /home/user/hfauto_r10/probe/P0e.",
+ "archives": [
+  {
+   "name": "BH76.tar",
+   "url": "http://www.thch.uni-bonn.de/tc.old/downloads/GMTKN/GMTKN55/BH76.tar",
+   "sha256": "46af9ee9130308af58b29c4426383fd954d280f330ce911c4b089c0b0588fa20"
+  },
+  {
+   "name": "BH76ref.html",
+   "url": "http://www.thch.uni-bonn.de/tc.old/downloads/GMTKN/GMTKN55/BH76ref.html",
+   "sha256": "d5cf22cd6ccd52a6081a78d0b51d6147090533ff53bfc3ab942615c0d93c0bc1"
+  },
+  {
+   "name": "CHARGE_MULTIPLICITY_BH76.txt",
+   "url": "http://www.thch.uni-bonn.de/tc.old/downloads/GMTKN/GMTKN55/CHARGE_MULTIPLICITY_BH76.txt",
+   "sha256": "1c4b33d963c2ef67b68ee1be26b7d2d8dd9f18c643883ba04cd8e4d6e1384d59"
+  },
+  {
+   "name": "htbh38.html",
+   "url": "https://comp.chem.umn.edu/db/dbs/htbh38.html",
+   "sha256": "13858b6a67dbad852a2034fcd809af8fc998024cc297afc96a4f7541d68de092"
+  },
+  {
+   "name": "nhtbh38.html",
+   "url": "https://comp.chem.umn.edu/db/dbs/nhtbh38.html",
+   "sha256": "a1f0a703216a2c8d1de54d67d580fc78dc28918d9f2b0f5d586d1bce0f40264f"
+  }
+ ],
+ "files": [
+  {
+   "path": "subset.yaml",
+   "source": "/home/user/hfauto_r10/probe/P0e/bh76_subset.yaml",
+   "sha256": "aae59816e554ce3d5cac15c955ea6e4dc788f9055f84f5dbb7b959c629349142",
+   "origin": "P0e: the declared BH76 subset, written before any hfauto value of these reactions"
+  },
+  {
+   "path": "xyz/c2h4.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/c2h4.xyz",
+   "sha256": "bd6fef169a976f617fa31664b079d0fd1097a905fbba512219f279e7d1f763b7",
+   "origin": "GMTKN55 BH76.tar member BH76/c2h4/struc.xyz"
+  },
+  {
+   "path": "xyz/c2h5.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/c2h5.xyz",
+   "sha256": "517742107cff52680435d56ed86ef3616f3acaaa5a0d541aa9fc711b1d32fffc",
+   "origin": "GMTKN55 BH76.tar member BH76/c2h5/struc.xyz"
+  },
+  {
+   "path": "xyz/c2h5ts.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/c2h5ts.xyz",
+   "sha256": "516f2866f32534e7cf70c345c7801c669f1bbe760ef922804638836f63512ba2",
+   "origin": "GMTKN55 BH76.tar member BH76/c2h5ts/struc.xyz"
+  },
+  {
+   "path": "xyz/ch3.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/ch3.xyz",
+   "sha256": "e0c47be3cedf2169c273309cf89c41440592dacad0eebc88104fbbabdf3aaaf7",
+   "origin": "GMTKN55 BH76.tar member BH76/ch3/struc.xyz"
+  },
+  {
+   "path": "xyz/ch3cl.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/ch3cl.xyz",
+   "sha256": "dc65dcc360032806c21c7427f1d759ee0c1d0ec10757548cd3d48e4ee9b3bb9e",
+   "origin": "GMTKN55 BH76.tar member BH76/ch3cl/struc.xyz"
+  },
+  {
+   "path": "xyz/CH4.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/CH4.xyz",
+   "sha256": "b4e23abbd49a7457b096962ad3d209986d78f7e9c432cfd763c6f4eca3a5f144",
+   "origin": "GMTKN55 BH76.tar member BH76/CH4/struc.xyz"
+  },
+  {
+   "path": "xyz/cl-.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/cl-.xyz",
+   "sha256": "4a2dab58433c691e5f384c74ccfbb0563d518811da4a708cfa14bb318c7bb922",
+   "origin": "GMTKN55 BH76.tar member BH76/cl-/struc.xyz"
+  },
+  {
+   "path": "xyz/clch3clcomp.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/clch3clcomp.xyz",
+   "sha256": "230e3d874b0db4f6a027c39112aa385c85e502634b6dc54cdc39f7e2295de7ce",
+   "origin": "GMTKN55 BH76.tar member BH76/clch3clcomp/struc.xyz"
+  },
+  {
+   "path": "xyz/clch3clts.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/clch3clts.xyz",
+   "sha256": "8db3bd654864b45b668de84d9c830a284e22ac82d6ba2a4acc774ec4e835e9c4",
+   "origin": "GMTKN55 BH76.tar member BH76/clch3clts/struc.xyz"
+  },
+  {
+   "path": "xyz/h.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/h.xyz",
+   "sha256": "6d1081aa11ce851872326f6631a9731a7ccd9258ef1f43f57f027b82763033d3",
+   "origin": "GMTKN55 BH76.tar member BH76/h/struc.xyz"
+  },
+  {
+   "path": "xyz/H2.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/H2.xyz",
+   "sha256": "d59a912dceb262b6467a19de326676c8a68aa35eea714b89bdea4f2ae071aa5f",
+   "origin": "GMTKN55 BH76.tar member BH76/H2/struc.xyz"
+  },
+  {
+   "path": "xyz/H2O.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/H2O.xyz",
+   "sha256": "8dd0678d510b8a535d742806f69eb0e9f8faffe50952ccfe38e74569e04dedd8",
+   "origin": "GMTKN55 BH76.tar member BH76/H2O/struc.xyz"
+  },
+  {
+   "path": "xyz/hcn.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/hcn.xyz",
+   "sha256": "e23f49b14258b529f32e903dc799f07fae52fd1fd4c050b45ecc92d10613512f",
+   "origin": "GMTKN55 BH76.tar member BH76/hcn/struc.xyz"
+  },
+  {
+   "path": "xyz/hcnts.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/hcnts.xyz",
+   "sha256": "5a991c606112116b49b60b9db756565a128fc74c639a71cf089be06f96f72953",
+   "origin": "GMTKN55 BH76.tar member BH76/hcnts/struc.xyz"
+  },
+  {
+   "path": "xyz/hnc.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/hnc.xyz",
+   "sha256": "add2915f2f2088a163d2c9f93fe9c89093baf37e5ff0af80afd85057600aec3f",
+   "origin": "GMTKN55 BH76.tar member BH76/hnc/struc.xyz"
+  },
+  {
+   "path": "xyz/oh.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/oh.xyz",
+   "sha256": "9182d65101326638f93d6fa49df23ede9d577a1a83088b5c38410823d6f9a9d2",
+   "origin": "GMTKN55 BH76.tar member BH76/oh/struc.xyz"
+  },
+  {
+   "path": "xyz/RKT04.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/RKT04.xyz",
+   "sha256": "95089763fc893414cf4f8b7d720e24448a748afcc1637835f7b066f60adc789c",
+   "origin": "GMTKN55 BH76.tar member BH76/RKT04/struc.xyz"
+  },
+  {
+   "path": "xyz/RKT06.xyz",
+   "source": "/home/user/hfauto_r10/probe/P0e/xyz/RKT06.xyz",
+   "sha256": "28e5f22213bd9eed0eb4ac9103baaff62b1e3d701da39f9616c954d99e5f2f4d",
+   "origin": "GMTKN55 BH76.tar member BH76/RKT06/struc.xyz"
+  }
+ ]
+}

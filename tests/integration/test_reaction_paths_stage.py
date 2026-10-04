@@ -10,6 +10,7 @@ import pytest
 
 from hfauto.backends.protocols import Capability as Cap
 from hfauto.chemistry.xyz import composition_key
+from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.ids import species_artifact_id
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
@@ -34,13 +35,14 @@ XTB = MethodSpec(id="gfn2", kind="xtb", gfn=2)
 ENDS = {"reactant": "reactant", "product": "product"}  # species id -> PES point
 SYSTEM = SystemConfig(  # declared endpoints name an xyz, which this stage never reads
     system_id="t", reactions=[ReactionInput(id="rx", reactant="reactant", product="product")],
-    species=[SpeciesInput(id=n, role="endpoint", xyz=Path(f"{n}.xyz")) for n in ENDS])
+    species=[SpeciesInput(id=n, role="endpoint", xyz=Path(f"{n}.xyz"), multiplicity=1)
+             for n in ENDS])
 FAKES = {(Cap.QM, "nwchem"): fakes.FakeQM, (Cap.PATH, "nwchem_string"): fakes.FakePath,
          (Cap.QM, "xtb"): fakes.FakeQM, (Cap.PATH, "pysis_neb"): partial(fakes.FakePath, tsopt=True)}
 
 
 class CollapsingSaddle(fakes.FakeSaddle):  # every saddle search falls into the intermediate
-    def refine(self, seed, method, *, hessian, mode, deadline=None):
+    def refine(self, seed, method, *, hessian, mode):
         key = self._key("collapse", seed.fingerprint())
         return self._evidence("saddle", seed, method, key, self._start(seed, key),
                               self.pes.points["intermediate"])
@@ -56,17 +58,22 @@ class KeyedQM(fakes.FakeQM):  # the calculation id of every result, as a JobStor
         self.jobs[calc_id(ev)] += 1
         return ev
 
-    def optimize(self, mol, method, *, init_hessian=None, deadline=None):
-        ev = super().optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
+    def optimize(self, mol, method, *, init_hessian=None):
+        ev = super().optimize(mol, method, init_hessian=init_hessian)
         self.jobs[calc_id(ev)] += 1
         return ev
 
 
-class SlowQM(fakes.FakeQM):  # an optimization uses up the rest of its hypothesis' walltime
-    def optimize(self, mol, method, *, init_hessian=None, deadline=None):
-        if deadline is not None:
-            deadline.end = 0.0
-        return super().optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
+class FirstStepSaddle(fakes.FakeSaddle):
+    """Every search that starts with H on the reactant's side of the triple well's intermediate
+    (the R -> I step) stops without a last frame (no restart); the I -> P searches converge."""
+
+    def refine(self, seed, method, *, hessian, mode):
+        a, h, b = seed.xyz.coords
+        if (h - 0.5 * (a + b)) @ (b - a) < 0:
+            self.calls.append("refine:failed")
+            return Failure(kind=FailureKind.GEOMETRY_MAXITER, reason="scripted")
+        return super().refine(seed, method, hessian=hessian, mode=mode)
 
 
 def dft_view(root, pes, points=ENDS):
@@ -174,22 +181,29 @@ def test_triple_well_splits_into_two_elementary_children(tmp_run, fake_runtime, 
     assert children[0].minima[1] == children[1].minima[0] in new_minima
 
 
-def test_split_children_run_on_the_rest_of_their_hypothesis_walltime(tmp_run,
-                                                                    fake_runtime) -> None:
-    """U9-P5: the well found at the parent's deadline still splits the case (evidence before the
-    walltime row); its children inherit the expired deadline instead of 6 h each."""
+def test_a_split_child_queued_behind_a_sibling_that_used_its_budget_has_its_own(
+        tmp_run, fake_runtime) -> None:
+    """X7-1: the budget is counts only, per case. rx splits at the triple well's intermediate;
+    rx_split1 (R -> I) runs first and uses up its saddle attempts (SCREEN's seed, then the
+    string's); rx_split2 (I -> P), queued behind it, is still driven from 0 attempts and finds
+    its TS."""
     pes = fakes.triple_well()
     view, _ = dft_view(tmp_run, pes)
-    reactions = run_stage(fake_runtime, tmp_run, pes, view, qm=SlowQM(tmp_run, pes))[0]
+    saddle = FirstStepSaddle(tmp_run, pes)
+    reactions = run_stage(fake_runtime, tmp_run, pes, view, saddle=saddle)[0]
+    first, second = (reactions[f"rx_split{i}"] for i in (1, 2))
     assert reactions["rx"].outcome is O.MULTI_STEP
-    children = [reactions[f"rx_split{i}"] for i in (1, 2)]
-    assert [(c.outcome, c.reasons) for c in children] == [(O.UNRESOLVED, ("walltime",))] * 2
+    assert (first.outcome, first.reasons) == (O.UNRESOLVED, ("attempts_exhausted",))
+    assert second.outcome is O.ELEMENTARY_STEP
+    assert saddle.calls == ["refine:failed"] * 2 + ["refine"]
+    log = [json.loads(line) for line in (tmp_run / "stage" / second.log).read_text().splitlines()]
+    assert [e["action"] for e in log if "action" in e][:2] == ["screen", "refine_saddle"]
 
 
 def test_a_saddle_search_that_falls_into_a_well_goes_on_to_the_screen_path(tmp_run,
                                                                           fake_runtime) -> None:
     """G3-P1: a saddle without an imaginary mode is a failed attempt like any rejected saddle;
-    the intermediate comes from the screen profile's well (row 11), not from the saddle."""
+    the intermediate comes from the screen profile's well (row 10), not from the saddle."""
     pes = fakes.triple_well()
     view, source = dft_view(tmp_run, pes)
     ts = fakes.write_geometry(tmp_run, "ts1.xyz", pes.symbols, pes.points["ts1"])
@@ -239,8 +253,8 @@ def test_a_split_child_takes_the_result_of_a_queued_case_of_its_state_pair(
     pes, names = fakes.triple_well(), {**ENDS, "intermediate": "intermediate"}
     view, _ = dft_view(tmp_run, pes, names)
     system = SystemConfig(
-        system_id="t", species=[SpeciesInput(id=n, role="endpoint", xyz=Path(f"{n}.xyz"))
-                                for n in names],
+        system_id="t", species=[SpeciesInput(id=n, role="endpoint", xyz=Path(f"{n}.xyz"),
+                                             multiplicity=1) for n in names],
         reactions=[*SYSTEM.reactions,
                    ReactionInput(id="ri", reactant="reactant", product="intermediate")])
     reactions = run_stage(fake_runtime, tmp_run, pes, view, system=system)[0]
@@ -251,12 +265,10 @@ def test_a_split_child_takes_the_result_of_a_queued_case_of_its_state_pair(
     assert second.outcome is O.ELEMENTARY_STEP and second.log is not None
 
 
-def test_walltime_low_level_ts_shortcut_and_negative_discoveries_do_not_veto(
+def test_low_level_ts_shortcut_and_negative_discoveries_do_not_veto(
         tmp_run, fake_runtime) -> None:
     pes = fakes.double_well()
     view, source = dft_view(tmp_run, pes)
-    rx = run_stage(fake_runtime, tmp_run, pes, view, walltime_h=0.0)[0]["rx"]
-    assert rx.outcome is O.UNRESOLVED and rx.reasons == ("walltime",)
     ts = fakes.write_geometry(tmp_run, "ts.xyz", pes.symbols, pes.points["ts"])
     found = DiscoveryRecord(discovery_id="d1", source_minimum=source, mechanism="nt2",
                             outcome="product", product_species="product", ts=ts)

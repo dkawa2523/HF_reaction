@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from hfauto.chemistry.xyz import XYZ, write_xyz
 from hfauto.core.evidence import FailureKind
@@ -14,7 +15,8 @@ from hfauto.stages.structures import StructuresConfig, StructuresStage
 def test_endpoint_mismatch_and_coordinate_range_fail_both_ends(tmp_path, fake_runtime):
     hf = write_xyz(XYZ(["H", "F"], np.array([[0, 0, 0], [0, 0, 0.92]])), tmp_path / "hf.xyz")
     spin = {"q": {"charge": 1, "multiplicity": 2}, "x": {"multiplicity": 3}}
-    species = [SpeciesInput(id=k, xyz=hf, role="endpoint", **spin.get(k, {}))
+    species = [SpeciesInput(id=k, xyz=hf, role="endpoint",
+                            **({"multiplicity": 1} | spin.get(k, {})))
                for k in ("p", "q", "r", "s", "u", "v", "w", "x")]
     bond = [CoordinateTerm(kind="distance", atoms=(0, 1))]
     reactions = [ReactionInput(id="charge", reactant="p", product="q", coordinate=bond),
@@ -34,25 +36,30 @@ def test_endpoint_mismatch_and_coordinate_range_fail_both_ends(tmp_path, fake_ru
         "spin_crossing_reaction_unsupported: reaction spin joins multiplicities 1 and 3")
 
 
-def test_elements_and_spin_are_checked_once_at_the_entrance(tmp_path, fake_runtime):
+def test_the_declared_multiplicity_is_the_only_spin_source(tmp_path, fake_runtime):
     pytest.importorskip("rdkit")
 
     def xyz(name, symbols):
         return write_xyz(XYZ(symbols, np.eye(len(symbols), 3) * 2.2), tmp_path / f"{name}.xyz")
 
     fecl3 = xyz("fecl3", ["Fe", "Cl", "Cl", "Cl"])
-    species = [SpeciesInput(id="ce", xyz=xyz("ce", ["Ce", "Cl", "Cl", "Cl"])),
-               SpeciesInput(id="fr", xyz=xyz("fr", ["Fr"]), charge=1),
-               SpeciesInput(id="fe", xyz=fecl3), SpeciesInput(id="fe6", xyz=fecl3, multiplicity=6),
-               SpeciesInput(id="fe2", smiles="[Fe+2]", charge=2),
-               SpeciesInput(id="o2", smiles="[O][O]")]
+    with pytest.raises(ValidationError, match="multiplicity"):  # no default, xyz or SMILES
+        SpeciesInput(id="fe", xyz=fecl3)
+    with pytest.raises(ValidationError, match="multiplicity"):
+        SpeciesInput(id="ch3", smiles="[CH3]")
+    species = [SpeciesInput(id="ce", xyz=xyz("ce", ["Ce", "Cl", "Cl", "Cl"]), multiplicity=2),
+               SpeciesInput(id="fr", xyz=xyz("fr", ["Fr"]), charge=1, multiplicity=1),
+               SpeciesInput(id="fe6", xyz=fecl3, multiplicity=6),
+               SpeciesInput(id="cf2", smiles="F[C]F", multiplicity=1),  # singlet ground state
+               SpeciesInput(id="ch3", smiles="[CH3]", multiplicity=1),
+               SpeciesInput(id="o2", smiles="[O][O]", multiplicity=3)]
     system = SystemConfig(system_id="t", species=species)
     arts = StructuresStage().run(Manifest(run_id="r", stage_id="s", created_at=""),
                                  StructuresConfig(), fake_runtime(system, {}, stage_id="s"))
     failed = {a.artifact_id[8:]: a.failure.reason for a in arts if a.failure}
     assert all(a.failure.kind == FailureKind.INPUT_INVALID for a in arts if a.failure)
     assert failed == {"ce": "unsupported_element:Ce", "fr": "unsupported_element:Fr",
-                      "fe": "declare_multiplicity: d-block element(s) Fe",
-                      "fe2": "declare_multiplicity: d-block element(s) Fe"}
+                      "ch3": "Electron-count parity is incompatible with multiplicity: "
+                             "electrons=9, multiplicity=1"}
     ok = {a.payload.species_id: a.payload.composition_id for a in arts if a.payload}
-    assert ok == {"fe6": "Cl3Fe_q0_m6", "o2": "O2_q0_m3"}  # [O][O]: radicals + 1
+    assert ok == {"fe6": "Cl3Fe_q0_m6", "cf2": "CF2_q0_m1", "o2": "O2_q0_m3"}

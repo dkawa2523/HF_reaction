@@ -18,7 +18,7 @@ from hfauto.chemistry.gates import Policy
 from hfauto.chemistry.xyz import XYZ
 from hfauto.core.evidence import FileRef, Geometry
 from hfauto.core.manifest import Artifact, Manifest
-from hfauto.core.method import Deadline, MethodSpec
+from hfauto.core.method import MethodSpec
 from hfauto.core.records import ArtifactType
 from hfauto.core.system import SystemConfig
 
@@ -60,8 +60,6 @@ class StageRuntime(Protocol):
     def thread_map(  # in input order; each item's jobs get cores // (items in its wave) ranks
         self, fn: Callable[[ItemT], ResultT], items: Sequence[ItemT]
     ) -> list[ResultT]: ...
-
-    def deadline(self, seconds: float) -> Deadline: ...
 
 
 class Stage(Protocol):

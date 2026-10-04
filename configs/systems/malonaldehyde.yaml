@@ -1,7 +1,7 @@
 # S14 (review §6.1): malonaldehyde intramolecular proton transfer (barrier submerged by ZPE).
 system_id: malonaldehyde
 species:
-  - {id: enol_a, xyz: xyz/malonaldehyde/reactant.xyz, role: endpoint}
-  - {id: enol_b, xyz: xyz/malonaldehyde/product.xyz, role: endpoint}
+  - {id: enol_a, xyz: xyz/malonaldehyde/reactant.xyz, multiplicity: 1, role: endpoint}
+  - {id: enol_b, xyz: xyz/malonaldehyde/product.xyz, multiplicity: 1, role: endpoint}
 reactions:
   - {id: malon_pt, reactant: enol_a, product: enol_b}

@@ -75,11 +75,9 @@ def test_method_panel_shows_levels_and_defines_no_second_energy_layer():
 def test_system_loads_and_its_xyz_fit_the_state_and_the_reaction_atom_order(path):
     system = load_system(path)
     xyz = {s.id: read_xyz(s.xyz) for s in system.species if s.xyz is not None}
-    for species in system.species:  # elements, charge and multiplicity (xyz default 1)
+    for species in system.species:  # elements, and parity of the declared multiplicity
         if species.id in xyz:
-            m = species.multiplicity
-            check_electronic_state(xyz[species.id].symbols, species.charge, 1 if m is None else m,
-                                   declared=m is not None)
+            check_electronic_state(xyz[species.id].symbols, species.charge, species.multiplicity)
     for reaction in system.reactions:
         assert xyz[reaction.reactant].symbols == xyz[reaction.product].symbols
 

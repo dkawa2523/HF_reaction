@@ -73,7 +73,7 @@ def test_coverage_counts_mechanisms_negative_reasons_and_failure_kinds():
              disc(3, "nt2", "negative", "ts_imaginary_modes:3"),
              disc(4, "mode_follow", "failed"),
              disc(5, "mode_follow", "negative", "out_of_window")]
-    failure = Failure(kind=FailureKind.TIMEOUT, reason="walltime")
+    failure = Failure(kind=FailureKind.TIMEOUT, reason="timeout")
     failed = [Artifact(artifact_id=f"f{i}", type=rec.ArtifactType.CALCULATION, status="failed",
                        failure=failure) for i in range(2)]
     assert {astuple(row) for row in coverage(found, failed)} == {

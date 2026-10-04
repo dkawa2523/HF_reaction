@@ -26,7 +26,7 @@ from hfauto.backends.protocols import Requirements
 from hfauto.backends.pysis.worker import neb_images
 from hfauto.chemistry.xyz import XYZ, Molecule, read_xyz_trajectory, write_xyz, written_geometry
 from hfauto.core.evidence import Failure, FailureKind, FileRef, Geometry, Level, PathProfile
-from hfauto.core.method import Deadline, EngineSite, MethodSpec, level_mismatches
+from hfauto.core.method import EngineSite, MethodSpec, level_mismatches
 from hfauto.execution.jobs import Task
 from hfauto.execution.process import Command, CommandResult, resolve_executable
 from hfauto.execution.worker import RESULT_NAME
@@ -158,7 +158,6 @@ class PysisNEB:
         )
 
     def find_path(self, start: Molecule, end: Molecule, method: MethodSpec, *, images: int,
-                  initial_path: FileRef, deadline: Deadline | None = None
-                  ) -> PathProfile | Failure:
+                  initial_path: FileRef) -> PathProfile | Failure:
         task = self.task(start, end, method, images=images, initial_path=initial_path)
-        return self.jobs.run(task, self.adapter, deadline=deadline)
+        return self.jobs.run(task, self.adapter)

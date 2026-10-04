@@ -8,7 +8,7 @@
 |---|---|---|
 | 元素 | Z=1〜57、72〜86。Z>36 は def2 系の基底だけで、def2-ECP を元素ごとに自動で書く。計算できる範囲で、遷移金属は未検証 | Ce〜Lu、Z>86、Z>36 に def2 以外の基底(入口で拒否) |
 | 電荷 | 任意の整数(陰イオンは SVPD の拡散関数で扱う) | 気相の多価陰イオンは基底に依存しうる |
-| スピン | 閉殻一重項(RKS)と高スピン(UKS、⟨S²⟩ を検査)。低スピン結合の組成(CH3·O2 の二重項など)も UKS で受け付け、その会合は分離した単量体からの緩和スキャンで判定する。多重度は利用者が宣言し、未宣言なら SMILES は不対電子数 + 1、xyz は 1、組成はスピン結合で 1 つに決まるときだけその値。d ブロック元素を含む化学種は宣言が必須 | 開殻一重項(ラジカル対の一重項は `low_spin_singlet_unsupported` で止める。1 分子のビラジカルは RKS で計算され、不安定性を検出しない)、MECP・スピン交差(`spin_crossing_reaction_unsupported`)、2 本以上の結合が同時にできる会合、会合の速度定数(VRC-TST)、スピン軌道補正(原子で Cl 0.84、Br 3.5、I 7.3 kcal/mol がそのまま誤差になる) |
+| スピン | 閉殻一重項(RKS)と高スピン(UKS、⟨S²⟩ を検査)。低スピン結合の組成(CH3·O2 の二重項など)も UKS で受け付け、その会合は分離した単量体からの緩和スキャンで判定する。化学種の多重度は必ず宣言する(省略すると system の読み込みで拒否。SMILES のラジカル電子数も xyz も多重度を決めない)。組成は宣言値か、スピン結合で 1 つに決まるときだけその値 | 開殻一重項(ラジカル対の一重項は `low_spin_singlet_unsupported` で止める。1 分子のビラジカルは RKS で計算され、不安定性を検出しない)、MECP・スピン交差(`spin_crossing_reaction_unsupported`)、2 本以上の結合が同時にできる会合、会合の速度定数(VRC-TST)、スピン軌道補正(原子で Cl 0.84、Br 3.5、I 7.3 kcal/mol がそのまま誤差になる) |
 | 反応型 | 異性化、H・プロトン移動(リレーを含む)、SN2 型置換、H 引き抜き、付加・会合、開殻・電荷系の結合切断、縮退転位、宣言したねじれ。単原子も通常の経路を通る | 溶液相、速度論(マスター方程式、トンネル補正) |
 | 系のサイズ | 4 コア・def2-SVPD で約 35 原子まで(解析 freq が N·nbf^2.8 に比例し、15 原子で約 11 分、40 原子で約 6 h) | freq の途中継続(ないので timeout 4 h で全損する。大きな系は ranks を増やす) |
 
@@ -55,13 +55,13 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 |---|---|
 | `hfauto doctor [--site SITE]` | site の全エンジン(実行ファイル、版数の pin、worker のモジュール、scratch)を検査する。問題があれば終了コード 1 |
 | `hfauto run PIPELINE --system SYSTEM --site SITE [--run-dir DIR] [--from ID] [--to ID] [--dry-run] [--retry-failed KINDS]` | パイプラインを実行する。同じ run ディレクトリでは続きから再開する |
-| `hfauto status RUN_DIR` | stage の状態、FailureKind 別の失敗数、ジョブの再利用率 |
+| `hfauto status RUN_DIR` | stage の状態、FailureKind 別の失敗数、ジョブの再利用率。終了コードは `run` と同じ規則(1 = failed・incomplete の stage か failed の artifact) |
 | `hfauto report RUN_DIR` | run 全体の report.html を書く |
 | `hfauto case RUN_DIR REACTION_ID` | 反応ケースの判断ログ(log.jsonl)を表示する |
 
 - PIPELINE・SYSTEM・SITE には YAML のパスか、カレントディレクトリの `configs/<kind>/` の下の名前を指定する。method は pipeline ファイルの隣の `methods/<id>.yaml`、なければ `configs/methods/<id>.yaml` を読む。
-- `run` の終了コード: 0 は成功、1 は failed の artifact か失敗した stage がある、2 は設定か preflight の問題、SIGINT・SIGTERM・SIGHUP では外部プログラムを止めて 128 + signum。failed の artifact は後続の stage を止めず report も出るので、結果は終了コードではなく `hfauto status` と report で判断する。
-- `--from ID` はその stage 以降を取り直し、`--retry-failed KINDS`(例 `incomplete_output,nonzero_exit`)は JobStore に記録された該当の種類の失敗を再実行する。timeout と budget_exhausted は記録しないので、取り直せば常に再実行される。
+- `run` の終了コード: 0 は成功、1 は failed の artifact か失敗した stage がある、または SIGINT・SIGTERM・SIGHUP で止めた(外部プログラムを止め、実行中の stage を incomplete にする。同じコマンドを流し直せば JobStore から続ける)、2 は設定か preflight の問題。failed の artifact は後続の stage を止めず report も出るので、結果は終了コードではなく `hfauto status` と report で判断する。
+- `--from ID` はその stage 以降を取り直し、`--retry-failed KINDS`(例 `incomplete_output,nonzero_exit`)は JobStore に記録された該当の種類の失敗を再実行する。timeout は記録しないので、取り直せば常に再実行される。
 
 ## クイックスタート(HCN → HNC)
 
@@ -90,4 +90,5 @@ WSL(4 vCPU / 11 GB)、M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD、298.15 K�
 - [docs/design.md](docs/design.md): 設計(層と import 契約、処理区分の責務、Evidence とゲート、判断表、化学プロトコル、順位の量、実行基盤、設定、範囲外)
 - [docs/environment.md](docs/environment.md): 版数、インストール、WSL の資源、テストと品質ゲート
 - [docs/validation.md](docs/validation.md): WSL の実計算による全体の再検証(VAL9)、期待値とその変更の理由、到達表
+- [docs/roadmap.md](docs/roadmap.md): round 10 の改良の計画(提案と wave、計画の変更の記録、見送り)。検証の case と道具は `validation/`(cases.yaml、check.py、replay.py、BH76 の参照)
 - [docs/reviews/](docs/reviews/): 設計の根拠になったレビューと改良の結果報告(最新は [2026-10-02_round9_result.md](docs/reviews/2026-10-02_round9_result.md)、その根拠の分析は [2026-09-30_remaining_issues_analysis.md](docs/reviews/2026-09-30_remaining_issues_analysis.md))

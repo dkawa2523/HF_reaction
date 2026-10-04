@@ -4,7 +4,8 @@
 ``<run>/run_state.json`` and ``<run>/resolved_config.yaml``. run_state is the list of
 stages in the order they were (last) executed; a stage's input is the union of the
 manifests of the done stages before it (so another pipeline can append to a run).
-Pending entries have not run yet: their position carries no meaning.
+Pending entries have not run yet: their position carries no meaning. An ``incomplete`` stage was
+stopped from outside; like every stage that is not done, a resume runs it again.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from hfauto.core.manifest import Manifest, load_manifest
 from hfauto.execution.jobs import JobStats
 from hfauto.pipeline.config import ResolvedConfig
 
-Status = Literal["pending", "running", "done", "failed", "stale"]
+Status = Literal["pending", "running", "done", "failed", "incomplete", "stale"]
 
 
 class StageState(BaseModel):

@@ -21,7 +21,7 @@ class SpeciesInput(BaseModel):
     xyz: Path | None = None
     smiles: str | None = None
     charge: int = 0
-    multiplicity: int | None = None  # None: SMILES radicals + 1, xyz 1; d-block must declare
+    multiplicity: PositiveInt  # 2S + 1, always declared: no structure implies its spin state
     role: Literal["monomer", "endpoint"] = "monomer"
 
     @model_validator(mode="after")

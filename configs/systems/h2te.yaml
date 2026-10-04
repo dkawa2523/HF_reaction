@@ -1,4 +1,4 @@
 # S3 (review §6.1): H2Te minimum only (Te, Z = 52: element table and def2 ECP).
 system_id: h2te
 species:
-  - {id: h2te, xyz: xyz/h2te/h2te.xyz}
+  - {id: h2te, xyz: xyz/h2te/h2te.xyz, multiplicity: 1}

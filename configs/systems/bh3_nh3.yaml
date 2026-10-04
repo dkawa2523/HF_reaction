@@ -7,8 +7,8 @@
 # BH3 + NH3 apart. Runs with known_endpoints (declared) or discover (composition).
 system_id: bh3_nh3
 species:
-  - {id: bh3, smiles: "B"}
-  - {id: nh3, smiles: "N"}
+  - {id: bh3, smiles: "B", multiplicity: 1}
+  - {id: nh3, smiles: "N", multiplicity: 1}
   - {id: complex, xyz: xyz/bh3_nh3_complex.xyz, multiplicity: 1, role: endpoint}
   - {id: adduct, xyz: xyz/bh3_nh3_adduct.xyz, multiplicity: 1, role: endpoint}
 compositions:

@@ -1,0 +1,8 @@
+# The method panel with CCSD(T), appended to a known_endpoints run: shown, not ranked on (the
+# run keeps its one energy layer). Origin: /home/user/hfauto_r9/pipelines/panel_ccsdt.yaml
+# (cases s20_hcn_panel, s20_ch3o_panel, hono_panel).
+pipeline_id: method_panel
+stages:
+  - {id: panel_sp, stage: sp, engine: nwchem,
+     methods: [pbe0-d3bj_def2-tzvpd, wb97x-d3_def2-tzvpd, ccsd-t_def2-tzvpd]}
+  - {id: panel_report, stage: report}

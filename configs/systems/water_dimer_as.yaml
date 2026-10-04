@@ -4,7 +4,7 @@
 # and row 8). Fake-pass check: both ends settle in one Cs basin, degenerate (not same_basin).
 system_id: water_dimer_as
 species:
-  - {id: dimer_a, xyz: xyz/water_dimer_as/reactant.xyz, role: endpoint}
-  - {id: dimer_b, xyz: xyz/water_dimer_as/product.xyz, role: endpoint}
+  - {id: dimer_a, xyz: xyz/water_dimer_as/reactant.xyz, multiplicity: 1, role: endpoint}
+  - {id: dimer_b, xyz: xyz/water_dimer_as/product.xyz, multiplicity: 1, role: endpoint}
 reactions:
   - {id: acceptor_switching, reactant: dimer_a, product: dimer_b}

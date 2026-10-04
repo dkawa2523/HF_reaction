@@ -77,20 +77,21 @@ def _site_probe(site: config.SiteConfig) -> config.ResolvedConfig:
     )
 
 
-def _failed_stages(layout: RunLayout) -> list[str]:
-    """Stages that failed or saved an artifact carrying a failure."""
-    return [s.stage_id for s in layout.read_state()
-            if s.status == "failed" or (s.status == "done" and s.n_failed > 0)]
+def _unfinished(layout: RunLayout) -> list[str]:
+    """Stages that failed, were stopped (incomplete) or saved an artifact carrying a failure:
+    exit code 1 of ``run`` and ``status``."""
+    return [f"{s.stage_id} ({s.status})" for s in layout.read_state()
+            if s.status in ("failed", "incomplete") or (s.status == "done" and s.n_failed > 0)]
 
 
 def _stop(signum: int, _frame: object) -> None:
     process.stop_all()
-    sys.exit(128 + signum)  # unwinds through execute_stage, which records the stage failed
+    raise KeyboardInterrupt(signal.Signals(signum).name)  # execute_stage: stage incomplete
 
 
 def stop_on_signals() -> None:
-    """SIGINT (Ctrl-C), SIGTERM and SIGHUP kill every running external program, then exit
-    128 + signum (POSIX; 130 for Ctrl-C).
+    """SIGINT (Ctrl-C), SIGTERM and SIGHUP kill every running external program and stop the
+    run as Ctrl-C does (POSIX): the running stage is left incomplete and ``run`` exits 1.
 
     SIGKILL cannot be caught: a scheduler must send SIGTERM first (docs/environment.md)."""
     if sys.platform != "win32":
@@ -140,8 +141,8 @@ def run(
 ) -> None:
     """Run a pipeline for a system on a site (resumes a run directory).
 
-    Exit code 1 when a stage failed or a saved artifact carries a failure; SIGINT / SIGTERM /
-    SIGHUP stop the external programs and exit 128 + signum."""
+    Exit code 1 when a stage failed or was stopped (SIGINT / SIGTERM / SIGHUP: incomplete, and
+    a rerun resumes it) or a saved artifact carries a failure."""
     kinds = _failure_kinds(retry_failed)
     paths = [config_path(k, v) for k, v in (("pipelines", pipeline), ("systems", system),
                                             ("sites", site))]
@@ -164,10 +165,15 @@ def run(
         console.print(table)
         return
     stop_on_signals()
-    runner.run_pipeline(resolved, target, start=start, stop=stop, retry_failed=kinds)
-    failed = _failed_stages(RunLayout(target))
-    if failed:
-        console.print(f"[yellow]done with failures[/yellow] in {escape(', '.join(failed))}:"
+    try:
+        runner.run_pipeline(resolved, target, start=start, stop=stop, retry_failed=kinds)
+    except KeyboardInterrupt:  # the running stage is left incomplete
+        console.print(f"[yellow]stopped[/yellow]; rerun to resume {escape(str(target))}",
+                      soft_wrap=True)
+        raise typer.Exit(1) from None
+    unfinished = _unfinished(RunLayout(target))
+    if unfinished:
+        console.print(f"[yellow]unfinished[/yellow] {escape(', '.join(unfinished))}:"
                       f" {escape(str(target))}", soft_wrap=True)
         raise typer.Exit(1)
     console.print(f"[green]done[/green] {escape(str(target))}", soft_wrap=True)
@@ -175,8 +181,10 @@ def run(
 
 @app.command()
 def status(run_dir: Path) -> None:
-    """Stages in execution order, job failures by FailureKind and the JobStore reuse rate."""
-    states = _layout(run_dir).read_state()
+    """Stages in execution order, job failures by FailureKind and the JobStore reuse rate; exit
+    code 1 as ``run``'s."""
+    layout = _layout(run_dir)
+    states = layout.read_state()
     table = Table("stage", "pipeline", "status", "ok", "failed", "job hits", "job misses")
     failures: Counter[str] = Counter()
     for s in states:
@@ -190,6 +198,8 @@ def status(run_dir: Path) -> None:
     hits = sum(s.jobs.hits for s in states)
     total = hits + sum(s.jobs.misses for s in states)
     console.print(f"job reuse: {hits}/{total}" + (f" ({hits / total:.0%})" if total else ""))
+    if _unfinished(layout):
+        raise typer.Exit(1)
 
 
 @app.command()

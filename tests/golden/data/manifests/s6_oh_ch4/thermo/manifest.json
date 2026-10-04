@@ -1,0 +1,326 @@
+{
+  "schema_version": "hfauto.manifest.v2",
+  "run_id": "s6_oh_ch4",
+  "stage_id": "thermo",
+  "created_at": "2026-10-02T05:21:57+00:00",
+  "artifacts": [
+    {
+      "artifact_id": "species_thermo_min_ch4_ff60c312_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_ch4_ff60c312",
+        "calc_eddeef324dc05f39",
+        "calc_33df7925baf19b34"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_ch4_ff60c312",
+        "freq_calc": "calc_eddeef324dc05f39",
+        "energy_calc": "calc_33df7925baf19b34",
+        "T_K": 298.15,
+        "G_hartree": -40.473033296868756,
+        "H_hartree": -40.45187823456167,
+        "zpe_hartree": 0.044525481066749126,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_oh_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_oh_5a7804cb",
+        "calc_9241c29e0268bf29",
+        "calc_a81b8334f06f1663"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_oh_5a7804cb",
+        "freq_calc": "calc_9241c29e0268bf29",
+        "energy_calc": "calc_a81b8334f06f1663",
+        "T_K": 298.15,
+        "G_hartree": -75.74207758253289,
+        "H_hartree": -75.72184725075843,
+        "zpe_hartree": 0.008592094140004327,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_oh_ch4_p02_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_oh_ch4_p02_5a7804cb",
+        "calc_d2df3095bedee2d2",
+        "calc_de9deac8de52ed0a"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_oh_ch4_p02_5a7804cb",
+        "freq_calc": "calc_d2df3095bedee2d2",
+        "energy_calc": "calc_de9deac8de52ed0a",
+        "T_K": 298.15,
+        "G_hartree": -116.23197914727139,
+        "H_hartree": -116.19600503547854,
+        "zpe_hartree": 0.05339817716122416,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_spc_disc_trial_316385e9cddd3ba5_nt2_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_spc_disc_trial_316385e9cddd3ba5_nt2_5a7804cb",
+        "calc_8197b9ad5560eb58",
+        "calc_44bee7df6449a976"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_spc_disc_trial_316385e9cddd3ba5_nt2_5a7804cb",
+        "freq_calc": "calc_8197b9ad5560eb58",
+        "energy_calc": "calc_44bee7df6449a976",
+        "T_K": 298.15,
+        "G_hartree": -116.18875367888667,
+        "H_hartree": -116.15534933394859,
+        "zpe_hartree": 0.051894741928732994,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_spc_relax_oh_ch4_p02_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_spc_relax_oh_ch4_p02_5a7804cb",
+        "calc_693b25ab8c441260",
+        "calc_5d924e5c93f5c0d0"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_spc_relax_oh_ch4_p02_5a7804cb",
+        "freq_calc": "calc_693b25ab8c441260",
+        "energy_calc": "calc_5d924e5c93f5c0d0",
+        "T_K": 298.15,
+        "G_hartree": -116.20798830345004,
+        "H_hartree": -116.17414604412123,
+        "zpe_hartree": 0.05470161411439023,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_spc_rxn_discovery_9ddaec1f1a_qrc1_0_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_spc_rxn_discovery_9ddaec1f1a_qrc1_0_5a7804cb",
+        "calc_81fd9a41794f14cb",
+        "calc_06632ae49dec18be"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_spc_rxn_discovery_9ddaec1f1a_qrc1_0_5a7804cb",
+        "freq_calc": "calc_81fd9a41794f14cb",
+        "energy_calc": "calc_06632ae49dec18be",
+        "T_K": 298.15,
+        "G_hartree": -116.20742779577141,
+        "H_hartree": -116.17261160490705,
+        "zpe_hartree": 0.054380584207615615,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_spc_rxn_discovery_9ddaec1f1a_qrc1_1_5a7804cb_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_spc_rxn_discovery_9ddaec1f1a_qrc1_1_5a7804cb",
+        "calc_395d37ceffdce1fa",
+        "calc_ce48df2f33abfe1d"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_spc_rxn_discovery_9ddaec1f1a_qrc1_1_5a7804cb",
+        "freq_calc": "calc_395d37ceffdce1fa",
+        "energy_calc": "calc_ce48df2f33abfe1d",
+        "T_K": 298.15,
+        "G_hartree": -116.18832887437857,
+        "H_hartree": -116.15530400893343,
+        "zpe_hartree": 0.05195852866077963,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_calc_869556294003f6a5_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "calc_869556294003f6a5",
+        "calc_55809d47770e1043"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "calc_869556294003f6a5",
+        "freq_calc": "calc_869556294003f6a5",
+        "energy_calc": "calc_55809d47770e1043",
+        "T_K": 298.15,
+        "G_hartree": -116.13655302719799,
+        "H_hartree": -116.10745100979224,
+        "zpe_hartree": 0.05236272865725247,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_calc_0e7147a469baec65_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "calc_0e7147a469baec65",
+        "calc_d71fe210cfad8a8e"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "calc_0e7147a469baec65",
+        "freq_calc": "calc_0e7147a469baec65",
+        "energy_calc": "calc_d71fe210cfad8a8e",
+        "T_K": 298.15,
+        "G_hartree": -116.19853938283103,
+        "H_hartree": -116.16741913958558,
+        "zpe_hartree": 0.05188814763389173,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "reaction_thermo_rxn_discovery_9ddaec1f1a_298.15K_1atm",
+      "type": "reaction_thermo",
+      "parents": [
+        "rxn_discovery_9ddaec1f1a"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "reaction_thermo",
+        "reaction_id": "rxn_discovery_9ddaec1f1a",
+        "T_K": 298.15,
+        "standard_state": "1atm",
+        "dE_act_kcal": null,
+        "dE_rxn_kcal": 27.140104407177137,
+        "dG_act_kcal": null,
+        "dG_rxn_kcal": 27.124390932226227,
+        "dG_assoc_kcal": -10.584997899304566,
+        "dG_act_vs_separated_kcal": null,
+        "band_kcal": null,
+        "blockers": [],
+        "dG_eff_kcal": null,
+        "energy_level": "m06-2x-d3zero/def2-tzvpd",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "reaction_thermo_rxn_discovery_9ddaec1f1a_split2_298.15K_1atm",
+      "type": "reaction_thermo",
+      "parents": [
+        "rxn_discovery_9ddaec1f1a_split2"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "reaction_thermo",
+        "reaction_id": "rxn_discovery_9ddaec1f1a_split2",
+        "T_K": 298.15,
+        "standard_state": "1atm",
+        "dE_act_kcal": 43.762595384112366,
+        "dE_rxn_kcal": 12.892436552652994,
+        "dG_act_kcal": 44.47458875184954,
+        "dG_rxn_kcal": 11.718185264935475,
+        "dG_assoc_kcal": 4.821207767986185,
+        "dG_act_vs_separated_kcal": 49.29579651983572,
+        "band_kcal": [
+          44.316268548881936,
+          45.21801381351627
+        ],
+        "blockers": [],
+        "dG_eff_kcal": 44.82631263047381,
+        "energy_level": "m06-2x-d3zero/def2-tzvpd",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "reaction_thermo_rxn_discovery_1f266f1727_298.15K_1atm",
+      "type": "reaction_thermo",
+      "parents": [
+        "rxn_discovery_1f266f1727"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "reaction_thermo",
+        "reaction_id": "rxn_discovery_1f266f1727",
+        "T_K": 298.15,
+        "standard_state": "1atm",
+        "dE_act_kcal": 6.985234240553943,
+        "dE_rxn_kcal": -13.279010260764608,
+        "dG_act_kcal": 5.9292872080974375,
+        "dG_rxn_kcal": -15.054481788666477,
+        "dG_assoc_kcal": 4.469483889361911,
+        "dG_act_vs_separated_kcal": 10.398771097459349,
+        "band_kcal": [
+          5.7237639699793865,
+          6.190123344995012
+        ],
+        "blockers": [],
+        "dG_eff_kcal": 5.9292872080974375,
+        "energy_level": "m06-2x-d3zero/def2-tzvpd",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "reaction_thermo_rxn_discovery_9ddaec1f1a_split1_298.15K_1atm",
+      "type": "reaction_thermo",
+      "parents": [
+        "rxn_discovery_9ddaec1f1a_split1"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "reaction_thermo",
+        "reaction_id": "rxn_discovery_9ddaec1f1a_split1",
+        "T_K": 298.15,
+        "standard_state": "1atm",
+        "dE_act_kcal": 20.26424450131855,
+        "dE_rxn_kcal": 14.247667854524144,
+        "dG_act_kcal": 20.983768996763914,
+        "dG_rxn_kcal": 15.406205667290752,
+        "dG_assoc_kcal": -10.584997899304566,
+        "dG_act_vs_separated_kcal": 10.398771097459349,
+        "band_kcal": [
+          20.732246255871758,
+          21.113005400170607
+        ],
+        "blockers": [],
+        "dG_eff_kcal": 20.983768996763914,
+        "energy_level": "m06-2x-d3zero/def2-tzvpd",
+        "notes": []
+      },
+      "failure": null
+    }
+  ]
+}

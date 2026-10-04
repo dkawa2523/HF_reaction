@@ -2,12 +2,12 @@
 # plus the TMA microsolvation series (one explicit water). SMILES species need rdkit.
 system_id: amine_hf_panel
 species:
-  - {id: nh3, smiles: "N"}
-  - {id: tma, smiles: "CN(C)C"}
-  - {id: anl, smiles: "Nc1ccccc1"}
-  - {id: pyr, smiles: "n1ccccc1"}
-  - {id: hf, xyz: xyz/amine_hf_panel/hf.xyz}
-  - {id: water, xyz: xyz/amine_hf_panel/water.xyz}
+  - {id: nh3, smiles: "N", multiplicity: 1}
+  - {id: tma, smiles: "CN(C)C", multiplicity: 1}
+  - {id: anl, smiles: "Nc1ccccc1", multiplicity: 1}
+  - {id: pyr, smiles: "n1ccccc1", multiplicity: 1}
+  - {id: hf, xyz: xyz/amine_hf_panel/hf.xyz, multiplicity: 1}
+  - {id: water, xyz: xyz/amine_hf_panel/water.xyz, multiplicity: 1}
 compositions:
   - {id: nh3_hf1, components: {nh3: 1, hf: 1}}
   - {id: nh3_hf2, components: {nh3: 1, hf: 2}}

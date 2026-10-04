@@ -1,6 +1,6 @@
 system_id: hcn
 species:
-  - {id: hcn, xyz: xyz/hcn/hcn.xyz, role: endpoint}
-  - {id: hnc, xyz: xyz/hcn/hnc.xyz, role: endpoint}
+  - {id: hcn, xyz: xyz/hcn/hcn.xyz, multiplicity: 1, role: endpoint}
+  - {id: hnc, xyz: xyz/hcn/hnc.xyz, multiplicity: 1, role: endpoint}
 reactions:
   - {id: hcn_to_hnc, reactant: hcn, product: hnc}

@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict
 
 from hfauto.chemistry.xyz import Molecule
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry, PathProfile
-from hfauto.core.method import Deadline, EngineSite, MethodSpec
+from hfauto.core.method import EngineSite, MethodSpec
 from hfauto.core.records import ReactionTrial
 
 if TYPE_CHECKING:
@@ -104,7 +104,6 @@ class QMEngine(Engine, Protocol):
         # a job of the same atoms, state and basis whose converged SCF starts this one (a
         # profile point on its end's SCF branch); an engine without SCF vectors ignores it
         scf_guess: Evidence | None = None,
-        deadline: Deadline | None = None,
     ) -> Evidence | Failure: ...
 
     def optimize(
@@ -120,7 +119,6 @@ class QMEngine(Engine, Protocol):
         # an opt of the same atoms and state whose converged SCF starts this one (a scan's
         # previous point); an engine without SCF vectors ignores it
         scf_guess: Evidence | None = None,
-        deadline: Deadline | None = None,
     ) -> Evidence | Failure: ...
 
     def frequencies(
@@ -130,7 +128,6 @@ class QMEngine(Engine, Protocol):
         *,
         # the opt or saddle at mol whose converged SCF starts this one (same electronic state)
         scf_guess: Evidence | None = None,
-        deadline: Deadline | None = None,
     ) -> Evidence | Failure: ...
 
 
@@ -144,7 +141,6 @@ class PathEngine(Engine, Protocol):
         *,
         images: int,
         initial_path: FileRef,  # multi-frame xyz from start to end (the relaxed path's start)
-        deadline: Deadline | None = None,
     ) -> PathProfile | Failure: ...
 
 
@@ -158,7 +154,6 @@ class SaddleRefiner(Engine, Protocol):
         # freq Evidence (any Level) at seed or within 0.5 Å per atom of it (same atoms, frame)
         hessian: Evidence,
         mode: Sequence[float],  # reaction direction (3N): the only negative initial curvature
-        deadline: Deadline | None = None,
     ) -> Evidence | Failure: ...  # maxiter: a Failure whose ``final`` is the last frame
 
 

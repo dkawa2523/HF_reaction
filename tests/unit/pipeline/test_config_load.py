@@ -13,7 +13,7 @@ from hfauto.stages.spec import StageConfig
 FILES = {  # pipeline, system and site first: the arguments of load()
     "pipelines/demo.yaml": "{pipeline_id: demo, gates: {noise_cm1: 12.0}, stages: [{id: screen,"
     " stage: minima, engine: xtb, method: gfn2, init_hessian: {method: gfn2}}]}",
-    "systems/h2.yaml": "{system_id: h2, species: [{id: h2, xyz: xyz/h2.xyz}]}",
+    "systems/h2.yaml": "{system_id: h2, species: [{id: h2, xyz: xyz/h2.xyz, multiplicity: 1}]}",
     "sites/local.yaml": "{site: local, scratch_root: /home/u/s, cores: 4}",
     "pipelines/methods/gfn2.yaml": "{id: gfn2, kind: xtb, gfn: 2}",  # next to the pipeline
     "systems/xyz/h2.xyz": "2\n\nH 0 0 0\nH 0 0 0.74\n",
@@ -60,22 +60,22 @@ def test_unknown_keys_are_errors():
         config.model_validate({"level": "dft", "no_such_key": True})
 
 
-def test_eight_knobs_five_gates_and_a_typed_reaction_paths_budget():
-    """U9-P2: the gates are the chemical thresholds only; the reaction-paths policy is typed."""
+def test_seven_knobs_five_gates_and_a_typed_reaction_paths_budget():
+    """U9-P2: the gates are the chemical thresholds only; the reaction-paths policy is typed and
+    counts only (no wall clock)."""
     assert {f.name for f in dataclasses.fields(Policy)} == {
         "noise_cm1", "saddle_cm1", "resolution_kcal", "reaction_window_kcal", "spin_tol"}
-    assert set(ReactionPathsPolicy.model_fields) == {
-        "walltime_h", "max_saddle_attempts", "max_split_depth"}
+    assert set(ReactionPathsPolicy.model_fields) == {"max_saddle_attempts", "max_split_depth"}
     stage = {"id": "a", "stage": "structures"}
     for gone in ("spin_contamination_tol", "qrc_min_drop_hartree", "thermo_zpe_tol_hartree"):
         with pytest.raises(ValidationError):
             PipelineConfig.model_validate({"pipeline_id": "p", "stages": [stage],
                                            "gates": {gone: 1.0}})
     base = {"method": "m", "engines": {"qm": "q", "saddle": "s", "path": "p"}}
-    config = ReactionPathsConfig.model_validate({**base, "policy": {"walltime_h": 1.5}})
-    assert config.policy == ReactionPathsPolicy(walltime_h=1.5)
+    config = ReactionPathsConfig.model_validate({**base, "policy": {"max_saddle_attempts": 3}})
+    assert config.policy == ReactionPathsPolicy(max_saddle_attempts=3)
     assert ReactionPathsConfig.model_validate(base).policy.max_saddle_attempts == 2
-    for gone in ("screen", "string_beads", "qrc_bounds_A", "walltime_s"):
+    for gone in ("screen", "string_beads", "qrc_bounds_A", "walltime_s", "walltime_h"):
         with pytest.raises(ValidationError):
             ReactionPathsConfig.model_validate({**base, "policy": {gone: 1}})
 

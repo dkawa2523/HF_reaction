@@ -1,10 +1,8 @@
-"""Requested methods, site execution settings and deadlines (design §5.2)."""
+"""Requested methods and site execution settings (design §5.2)."""
 
 from __future__ import annotations
 
 import math
-import time
-from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -128,23 +126,3 @@ class ThermoSettings(BaseModel):
     vib_scale: float = 1.0  # one factor for the frequencies and the ZPE
     sensitivity: bool = True  # qs x cutoff{50, 100, 150} band
 
-
-MIN_ATTEMPT_S = 60.0  # below this remaining budget no attempt starts
-
-
-@dataclass
-class Deadline:
-    """A walltime budget; it has expired once no attempt can start (MIN_ATTEMPT_S), so a case
-    closes on its walltime row instead of running on through refused jobs."""
-
-    end: float  # time.monotonic() reference
-
-    @classmethod
-    def after(cls, seconds: float) -> Deadline:
-        return cls(end=time.monotonic() + seconds)
-
-    def remaining(self) -> float:
-        return max(0.0, self.end - time.monotonic())
-
-    def expired(self) -> bool:
-        return self.remaining() < MIN_ATTEMPT_S

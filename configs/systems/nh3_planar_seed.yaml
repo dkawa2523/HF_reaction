@@ -4,8 +4,8 @@
 # planar history shows follow1:ts_candidate; the R3 case starts with validate_and_connect from ts_calc.
 system_id: nh3_planar_seed
 species:
-  - {id: nh3_up, xyz: xyz/nh3_inversion/reactant.xyz, role: endpoint}
-  - {id: nh3_down, xyz: xyz/nh3_inversion/product.xyz, role: endpoint}
-  - {id: planar_nh3, xyz: xyz/nh3_planar_seed/d3h.xyz}
+  - {id: nh3_up, xyz: xyz/nh3_inversion/reactant.xyz, multiplicity: 1, role: endpoint}
+  - {id: nh3_down, xyz: xyz/nh3_inversion/product.xyz, multiplicity: 1, role: endpoint}
+  - {id: planar_nh3, xyz: xyz/nh3_planar_seed/d3h.xyz, multiplicity: 1}
 reactions:
   - {id: nh3_inversion, reactant: nh3_up, product: nh3_down}

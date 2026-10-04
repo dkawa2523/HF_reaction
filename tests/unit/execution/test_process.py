@@ -1,5 +1,4 @@
 import json
-import signal
 import sys
 import time
 from pathlib import Path
@@ -62,20 +61,25 @@ def test_a_command_started_while_stopping_dies_and_is_no_result(tmp_path, monkey
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals and process groups")
-def test_sigterm_kills_the_running_groups_and_exits_143(tmp_path):
-    # The command sends SIGTERM to hfauto (its parent), as `timeout` or a scheduler would.
+def test_sigterm_kills_the_running_groups_and_stops_as_ctrl_c(tmp_path):
+    # The command sends SIGTERM to hfauto (its parent), as `timeout` or a scheduler would; the
+    # handler raises KeyboardInterrupt, which ``hfauto run`` turns into exit code 1.
     child = _TREE.format(then="import signal; os.kill(os.getppid(), signal.SIGTERM)")
     harness = (
         "import sys\nfrom pathlib import Path\n"
         "from hfauto.cli.main import stop_on_signals\n"
         "from hfauto.execution.process import Command, run_command\n"
         "stop_on_signals()\n"
-        f"run_command(Command(argv=(sys.executable, '-c', {child!r}), cwd=Path('job')),"
+        "try:\n"
+        f"    run_command(Command(argv=(sys.executable, '-c', {child!r}), cwd=Path('job')),"
         " timeout_s=60)\n"
+        "except KeyboardInterrupt as stop:\n"
+        "    sys.exit(f'stopped by {stop}')\n"
     )
     root = str(Path(__file__).resolve().parents[3])
     res = run_command(_py(tmp_path, harness, env={"PYTHONPATH": root}), timeout_s=30)
-    assert res.returncode == 128 + signal.SIGTERM and res.duration_s < 20, res.stderr.read_text()
+    stderr = res.stderr.read_text()
+    assert res.returncode == 1 and "stopped by SIGTERM" in stderr and res.duration_s < 20, stderr
     assert _gone(tmp_path / "job" / "child.pid")
 
 

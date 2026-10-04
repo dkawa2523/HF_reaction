@@ -16,7 +16,7 @@ from hfauto.chemistry.interpolation import align_mapped
 from hfauto.core import records as R
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Failure, FailureKind
-from hfauto.core.method import Deadline, MethodSpec
+from hfauto.core.method import MethodSpec
 from hfauto.drivers.minimum import Registry, relax_to_minimum
 from hfauto.drivers.reaction_case.actions import Profile
 from hfauto.drivers.reaction_case.driver import HANDLERS, CaseRuntime, open_case
@@ -52,7 +52,7 @@ class FailingSaddle(fakes.FakeSaddle):  # a failure without a last frame
 
 
 class NoOpt(fakes.FakeQM):  # every optimization fails at maxiter
-    def optimize(self, mol, method, *, init_hessian=None, deadline=None):
+    def optimize(self, mol, method, *, init_hessian=None):
         return Failure(kind=FailureKind.GEOMETRY_MAXITER, reason="scripted")
 
 
@@ -61,8 +61,8 @@ class Bumped(fakes.FakeQM):  # an SP within 0.01 Å of ``at`` rises by ``bump`` 
         super().__init__(root, pes)
         self.at, self.bump = at, bump
 
-    def energy(self, mol, method, *, scf_guess=None, deadline=None):
-        ev = super().energy(mol, method, scf_guess=scf_guess, deadline=deadline)
+    def energy(self, mol, method, *, scf_guess=None):
+        ev = super().energy(mol, method, scf_guess=scf_guess)
         if np.abs(mol.xyz.coords - self.at).max() > 0.01:
             return ev
         if self.bump is None:
@@ -115,7 +115,7 @@ def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None, neb=()
     case = R.ReactionRecord(reaction_id="rx", reactants=(), products=(), minima=tuple(ids),
                             endpoints=("reactant", "product"), degenerate=ids[0] == ids[1],
                             source="declared")
-    ctx = open_case(case, rt, CaseRules(screen=False), Deadline.after(600), root, lambda _: None)
+    ctx = open_case(case, rt, CaseRules(screen=False), root, lambda _: None)
     return ctx, CaseState(minima=tuple(registry.minima[m][0] for m in ids))
 
 

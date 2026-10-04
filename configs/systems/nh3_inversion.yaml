@@ -1,6 +1,6 @@
 system_id: nh3_inversion
 species:
-  - {id: nh3_up, xyz: xyz/nh3_inversion/reactant.xyz, role: endpoint}
-  - {id: nh3_down, xyz: xyz/nh3_inversion/product.xyz, role: endpoint}
+  - {id: nh3_up, xyz: xyz/nh3_inversion/reactant.xyz, multiplicity: 1, role: endpoint}
+  - {id: nh3_down, xyz: xyz/nh3_inversion/product.xyz, multiplicity: 1, role: endpoint}
 reactions:
   - {id: nh3_inversion, reactant: nh3_up, product: nh3_down}

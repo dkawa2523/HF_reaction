@@ -21,7 +21,7 @@ from hfauto.chemistry.xyz import composition_key
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence
 from hfauto.core.ids import species_artifact_id, species_id
-from hfauto.core.method import Deadline, MethodSpec
+from hfauto.core.method import MethodSpec
 from hfauto.core.records import (
     BarrierVerdict,
     CaseOutcome,
@@ -93,8 +93,7 @@ def case_ctx(root: Path, ends=("reactant", "product"), known=(), kcal=None):
     case = ReactionRecord(reaction_id="rx", reactants=terms, products=terms,
                           minima=(ids[ends[0]], ids[ends[1]]), endpoints=ends,
                           source="discovery")
-    ctx = driver.open_case(case, rt, CaseRules(screen=False), Deadline.after(600), root,
-                           lambda _: None)
+    ctx = driver.open_case(case, rt, CaseRules(screen=False), root, lambda _: None)
     return ctx, CaseState(minima=tuple(registry.minima[m][0] for m in case.minima))
 
 
@@ -169,24 +168,13 @@ def test_a_ts_whose_sides_join_one_state_is_rejected_and_the_search_goes_on(
 def test_sides_in_one_basin_are_retried_wider_within_the_action(tmp_path, monkeypatch, names,
                                                                 amplitudes, label):
     """G7-P5: one action from the TS checks to QRC; only sides in one basin get the second,
-    wider amplitude. Row 8 then searches on while attempts are left."""
+    wider amplitude. Row 7 then searches on while attempts are left."""
     ctx, state = case_ctx(tmp_path)
     ran = []
     state = qrc(ctx, state, monkeypatch, names, amplitudes=ran)
     assert (ran, state.connection, state.last_saddle) == (amplitudes, label, None)
     if label != "elementary":
         assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "dft_path")
-
-
-def test_no_qrc_starts_after_the_walltime(tmp_path, monkeypatch):
-    """The walltime closes the case between steps (row 7) as when QRC was an action of its own:
-    the accepted TS keeps its claim, no QRC runs."""
-    ctx, state = case_ctx(tmp_path)
-    ctx.deadline, ran = Deadline.after(0.0), []
-    state = qrc(ctx, state, monkeypatch, ("reactant", "product"), amplitudes=ran)
-    assert ran == [] and state.claim is not None and state.connection is None
-    assert decide(ctx.case, replace(state, expired=True), ctx.rules) == Decision(
-        Action.COMPLETE, "walltime", CaseOutcome.UNRESOLVED)
 
 
 def test_a_new_state_on_one_side_splits_and_none_at_an_end_is_reassigned(tmp_path,

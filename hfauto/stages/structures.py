@@ -1,8 +1,8 @@
 """structures stage (design §4.1 #1, §8.2): system species → ``species`` artifacts.
 
 xyz files are copied into the stage directory and SMILES are embedded once (RDKit ETKDG).
-An undeclared multiplicity is the SMILES radical electrons + 1, or 1 for xyz. Elements,
-charge and multiplicity are checked once here with ``check_electronic_state``; both ends of a
+The multiplicity is always the declared one. Elements and the parity of the declared charge
+and multiplicity are checked once here with ``check_electronic_state``; both ends of a
 declared reaction must share composition id (formula, charge, multiplicity) and atom order,
 and its coordinate indices must fall inside the molecule. Ends that differ only in
 multiplicity are a spin crossing (``spin_crossing_reaction_unsupported``: no MECP search; each
@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import ClassVar, cast
 
 from hfauto.chemistry.electronic_state import check_electronic_state
-from hfauto.chemistry.smiles import smiles_to_molecule
+from hfauto.chemistry.smiles import smiles_to_xyz
 from hfauto.chemistry.topology import state_label
-from hfauto.chemistry.xyz import composition_key, read_xyz, written_geometry
+from hfauto.chemistry.xyz import composition_key, read_xyz, write_xyz, written_geometry
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.ids import species_artifact_id
 from hfauto.core.manifest import Artifact, Manifest
@@ -37,24 +37,21 @@ def _failed(species_id: str, kind: FailureKind, reason: str) -> Artifact:
                     status="failed", failure=Failure(kind=kind, reason=reason))
 
 
-def _write(species: SpeciesInput, target: Path) -> int:
-    """Write the input structure to ``target`` and return its multiplicity."""
+def _write(species: SpeciesInput, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     if species.xyz is not None:  # SpeciesInput guarantees exactly one of xyz and smiles
         shutil.copyfile(species.xyz, target)
-        return 1 if species.multiplicity is None else species.multiplicity
-    mol = smiles_to_molecule(cast(str, species.smiles), species.charge, species.multiplicity)
-    mol.write(target)
-    return mol.multiplicity
+    else:
+        write_xyz(smiles_to_xyz(cast(str, species.smiles), species.charge), target)
 
 
 def _species(species: SpeciesInput, rt: StageRuntime) -> Artifact:
     path = rt.stage_dir / "xyz" / f"{species.id}.xyz"
+    mult = species.multiplicity
     try:
-        mult = _write(species, path)
+        _write(species, path)
         geometry, xyz = written_geometry(path, rt.file_ref), read_xyz(path)
-        check_electronic_state(xyz.symbols, species.charge, mult,
-                               declared=species.multiplicity is not None)
+        check_electronic_state(xyz.symbols, species.charge, mult)
         record = SpeciesRecord(
             species_id=species.id,
             composition_id=composition_key(xyz.symbols, species.charge, mult),

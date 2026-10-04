@@ -87,7 +87,7 @@ def _register(ctx: Ctx, coords: np.ndarray, name: str,
     member, or None (no minimum)."""
     rt = ctx.rt
     out = relax_to_minimum(ctx.mol(coords), rt.method, rt.qm, known=rt.registry, opt=opt,
-                           deadline=ctx.deadline, gates=ctx.rules.gates, resolve=rt.resolve)
+                           gates=ctx.rules.gates, resolve=rt.resolve)
     if out.status == "known" and out.known_basin is not None and out.opt is not None:
         return Reached(rt.registry.basin(out.known_basin), out.opt)
     if out.status != "minimum" or out.opt is None or out.freq is None:
@@ -139,8 +139,8 @@ def _sides(ctx: Ctx, freq: Evidence, starts: tuple[np.ndarray, np.ndarray], atte
     image = is_image(ctx.symbols, starts[1], starts[0])
     if image:
         ctx.note(f"qrc{attempt}:minus_is_image")
-    runs = rt.map(lambda y: rt.qm.optimize(ctx.mol(y), rt.method, init_hessian=freq,
-                                           deadline=ctx.deadline), starts[:1 if image else 2])
+    runs = rt.map(lambda y: rt.qm.optimize(ctx.mol(y), rt.method, init_hessian=freq),
+                  starts[:1 if image else 2])
     plus, minus = runs[0], runs[-1]
     if isinstance(plus, Failure) or isinstance(minus, Failure):
         ctx.note(f"qrc{attempt}:side_failed")
@@ -152,16 +152,13 @@ def _sides(ctx: Ctx, freq: Evidence, starts: tuple[np.ndarray, np.ndarray], atte
 
 def validate_and_connect(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """The saddle's TS checks (actions.validate_ts), then QRC from an accepted TS. Sides in one
-    basin may be a displacement too small to leave it: QRC runs once more, wider. Each QRC
-    starts only before the walltime (row 7 then closes the case); row 8 judges a connection
-    that is still rejected."""
+    basin may be a displacement too small to leave it: QRC runs once more, wider; row 7 judges
+    a connection that is still rejected."""
     state = validate_ts(ctx, state)
     if state.claim is None:
         return state
     freq = ctx.work.calcs[state.claim.freq_calc]
     for attempt in (1, 2):
-        if ctx.deadline.expired():
-            break
         state = connect(ctx, state, freq, attempt)
         if state.connection != "same_basin":
             break
@@ -218,7 +215,7 @@ def _rejected(reasons: tuple[str, ...], one_key: bool, a: Reached | None, b: Rea
     """A connection that failed the gate. Both sides in one basin may be a displacement too
     small to leave it: worth a wider one (validate_and_connect). Both in one key but two basins
     (one state of a bond-changing case, or a basin split finer than the resolution) make a
-    saddle of another process, never this case's (row 8 searches on). Anything else failed."""
+    saddle of another process, never this case's (row 7 searches on). Anything else failed."""
     if a is None or b is None or not one_key:
         return "failed"
     if a.record.basin_id != b.record.basin_id:
@@ -260,13 +257,13 @@ def _past_the_well(ctx: Ctx, state: CaseState, e: Sequence[float], name: str) ->
 
 
 def validate_intermediate(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """relax_to_minimum → Registry on the latest profile's lowest well (row 11); the claim of a
-    TS of another process (row 8 searched on) is dropped with its connection verdict. The well
+    """relax_to_minimum → Registry on the latest profile's lowest well (row 10); the claim of a
+    TS of another process (row 7 searched on) is dropped with its connection verdict. The well
     is an end when it has an end's case key, or (``_as_end``) lies within a resolution of an end
     with no hill of a resolution between them on the profile. A failed relaxation is no chemical
     result: the profile goes on from its highest peak."""
     path, state = ctx.work.path, replace(state, claim=None, connection=None)
-    if path is None:  # row 11 follows a DFT profile (CaseState.screen)
+    if path is None:  # row 10 follows a DFT profile (CaseState.screen)
         return replace(state, intermediate="relax_failed")
     e = path.energies
     w = min(profile.interior_maxima([-v for v in e], ctx.resolution), key=e.__getitem__)

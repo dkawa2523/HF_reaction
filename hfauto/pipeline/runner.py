@@ -15,7 +15,7 @@ from hfauto.chemistry.xyz import XYZ, read_xyz
 from hfauto.core.evidence import FileRef, Geometry
 from hfauto.core.hashing import sha256_file
 from hfauto.core.manifest import Artifact, Manifest, save_manifest
-from hfauto.core.method import Deadline, MethodSpec
+from hfauto.core.method import MethodSpec
 from hfauto.core.records import ArtifactType
 from hfauto.core.system import SystemConfig
 from hfauto.pipeline.config import ResolvedConfig, SiteConfig, StageEntry, method_ids
@@ -84,9 +84,6 @@ class Runtime:
 
         return thread_map(fn, items, workers=self.site.cores)
 
-    def deadline(self, seconds: float) -> Deadline:
-        return Deadline.after(seconds)
-
 
 def build_runtime(
     resolved: ResolvedConfig, layout: RunLayout, *, retry_failed: Collection[str] = ()
@@ -142,7 +139,9 @@ def execute_stage(
     """The only way a stage runs: validate, check consumes, run, check produces, save, record.
 
     A stage missing a consumed type is done with no artifacts (the log says why), so the
-    later stages, report included, still run."""
+    later stages, report included, still run. An external stop (KeyboardInterrupt: Ctrl-C, or
+    SIGTERM / SIGHUP through the CLI) leaves the stage ``incomplete``, which a resume runs
+    again from the JobStore; any other exception leaves it ``failed``."""
     pipeline_id = resolved.pipeline.pipeline_id
     layout.begin(entry.id, pipeline_id)
     before = runtime.jobs.stats()
@@ -166,9 +165,10 @@ def execute_stage(
             run_id=layout.run_id, stage_id=entry.id, created_at=now(), artifacts=list(artifacts)
         )
         save_manifest(manifest, layout.manifest_path(entry.id))
-    except BaseException:
-        jobs = runtime.jobs.stats().since(before)
-        layout.update(entry.id, status="failed", finished=now(), jobs=jobs)
+    except BaseException as exc:
+        status = "incomplete" if isinstance(exc, KeyboardInterrupt) else "failed"
+        layout.update(entry.id, status=status, finished=now(),
+                      jobs=runtime.jobs.stats().since(before))
         raise
     layout.update(
         entry.id,

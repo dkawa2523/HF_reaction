@@ -14,7 +14,7 @@
 | pysisyphus | 1.0 | production extra。xTB ネイティブ計算器の CI-NEB(`pysis_neb`)だけに使う | worker の import(doctor)。pin は xTB の版数 |
 | SCINE ReaDuct | 6.1.0(scine-xtb-wrapper 3.0.2) | production extra | worker の import(doctor) |
 | GoodVibes | 4.3.0 | production extra。thermo stage が同じプロセスで呼ぶ | `hfauto run` の preflight が thermo を含む pipeline で照合する |
-| pymsym | 0.3.5(対称数 σ の libmsym) | production extra で `pymsym==0.3.5` に固定。入れ直さない(別の libmsym のビルドは σ を変えうる) | `importlib.metadata.version('pymsym')`(WSL の既定テストが照合) |
+| pymsym | 0.3.5(点群と対称操作の libmsym) | production extra で `pymsym==0.3.5` に固定。入れ直さない(別の libmsym のビルドは σ を変えうる) | `importlib.metadata.version('pymsym')`(WSL の既定テストが照合) |
 
 production extra(`pyproject.toml`)は Linux・CPython 3.12 のときだけ入り、rdkit、numba、llvmlite と、scine_utilities が宣言せずに使う setuptools を含む。本体の依存は pydantic、typer、PyYAML、rich、numpy、scipy だけである。外部プログラムを conda でそろえる場合は `environment.production.yml` を使う。
 
@@ -42,7 +42,7 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 | xTB・CREST・ReaDuct | `OMP_NUM_THREADS=<threads>,1`、`OMP_STACKSIZE=4G`(アダプタが設定する)。CREST の `-T` は site の `engines.crest.execution.threads`(4)から決まる |
 | コア数 | 実行中のジョブの ranks × threads の合計を `cores` 以下に保つ(`JobRunner` のセマフォ)。極小の stage は全 rank で直列 |
 | 系のサイズ | 4 コア・def2-SVPD では解析 freq が約 35 原子でジョブの timeout(4 h)に達し、途中継続がないので全損する。大きな系は ranks を増やす |
-| シグナル | `hfauto run` は SIGINT・SIGTERM・SIGHUP で外部プログラム(NWChem の MPI ランクを含むプロセスグループ)を止め、128 + signum で終わる。SIGKILL は捕まえられないので、`timeout` は既定の SIGTERM で使い(`-s KILL` にしない)、スケジューラの SIGTERM から SIGKILL までの猶予(Slurm の KillWait)は数秒以上にする |
+| シグナル | `hfauto run` は SIGINT・SIGTERM・SIGHUP で外部プログラム(NWChem の MPI ランクを含むプロセスグループ)を止め、実行中の stage を incomplete と記録して終了コード 1 で終わる(流し直せば JobStore から続ける)。SIGKILL は捕まえられないので、`timeout` は既定の SIGTERM で使い(`-s KILL` にしない)、スケジューラの SIGTERM から SIGKILL までの猶予(Slurm の KillWait)は数秒以上にする |
 | SiteLock | `hfauto run` は実行中ずっと `<scratch_root>/.hfauto_site.lock` を保持し、別の run は保持者(pid、run ディレクトリ、時刻)を示して直ちに失敗する。pid が死んだロックは奪う。run を止めるシグナルは hfauto の python プロセスに送る(`time` などの親だけに送ると python が残り、ロックを持ち続ける) |
 
 `.wslconfig` を 16 vCPU / 48 GB に広げたときの site の値(cores 16、NWChem 16 rank × 2,000 MB、CREST threads 4)は `configs/sites/wsl_local.yaml` のコメントにある。
@@ -63,7 +63,7 @@ MSYS_NO_PATHCONV=1 wsl -e bash -lc 'cd /mnt/c/Users/user/Desktop/HF_reaction/hfa
 
 ### 実エンジンの smoke(`pytest -m real`、WSL)
 
-`tests/smoke/` のテストは marker `real` が付き、`HFAUTO_REAL=1` と `HFAUTO_SITE=<site ファイル>` がそろったときだけ動く。各エンジンを小さな系で 1 回ずつ動かし(NWChem の opt・freq・saddle・ECP・CCSD(T)・ZTS、xTB と `pysis_neb`、CREST、ReaDuct の NT2、GoodVibes)、約 1 分かかる。`--basetemp` は実行のたびに消されるので、専用の ext4 のディレクトリを指定する。
+`tests/smoke/` のテストは marker `real` が付き、`HFAUTO_REAL=1` と `HFAUTO_SITE=<site ファイル>` がそろったときだけ動く。各エンジンを小さな系で 1 回ずつ動かし(NWChem の opt・freq・saddle・ECP・CCSD(T)・ZTS、xTB と `pysis_neb`、CREST、ReaDuct の NT2、GoodVibes)、HCN の known_endpoints を 1 本流して `validation/cases.yaml` の case と比べる(`test_real_known_endpoints.py`)。全体で約 2 分かかる。`--basetemp` は実行のたびに消されるので、専用の ext4 のディレクトリを指定する。
 
 ```bash
 MSYS_NO_PATHCONV=1 wsl -e bash -lc 'cd /mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline && HFAUTO_REAL=1 HFAUTO_SITE=configs/sites/wsl_local.yaml /home/user/.venvs/hfauto-prod/bin/python -m pytest -m real tests/smoke --basetemp=/home/user/hfauto_smoke'

@@ -2,6 +2,6 @@
 system_id: oh_ch4
 species:
   - {id: oh, xyz: xyz/oh_ch4/oh.xyz, multiplicity: 2}
-  - {id: ch4, smiles: "C"}
+  - {id: ch4, smiles: "C", multiplicity: 1}
 compositions:
   - {id: oh_ch4, components: {oh: 1, ch4: 1}}

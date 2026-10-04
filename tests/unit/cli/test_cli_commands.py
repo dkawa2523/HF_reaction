@@ -34,25 +34,30 @@ def test_run_dry_run_resolves_names_and_writes_nothing(tmp_path, monkeypatch, ex
 
 
 def test_status_sums_failures_by_kind_and_job_reuse(tmp_path):
-    RunLayout(tmp_path).write_state([
-        StageState(stage_id="dft", pipeline_id="p", status="done", n_ok=3,
-                   jobs=JobStats(hits=1, misses=3, failures_by_kind={"timeout": 2})),
-        StageState(stage_id="paths", pipeline_id="p", status="failed",
-                   jobs=JobStats(hits=1, failures_by_kind={"timeout": 1, "nonzero_exit": 1}))])
-    result = cli.invoke(app, ["status", str(tmp_path)])
-    assert result.exit_code == 0, result.output
+    dft = StageState(stage_id="dft", pipeline_id="p", status="done", n_ok=3,
+                     jobs=JobStats(hits=1, misses=3, failures_by_kind={"timeout": 2}))
+    RunLayout(tmp_path).write_state([dft])
+    assert cli.invoke(app, ["status", str(tmp_path)]).exit_code == 0
+    for status in ("failed", "incomplete"):  # exit code 1, as for run
+        RunLayout(tmp_path).write_state([dft, StageState(
+            stage_id="paths", pipeline_id="p", status=status,
+            jobs=JobStats(hits=1, failures_by_kind={"timeout": 1, "nonzero_exit": 1}))])
+        result = cli.invoke(app, ["status", str(tmp_path)])
+        assert result.exit_code == 1, result.output
     assert "job failures: nonzero_exit=1, timeout=3" in result.output
     assert "job reuse: 2/5 (40%)" in result.output
     assert cli.invoke(app, ["status", str(tmp_path / "missing")]).exit_code == 2
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
-def test_ctrl_c_stops_the_external_programs_and_exits_130(monkeypatch):
+def test_a_signal_stops_the_external_programs_and_the_run_as_ctrl_c(monkeypatch):
+    """SIGTERM stops the run as Ctrl-C does (KeyboardInterrupt): the running stage is left
+    incomplete and run exits 1 (tests/integration/test_resume_e2e)."""
     handlers, stopped = {}, []
     monkeypatch.setattr(signal, "signal", lambda signum, handler: handlers.update({signum: handler}))
     monkeypatch.setattr(process, "stop_all", lambda: stopped.append(True))
     stop_on_signals()
     assert handlers[signal.SIGINT] is handlers[signal.SIGTERM] is handlers[signal.SIGHUP]
-    with pytest.raises(SystemExit) as exit_:
-        handlers[signal.SIGINT](signal.SIGINT, None)
-    assert exit_.value.code == 130 and stopped == [True]
+    with pytest.raises(KeyboardInterrupt, match="SIGTERM"):
+        handlers[signal.SIGTERM](signal.SIGTERM, None)
+    assert stopped == [True]

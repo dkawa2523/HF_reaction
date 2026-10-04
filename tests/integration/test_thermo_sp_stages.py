@@ -1,6 +1,6 @@
 """sp -> thermo with FakeQM and fake_species_thermo: energy layer (parents, label, spin),
-band, association, mixed LOT, m = 2, the state G (lowest spin-clean minimum) and dG_eff
-(submerged barrier, barrierless)."""
+band, association, mixed LOT, m = 2, the state G (lowest spin-clean minimum, closed when one
+lacks its energy layer) and dG_eff (submerged barrier, barrierless)."""
 
 import dataclasses
 import math
@@ -75,7 +75,7 @@ def _setup(fake_runtime, tmp_run, states=NEUTRAL):
                              energy_hartree=0.0))
     rx2 = rx1.model_copy(update={"reaction_id": "rx2", "minima": ("m_reactant", "m_p2")})
     arts += [Artifact(artifact_id=r.reaction_id, type=T.REACTION, payload=r) for r in (rx1, rx2)]
-    system = SystemConfig(system_id="s", species=[SpeciesInput(id=t, xyz=Path(f"{t}.xyz"))
+    system = SystemConfig(system_id="s", species=[SpeciesInput(id=t, xyz=Path(f"{t}.xyz"), multiplicity=1)
                                                   for t in ("nh", "o")],  # never read
                           compositions=[CompositionInput(id="c", components={"nh": 1, "o": 1})])
     rt = fake_runtime(system, {(Capability.QM, "nwchem"): qm}, methods={"svp": DFT, "tzvp": BIG})
@@ -145,7 +145,7 @@ def test_association_across_charge_and_spin_fails_closed(fake_runtime, tmp_run):
     view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, *sp]})
     out = _thermo(view, rt, "tzvp")
     assert out["m_nh_298.15K"].G_hartree is not None and out["m_o_298.15K"].G_hartree is None
-    assert out["rx1_298.15K_1atm"].dG_assoc_kcal is None  # no O minimum on the complex's LOT
+    assert out["rx1_298.15K_1atm"].dG_assoc_kcal is None  # the O state lacks its layer
 
 
 def test_an_association_refers_to_its_separated_monomers(fake_runtime, tmp_run):
@@ -189,23 +189,29 @@ def _relabel(view, updates):
     return view.model_copy(update={"artifacts": arts})
 
 
+def _lower_minima(ev, notes=()):
+    """One more reactant and O minimum, 1 kcal/mol lower each (m_low_reactant, m_low_o)."""
+    arts = []
+    for tag, composition in (("reactant", "HNO"), ("o", "o")):
+        e = ev[tag].energy_hartree - 1 / HARTREE_TO_KCAL_MOL
+        low = ev[tag].model_copy(update={"job_key": f"low_{tag}", "energy_hartree": e})
+        arts += [Artifact(artifact_id=calc_id(low), type=T.CALCULATION, payload=low),
+                 Artifact(artifact_id=f"m_low_{tag}", type=T.MINIMUM, payload=R.MinimumRecord(
+                     minimum_id=f"m_low_{tag}", basin_id=f"low_{tag}", notes=notes,
+                     composition_id=composition, species_id=tag, tier="dft", level_key="x",
+                     opt_calc="o", freq_calc=calc_id(low), energy_hartree=0.0,
+                     state_label=tag))]
+    return arts
+
+
 def test_state_g_is_the_lowest_spin_clean_minimum_of_the_state(fake_runtime, tmp_run):
     """dG_eff refers to the reactant state and dG_assoc to the O state (Curtin-Hammett); a
     spin-contaminated minimum is no candidate."""
     inputs, rt, ev = _setup(fake_runtime, tmp_run)
 
-    def with_lower_minima(notes):  # one more reactant and O minimum, 1 kcal/mol lower each
-        arts = []
-        for tag, composition in (("reactant", "HNO"), ("o", "o")):
-            e = ev[tag].energy_hartree - 1 / HARTREE_TO_KCAL_MOL
-            low = ev[tag].model_copy(update={"job_key": f"low_{tag}", "energy_hartree": e})
-            arts += [Artifact(artifact_id=calc_id(low), type=T.CALCULATION, payload=low),
-                     Artifact(artifact_id=f"m_low_{tag}", type=T.MINIMUM, payload=R.MinimumRecord(
-                         minimum_id=f"m_low_{tag}", basin_id=f"low_{tag}", notes=notes,
-                         composition_id=composition, species_id=tag, tier="dft", level_key="x",
-                         opt_calc="o", freq_calc=calc_id(low), energy_hartree=0.0,
-                         state_label=tag))]
-        view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, *arts]})
+    def with_lower_minima(notes):
+        view = inputs.model_copy(update={"artifacts": [*inputs.artifacts,
+                                                       *_lower_minima(ev, notes)]})
         return _thermo(view, rt)["rx1_298.15K_1atm"]
 
     before, clean = _thermo(inputs, rt)["rx1_298.15K_1atm"], with_lower_minima(())
@@ -215,6 +221,21 @@ def test_state_g_is_the_lowest_spin_clean_minimum_of_the_state(fake_runtime, tmp
     hot = with_lower_minima(("spin_contaminated",))
     assert (hot.dG_eff_kcal, hot.dG_assoc_kcal, hot.blockers) == (
         pytest.approx(before.dG_eff_kcal), pytest.approx(before.dG_assoc_kcal), ())
+
+
+def test_a_state_g_fails_closed_without_the_layer_of_one_minimum(fake_runtime, tmp_run):
+    """A minimum of the state without its energy layer may be its lowest: the state G is None
+    and the reaction thermo_unavailable, though its own minima have their layer."""
+    inputs, rt, ev = _setup(fake_runtime, tmp_run)
+    view = inputs.model_copy(update={"artifacts": [*inputs.artifacts, *_lower_minima(ev)]})
+    sp = [a.model_copy(update={"parents": tuple(p for p in a.parents if not p.startswith("m_low"))})
+          for a in _sp(view, rt)]
+    out = _thermo(view.model_copy(update={"artifacts": [*view.artifacts, *sp]}), rt, "tzvp")
+    rx = out["rx1_298.15K_1atm"]
+    assert out["m_reactant_298.15K"].G_hartree is not None
+    assert "energy_layer_missing" in out["m_low_reactant_298.15K"].notes
+    assert rx.blockers == ("thermo_unavailable",) and rx.dG_eff_kcal is None
+    assert rx.dG_act_kcal is not None and rx.dG_assoc_kcal is None  # the O state is closed too
 
 
 def test_a_submerged_barrier_and_a_barrierless_step_rank_by_max_dg_rxn_0(fake_runtime, tmp_run):

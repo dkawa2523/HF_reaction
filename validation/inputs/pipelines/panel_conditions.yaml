@@ -1,0 +1,10 @@
+# The SN2 panel at two temperatures and standard states; the report shows (400 K, 1M), not the
+# first (T, state). panel_thermo is the run's own layer (M06-2X) at more conditions.
+# Origin: /home/user/hfauto_r9/pipelines/panel_conditions.yaml (case s20_sn2_panel).
+pipeline_id: method_panel_conditions
+stages:
+  - {id: panel_sp, stage: sp, engine: nwchem,
+     methods: [pbe0-d3bj_def2-tzvpd, wb97x-d3_def2-tzvpd, ccsd-t_def2-tzvpd]}
+  - {id: panel_thermo, stage: thermo, energy_method: m06-2x-d3_def2-tzvpd,
+     temperatures_K: [298.15, 400], standard_states: [1atm, 1M]}
+  - {id: panel_report, stage: report, T_K: 400, standard_state: 1M}

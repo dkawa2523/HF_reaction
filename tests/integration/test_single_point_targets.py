@@ -30,7 +30,7 @@ REFERENCE = {"m_r", "m_r2", "m_nh", "m_o"}  # the reactant state and the monomer
 class SpQM(FakeQM):
     """Single points on any molecule (the monomers are off the double well) at 0 Eh."""
 
-    def energy(self, mol, method, *, scf_guess=None, deadline=None):
+    def energy(self, mol, method, *, scf_guess=None):
         key = self._key("sp", mol.fingerprint(), method.signature())
         start = self._start(mol, key)
         return Evidence(engine=self.name, task="sp", level=fake_level(method, mol), start=start,
@@ -83,7 +83,8 @@ def _inputs(tmp_run: Path, outcome: Out | None) -> tuple[Manifest, dict[str, Evi
 def test_sp_computes_only_the_points_the_ranking_reads(fake_runtime, tmp_run, outcome, expected):
     inputs, freq, ts = _inputs(tmp_run, outcome)
     system = SystemConfig(
-        system_id="s", species=[SpeciesInput(id=k, xyz=Path(f"{k}.xyz")) for k in ("nh", "o", "f")],
+        system_id="s", species=[SpeciesInput(id=k, xyz=Path(f"{k}.xyz"), multiplicity=1)
+                                for k in ("nh", "o", "f")],
         compositions=[CompositionInput(id="c", components={"nh": 1, "o": 1}),
                       CompositionInput(id="c2", components={"nh": 1, "f": 1})])
     rt = fake_runtime(system, {(Capability.QM, "nwchem"): SpQM(tmp_run, double_well())},

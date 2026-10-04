@@ -76,8 +76,10 @@ def found(discovery_id, source_minimum, product=None, outcome="product"):
 
 
 def system(*endpoints):
-    declared = [{"id": "hf", "xyz": "hf.xyz"}, {"id": "h2", "xyz": "h2.xyz"},
-                *({"id": e, "xyz": f"{e}.xyz", "role": "endpoint"} for e in endpoints)]
+    declared = [{"id": "hf", "xyz": "hf.xyz", "multiplicity": 1},
+                {"id": "h2", "xyz": "h2.xyz", "multiplicity": 1},
+                *({"id": e, "xyz": f"{e}.xyz", "multiplicity": 1, "role": "endpoint"}
+                  for e in endpoints)]
     return SystemConfig(system_id="t", species=declared,
                         compositions=[{"id": "hf2", "components": {"hf": 2}},
                                       {"id": "hf_h2", "components": {"hf": 1, "h2": 1}}])

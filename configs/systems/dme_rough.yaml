@@ -1,7 +1,7 @@
 # S12 (review §6.1): DME with both methyls rotated by 120 deg from a rough input (degenerate).
 system_id: dme_rough
 species:
-  - {id: dme_a, xyz: xyz/dme_rough/reactant.xyz, role: endpoint}
-  - {id: dme_b, xyz: xyz/dme_rough/product.xyz, role: endpoint}
+  - {id: dme_a, xyz: xyz/dme_rough/reactant.xyz, multiplicity: 1, role: endpoint}
+  - {id: dme_b, xyz: xyz/dme_rough/product.xyz, multiplicity: 1, role: endpoint}
 reactions:
   - {id: dme_double_rotation, reactant: dme_a, product: dme_b}

@@ -16,7 +16,7 @@ from hfauto.chemistry.xyz import XYZ, Molecule
 from hfauto.core import records as R
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Failure, FailureKind
-from hfauto.core.method import Deadline, MethodSpec
+from hfauto.core.method import MethodSpec
 from hfauto.drivers.minimum import Registry
 from hfauto.drivers.reaction_case import paths
 from hfauto.drivers.reaction_case.actions import branch_jump
@@ -90,18 +90,17 @@ class ScanQM(fakes.FakeQM):
         super().__init__(root, pes)
         self.points, self.results, self.fail, self.dirty, self.high = [], [], fail, dirty, []
 
-    def energy(self, mol, method, *, scf_guess=None, deadline=None):
+    def energy(self, mol, method, *, scf_guess=None):
         x = np.array(mol.xyz.coords)
         self.high.append((mol.multiplicity, x))
         r = float(np.linalg.norm(x[0] - x[1]))
         s2 = 3.95 if len(self.high) - 1 == self.dirty else 3.76
-        return super().energy(mol, method, deadline=deadline).model_copy(update={
+        return super().energy(mol, method).model_copy(update={
             "energy_hartree": E_H + E_OH + 0.03 * np.exp(-2.0 * (r - R_P)), "s2": s2})
 
-    def optimize(self, mol, method, *, init_hessian=None, fixed_bond=None, scf_guess=None,
-                 deadline=None):
+    def optimize(self, mol, method, *, init_hessian=None, fixed_bond=None, scf_guess=None):
         if fixed_bond is None:
-            return super().optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
+            return super().optimize(mol, method, init_hessian=init_hessian)
         self.points.append((fixed_bond, scf_guess, np.array(mol.xyz.coords)))
         key = self._key("scan", mol.fingerprint(), fixed_bond)
         if len(self.points) - 1 == self.fail:
@@ -134,7 +133,7 @@ def context(root: Path, qm, minima, species, case, calcs=None):
         case_dir=root / "cases", resolve=lambda ref: root / ref.path,
         map=lambda fn, items: [fn(x) for x in items], species=species,
         calcs=calcs or {})
-    return open_case(case, rt, CaseRules(screen=False), Deadline.after(600), root,
+    return open_case(case, rt, CaseRules(screen=False), root,
                      lambda entry: notes.append(entry.get("note"))), notes
 
 
@@ -303,9 +302,9 @@ class Branches(fakes.FakeQM):
         super().__init__(root, pes)
         self.offset, self.script, self.sps = offset, list(script), []
 
-    def energy(self, mol, method, *, scf_guess=None, deadline=None):
+    def energy(self, mol, method, *, scf_guess=None):
         self.sps.append((scf_guess, np.array(mol.xyz.coords)))
-        ev = super().energy(mol, method, scf_guess=scf_guess, deadline=deadline)
+        ev = super().energy(mol, method, scf_guess=scf_guess)
         e, s2 = self.script.pop(0) if self.script else (
             self.offset.get(scf_guess and scf_guess.job_key, 0.0),
             scf_guess.s2 if scf_guess else 0.76)

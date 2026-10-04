@@ -1,0 +1,10 @@
+# CH3. + O2 with the composition's multiplicity left undeclared: coupling allows 2 and 4, so the
+# composition is refused (declare_multiplicity) and only the monomers go on.
+# Origin: /home/user/hfauto_r7/VAL7/outside/ch3_o2_undeclared.yaml (the species multiplicities,
+# then implied by the SMILES radicals, are declared).
+system_id: ch3_o2_undeclared
+species:
+  - {id: ch3, smiles: "[CH3]", multiplicity: 2}
+  - {id: o2, smiles: "[O][O]", multiplicity: 3}
+compositions:
+  - {id: ch3_o2, components: {ch3: 1, o2: 1}}

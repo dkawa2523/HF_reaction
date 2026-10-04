@@ -1,0 +1,13 @@
+# configs/pipelines/known_endpoints.yaml without screen: (FIND_PATH runs the DFT strings).
+# Origin: /home/user/hfauto_r9/pipelines/known_endpoints_noscreen.yaml (cases hcn_noscreen,
+# hf_dimer_swap_noscreen).
+pipeline_id: known_endpoints_noscreen
+stages:
+  - {id: structures, stage: structures}
+  - {id: dft, stage: minima, level: dft, engine: nwchem, method: pbe0-d3bj_def2-svpd,
+     select: {include: all}, init_hessian: {engine: xtb, method: gfn2}}
+  - {id: paths, stage: reaction-paths, method: pbe0-d3bj_def2-svpd,
+     engines: {qm: nwchem, saddle: nwchem_saddle, path: nwchem_string}}
+  - {id: sp, stage: sp, engine: nwchem, methods: [m06-2x-d3_def2-tzvpd]}
+  - {id: thermo, stage: thermo, energy_method: m06-2x-d3_def2-tzvpd}
+  - {id: report, stage: report}

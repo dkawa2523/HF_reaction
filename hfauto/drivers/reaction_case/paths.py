@@ -70,8 +70,7 @@ def _neb(ctx: Ctx, frames: list[np.ndarray]) -> tuple[list[np.ndarray], Geometry
     if engine is None or method is None:
         return frames, None
     neb = engine.find_path(ctx.mol(frames[0]), ctx.mol(frames[-1]), method, images=len(frames),
-                           initial_path=ctx.path_file("screen_idpp", frames),
-                           deadline=ctx.deadline)
+                           initial_path=ctx.path_file("screen_idpp", frames))
     if isinstance(neb, Failure):
         ctx.note(f"screen_neb:{neb.kind.value}")
         return frames, None
@@ -125,8 +124,7 @@ def _scan(ctx: Ctx) -> tuple[BarrierVerdict, tuple[Seed, ...]]:
     for k in range(SCAN_POINTS - 1):
         r = r_p + SCAN_REACH_A * (1.0 - k / (SCAN_POINTS - 1))
         opt = rt.qm.optimize(ctx.mol(_moved(x, (i, j), fragment, r)), rt.method,
-                             fixed_bond=(i, j, r), scf_guess=points[-1] if points else None,
-                             deadline=ctx.deadline)
+                             fixed_bond=(i, j, r), scf_guess=points[-1] if points else None)
         if isinstance(opt, Failure):
             ctx.note(f"scan{k}:{opt.kind.value}")
             return BarrierVerdict(verdict="unavailable", source="scan",
@@ -164,8 +162,8 @@ def _projected(ctx: Ctx, frames: list[np.ndarray], points: list[Evidence]) -> li
         return energies
     high, spin = sum(m - 1 for m in spins) + 1, (ctx.multiplicity - 1) / 2
     ctx.note(f"scan:ap:{high}")
-    sps = rt.map(lambda x: rt.qm.energy(replace(ctx.mol(x), multiplicity=high), rt.method,
-                                        deadline=ctx.deadline), frames)
+    sps = rt.map(lambda x: rt.qm.energy(replace(ctx.mol(x), multiplicity=high), rt.method),
+                 frames)
     for k, (bs, hs) in enumerate(zip(points, sps, strict=True)):
         if isinstance(hs, Failure):
             ctx.note(f"scan{k}:ap_skipped:{hs.kind.value}")
@@ -214,7 +212,7 @@ def find_path(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     if initial is None:
         return replace(state, path_runs=state.path_runs + 1)
     run = rt.path.find_path(ctx.mol(ctx.ends[0]), ctx.mol(ctx.ends[1]), rt.method,
-                            images=STRING_BEADS, initial_path=initial, deadline=ctx.deadline)
+                            images=STRING_BEADS, initial_path=initial)
     if isinstance(run, Failure):
         ctx.note(f"{run_name}:{run.kind.value}")
         return replace(state, path_runs=state.path_runs + 1)

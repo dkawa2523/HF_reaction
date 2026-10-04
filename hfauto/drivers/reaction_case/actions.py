@@ -33,7 +33,6 @@ from hfauto.chemistry.xyz import (
 )
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Failure, FileRef, Geometry
-from hfauto.core.method import Deadline
 from hfauto.core.records import (
     BarrierVerdict,
     ConnectionClaim,
@@ -82,7 +81,6 @@ class Ctx:
     case: ReactionRecord
     rt: CaseRuntime
     rules: CaseRules
-    deadline: Deadline
     folder: Path  # cases/<reaction_id>
     symbols: list[str]
     charge: int
@@ -118,7 +116,7 @@ class Ctx:
         jobs = [(i, *job) for i, x in enumerate(frames) for job in self._guesses(x)]
         found: list[Evidence | None] = [None] * len(frames)
         for (i, _, _), ev in zip(jobs, rt.map(lambda job: rt.qm.energy(
-                self.mol(job[2]), rt.method, scf_guess=job[1], deadline=self.deadline), jobs),
+                self.mol(job[2]), rt.method, scf_guess=job[1]), jobs),
                                   strict=True):
             if isinstance(ev, Failure):
                 self.note(f"sp:{ev.kind.value}")
@@ -279,7 +277,7 @@ def xtb_freq(ctx: Ctx, coords: np.ndarray) -> Evidence | None:
     rt = ctx.rt
     if rt.screen_qm is None or rt.screen_method is None:
         return None
-    freq = rt.screen_qm.frequencies(ctx.mol(coords), rt.screen_method, deadline=ctx.deadline)
+    freq = rt.screen_qm.frequencies(ctx.mol(coords), rt.screen_method)
     return None if isinstance(freq, Failure) else freq
 
 
@@ -290,7 +288,7 @@ def _seed_hessian(ctx: Ctx, seed: Seed, x: np.ndarray) -> tuple[str, Evidence | 
         return "ts_freq", seed.hessian
     if (xtb := xtb_freq(ctx, x)) is not None:
         return "xtb", xtb
-    return "dft", ctx.rt.qm.frequencies(ctx.mol(x), ctx.rt.method, deadline=ctx.deadline)
+    return "dft", ctx.rt.qm.frequencies(ctx.mol(x), ctx.rt.method)
 
 
 def _search(ctx: Ctx, seed: Seed) -> Evidence | Failure:
@@ -303,8 +301,7 @@ def _search(ctx: Ctx, seed: Seed) -> Evidence | Failure:
         ctx.note(f"saddle_hessian:{hessian.kind.value}")
         return hessian
     ctx.note(f"saddle_hessian:{source}:{kind}")
-    result = rt.saddle.refine(ctx.mol(x), rt.method, hessian=hessian, mode=tuple(direction),
-                              deadline=ctx.deadline)
+    result = rt.saddle.refine(ctx.mol(x), rt.method, hessian=hessian, mode=tuple(direction))
     if isinstance(result, Failure):
         ctx.note(f"saddle:{result.kind.value}:{result.reason}")
     return result
@@ -312,12 +309,12 @@ def _search(ctx: Ctx, seed: Seed) -> Evidence | Failure:
 
 def _restart(ctx: Ctx, seed: Seed, stalled: Failure) -> Seed | None:
     """A search stalled at maxiter goes on from its last frame with a fresh Hessian, one
-    continuation deeper (up to MAX_DEPTH) and before the walltime, unless that frame lies more
-    than a resolution above the latest DFT profile's maximum: a continuous path bounds
-    the saddle from above, so the search has climbed past the barrier it was to find. A stalled
-    search stored without its energy is not bounded."""
+    continuation deeper (up to MAX_DEPTH), unless that frame lies more than a resolution above
+    the latest DFT profile's maximum: a continuous path bounds the saddle from above, so the
+    search has climbed past the barrier it was to find. A stalled search stored without its
+    energy is not bounded."""
     path, energy = ctx.work.path, stalled.energy_hartree
-    if stalled.final is None or seed.depth >= MAX_DEPTH or ctx.deadline.expired():
+    if stalled.final is None or seed.depth >= MAX_DEPTH:
         return None
     if energy is not None and path is not None and energy > max(path.energies) + ctx.resolution:
         ctx.note(f"saddle:above_path_bound:{path.source}")
@@ -327,9 +324,9 @@ def _restart(ctx: Ctx, seed: Seed, stalled: Failure) -> Seed | None:
 
 def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
     """The front seed → a saddle search, restarted once within the attempt when it stalls
-    (``_restart``). Every seed counts one attempt (per case: a split child starts from 0; only
-    the walltime deadline is shared). A new search drops the claim and connection verdict of an
-    earlier TS whose sides joined one basin or state (row 8)."""
+    (``_restart``). Every seed counts one attempt (per case: a split child starts from 0). A
+    new search drops the claim and connection verdict of an earlier TS whose sides joined one
+    basin or state (row 7)."""
     seed = state.seeds[0]
     state = replace(state, seeds=state.seeds[1:], saddle_attempts=state.saddle_attempts + 1,
                     last_saddle="failed", claim=None, connection=None)
@@ -356,8 +353,7 @@ def _newton_start(ctx: Ctx, saddle: Evidence, freq: Evidence, x: np.ndarray) -> 
     if newton is None:
         return None
     start = np.reshape(x, (-1, 3)) + newton
-    stepped = rt.qm.frequencies(ctx.mol(start), rt.method, scf_guess=saddle,
-                                deadline=ctx.deadline)
+    stepped = rt.qm.frequencies(ctx.mol(start), rt.method, scf_guess=saddle)
     saddle_cm1 = ctx.rules.gates.saddle_cm1
     if isinstance(stepped, Failure) or sum(
             f < -saddle_cm1 for f in stepped.frequencies_cm1 or ()) >= 2:
@@ -402,7 +398,7 @@ def validate_ts(ctx: Ctx, state: CaseState) -> CaseState:
     if saddle is None:
         return state
     x = ctx.coords(saddle.final)
-    freq = rt.qm.frequencies(ctx.mol(x), rt.method, scf_guess=saddle, deadline=ctx.deadline)
+    freq = rt.qm.frequencies(ctx.mol(x), rt.method, scf_guess=saddle)
     if isinstance(freq, Failure):
         ctx.note(f"ts_freq:{freq.kind.value}")
         return state

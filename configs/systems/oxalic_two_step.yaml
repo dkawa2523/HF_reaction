@@ -4,7 +4,7 @@
 # multi_step leaves GEN-05 unreached; the ts_calc child runs no new saddle or freq job.
 system_id: oxalic_two_step
 species:
-  - {id: ctc, xyz: xyz/oxalic_two_step/ctc.xyz, role: endpoint}
-  - {id: ttt, xyz: xyz/oxalic_two_step/ttt.xyz, role: endpoint}
+  - {id: ctc, xyz: xyz/oxalic_two_step/ctc.xyz, multiplicity: 1, role: endpoint}
+  - {id: ttt, xyz: xyz/oxalic_two_step/ttt.xyz, multiplicity: 1, role: endpoint}
 reactions:
   - {id: ctc_to_ttt, reactant: ctc, product: ttt}

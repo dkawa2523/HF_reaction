@@ -1,0 +1,7 @@
+# Nitromethane is a quasi-free rotor: the eclipsed input (one C-H in the NO2 plane) is a
+# stationary point with one soft imaginary mode; one push along it gives the staggered minimum
+# (soft:resolved). Origin: /home/user/hfauto_r9/inputs/nitromethane.yaml; the xyz from
+# /home/user/hfauto_r8_probe/G3-4_soft/ch3no2.xyz.
+system_id: nitromethane
+species:
+  - {id: ch3no2, xyz: xyz/nitromethane/ch3no2.xyz, multiplicity: 1, role: endpoint}

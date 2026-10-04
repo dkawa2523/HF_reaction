@@ -1,0 +1,106 @@
+# P0e: BH76 (HTBH38/NHTBH38) subset overlapping the repo validation systems.
+# Written 2026-10-04 BEFORE any hfauto value for these reactions was computed.
+# Every number below was copied from the downloaded source files listed under sources
+# (sha256 given); nothing was typed from memory.
+sources:
+  gmtkn55:
+    cite: "Goerigk, L.; Hansen, A.; Bauer, C.; Ehrlich, S.; Najibi, A.; Grimme, S. Phys. Chem. Chem. Phys. 2017, 19, 32184 (GMTKN55, BH76)"
+    page: https://www.chemie.uni-bonn.de/grimme/de/software/gmtkn/gmtkn55
+    reference_data: http://www.thch.uni-bonn.de/tc.old/downloads/GMTKN/GMTKN55/BH76ref.html   # sha256 d5cf22cd6ccd52a6...
+    geometries: http://www.thch.uni-bonn.de/tc.old/downloads/GMTKN/GMTKN55/BH76.tar           # sha256 46af9ee9130308af...
+    charge_multiplicity: http://www.thch.uni-bonn.de/tc.old/downloads/GMTKN/GMTKN55/CHARGE_MULTIPLICITY_BH76.txt  # sha256 1c4b33d963c2ef67...
+    header_verbatim: "Taken from (this work) / All values are in kcal/mol."
+    zero_definition_verbatim: 'Example for reaction 1: -1 x (Total Energy of "h") - 1 x (Total Energy of "n2o") + 1 x (Total Energy of "n2ohts") = 17.7'
+    note: "Reference = difference of total (electronic) energies: no zero-point or thermal terms. The page does not state whether spin-orbit coupling is included."
+  minnesota_08:
+    cite: "Zhao, Y.; Lynch, B. J.; Truhlar, D. G. Phys. Chem. Chem. Phys. 2005, 7, 43 (HTBH38); Zhao, Y.; Gonzalez-Garcia, N.; Truhlar, D. G. J. Phys. Chem. A 2005, 109, 2012 (NHTBH38); /08 update: Zheng, J.; Zhao, Y.; Truhlar, D. G. J. Chem. Theory Comput. 2009, 5, 808"
+    pages: [https://comp.chem.umn.edu/db/dbs/htbh38.html, https://comp.chem.umn.edu/db/dbs/nhtbh38.html]  # sha256 13858b6a67dbad85..., a1f0a703216a2c8d...
+    verbatim: "The data of this database are calculated by means of single-point calculations at specified geometries, which are obtained at the QCISD/MG3 level. REF1 is for direct comparison to calculated data that does not include vector-relativistic effects (spin-orbit coupling)."
+    role: "second cited table; its difference to GMTKN55 is the reference spread s_ref (REF1: hfauto has no spin-orbit term)"
+
+compared_quantity:
+  value: "dE_barrier = E_layer(TS) - E_layer(zero): electronic only, no ZPE, no thermal, no spin-orbit"
+  structures: "the pipeline's own PBE0-D3(BJ)/def2-SVPD stationary structures (TS and minima verified); never the reference geometry alone"
+  never: [dG_eff, dG, dH, "a value at the BH76 geometry only"]
+  zero: "as stated per row: separated reactants (sum of monomer energies) or the ion-molecule complex"
+
+tolerance:
+  per_row_kcal: 1.0            # |dE_barrier(hfauto) - ref_gmtkn55|
+  composition:
+    geometry_share_max_kcal: 0.3
+    geometry_share_measured_as: "g = |dE_barrier(layer // PBE0 structures) - dE_barrier(layer // BH76 QCISD/MG3 structures)|: one extra SP set per row"
+    method_share_kcal: 0.7     # 1.0 - 0.3
+    reference_spread: "s_ref = |GMTKN55 - Minnesota/08 REF1| per row (below); reported next to the error, not added"
+  rules:
+    - "a row with g > 0.3 is reported geometry-limited and does not pass; the tolerance is never widened"
+    - "the GMTKN55 value decides; the Minnesota/08 value is reported next to it"
+    - "a changed expectation is recorded as a deviation from the reference, never as a pass"
+
+split:   # fixed before any hfauto value; no reaction in both sets
+  selection:   # W5-4: the energy layer is chosen on these rows (MUE)
+    - oh_ch4
+    - hcn_hnc
+    - cl_ch3cl_sn2
+  holdout:     # never used to choose; MUE and max |error| reported
+    - h_c2h4   # W6-3 acceptance (forward barrier +-1 kcal/mol): out of selection so the check is not circular
+    - h_h2
+
+reactions:
+  oh_ch4:
+    repo_system: "configs/systems/oh_ch4.yaml (monomers oh, ch4)"
+    type: "H transfer (HTBH38)"
+    forward: {row: 45, systems: [oh, CH4, RKT04], ref_kcal: 6.3, zero: "separated OH + CH4", verbatim: "45 | oh CH4 RKT04 | -1 -1 1 | 6.3"}
+    reverse: {row: 46, systems: [H2O, ch3, RKT04], ref_kcal: 19.5, zero: "separated H2O + CH3", verbatim: "46 | H2O ch3 RKT04 | -1 -1 1 | 19.5"}
+    minnesota_08: {set: HTBH38/08, rows: [7, 8], REF1: [6.50, 19.60], REF2: [6.70, 19.60]}
+    s_ref_kcal: [0.20, 0.10]
+  hcn_hnc:
+    repo_system: "configs/systems/hcn.yaml (endpoints hcn, hnc)"
+    type: "unimolecular isomerization (NHTBH38)"
+    forward: {row: 37, systems: [hcn, hcnts], ref_kcal: 48.1, zero: "HCN minimum", verbatim: "37 | hcn hcnts | -1 1 | 48.1"}
+    reverse: {row: 38, systems: [hnc, hcnts], ref_kcal: 33.0, zero: "HNC minimum", verbatim: "38 | hnc hcnts | -1 1 | 33.0"}
+    minnesota_08: {set: NHTBH38/08, rows: [37, 38], REF1: [48.07, 32.82], REF2: [48.07, 32.82]}
+    s_ref_kcal: [0.03, 0.18]
+  cl_ch3cl_sn2:
+    repo_system: "configs/systems/sn2_cl.yaml (monomers cl, ch3cl; endpoints rc, pc); sn2_cl_d3h.yaml is the same reaction"
+    type: "identity SN2 (NHTBH38); forward = reverse by symmetry"
+    separated: {rows: [17, 18], systems: [cl-, ch3cl, clch3clts], ref_kcal: 2.5, zero: "separated Cl- + CH3Cl", verbatim: ["17 | cl- ch3cl clch3clts | -1 -1 1 | 2.5", "18 | ch3cl cl- clch3clts | -1 -1 1 | 2.5"]}
+    complex: {rows: [19, 20], systems: [clch3clcomp, clch3clts], ref_kcal: 13.5, zero: "Cl-...CH3Cl ion-molecule complex", verbatim: ["19 | clch3clcomp clch3clts | -1 1 | 13.5", "20 | clch3clcomp clch3clts | -1 1 | 13.5"]}
+    minnesota_08: {set: NHTBH38/08, rows: [17, 18, 19, 20], REF1: [3.10, 3.10, 13.41, 13.41]}
+    s_ref_kcal: {separated: 0.60, complex: 0.09}
+  h_c2h4:
+    repo_system: "configs/systems/h_c2h4.yaml (monomers h, c2h4; endpoints complex, adduct)"
+    type: "radical addition (NHTBH38)"
+    forward: {row: 33, systems: [h, c2h4, c2h5ts], ref_kcal: 2.0, zero: "separated H + C2H4", verbatim: "33 | h c2h4 c2h5ts | -1 -1 1 | 2.0"}
+    reverse: {row: 34, systems: [c2h5, c2h5ts], ref_kcal: 42.0, zero: "C2H5 minimum", verbatim: "34 | c2h5 c2h5ts | -1 1 | 42.0"}
+    minnesota_08: {set: NHTBH38/08, rows: [33, 34], REF1: [1.72, 41.75], REF2: [1.72, 41.75]}
+    s_ref_kcal: [0.28, 0.25]
+  h_h2:
+    repo_system: "configs/systems/h3_doublet.yaml (endpoints rc, pc only)"
+    type: "H transfer, thermoneutral identity (HTBH38); rows 47 and 48 are one reaction"
+    forward: {rows: [47, 48], systems: [h, H2, RKT06], ref_kcal: 9.7, zero: "separated H + H2", verbatim: ["47 | h H2 RKT06 | -1 -1 1 | 9.7", "48 | h H2 RKT06 | -1 -1 1 | 9.7"]}
+    minnesota_08: {set: HTBH38/08, rows: [9, 10], REF1: [9.60, 9.60]}
+    s_ref_kcal: [0.10]
+    config_gap: "h3_doublet declares no monomers; the separated zero needs h and h2 monomers (W1-4)"
+
+geometries:   # GMTKN55 struc.xyz (Angstrom) copied to probe/P0e/xyz/<name>.xyz; q m from CHARGE_MULTIPLICITY_BH76.txt
+  cl-: {q: -1, m: 1}
+  ch3cl: {q: 0, m: 1}
+  clch3clcomp: {q: -1, m: 1}
+  clch3clts: {q: -1, m: 1}
+  h: {q: 0, m: 2}
+  c2h4: {q: 0, m: 1}
+  c2h5: {q: 0, m: 2}
+  c2h5ts: {q: 0, m: 2}
+  hcn: {q: 0, m: 1}
+  hnc: {q: 0, m: 1}
+  hcnts: {q: 0, m: 1}
+  oh: {q: 0, m: 2}
+  CH4: {q: 0, m: 1}
+  H2O: {q: 0, m: 1}
+  ch3: {q: 0, m: 2}
+  RKT04: {q: 0, m: 2}
+  H2: {q: 0, m: 1}
+  RKT06: {q: 0, m: 2}
+
+not_added: "No other BH76 reaction is covered by a repo system (configs/systems/*.yaml checked; sn2_i, ch3_o2, ch3o_doublet, formaldehyde, hono, h2te, bh3_nh3 and the rest have no BH76 row)."
+missing: []   # every chosen reference was fetched

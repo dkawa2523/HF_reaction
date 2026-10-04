@@ -56,10 +56,10 @@ class StalledQM(fakes.FakeQM):
 
 
 class StuckQM(fakes.FakeQM):
-    def optimize(self, mol, method, *, init_hessian=None, deadline=None):
+    def optimize(self, mol, method, *, init_hessian=None):
         if not self.calls:  # the first input converges to the barrier top (a saddle endpoint)
             mol = self.pes.molecule("ts")
-        return super().optimize(mol, method, init_hessian=init_hessian, deadline=deadline)
+        return super().optimize(mol, method, init_hessian=init_hessian)
 
 
 def species_at(root, sid, symbols, x):
@@ -92,7 +92,8 @@ def stage(fake_runtime, tmp_run, pes, low=fakes.FakeQM, system=None, high=fakes.
 
 def test_one_basin_gets_one_freq_job_per_tier_and_dft_starts_from_screen(fake_runtime, tmp_run):
     pes = fakes.harmonic()  # "a" is a declared endpoint: its composition reacts
-    system = SystemConfig(system_id="t", species=[{"id": "a", "xyz": "a.xyz", "role": "endpoint"}])
+    system = SystemConfig(system_id="t", species=[{"id": "a", "xyz": "a.xyz", "role": "endpoint",
+                                                   "multiplicity": 1}])
     run, xtb, dft = stage(fake_runtime, tmp_run, pes, system=system)
     inputs = [species(tmp_run, pes, "a", "start"), species(tmp_run, pes, "b", "minimum")]
     screen = run("screen", inputs, **SCREEN)
@@ -236,8 +237,8 @@ def test_only_reacting_compositions_and_their_monomers_are_refined(fake_runtime,
         return float(np.sum((pdist(np.reshape(x, (-1, 3))) - 0.92) ** 2))
 
     pes = fakes.PES(("H", "F"), springs, {})  # every pair at 0.92 A: HF, H2 and tetrahedra
-    system = SystemConfig(system_id="t", species=[{"id": "hf", "xyz": "hf.xyz"},
-                                                  {"id": "h2", "xyz": "h2.xyz"}],
+    system = SystemConfig(system_id="t", species=[{"id": "hf", "xyz": "hf.xyz", "multiplicity": 1},
+                                                  {"id": "h2", "xyz": "h2.xyz", "multiplicity": 1}],
                           compositions=[{"id": "hf2", "components": {"hf": 2}},
                                         {"id": "hf_h2", "components": {"hf": 1, "h2": 1}}])
     run, _, dft = stage(fake_runtime, tmp_run, pes, system=system)
@@ -274,7 +275,7 @@ def test_a_crowded_state_is_reranked_by_single_points_at_its_screen_structures(f
     pes = fakes.PES(("O", "H", "H"), bent, {
         f"w{i}": np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [0.96 * c, 0.96 * s, 0.0]])
         for i, (c, s) in enumerate(zip(cos, np.sin(np.arccos(cos)), strict=True), start=1)})
-    endpoint = {"id": "w1", "xyz": "w1.xyz", "role": "endpoint"}  # H2O reacts
+    endpoint = {"id": "w1", "xyz": "w1.xyz", "role": "endpoint", "multiplicity": 1}  # reacts
     system = SystemConfig(system_id="t", species=[endpoint])
     run, _, dft = stage(fake_runtime, tmp_run, pes, system=system)
     screen = run("screen", [species(tmp_run, pes, w, w) for w in ("w1", "w2")], **SCREEN)

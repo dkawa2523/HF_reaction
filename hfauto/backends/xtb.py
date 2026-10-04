@@ -24,7 +24,7 @@ from hfauto.backends.protocols import Requirements
 from hfauto.chemistry.vibrations import projected_frequencies, to_canonical_npy
 from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, Geometry, Level
-from hfauto.core.method import Deadline, EngineSite, MethodSpec, level_mismatches
+from hfauto.core.method import EngineSite, MethodSpec, level_mismatches
 from hfauto.execution.jobs import Task
 from hfauto.execution.process import Command, CommandResult, resolve_executable
 
@@ -205,20 +205,18 @@ class XTBEngine:
             execution=self.site.execution, inputs={"mol": mol, "method": method},
         )
 
-    def energy(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None,
-               deadline: Deadline | None = None) -> Evidence | Failure:
-        return self.jobs.run(self.task("energy", mol, method), self.adapter, deadline=deadline)
+    def energy(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None
+               ) -> Evidence | Failure:
+        return self.jobs.run(self.task("energy", mol, method), self.adapter)
 
     def optimize(self, mol: Molecule, method: MethodSpec, *,
                  init_hessian: Evidence | None = None,
                  fixed_bond: tuple[int, int, float] | None = None,
-                 scf_guess: Evidence | None = None, deadline: Deadline | None = None
-                 ) -> Evidence | Failure:
+                 scf_guess: Evidence | None = None) -> Evidence | Failure:
         if fixed_bond is not None:
             return _fail(FailureKind.INPUT_INVALID, "constraint_unsupported")
-        return self.jobs.run(self.task("optimize", mol, method), self.adapter, deadline=deadline)
+        return self.jobs.run(self.task("optimize", mol, method), self.adapter)
 
-    def frequencies(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None,
-                    deadline: Deadline | None = None) -> Evidence | Failure:
-        task = self.task("frequencies", mol, method)
-        return self.jobs.run(task, self.adapter, deadline=deadline)
+    def frequencies(self, mol: Molecule, method: MethodSpec, *, scf_guess: Evidence | None = None
+                    ) -> Evidence | Failure:
+        return self.jobs.run(self.task("frequencies", mol, method), self.adapter)

@@ -1,0 +1,8 @@
+# Triplet CH3N -> singlet CH2NH: a declared reaction between different multiplicities, refused
+# (spin_crossing_reaction_unsupported). Origin: /home/user/hfauto_r7/VAL7/outside/ch3n_spin.yaml.
+system_id: ch3n_spin
+species:
+  - {id: ch3n, xyz: xyz/ch3n_spin/ch3n.xyz, multiplicity: 3, role: endpoint}
+  - {id: ch2nh, xyz: xyz/ch3n_spin/ch2nh.xyz, multiplicity: 1, role: endpoint}
+reactions:
+  - {id: ch3n_to_ch2nh, reactant: ch3n, product: ch2nh}

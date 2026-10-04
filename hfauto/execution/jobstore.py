@@ -6,9 +6,9 @@ A job directory holds ``job.json`` (the key document), ``result.json`` and the
 lists every FileRef inside the result or failure (paths relative to the run directory).
 
 The store is the memory of one run, not determinism between runs: a key gives back its
-outcome, the Failure at the end of the ladder included, so a replay reruns no job. Only
-failures of the wall clock (timeout, budget_exhausted) are forgotten, since a resume with
-more time may succeed; ``--retry-failed`` makes remembered failures of its kinds misses.
+outcome, the Failure at the end of the ladder included, so a replay reruns no job. Only a
+timeout is forgotten (it depends on the machine and the site's timeout, not on the job);
+``--retry-failed`` makes remembered failures of its kinds misses.
 """
 
 from __future__ import annotations
@@ -34,8 +34,6 @@ if TYPE_CHECKING:
 
 T = TypeVar("T", bound=BaseModel)
 
-# Failures of the wall clock: never stored, so that a resume with more time reruns the job.
-_VOLATILE = frozenset({FailureKind.TIMEOUT, FailureKind.BUDGET_EXHAUSTED})
 _FAILURE_KIND = "failure"
 _LOCK_POLL_S = 0.05
 
@@ -142,9 +140,9 @@ class JobStore:
         return len(list(job_dir.glob("attempt_*")))
 
     def save(self, key: str, result: BaseModel) -> None:
-        """Store a result or a failure; a failure of the wall clock clears the old record."""
+        """Store a result or a failure; a timeout is never stored and clears the old record."""
         path = self.job_dir(key) / "result.json"
-        if isinstance(result, Failure) and result.kind in _VOLATILE:
+        if isinstance(result, Failure) and result.kind is FailureKind.TIMEOUT:
             path.unlink(missing_ok=True)
             return
         kind = _FAILURE_KIND if isinstance(result, Failure) else getattr(result, "kind", None)

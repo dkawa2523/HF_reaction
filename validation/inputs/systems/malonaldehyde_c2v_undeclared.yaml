@@ -1,0 +1,9 @@
+# No reaction declared: the only hypothesis is the mode-follow discovery of ts_c2v, the C2v
+# malonaldehyde proton-transfer saddle. enol_a and enol_b are exact images of each other, so the
+# case is a degenerate rearrangement. Origin:
+# /home/user/hfauto_r9/inputs/malonaldehyde_c2v_undeclared_ab.yaml (the _ab atom order).
+system_id: malonaldehyde_c2v_undeclared_ab
+species:
+  - {id: r1_enol_a, xyz: xyz/malonaldehyde_c2v/enol_a.xyz, multiplicity: 1}
+  - {id: r2_enol_b, xyz: xyz/malonaldehyde_c2v/enol_b.xyz, multiplicity: 1}
+  - {id: ts_c2v, xyz: xyz/malonaldehyde_c2v/c2v_seed.xyz, multiplicity: 1}

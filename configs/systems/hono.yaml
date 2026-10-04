@@ -1,7 +1,7 @@
 system_id: hono
 species:
-  - {id: trans_hono, xyz: xyz/hono/trans.xyz, role: endpoint}
-  - {id: cis_hono, xyz: xyz/hono/cis.xyz, role: endpoint}
+  - {id: trans_hono, xyz: xyz/hono/trans.xyz, multiplicity: 1, role: endpoint}
+  - {id: cis_hono, xyz: xyz/hono/cis.xyz, multiplicity: 1, role: endpoint}
 reactions:
   - id: trans_to_cis
     reactant: trans_hono

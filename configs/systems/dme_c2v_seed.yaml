@@ -4,8 +4,8 @@
 # imaginary modes before the follow; follow1 moves to one side and ends in the DME minimum.
 system_id: dme_c2v_seed
 species:
-  - {id: dme_a, xyz: xyz/dme_rough/reactant.xyz, role: endpoint}
-  - {id: dme_b, xyz: xyz/dme_rough/product.xyz, role: endpoint}
-  - {id: dme_c2v, xyz: xyz/dme_c2v_seed/c2v_eclipsed.xyz}
+  - {id: dme_a, xyz: xyz/dme_rough/reactant.xyz, multiplicity: 1, role: endpoint}
+  - {id: dme_b, xyz: xyz/dme_rough/product.xyz, multiplicity: 1, role: endpoint}
+  - {id: dme_c2v, xyz: xyz/dme_c2v_seed/c2v_eclipsed.xyz, multiplicity: 1}
 reactions:
   - {id: dme_double_rotation, reactant: dme_a, product: dme_b}

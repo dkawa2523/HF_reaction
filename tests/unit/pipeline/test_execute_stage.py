@@ -64,7 +64,8 @@ def dummy_stages(monkeypatch):  # the runner finds these stage names through cat
 def resolved(tmp_path, pipeline_id: str, *stages: dict) -> ResolvedConfig:
     site = SiteConfig(site="t", scratch_root=str(tmp_path / "scratch"), cores=2,
                       engines={"xtb": EngineSite(version="6.7.1")})
-    system = SystemConfig(system_id="s", species=[SpeciesInput(id="h2", smiles="[H][H]")])
+    system = SystemConfig(system_id="s",
+                          species=[SpeciesInput(id="h2", smiles="[H][H]", multiplicity=1)])
     return ResolvedConfig(pipeline=PipelineConfig(pipeline_id=pipeline_id, stages=list(stages)),
                           system=system, site=site, methods={}, code_version="test")
 

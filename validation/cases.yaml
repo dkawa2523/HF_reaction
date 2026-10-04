@@ -1,0 +1,269 @@
+# Validation cases: one run each, the pipeline chain that makes it and what it must conclude
+# (model and comparison: hfauto/reporting/validation.py; tools: check.py, replay.py; record:
+# docs/validation.md).
+#
+# chain        the pipelines run in turn in one run dir (later ones resume it). A name is a file
+#              under configs/pipelines or configs/systems, a path is relative to the repository.
+# reactions    every reaction with an outcome: the equation of its end fragments (fragment
+#              formulas of the optimized end minima; an association starts from its separated
+#              monomers), the outcome and dG_eff in kcal/mol at (T_K, standard_state): a value
+#              within `tolerance`, a [low, high] band, or null for no ranking value.
+# minima       fragment formulas of minima the run holds (runs that stop before reactions).
+# refusals     reason categories of refused records.  products: discovery products.
+# bh76         the reference row of validation/bh76/subset.yaml (<reaction>.<direction>). An
+#              outcome without a barrier against a referenced row is a deviation, never a pass;
+#              the numeric comparison (electronic barriers, never dG_eff) is a separate table.
+# twice        a boundary system: a fresh validation runs it twice (<name> and <name>.2).
+# superseded   evidence only: no new run is made; the text names what replaces it.
+#
+# Expectations: the VAL9/R2 records (docs/validation.md §3, /home/user/hfauto_r9/VAL9/R2), the
+# tolerance 0.01 kcal/mol of docs/validation.md §3. Not cases: s9_undeclared and s9_conformers
+# (transition-metal DFT is unvalidated; a species without a multiplicity is now refused when the
+# system file loads).
+
+hcn:
+  chain: [{pipeline: known_endpoints, system: hcn}]
+  reactions:
+    - {equation: CHN -> CHN, outcome: elementary_step, dG_eff: 41.57, bh76: hcn_hnc.forward}
+
+hono:
+  chain: [{pipeline: known_endpoints, system: hono}]
+  reactions:
+    - {equation: HNO2 -> HNO2, outcome: elementary_step, dG_eff: 9.88}
+
+nh3_inversion:
+  chain: [{pipeline: known_endpoints, system: nh3_inversion}]
+  reactions:
+    - {equation: H3N -> H3N, outcome: degenerate_rearrangement, dG_eff: 4.38}
+
+water_same_basin:
+  chain: [{pipeline: known_endpoints, system: water_same_basin}]
+  reactions:
+    - {equation: H2O -> H2O, outcome: same_basin, dG_eff: null}
+
+ch3n_spin:
+  chain: [{pipeline: known_endpoints, system: validation/inputs/systems/ch3n_spin.yaml}]
+  refusals: [spin_crossing_reaction_unsupported]
+
+formaldehyde:
+  chain: [{pipeline: known_endpoints, system: formaldehyde}]
+  reactions:
+    - {equation: CH2O -> CH2O, outcome: elementary_step, dG_eff: 31.29}  # HCOH -> H2CO
+    - {equation: CH2O -> CH2O, outcome: out_of_window, dG_eff: null}
+
+h2o_hf_inversion:
+  chain: [{pipeline: known_endpoints, system: h2o_hf_inversion}]
+  reactions:
+    - {equation: FH + H2O -> FH + H2O, outcome: barrierless_at_resolution, dG_eff: 0.0}
+
+water_dimer_as:
+  chain: [{pipeline: known_endpoints, system: water_dimer_as}]
+  reactions:
+    - {equation: H2O + H2O -> H2O + H2O, outcome: barrierless_at_resolution, dG_eff: 0.0}
+
+nh3_planar_seed:
+  chain: [{pipeline: known_endpoints, system: nh3_planar_seed}]
+  reactions:
+    - {equation: H3N -> H3N, outcome: degenerate_rearrangement, dG_eff: 4.38}
+
+dme_c2v_seed:
+  chain: [{pipeline: known_endpoints, system: dme_c2v_seed}]
+  reactions:
+    - {equation: C2H6O -> C2H6O, outcome: degenerate_rearrangement, dG_eff: 2.13}
+
+hcn_noscreen:
+  chain:
+    - {pipeline: validation/inputs/pipelines/known_endpoints_noscreen.yaml, system: hcn}
+  reactions:
+    - {equation: CHN -> CHN, outcome: elementary_step, dG_eff: 41.57}
+
+hf_dimer_swap_noscreen:
+  chain:
+    - {pipeline: validation/inputs/pipelines/known_endpoints_noscreen.yaml, system: hf_dimer_swap}
+  reactions:
+    - {equation: FH + FH -> FH + FH, outcome: degenerate_rearrangement, dG_eff: 0.80}
+
+hono_walltime:
+  superseded: >-
+    budgets are counts; a wall-clock stop is external (SIGTERM): the stage is left incomplete
+    (rc 1) and a resume finishes it. Replaced by the fake-engine tests
+    tests/integration/test_resume_e2e.py::test_sigterm_leaves_the_stage_incomplete_and_a_rerun_resumes_it
+    and tests/integration/test_reaction_paths_stage.py::test_a_split_child_queued_behind_a_sibling_that_used_its_budget_has_its_own
+  chain:
+    - {pipeline: /home/user/hfauto_r9/pipelines/known_endpoints_walltime.yaml, system: hono}
+  reactions:
+    - {equation: HNO2 -> HNO2, outcome: unresolved_within_budget, dG_eff: null}
+
+s1_sn2_cl:
+  chain: [{pipeline: known_endpoints, system: sn2_cl}]
+  reactions:
+    - {equation: CH3Cl + Cl -> CH3Cl + Cl, outcome: degenerate_rearrangement, dG_eff: 14.53,
+       bh76: cl_ch3cl_sn2.complex}
+
+s2_sn2_i:
+  chain: [{pipeline: known_endpoints, system: sn2_i}]
+  reactions:
+    - {equation: CH3I + I -> CH3I + I, outcome: degenerate_rearrangement, dG_eff: 9.61}
+
+s3_h2te:
+  chain: [{pipeline: known_endpoints, system: h2te}]
+  minima: [H2Te]
+
+s4_ch3o_doublet:
+  chain: [{pipeline: known_endpoints, system: ch3o_doublet}]
+  reactions:
+    - {equation: CH3O -> CH3O, outcome: elementary_step, dG_eff: 30.26}
+
+s12_dme_rough:
+  chain: [{pipeline: known_endpoints, system: dme_rough}]
+  reactions:
+    - {equation: C2H6O -> C2H6O, outcome: degenerate_rearrangement, dG_eff: 2.13}
+
+s13_h2o2_gauche:
+  chain: [{pipeline: known_endpoints, system: h2o2_gauche}]
+  reactions:
+    - {equation: H2O2 -> H2O2, outcome: degenerate_rearrangement, dG_eff: 1.29}
+
+s14_malonaldehyde:
+  chain: [{pipeline: known_endpoints, system: malonaldehyde}]
+  reactions:
+    - {equation: C3H4O2 -> C3H4O2, outcome: degenerate_rearrangement, dG_eff: 0.93}
+
+s15_hono_hno2:
+  chain: [{pipeline: known_endpoints, system: hono_hno2}]
+  reactions:
+    - {equation: HNO2 -> HNO2, outcome: elementary_step, dG_eff: 56.83}
+
+s16_acac:
+  chain: [{pipeline: known_endpoints, system: acac}]
+  reactions:
+    - {equation: C5H8O2 -> C5H8O2, outcome: degenerate_rearrangement, dG_eff: 0.0}
+
+s17_hf_dimer_swap:
+  chain: [{pipeline: known_endpoints, system: hf_dimer_swap}]
+  reactions:
+    - {equation: FH + FH -> FH + FH, outcome: degenerate_rearrangement, dG_eff: 0.81}
+
+s18_h3_doublet:
+  chain: [{pipeline: known_endpoints, system: h3_doublet}]
+  reactions:
+    - {equation: H + H2 -> H + H2, outcome: degenerate_rearrangement, dG_eff: 12.71,
+       bh76: h_h2.forward}
+
+oxalic_two_step:
+  chain: [{pipeline: known_endpoints, system: oxalic_two_step}]
+  reactions:
+    - {equation: C2H2O4 -> C2H2O4, outcome: multi_step, dG_eff: null}
+    - {equation: C2H2O4 -> C2H2O4, outcome: elementary_step, dG_eff: 11.81}  # split1
+    - {equation: C2H2O4 -> C2H2O4, outcome: elementary_step, dG_eff: 12.71}  # split2
+
+malonaldehyde_c2v_undeclared:
+  chain:
+    - {pipeline: known_endpoints,
+       system: validation/inputs/systems/malonaldehyde_c2v_undeclared.yaml}
+  reactions:
+    - {equation: C3H4O2 -> C3H4O2, outcome: degenerate_rearrangement, dG_eff: 0.93}
+
+sn2_cl_d3h:
+  chain: [{pipeline: known_endpoints, system: sn2_cl_d3h}]
+  reactions:
+    - {equation: CH3Cl + Cl -> CH3Cl + Cl, outcome: degenerate_rearrangement, dG_eff: 14.53,
+       bh76: cl_ch3cl_sn2.complex}
+
+h_c2h4:
+  twice: true
+  chain: [{pipeline: known_endpoints, system: h_c2h4}]
+  reactions:
+    # BH76 row 33 has a forward barrier of 2.0 kcal/mol; the PBE0 crest (+0.60) is below the
+    # resolution: listed as a deviation, not a pass.
+    - {equation: C2H4 + H -> C2H5, outcome: barrierless_at_resolution, dG_eff: 0.0,
+       bh76: h_c2h4.forward}
+
+bh3_nh3:
+  chain: [{pipeline: known_endpoints, system: bh3_nh3}]
+  reactions:
+    - {equation: BH3 + H3N -> BH6N, outcome: barrierless_at_resolution, dG_eff: 0.0}
+
+nitromethane:
+  chain:
+    - {pipeline: validation/inputs/pipelines/minima_dft.yaml,
+       system: validation/inputs/systems/nitromethane.yaml}
+  minima: [CH3NO2]
+
+s7_nh3_icl:
+  chain: [{pipeline: discover, system: nh3_icl, args: [--to, explore]}]
+  minima: [ClI + H3N]
+  products: 0
+
+s8_so2_nme3:
+  chain: [{pipeline: discover, system: so2_nme3, args: [--to, explore]}]
+  minima: [C3H9N + O2S]
+  products: 0
+
+s5_undeclared:
+  chain:
+    - {pipeline: discover, system: validation/inputs/systems/ch3_o2_undeclared.yaml,
+       args: [--to, screen]}
+  minima: [CH3, O2]
+  refusals: [declare_multiplicity]
+
+s20_sn2_panel:
+  T_K: 400
+  standard_state: 1M
+  chain:
+    - {pipeline: known_endpoints, system: sn2_cl}
+    - {pipeline: validation/inputs/pipelines/panel_conditions.yaml, system: sn2_cl}
+  reactions:
+    - {equation: CH3Cl + Cl -> CH3Cl + Cl, outcome: degenerate_rearrangement, dG_eff: 14.89}
+
+s20_hcn_panel:
+  chain:
+    - {pipeline: known_endpoints, system: hcn}
+    - {pipeline: validation/inputs/pipelines/panel_ccsdt.yaml, system: hcn}
+  reactions:
+    - {equation: CHN -> CHN, outcome: elementary_step, dG_eff: 41.57}
+
+s20_ch3o_panel:
+  chain:
+    - {pipeline: known_endpoints, system: ch3o_doublet}
+    - {pipeline: validation/inputs/pipelines/panel_ccsdt.yaml, system: ch3o_doublet}
+  reactions:
+    - {equation: CH3O -> CH3O, outcome: elementary_step, dG_eff: 30.26}
+
+hono_panel:
+  chain:
+    - {pipeline: known_endpoints, system: hono}
+    - {pipeline: validation/inputs/pipelines/panel_ccsdt.yaml, system: hono}
+  reactions:
+    - {equation: HNO2 -> HNO2, outcome: elementary_step, dG_eff: 9.88}
+
+s10_amine_pilot2:
+  chain: [{pipeline: discover, system: amine_pilot2}]
+  reactions:
+    - {equation: FH + H3N -> FH + H3N, outcome: degenerate_rearrangement, dG_eff: 36.64}
+
+s19_tma_hf2:
+  chain: [{pipeline: discover, system: tma_hf2}]
+  reactions:
+    - {equation: C3H10FN + FH -> C3H10FN + FH, outcome: same_basin, dG_eff: null}
+
+s5_ch3_o2:
+  twice: true  # split2 (CH2OOH -> CH2O + OH) ends near the boundary
+  chain: [{pipeline: discover, system: ch3_o2}]
+  reactions:
+    - {equation: CH3 + O2 -> CH3O2, outcome: barrierless_at_resolution, dG_eff: 0.0}
+    - {equation: CH3O2 -> CH2O + HO, outcome: multi_step, dG_eff: null}
+    - {equation: CH3O2 -> CH3O2, outcome: elementary_step, dG_eff: 46.85}  # split1
+    - {equation: CH3O2 -> CH2O + HO, outcome: unresolved_within_budget, dG_eff: null}  # split2
+
+s6_oh_ch4:
+  twice: true  # the near-Cs TS is Cs or C1 by run: dG_eff moves by RT ln 2
+  chain: [{pipeline: discover, system: oh_ch4}]
+  reactions:
+    - {equation: CH4 + HO -> CH3 + H2O, outcome: elementary_step, dG_eff: [5.5, 6.0],
+       bh76: oh_ch4.forward}
+    - {equation: CH3 + H2O -> CH4O + H, outcome: multi_step, dG_eff: null}
+    # split1 repeats the abstraction backwards (same_as): the band above plus its dG_rxn 15.05
+    - {equation: CH3 + H2O -> CH4 + HO, outcome: elementary_step, dG_eff: [20.55, 21.05],
+       bh76: oh_ch4.reverse}
+    - {equation: CH4 + HO -> CH4O + H, outcome: elementary_step, dG_eff: 44.83}  # split2

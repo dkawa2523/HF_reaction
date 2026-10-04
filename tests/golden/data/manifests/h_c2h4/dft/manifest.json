@@ -1,0 +1,744 @@
+{
+  "schema_version": "hfauto.manifest.v2",
+  "run_id": "h_c2h4",
+  "stage_id": "dft",
+  "created_at": "2026-10-02T00:57:04+00:00",
+  "artifacts": [
+    {
+      "artifact_id": "calc_26b3eadbcb59d9d5",
+      "type": "calculation",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "calculation",
+        "engine": "nwchem",
+        "task": "opt",
+        "level": {
+          "program": "nwchem",
+          "version": "7.2.3",
+          "method": "pbe0",
+          "basis": "def2-svpd",
+          "dispersion": "d3bj",
+          "charge": 0,
+          "multiplicity": 2,
+          "grid": "fine",
+          "scf_tol": 1e-7,
+          "electronic_temperature_K": null
+        },
+        "start": {
+          "file": {
+            "path": "jobs/26/26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a/attempt_00/start.xyz",
+            "sha256": "4658f6570be31ef5efa760b918a0f336e4971abaf9f0be3dc7103196418f4690"
+          },
+          "fingerprint": "80c6808b25bc64025fe42824639d2506237465ba2fa883ffb333a4ac72bb11a4",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "final": {
+          "file": {
+            "path": "jobs/26/26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a/attempt_00/final-007.xyz",
+            "sha256": "b19c37f5934f62fa5efc4d338a995c3db885f491a9c3696d39c3311e24b5e20a"
+          },
+          "fingerprint": "0f1d8ec69983d6949f4411ef1522154afde9091507b50ff7345df27eb0bd7282",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "energy_hartree": -79.002777961948,
+        "frequencies_cm1": null,
+        "n_external": null,
+        "imaginary_modes": [],
+        "hessian": null,
+        "gradient": [
+          -0.00001,
+          0.0,
+          3e-6,
+          0.000047,
+          -0.0,
+          -0.00001,
+          -2e-6,
+          0.000015,
+          -0.0,
+          -2e-6,
+          -0.000015,
+          -0.0,
+          -0.000014,
+          7e-6,
+          1e-6,
+          -0.000014,
+          -7e-6,
+          1e-6,
+          -6e-6,
+          0.0,
+          6e-6
+        ],
+        "s2": 0.7549,
+        "output": {
+          "path": "jobs/26/26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a/attempt_00/stdout.txt",
+          "sha256": "cfb13ebec7ab7b66da5eb40f0a1c8bcff73e7138fc7edad1033c89e0f39dad52"
+        },
+        "job_key": "26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a"
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "calc_4994510bc68e6e82",
+      "type": "calculation",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "calculation",
+        "engine": "nwchem",
+        "task": "freq",
+        "level": {
+          "program": "nwchem",
+          "version": "7.2.3",
+          "method": "pbe0",
+          "basis": "def2-svpd",
+          "dispersion": "d3bj",
+          "charge": 0,
+          "multiplicity": 2,
+          "grid": "fine",
+          "scf_tol": 1e-7,
+          "electronic_temperature_K": null
+        },
+        "start": {
+          "file": {
+            "path": "jobs/49/4994510bc68e6e822b6a2be5b2dd68569d9d8e38b72f5cb43af7ed8de210f73a/attempt_00/start.xyz",
+            "sha256": "97d0ebfc4e6cdece7d06ea422628b70c0e7c612362017ccae1871d413ae250f4"
+          },
+          "fingerprint": "0f1d8ec69983d6949f4411ef1522154afde9091507b50ff7345df27eb0bd7282",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "final": {
+          "file": {
+            "path": "jobs/49/4994510bc68e6e822b6a2be5b2dd68569d9d8e38b72f5cb43af7ed8de210f73a/attempt_00/start.xyz",
+            "sha256": "97d0ebfc4e6cdece7d06ea422628b70c0e7c612362017ccae1871d413ae250f4"
+          },
+          "fingerprint": "0f1d8ec69983d6949f4411ef1522154afde9091507b50ff7345df27eb0bd7282",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "energy_hartree": -79.002778234562,
+        "frequencies_cm1": [
+          110.07065584511338,
+          480.54225291998347,
+          805.0791036138586,
+          961.825555273797,
+          1097.7130808231104,
+          1175.7782590456663,
+          1368.897355997424,
+          1438.3565409513008,
+          1448.9761311659508,
+          1462.3572830387095,
+          2987.9702676218512,
+          3082.4521812244584,
+          3135.633961808148,
+          3161.2290090509273,
+          3274.8702863990648
+        ],
+        "n_external": 6,
+        "imaginary_modes": [],
+        "hessian": {
+          "path": "jobs/49/4994510bc68e6e822b6a2be5b2dd68569d9d8e38b72f5cb43af7ed8de210f73a/attempt_00/hessian.npy",
+          "sha256": "85de41b8911669dbca73768bfad8c48821a85b67d11a417f4a99a64058fffe7b"
+        },
+        "gradient": null,
+        "s2": 0.7549,
+        "output": {
+          "path": "jobs/49/4994510bc68e6e822b6a2be5b2dd68569d9d8e38b72f5cb43af7ed8de210f73a/attempt_00/stdout.txt",
+          "sha256": "dddcc50813b872a0786d1ba91e7da38ab06834649473946db0088602a4fbf8b0"
+        },
+        "job_key": "4994510bc68e6e822b6a2be5b2dd68569d9d8e38b72f5cb43af7ed8de210f73a"
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "calc_60b394348203e4b9",
+      "type": "calculation",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "calculation",
+        "engine": "nwchem",
+        "task": "opt",
+        "level": {
+          "program": "nwchem",
+          "version": "7.2.3",
+          "method": "pbe0",
+          "basis": "def2-svpd",
+          "dispersion": "d3bj",
+          "charge": 0,
+          "multiplicity": 1,
+          "grid": "fine",
+          "scf_tol": 1e-7,
+          "electronic_temperature_K": null
+        },
+        "start": {
+          "file": {
+            "path": "jobs/60/60b394348203e4b9d83710c7ecb9e179f49204ae20c164d088ebad00f80f291a/attempt_00/start.xyz",
+            "sha256": "fe7d678dde8341464d55de485fc3b4cf16d77ab4ef68047d23596a2391a9de16"
+          },
+          "fingerprint": "c5b324cc572f9ccc9f0d54f16a88f701156a07fe662e9f34b12fcc2224e0493a",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "final": {
+          "file": {
+            "path": "jobs/60/60b394348203e4b9d83710c7ecb9e179f49204ae20c164d088ebad00f80f291a/attempt_00/final-004.xyz",
+            "sha256": "bee5d1b38a8d8824e5c2a20ac7bd98878d9c59b325750168d6213dad61cc0d33"
+          },
+          "fingerprint": "cf8573490f8056b8afb7dd4fa08ad2b1b8dd072e9ecaf779208de0946d93a8d7",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "energy_hartree": -78.431190705157,
+        "frequencies_cm1": null,
+        "n_external": null,
+        "imaginary_modes": [],
+        "hessian": null,
+        "gradient": [
+          0.000017,
+          0.000044,
+          -0.0,
+          9e-6,
+          -0.000068,
+          -1e-6,
+          4e-6,
+          0.00002,
+          -0.0,
+          -3e-6,
+          -0.000033,
+          -0.0,
+          -0.000024,
+          8e-6,
+          1e-6,
+          -2e-6,
+          0.00003,
+          0.0
+        ],
+        "s2": null,
+        "output": {
+          "path": "jobs/60/60b394348203e4b9d83710c7ecb9e179f49204ae20c164d088ebad00f80f291a/attempt_00/stdout.txt",
+          "sha256": "c36039453e2a6aaac1cced8446bc060ec4c6cb92e3c65b75772b5dc2e56180ec"
+        },
+        "job_key": "60b394348203e4b9d83710c7ecb9e179f49204ae20c164d088ebad00f80f291a"
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "calc_40effa2d44f1f1d2",
+      "type": "calculation",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "calculation",
+        "engine": "nwchem",
+        "task": "freq",
+        "level": {
+          "program": "nwchem",
+          "version": "7.2.3",
+          "method": "pbe0",
+          "basis": "def2-svpd",
+          "dispersion": "d3bj",
+          "charge": 0,
+          "multiplicity": 1,
+          "grid": "fine",
+          "scf_tol": 1e-7,
+          "electronic_temperature_K": null
+        },
+        "start": {
+          "file": {
+            "path": "jobs/40/40effa2d44f1f1d2938eae63dffbf1f19b829cdd70fd21e94af8872587c62093/attempt_00/start.xyz",
+            "sha256": "41e468e4e922abe3055285e140a8a7df1ca81f1274833e0ee9a379c02c467f18"
+          },
+          "fingerprint": "cf8573490f8056b8afb7dd4fa08ad2b1b8dd072e9ecaf779208de0946d93a8d7",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "final": {
+          "file": {
+            "path": "jobs/40/40effa2d44f1f1d2938eae63dffbf1f19b829cdd70fd21e94af8872587c62093/attempt_00/start.xyz",
+            "sha256": "41e468e4e922abe3055285e140a8a7df1ca81f1274833e0ee9a379c02c467f18"
+          },
+          "fingerprint": "cf8573490f8056b8afb7dd4fa08ad2b1b8dd072e9ecaf779208de0946d93a8d7",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "energy_hartree": -78.431191090701,
+        "frequencies_cm1": [
+          820.6813227312341,
+          969.8447244818792,
+          985.7150253791544,
+          1060.501353587988,
+          1216.2356066708278,
+          1362.4959515481517,
+          1437.508034123646,
+          1707.6854160085393,
+          3146.133124930062,
+          3162.2371504174193,
+          3235.9640960225834,
+          3261.4020942446473
+        ],
+        "n_external": 6,
+        "imaginary_modes": [],
+        "hessian": {
+          "path": "jobs/40/40effa2d44f1f1d2938eae63dffbf1f19b829cdd70fd21e94af8872587c62093/attempt_00/hessian.npy",
+          "sha256": "68060fcf74288561f060c6e01f96fcdf2f151969970beae977c2b5e000d9d5ae"
+        },
+        "gradient": null,
+        "s2": null,
+        "output": {
+          "path": "jobs/40/40effa2d44f1f1d2938eae63dffbf1f19b829cdd70fd21e94af8872587c62093/attempt_00/stdout.txt",
+          "sha256": "c4cb4fbdf5c6504de180b0293fc105e6920630519aebfef50d98f5a18ded4618"
+        },
+        "job_key": "40effa2d44f1f1d2938eae63dffbf1f19b829cdd70fd21e94af8872587c62093"
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "calc_2266f07f02931c2e",
+      "type": "calculation",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "calculation",
+        "engine": "nwchem",
+        "task": "opt",
+        "level": {
+          "program": "nwchem",
+          "version": "7.2.3",
+          "method": "pbe0",
+          "basis": "def2-svpd",
+          "dispersion": "d3bj",
+          "charge": 0,
+          "multiplicity": 2,
+          "grid": "fine",
+          "scf_tol": 1e-7,
+          "electronic_temperature_K": null
+        },
+        "start": {
+          "file": {
+            "path": "jobs/22/2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd/attempt_00/start.xyz",
+            "sha256": "762f134d2dc57a29efcd855139ecec746cf308696a0320393011c55eef565831"
+          },
+          "fingerprint": "6781b7c9fe1f229a70451e87a4cc0705f71ef7a80f339836f7e82e5322108047",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "final": {
+          "file": {
+            "path": "jobs/22/2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd/attempt_00/final-013.xyz",
+            "sha256": "52657d2d58a71b2795c4fc8448047952fd0d7b92beeb847ebd84271d25c3cdcf"
+          },
+          "fingerprint": "1e20f4f02db8d7fd37b79bd7ede9020d967bc874d6c3a7a231e0a45cf9825210",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "energy_hartree": -78.932180175346,
+        "frequencies_cm1": null,
+        "n_external": null,
+        "imaginary_modes": [],
+        "hessian": null,
+        "gradient": [
+          -2e-6,
+          -0.0,
+          1e-6,
+          -1e-6,
+          0.0,
+          -0.0,
+          1e-6,
+          -2e-6,
+          -0.0,
+          1e-6,
+          2e-6,
+          -0.0,
+          1e-6,
+          3e-6,
+          -0.0,
+          1e-6,
+          -3e-6,
+          -0.0,
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "s2": 0.7501,
+        "output": {
+          "path": "jobs/22/2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd/attempt_00/stdout.txt",
+          "sha256": "a037bd5de375466ab7063a2a3397053b374df6c8cc2d2206c8a85e7059b65837"
+        },
+        "job_key": "2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd"
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "calc_60965dc350d38a90",
+      "type": "calculation",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "calculation",
+        "engine": "nwchem",
+        "task": "freq",
+        "level": {
+          "program": "nwchem",
+          "version": "7.2.3",
+          "method": "pbe0",
+          "basis": "def2-svpd",
+          "dispersion": "d3bj",
+          "charge": 0,
+          "multiplicity": 2,
+          "grid": "fine",
+          "scf_tol": 1e-7,
+          "electronic_temperature_K": null
+        },
+        "start": {
+          "file": {
+            "path": "jobs/60/60965dc350d38a9019eabae6a98686e7f1032c7c3cde305ec30df7c514c440d8/attempt_00/start.xyz",
+            "sha256": "47b24bf2ac6fde2d754e9073c9d3cb80d682c9eafa6bebc181c8575ea0c81d6d"
+          },
+          "fingerprint": "1e20f4f02db8d7fd37b79bd7ede9020d967bc874d6c3a7a231e0a45cf9825210",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "final": {
+          "file": {
+            "path": "jobs/60/60965dc350d38a9019eabae6a98686e7f1032c7c3cde305ec30df7c514c440d8/attempt_00/start.xyz",
+            "sha256": "47b24bf2ac6fde2d754e9073c9d3cb80d682c9eafa6bebc181c8575ea0c81d6d"
+          },
+          "fingerprint": "1e20f4f02db8d7fd37b79bd7ede9020d967bc874d6c3a7a231e0a45cf9825210",
+          "symbols": [
+            "C",
+            "C",
+            "H",
+            "H",
+            "H",
+            "H",
+            "H"
+          ]
+        },
+        "energy_hartree": -78.932180258442,
+        "frequencies_cm1": [
+          35.32921320298349,
+          60.55025295208035,
+          111.37157723743772,
+          820.4421357964853,
+          970.0727834968899,
+          984.0400137530978,
+          1058.6881752107172,
+          1216.378305726248,
+          1362.06975146168,
+          1437.3251179656688,
+          1705.948464550162,
+          3146.2540249607664,
+          3162.303970392706,
+          3236.3405672949525,
+          3261.602186744458
+        ],
+        "n_external": 6,
+        "imaginary_modes": [],
+        "hessian": {
+          "path": "jobs/60/60965dc350d38a9019eabae6a98686e7f1032c7c3cde305ec30df7c514c440d8/attempt_00/hessian.npy",
+          "sha256": "551b0f19414ec7144a3d18ea49aaf93ea8ced4bd457b734429cf4f7b6d372904"
+        },
+        "gradient": null,
+        "s2": 0.7501,
+        "output": {
+          "path": "jobs/60/60965dc350d38a9019eabae6a98686e7f1032c7c3cde305ec30df7c514c440d8/attempt_00/stdout.txt",
+          "sha256": "28cf55e21b5fb1c319b3ff27833ccb9edd120f44e018a8f6ba73d9a9bf6a4229"
+        },
+        "job_key": "60965dc350d38a9019eabae6a98686e7f1032c7c3cde305ec30df7c514c440d8"
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "calc_02c67eb0d98b3416",
+      "type": "calculation",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "calculation",
+        "engine": "nwchem",
+        "task": "opt",
+        "level": {
+          "program": "nwchem",
+          "version": "7.2.3",
+          "method": "pbe0",
+          "basis": "def2-svpd",
+          "dispersion": "d3bj",
+          "charge": 0,
+          "multiplicity": 2,
+          "grid": "fine",
+          "scf_tol": 1e-7,
+          "electronic_temperature_K": null
+        },
+        "start": {
+          "file": {
+            "path": "jobs/02/02c67eb0d98b3416dce00d38d1227eb018278992f1e6ff4a3d4a40c248e68053/attempt_00/start.xyz",
+            "sha256": "95ea1f00284949ec4df5072d0f8a9e7b9b7214c8576f1280e472d47878fcedc1"
+          },
+          "fingerprint": "4700d7cc27533780b445b1f7fc83381915b76d1b69bb3a4bd917d23bc426263d",
+          "symbols": [
+            "H"
+          ]
+        },
+        "final": {
+          "file": {
+            "path": "jobs/02/02c67eb0d98b3416dce00d38d1227eb018278992f1e6ff4a3d4a40c248e68053/attempt_00/final-001.xyz",
+            "sha256": "1d01e9d9d8b67b6dee69a49de3dffd8b4d73eafdc27912d2922fb2955c27e8c1"
+          },
+          "fingerprint": "4700d7cc27533780b445b1f7fc83381915b76d1b69bb3a4bd917d23bc426263d",
+          "symbols": [
+            "H"
+          ]
+        },
+        "energy_hartree": -0.500290805039,
+        "frequencies_cm1": null,
+        "n_external": null,
+        "imaginary_modes": [],
+        "hessian": null,
+        "gradient": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "s2": 0.75,
+        "output": {
+          "path": "jobs/02/02c67eb0d98b3416dce00d38d1227eb018278992f1e6ff4a3d4a40c248e68053/attempt_00/stdout.txt",
+          "sha256": "64cdb9111d95cd8192c408978371ec19cf42f9493599937cd86219ab910a818d"
+        },
+        "job_key": "02c67eb0d98b3416dce00d38d1227eb018278992f1e6ff4a3d4a40c248e68053"
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "calc_ac17926a57df758c",
+      "type": "calculation",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "calculation",
+        "engine": "nwchem",
+        "task": "freq",
+        "level": {
+          "program": "nwchem",
+          "version": "7.2.3",
+          "method": "pbe0",
+          "basis": "def2-svpd",
+          "dispersion": "d3bj",
+          "charge": 0,
+          "multiplicity": 2,
+          "grid": "fine",
+          "scf_tol": 1e-7,
+          "electronic_temperature_K": null
+        },
+        "start": {
+          "file": {
+            "path": "jobs/ac/ac17926a57df758cd26fd0fe51ed73e927ddf82cb1c62da5445f45e002827ece/attempt_00/start.xyz",
+            "sha256": "07a3ddcc906736874ce5e8c735d52e5045506602098de7e3ae5cb3894a6dcb97"
+          },
+          "fingerprint": "4700d7cc27533780b445b1f7fc83381915b76d1b69bb3a4bd917d23bc426263d",
+          "symbols": [
+            "H"
+          ]
+        },
+        "final": {
+          "file": {
+            "path": "jobs/ac/ac17926a57df758cd26fd0fe51ed73e927ddf82cb1c62da5445f45e002827ece/attempt_00/start.xyz",
+            "sha256": "07a3ddcc906736874ce5e8c735d52e5045506602098de7e3ae5cb3894a6dcb97"
+          },
+          "fingerprint": "4700d7cc27533780b445b1f7fc83381915b76d1b69bb3a4bd917d23bc426263d",
+          "symbols": [
+            "H"
+          ]
+        },
+        "energy_hartree": -0.50029080506,
+        "frequencies_cm1": [],
+        "n_external": 3,
+        "imaginary_modes": [],
+        "hessian": {
+          "path": "jobs/ac/ac17926a57df758cd26fd0fe51ed73e927ddf82cb1c62da5445f45e002827ece/attempt_00/hessian.npy",
+          "sha256": "5afad6ea697586feda5790e01ccacb02499ceece0be71554d96252bcfc7657a1"
+        },
+        "gradient": null,
+        "s2": 0.75,
+        "output": {
+          "path": "jobs/ac/ac17926a57df758cd26fd0fe51ed73e927ddf82cb1c62da5445f45e002827ece/attempt_00/stdout.txt",
+          "sha256": "abfa2d00988d23b05520eac3259a9e1017768decd1c5667a6824aac66b3822f5"
+        },
+        "job_key": "ac17926a57df758cd26fd0fe51ed73e927ddf82cb1c62da5445f45e002827ece"
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "min_adduct_5a7804cb",
+      "type": "minimum",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "minimum",
+        "minimum_id": "min_adduct_5a7804cb",
+        "basin_id": "basin_adduct_5a7804cb",
+        "composition_id": "C2H5_q0_m2",
+        "species_id": "adduct",
+        "tier": "dft",
+        "level_key": "5a7804cb25cb0d66",
+        "opt_calc": "calc_26b3eadbcb59d9d5",
+        "freq_calc": "calc_4994510bc68e6e82",
+        "energy_hartree": -79.002777961948,
+        "state_label": "C2H5_2e5536af",
+        "members": [
+          "adduct"
+        ],
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "min_c2h4_ff60c312",
+      "type": "minimum",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "minimum",
+        "minimum_id": "min_c2h4_ff60c312",
+        "basin_id": "basin_c2h4_ff60c312",
+        "composition_id": "C2H4_q0_m1",
+        "species_id": "c2h4",
+        "tier": "dft",
+        "level_key": "ff60c3122547a3bb",
+        "opt_calc": "calc_60b394348203e4b9",
+        "freq_calc": "calc_40effa2d44f1f1d2",
+        "energy_hartree": -78.431190705157,
+        "state_label": "C2H4_9fad2bdd",
+        "members": [
+          "c2h4"
+        ],
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "min_complex_5a7804cb",
+      "type": "minimum",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "minimum",
+        "minimum_id": "min_complex_5a7804cb",
+        "basin_id": "basin_complex_5a7804cb",
+        "composition_id": "C2H5_q0_m2",
+        "species_id": "complex",
+        "tier": "dft",
+        "level_key": "5a7804cb25cb0d66",
+        "opt_calc": "calc_2266f07f02931c2e",
+        "freq_calc": "calc_60965dc350d38a90",
+        "energy_hartree": -78.932180175346,
+        "state_label": "C2H4+H_68194baa",
+        "members": [
+          "complex"
+        ],
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "min_h_5a7804cb",
+      "type": "minimum",
+      "parents": [],
+      "status": "success",
+      "payload": {
+        "kind": "minimum",
+        "minimum_id": "min_h_5a7804cb",
+        "basin_id": "basin_h_5a7804cb",
+        "composition_id": "H_q0_m2",
+        "species_id": "h",
+        "tier": "dft",
+        "level_key": "5a7804cb25cb0d66",
+        "opt_calc": "calc_02c67eb0d98b3416",
+        "freq_calc": "calc_ac17926a57df758c",
+        "energy_hartree": -0.500290805039,
+        "state_label": "H_81a6191a",
+        "members": [
+          "h"
+        ],
+        "notes": []
+      },
+      "failure": null
+    }
+  ]
+}

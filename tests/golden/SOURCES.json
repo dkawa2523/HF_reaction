@@ -766,5 +766,219 @@
    "remaining-issues-2026-09-30 §3 X7",
    "G6-P3"
   ]
+ },
+ {
+  "id": "G36",
+  "files": [
+   {
+    "golden": "manifests/s6_oh_ch4/dft/manifest.json",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/dft/manifest.json",
+    "source_sha256": "ea55904ef6f7c39be3e5757cf0de9d95220219bac24d7cbaa3d9ae5caeb27c46",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/paths/manifest.json.gz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/paths/manifest.json",
+    "source_sha256": "ec7a854bf1773ab3efbd87c8a152946db4c4d26d66297c5878de803a53c50d3f",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/thermo/manifest.json",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/thermo/manifest.json",
+    "source_sha256": "c863af563b4cb2f9cac5027cc742a428bf2c60226cb3d4d5437c5ccabfc76530",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/13/1344923f70b160d48bba7ac27a485c5dbc84027a2c3fd966517f84e04f4b98a2/attempt_00/final-046.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/jobs/13/1344923f70b160d48bba7ac27a485c5dbc84027a2c3fd966517f84e04f4b98a2/attempt_00/final-046.xyz",
+    "source_sha256": "b574cb7ecd8d9606bcec7fe9c33b5d1cf22c02f59a00a7ac9adc0a1a81b1d7ee",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/3c/3cf2fd985436364c896f218802d46fb5b0cdbda5734a39ed26f349ae95745ade/attempt_00/final-015.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/jobs/3c/3cf2fd985436364c896f218802d46fb5b0cdbda5734a39ed26f349ae95745ade/attempt_00/final-015.xyz",
+    "source_sha256": "dadc6dc8bbeeb7cb524019b525c892e0fc510762fadb688795448d13c76af370",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/b2/b251378326b0d147664991b342cf569bfbc331f7095ce7f86f5400f4eade198b/attempt_00/final-030.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/jobs/b2/b251378326b0d147664991b342cf569bfbc331f7095ce7f86f5400f4eade198b/attempt_00/final-030.xyz",
+    "source_sha256": "ca021d34d24303052c36432db229f52f26b52a2ad3aa85e4fb1cad809b850975",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/c6/c648089d1b147d0ca0750ae5d9ea95168eab123b2d33bd103a376a3616c72123/attempt_00/final-029.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s6_oh_ch4/jobs/c6/c648089d1b147d0ca0750ae5d9ea95168eab123b2d33bd103a376a3616c72123/attempt_00/final-029.xyz",
+    "source_sha256": "e925c5a19a1b8c9ed6221d9a437d1fc3207cf4234975f97e863f27d75960c928",
+    "method": "copy"
+   }
+  ],
+  "expect": "VAL9/R2 の S6(OH + CH4、discover)の dft・paths・thermo の manifest と、反応の端の極小の最適化構造。validation/cases.yaml の s6_oh_ch4 の期待(引き抜き elementary 5.93 は 5.5〜6.0 の幅、multi_step の親、split1 は逆向きの引き抜き 20.98、split2 44.83)をすべて満たす",
+  "refs": [
+   "platform-review-2 X7-7",
+   "validation/cases.yaml"
+  ]
+ },
+ {
+  "id": "G37",
+  "files": [
+   {
+    "golden": "manifests/s5_ch3_o2/dft/manifest.json",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/dft/manifest.json",
+    "source_sha256": "7736f9c571c9e95d80accc11af8e71b9eca452cc1e0d8b0891a0af2b29433b28",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s5_ch3_o2/paths/manifest.json.gz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/paths/manifest.json",
+    "source_sha256": "f10e8e01ca4f7acfc16556798cbe4b2e02479c53498ba0294cc3cbbec8f957b9",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s5_ch3_o2/thermo/manifest.json",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/thermo/manifest.json",
+    "source_sha256": "a8ed7dd0eb94c0e9c961e648b4a1b4c9aed2ec76d335058d1740c3258eafebfe",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s5_ch3_o2/jobs/07/0726fc38c63ff1d91c8eea78d07d172a19fb52879bf28470544793c9633389bc/attempt_00/final-002.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/07/0726fc38c63ff1d91c8eea78d07d172a19fb52879bf28470544793c9633389bc/attempt_00/final-002.xyz",
+    "source_sha256": "a290073a32e5212f3e6c011e0315fe30d2881abc928737ff8a5fb2f528253ac5",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s5_ch3_o2/jobs/55/5563282b219dc6c10af29c247d9893475b826f31e9f769dce44c59bf22634526/attempt_00/final-033.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/55/5563282b219dc6c10af29c247d9893475b826f31e9f769dce44c59bf22634526/attempt_00/final-033.xyz",
+    "source_sha256": "385fbe89192d86af42e5e2ae4bd5927d65842551df00de545c87acc6bc736307",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s5_ch3_o2/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
+    "source_sha256": "f179dca13b67084168cf600dd4203de3d5927c890b9d11dbc7a42d6fc5b8c603",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s5_ch3_o2/jobs/9f/9f1e23c8477d40832488f2beeb8b5aa87b67217a7f4ab07d9cab13230e5fb5d9/attempt_00/final-028.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/9f/9f1e23c8477d40832488f2beeb8b5aa87b67217a7f4ab07d9cab13230e5fb5d9/attempt_00/final-028.xyz",
+    "source_sha256": "37aca3a40dec68aa4b08f916b4f014f15c0e698bcf3cdb9e3d08b0f48d613f16",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s5_ch3_o2/jobs/aa/aa2460c8f37361aad5f6686ac87a1e253db70469f34acf4a5575291a08815039/attempt_00/final-030.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/aa/aa2460c8f37361aad5f6686ac87a1e253db70469f34acf4a5575291a08815039/attempt_00/final-030.xyz",
+    "source_sha256": "e3aaf175037a435811187daefa3647ad4e617d06af2480a31b3a17a159f8492c",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s5_ch3_o2/jobs/ca/cabb8a0e1ddb76c61bd1128daf6330fc411310a87cb155d5eda090ef33393129/attempt_00/final-004.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/s5_ch3_o2/jobs/ca/cabb8a0e1ddb76c61bd1128daf6330fc411310a87cb155d5eda090ef33393129/attempt_00/final-004.xyz",
+    "source_sha256": "934bf078b47815c44dd8413673014c128d5f4d917d7a28788a77804bf2d640d0",
+    "method": "copy"
+   }
+  ],
+  "expect": "VAL9/R2 の S5(CH3 + O2、discover)の dft・paths・thermo の manifest と端の構造。会合 CH3 + O2 -> CH3O2 は barrierless 0.0(反応物の側は分離した単量体)、CH3O2 -> CH2O + HO は multi_step、split1 46.85、split2 は unresolved(dG_eff なし)",
+  "refs": [
+   "platform-review-2 X7-7",
+   "validation/cases.yaml"
+  ]
+ },
+ {
+  "id": "G38",
+  "files": [
+   {
+    "golden": "manifests/oxalic_two_step/dft/manifest.json",
+    "source": "/home/user/hfauto_r9/VAL9/R2/oxalic_two_step/dft/manifest.json",
+    "source_sha256": "87aec1a9a649d0dd4a32826b40e354a2de6db37d95c17320364077724caa6d63",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/oxalic_two_step/paths/manifest.json.gz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/oxalic_two_step/paths/manifest.json",
+    "source_sha256": "fc671ec1a37d3a840e92dcd41180db42ffbecd80df83d1548929afa80164a240",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/oxalic_two_step/thermo/manifest.json",
+    "source": "/home/user/hfauto_r9/VAL9/R2/oxalic_two_step/thermo/manifest.json",
+    "source_sha256": "f43e1f73130f7b94fe452894746dee87f0dc4e3fbedfe43e810a2a70fae6a61e",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/oxalic_two_step/jobs/1c/1c218bbab6e37220397a4218569356574ab98bbdd690225b50cc215a2c177863/attempt_00/final-005.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/oxalic_two_step/jobs/1c/1c218bbab6e37220397a4218569356574ab98bbdd690225b50cc215a2c177863/attempt_00/final-005.xyz",
+    "source_sha256": "f8879a5dab6d159b4cd4a9a2abe8bb5b4b5fc953ba775819647757753cf3c86e",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/oxalic_two_step/jobs/3b/3bef30c35128f3720f914971771af62fc6591675d2add059b2e59827859e4330/attempt_00/final-013.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/oxalic_two_step/jobs/3b/3bef30c35128f3720f914971771af62fc6591675d2add059b2e59827859e4330/attempt_00/final-013.xyz",
+    "source_sha256": "2a2c364ebf66a9dac0551ffa3061c225e561aae6c0dfc5f1c74ba66843fbc10f",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/oxalic_two_step/jobs/68/6840e6687f366e22f279155652aa3d9f2be3a34e1aeafc2863944c77b99fee9d/attempt_00/final-005.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/oxalic_two_step/jobs/68/6840e6687f366e22f279155652aa3d9f2be3a34e1aeafc2863944c77b99fee9d/attempt_00/final-005.xyz",
+    "source_sha256": "fe3be6d6e6349a6929bf6b77f0341227ad512af9f0adbb27f4a595b68b6d8f27",
+    "method": "copy"
+   }
+  ],
+  "expect": "VAL9/R2 のシュウ酸の 2 段のねじれの dft・paths・thermo の manifest と端の構造。同じ式 C2H2O4 -> C2H2O4 の elementary が 2 本(11.81 と 12.71)あり、値の順で組む",
+  "refs": [
+   "platform-review-2 X7-7",
+   "validation/cases.yaml"
+  ]
+ },
+ {
+  "id": "G39",
+  "files": [
+   {
+    "golden": "manifests/h_c2h4/dft/manifest.json",
+    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/dft/manifest.json",
+    "source_sha256": "ee76b51d5646bbcb1eb354e3b607aeb521dea77029c47710fdd04b8e028dd4fe",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/h_c2h4/paths/manifest.json",
+    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/paths/manifest.json",
+    "source_sha256": "b6f469efcfc7bdc7719eaa1ca3e2f8f6e9ee94a15601d7649c5c234460fe8463",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/h_c2h4/thermo/manifest.json",
+    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/thermo/manifest.json",
+    "source_sha256": "01329a06fc1012bf248f3df9aad1ffc7485e1437be9639fae078712bf1615eeb",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/h_c2h4/jobs/02/02c67eb0d98b3416dce00d38d1227eb018278992f1e6ff4a3d4a40c248e68053/attempt_00/final-001.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/jobs/02/02c67eb0d98b3416dce00d38d1227eb018278992f1e6ff4a3d4a40c248e68053/attempt_00/final-001.xyz",
+    "source_sha256": "1d01e9d9d8b67b6dee69a49de3dffd8b4d73eafdc27912d2922fb2955c27e8c1",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/h_c2h4/jobs/22/2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd/attempt_00/final-013.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/jobs/22/2266f07f02931c2e3cbe7fbd836b444038b0546f8ac6a346bfad148ed41230cd/attempt_00/final-013.xyz",
+    "source_sha256": "52657d2d58a71b2795c4fc8448047952fd0d7b92beeb847ebd84271d25c3cdcf",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/h_c2h4/jobs/26/26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a/attempt_00/final-007.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/jobs/26/26b3eadbcb59d9d5b30e2a5fe379203e3a53dc66cbc154ef07ada371282d622a/attempt_00/final-007.xyz",
+    "source_sha256": "b19c37f5934f62fa5efc4d338a995c3db885f491a9c3696d39c3311e24b5e20a",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/h_c2h4/jobs/60/60b394348203e4b9d83710c7ecb9e179f49204ae20c164d088ebad00f80f291a/attempt_00/final-004.xyz",
+    "source": "/home/user/hfauto_r9/VAL9/R2/h_c2h4/jobs/60/60b394348203e4b9d83710c7ecb9e179f49204ae20c164d088ebad00f80f291a/attempt_00/final-004.xyz",
+    "source_sha256": "bee5d1b38a8d8824e5c2a20ac7bd98878d9c59b325750168d6213dad61cc0d33",
+    "method": "copy"
+   }
+  ],
+  "expect": "VAL9/R2 の H + C2H4 の dft・paths・thermo の manifest と端の構造。会合は barrierless 0.0 で case の期待は満たすが、BH76 の行 33(前向きの障壁 2.0 kcal/mol、分離のゼロ)とのずれとして deviations に出る",
+  "refs": [
+   "platform-review-2 X7-7",
+   "validation/cases.yaml"
+  ]
  }
 ]

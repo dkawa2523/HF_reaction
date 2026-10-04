@@ -2,12 +2,12 @@
 
 The monomer states of the system's compositions (thermo.monomer_states) make an association's
 separated reactant side (chemistry.hypotheses). Engines have no defaults here; the pipeline YAML
-names them (``engines`` and ``screen``). A hypothesis has ``policy.walltime_h`` in all: its split
-children run right after it, on its deadline, and see its calculations (a TS it validated for a
-child). A split child is not driven when a case of its case key (hypotheses.pair_key), run or
-queued, concludes: it takes that conclusion, ``same_as:<reaction_id>``; a case that ends
-UNRESOLVED gives none, and the child is driven with its own budget. Nor is a child deeper than
-``max_split_depth``: UNRESOLVED ``split_depth``. Neither has a job or a log.
+names them (``engines`` and ``screen``). A hypothesis' split children run right after it, each
+with its own ``policy`` budget, and see its calculations (a TS it validated for a child). A split
+child is not driven when a case of its case key (hypotheses.pair_key), run or queued, concludes:
+it takes that conclusion, ``same_as:<reaction_id>``; a case that ends UNRESOLVED gives none, and
+the child is driven. Nor is a child deeper than ``max_split_depth``: UNRESOLVED ``split_depth``.
+Neither has a job or a log.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from hfauto.chemistry.hypotheses import CaseKey, pair_key, select
 from hfauto.chemistry.thermo import monomer_states
 from hfauto.core.evidence import Evidence
 from hfauto.core.manifest import Artifact, Manifest
-from hfauto.core.method import Deadline
 from hfauto.core.records import (
     ArtifactType,
     CaseOutcome,
@@ -91,7 +90,7 @@ def _calcs(artifacts: Iterable[Artifact]) -> dict[str, Evidence]:
     return {a.artifact_id: a.payload for a in artifacts if isinstance(a.payload, Evidence)}
 
 
-Item = tuple[ReactionRecord, int, Deadline | None]  # a case, its split depth, its deadline
+Item = tuple[ReactionRecord, int]  # a case and its split depth
 
 
 @dataclass
@@ -119,12 +118,12 @@ class _Book:
             if (key := self.key(case)) is not None:
                 self.first.setdefault(key, case.reaction_id)
 
-    def emit(self, result: CaseResult, depth: int, deadline: Deadline) -> list[Item]:
+    def emit(self, result: CaseResult, depth: int) -> list[Item]:
         """A driven case's artifacts; the split children of ``result`` to drive now."""
         self.done[result.reaction.reaction_id] = result.reaction
         self.artifacts.update((a.artifact_id, a) for a in result.artifacts)
         self.rt.calcs.update(_calcs(result.artifacts))
-        return [i for child in result.children for i in self._child((child, depth + 1, deadline))]
+        return [i for child in result.children for i in self._child((child, depth + 1))]
 
     def waited(self) -> list[Item]:
         """The waiting children, once every queued case has been driven."""
@@ -132,7 +131,7 @@ class _Book:
         return [i for item in items for i in self._child(item)]
 
     def _child(self, item: Item) -> list[Item]:
-        child, depth, _ = item
+        child, depth = item
         key = self.key(child)
         case_id = None if key is None else self.first.get(key)
         if case_id is not None:
@@ -164,8 +163,7 @@ class ReactionPathsStage:
     def run(self, inputs: Manifest, config: StageConfig, rt: StageRuntime) -> list[Artifact]:
         if not isinstance(config, ReactionPathsConfig):
             raise TypeError(f"expected ReactionPathsConfig, got {type(config).__name__}")
-        budget = config.policy
-        rules = CaseRules(gates=rt.policy, budget=budget, screen=config.screen is not None)
+        rules = CaseRules(gates=rt.policy, budget=config.policy, screen=config.screen is not None)
         species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)}
         case_rt = _case_runtime(config, rt, inputs, species)
         opts = [(m, inputs.evidence(m.opt_calc))
@@ -180,14 +178,12 @@ class ReactionPathsStage:
         if config.reaction_ids is not None:
             cases = [c for c in cases if c.reaction_id in config.reaction_ids]
         # serial (§7.1), a stack: split children run next (one waiting for a queued case of
-        # its key: once the stack is empty), on the deadline of their hypothesis; a
-        # hypothesis' own deadline starts when it does
-        book = _Book(case_rt, budget.max_split_depth)
+        # its key: once the stack is empty)
+        book = _Book(case_rt, config.policy.max_split_depth)
         book.queue(cases)
-        stack: list[Item] = [(case, 0, None) for case in reversed(cases)]
+        stack: list[Item] = [(case, 0) for case in reversed(cases)]
         while stack:
-            case, depth, deadline = stack.pop()
-            deadline = deadline or rt.deadline(3600.0 * budget.walltime_h)
-            stack += reversed(book.emit(drive_case(case, case_rt, rules, deadline), depth, deadline))
+            case, depth = stack.pop()
+            stack += reversed(book.emit(drive_case(case, case_rt, rules), depth))
             stack = stack or list(reversed(book.waited()))
         return list(book.artifacts.values())

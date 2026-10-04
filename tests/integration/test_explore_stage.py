@@ -88,7 +88,8 @@ def _explore(fake_runtime, tmp_run):
             irc_connected_to_source=found, electronic_temperature_K=300.0)
 
     fake = FakeDiscovery(script)
-    rt = fake_runtime(SystemConfig(system_id="t", species=[SpeciesInput(id="hcn", smiles="C#N")]),
+    rt = fake_runtime(SystemConfig(system_id="t", species=[SpeciesInput(id="hcn", smiles="C#N",
+                                                                multiplicity=1)]),
                       {(Capability.DISCOVERY, "readuct"): fake},
                       methods={"gfn2": MethodSpec(id="gfn2", kind="xtb", gfn=2)})
     config = ExploreConfig(engine="readuct", method="gfn2")

@@ -1,4 +1,4 @@
-"""decide(): the 14 rows of design §7.3 (ports tests/test_reaction_classification.py cases)."""
+"""decide(): the 13 rows of design §7.3 (ports tests/test_reaction_classification.py cases)."""
 
 from __future__ import annotations
 
@@ -46,7 +46,6 @@ VALIDATE = Decision(A.VALIDATE_AND_CONNECT, "saddle_converged")
 EXHAUSTED = Decision(A.COMPLETE, "attempts_exhausted", C.UNRESOLVED)
 ELEMENTARY = Decision(A.COMPLETE, "connection:elementary", C.ELEMENTARY_STEP)
 DISTINCT = Decision(A.COMPLETE, "intermediate_distinct", C.MULTI_STEP)
-WALLTIME = Decision(A.COMPLETE, "walltime", C.UNRESOLVED)
 FAILED = Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)
 
 
@@ -56,100 +55,92 @@ ROW_CASES = [  # (row, id, case, state, rules, expected decision)
     (2, "same_basin", CASE, replace(BASE, minima=(MA, minimum("mb", "A")), claim=CLAIM), RULES,
      Decision(A.COMPLETE, "same_basin", C.SAME_BASIN)),
     # X4: a complex that relaxed into its adduct leaves one basin; the monomers are the reactant
-    (10, "association_from_the_adduct_basin", ASSOCIATION, replace(BASE, minima=(MA, MA)), RULES,
+    (9, "association_from_the_adduct_basin", ASSOCIATION, replace(BASE, minima=(MA, MA)), RULES,
      Decision(A.SCREEN, "screen")),
     (3, "uphill", CASE, replace(BASE, minima=(MA, minimum("mb", "B", 41.0))), RULES,
      Decision(A.COMPLETE, "out_of_window", C.OUT_OF_WINDOW)),
     (4, "elementary", CASE, replace(S, claim=CLAIM, connection="elementary"), RULES, ELEMENTARY),
-    (4, "at_the_deadline", CASE, replace(S, expired=True, claim=CLAIM, connection="elementary"),
-     RULES, ELEMENTARY),  # U9-P5: evidence in hand completes the case
     (4, "degenerate", DEGENERATE, replace(S, minima=(MA, MA), claim=CLAIM,
                                           connection="degenerate"), RULES,
      Decision(A.COMPLETE, "connection:degenerate", C.DEGENERATE)),
     (4, "reassigned", CASE, replace(S, claim=CLAIM, connection="reassigned"), RULES,
      Decision(A.COMPLETE, "connection:reassigned", C.REASSIGNED)),
     (5, "distinct", CASE, replace(S, intermediate="distinct"), RULES, DISTINCT),
-    (5, "at_the_deadline", CASE, replace(S, expired=True, intermediate="distinct"), RULES,
-     DISTINCT),
     (6, "screen", CASE, replace(S, screen=BV(verdict="barrierless", source="screen"),
                                 seeds=(SEED,)), RULES,
      Decision(A.COMPLETE, "screen:barrierless", C.BARRIERLESS)),
-    (6, "string_at_the_deadline", CASE, replace(S, screen=BV(verdict="barrierless",
-                                                             source="string"),
-                                                path_runs=1, expired=True), RULES,
+    (6, "string", CASE, replace(S, screen=BV(verdict="barrierless", source="string"),
+                                path_runs=1), RULES,
      Decision(A.COMPLETE, "string:barrierless", C.BARRIERLESS)),
     (6, "association_scan", ASSOCIATION, replace(S, screen=BV(verdict="barrierless",
                                                               source="scan")), RULES,
      Decision(A.COMPLETE, "scan:barrierless", C.BARRIERLESS)),
-    (7, "walltime", CASE, replace(S, expired=True, last_saddle="converged"), RULES, WALLTIME),
-    (7, "a_rejected_connection", CASE, replace(S, expired=True, claim=CLAIM,
-                                               connection="same_basin"), RULES, WALLTIME),
-    (8, "failed", CASE, replace(S, claim=CLAIM, connection="failed"), RULES, FAILED),
-    (8, "same_basin_without_attempts", CASE, replace(S, claim=CLAIM, connection="same_basin",
+    (7, "failed", CASE, replace(S, claim=CLAIM, connection="failed"), RULES, FAILED),
+    (7, "same_basin_without_attempts", CASE, replace(S, claim=CLAIM, connection="same_basin",
                                                      saddle_attempts=2), RULES, FAILED),
-    (8, "same_state_without_attempts", CASE, replace(S, claim=CLAIM, connection="same_state",
+    (7, "same_state_without_attempts", CASE, replace(S, claim=CLAIM, connection="same_state",
                                                      saddle_attempts=2), RULES, FAILED),
-    (9, "converged", CASE, replace(S, last_saddle="converged", saddle_attempts=1), RULES,
+    (8, "converged", CASE, replace(S, last_saddle="converged", saddle_attempts=1), RULES,
      VALIDATE),
-    (9, "given_ts_calc", CASE.model_copy(update={"ts_calc": "calc_ts"}),
+    (8, "given_ts_calc", CASE.model_copy(update={"ts_calc": "calc_ts"}),
      replace(BASE, last_saddle="converged"), RULES, VALIDATE),
-    (10, "screen", CASE, BASE, RULES, Decision(A.SCREEN, "screen")),
-    (10, "degenerate_goes_on", DEGENERATE, replace(BASE, minima=(MA, MA)), RULES,
+    (9, "screen", CASE, BASE, RULES, Decision(A.SCREEN, "screen")),
+    (9, "degenerate_goes_on", DEGENERATE, replace(BASE, minima=(MA, MA)), RULES,
      Decision(A.SCREEN, "screen")),
-    (10, "after_the_shortcut_seeds", CASE, SHORTCUT, RULES, Decision(A.SCREEN, "screen")),
-    (10, "a_given_ts_failed", CASE, replace(BASE, last_saddle="failed"), RULES,
+    (9, "after_the_shortcut_seeds", CASE, SHORTCUT, RULES, Decision(A.SCREEN, "screen")),
+    (9, "a_given_ts_failed", CASE, replace(BASE, last_saddle="failed"), RULES,
      Decision(A.SCREEN, "screen")),
-    (10, "association_without_a_low_level_engine", ASSOCIATION, BASE,
+    (9, "association_without_a_low_level_engine", ASSOCIATION, BASE,
      replace(RULES, screen=False), Decision(A.SCREEN, "screen")),
-    (11, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
+    (10, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
                                        seeds=(SEED,)), RULES,
      Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")),
-    (12, "seed", CASE, replace(S, seeds=(SEED,)), RULES,
+    (11, "seed", CASE, replace(S, seeds=(SEED,)), RULES,
      Decision(A.REFINE_SADDLE, "seed:screen_ts")),
-    (12, "higher_order_retry", CASE, replace(S, seeds=(HIGHER,), last_saddle="failed",
+    (11, "higher_order_retry", CASE, replace(S, seeds=(HIGHER,), last_saddle="failed",
                                              saddle_attempts=1), RULES,
      Decision(A.REFINE_SADDLE, "seed:higher_order_retry")),
-    (12, "the_next_shortcut_seed", CASE, replace(SHORTCUT, seeds=(OTHER_TS,)), RULES,
+    (11, "the_next_shortcut_seed", CASE, replace(SHORTCUT, seeds=(OTHER_TS,)), RULES,
      Decision(A.REFINE_SADDLE, "seed:discovery_ts")),
-    (13, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), RULES, DFT_PATH),
-    (13, "screen_off", CASE, BASE, replace(RULES, screen=False), DFT_PATH),
-    (13, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
+    (12, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), RULES, DFT_PATH),
+    (12, "screen_off", CASE, BASE, replace(RULES, screen=False), DFT_PATH),
+    (12, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
      RULES, DFT_PATH),
-    (13, "after_the_screen_path", CASE, replace(SHORTCUT, neb_done=True), RULES, DFT_PATH),
-    (13, "its_seed_failed", CASE, replace(S, screen=STRING, path_runs=1, saddle_attempts=1,
+    (12, "after_the_screen_path", CASE, replace(SHORTCUT, neb_done=True), RULES, DFT_PATH),
+    (12, "its_seed_failed", CASE, replace(S, screen=STRING, path_runs=1, saddle_attempts=1,
                                           last_saddle="failed"), RULES, DFT_PATH),
-    (13, "after_an_endpoint_well", CASE, replace(S, screen=BV(verdict="intermediate",
+    (12, "after_an_endpoint_well", CASE, replace(S, screen=BV(verdict="intermediate",
                                                               source="string"),
                                                  intermediate="same_as_endpoint", path_runs=1,
                                                  saddle_attempts=1), RULES, DFT_PATH),
-    (14, "exhausted", CASE, replace(S, path_runs=1, seeds=(SEED,), saddle_attempts=2,
+    (13, "exhausted", CASE, replace(S, path_runs=1, seeds=(SEED,), saddle_attempts=2,
                                     last_saddle="failed"), RULES, EXHAUSTED),
-    (14, "a_push_at_the_limit", CASE, replace(S, seeds=(HIGHER,), saddle_attempts=2), RULES,
+    (13, "a_push_at_the_limit", CASE, replace(S, seeds=(HIGHER,), saddle_attempts=2), RULES,
      EXHAUSTED),
     # G3-P2: the second string left no seed that was tried
-    (14, "a_string_without_a_seed", CASE, replace(S, screen=STRING, path_runs=2,
+    (13, "a_string_without_a_seed", CASE, replace(S, screen=STRING, path_runs=2,
                                                   saddle_attempts=1), RULES, EXHAUSTED),
-    (14, "string_failed", CASE, replace(S, path_runs=1, saddle_attempts=1), RULES, EXHAUSTED),
-    (14, "unavailable_string", CASE, replace(S, screen=BV(verdict="unavailable", source="string"),
+    (13, "string_failed", CASE, replace(S, path_runs=1, saddle_attempts=1), RULES, EXHAUSTED),
+    (13, "unavailable_string", CASE, replace(S, screen=BV(verdict="unavailable", source="string"),
                                              path_runs=1, saddle_attempts=1), RULES, EXHAUSTED),
     # R3: no string whose peak seed could never be refined
-    (14, "no_string_without_attempts", CASE, replace(S, saddle_attempts=2, last_saddle="failed"),
+    (13, "no_string_without_attempts", CASE, replace(S, saddle_attempts=2, last_saddle="failed"),
      RULES, EXHAUSTED),
-    (14, "no_chunk_without_attempts", CASE, replace(S, screen=STRING, path_runs=1,
+    (13, "no_chunk_without_attempts", CASE, replace(S, screen=STRING, path_runs=1,
                                                     saddle_attempts=2), RULES, EXHAUSTED),
     # X4: no string joins an association's monomers, after a failed scan or its failed seed
-    (14, "association_scan_point_failed", ASSOCIATION, replace(S, screen=BV(
+    (13, "association_scan_point_failed", ASSOCIATION, replace(S, screen=BV(
         verdict="unavailable", source="scan", reasons=("scan_point",))), RULES, EXHAUSTED),
-    (14, "association_seed_failed", ASSOCIATION, replace(S, screen=BV(verdict="single",
+    (13, "association_seed_failed", ASSOCIATION, replace(S, screen=BV(verdict="single",
                                                                       source="scan"),
                                                          saddle_attempts=1, last_saddle="failed"),
      RULES, EXHAUSTED),
 ]
 
 
-def test_table_has_14_rows_and_every_row_is_covered():
-    assert len(st.ROWS) == 14
-    assert {row for row, *_ in ROW_CASES} == set(range(1, 15))
+def test_table_has_13_rows_and_every_row_is_covered():
+    assert len(st.ROWS) == 13
+    assert {row for row, *_ in ROW_CASES} == set(range(1, 14))
 
 
 @pytest.mark.parametrize(("row", "case", "state", "rules", "expected"),

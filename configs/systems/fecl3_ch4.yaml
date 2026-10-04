@@ -2,6 +2,6 @@
 system_id: fecl3_ch4
 species:
   - {id: fecl3, xyz: xyz/fecl3_ch4/fecl3.xyz, multiplicity: 6}
-  - {id: ch4, smiles: "C"}
+  - {id: ch4, smiles: "C", multiplicity: 1}
 compositions:
   - {id: fecl3_ch4, components: {fecl3: 1, ch4: 1}, multiplicity: 6}

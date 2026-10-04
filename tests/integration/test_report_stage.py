@@ -14,7 +14,8 @@ T = rec.ArtifactType
 
 
 def test_report_stage_writes_tables_from_a_fake_view(fake_runtime, tmp_run):
-    rt = fake_runtime(SystemConfig(system_id="s", species=[SpeciesInput(id="w", smiles="O")]),
+    rt = fake_runtime(SystemConfig(system_id="s", species=[SpeciesInput(id="w", smiles="O",
+                                                                multiplicity=1)]),
                       {}, stage_id="report")
     pes = double_well()
     qm, arts = FakeQM(tmp_run, pes), []

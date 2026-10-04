@@ -23,7 +23,6 @@ from hfauto.chemistry import modes
 from hfauto.chemistry.identity import mapped_equivalent, mapped_rmsd
 from hfauto.chemistry.modes import BOUNDS_A, displace
 from hfauto.core.evidence import Failure, FailureKind
-from hfauto.core.method import Deadline
 from hfauto.core.records import BarrierVerdict, CaseOutcome
 from hfauto.drivers.reaction_case import connection
 from hfauto.drivers.reaction_case.actions import MAX_DEPTH, Profile
@@ -232,15 +231,14 @@ def test_a_stalled_saddle_restarts_once_within_its_attempt(tmp_path) -> None:
     assert decide(ctx.case, state, ctx.rules) == EXHAUSTED
 
 
-@pytest.mark.parametrize("above_kcal,profile,expired,restarts", [
-    (1.5, "string", False, False),  # climbed past the profile's maximum
-    (0.5, "string", False, True),  # within a resolution of it
-    (None, "string", False, True),  # a stored stalled search without its energy: no bound
-    (1.5, None, False, True),  # no DFT profile yet (a low-level TS or ts_calc): no bound
-    (0.5, "string", True, False),  # the walltime has passed
+@pytest.mark.parametrize("above_kcal,profile,restarts", [
+    (1.5, "string", False),  # climbed past the profile's maximum
+    (0.5, "string", True),  # within a resolution of it
+    (None, "string", True),  # a stored stalled search without its energy: no bound
+    (1.5, None, True),  # no DFT profile yet (a low-level TS or ts_calc): no bound
 ])
 def test_a_stalled_search_above_the_latest_profile_is_not_restarted(tmp_path, above_kcal, profile,
-                                                                    expired, restarts):
+                                                                    restarts):
     """G1-P3: a continuous DFT path bounds the saddle from above, so a search that stalled more
     than a resolution above the latest profile's maximum has climbed past the barrier: no
     restart, noted with the profile that bounds it. VAL7 s5: frames 29-32 kcal/mol above their
@@ -253,7 +251,7 @@ def test_a_stalled_search_above_the_latest_profile_is_not_restarted(tmp_path, ab
     frames = [a + t * (b - a) for t in np.linspace(0.0, 1.0, 5)]
     ctx.work.path = None if profile is None else Profile(
         frames, tuple(e * K for e in (0, 3, 6, 2, 1)), profile)
-    ctx.deadline, ctx.log = Deadline.after(0.0 if expired else 600.0), (logged := []).append
+    ctx.log = (logged := []).append
     state = act(ctx, seeded(ctx, state), Action.REFINE_SADDLE)
     assert len(ctx.rt.saddle.calls) == 1 + restarts and state.saddle_attempts == 1
     bounded = {"note": "saddle:above_path_bound:string"} in logged

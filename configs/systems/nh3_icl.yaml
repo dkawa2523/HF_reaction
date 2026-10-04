@@ -1,7 +1,7 @@
 # S7 (review §6.1): NH3...ICl halogen-bonded complex (I, neutral): bond perception and triggers.
 system_id: nh3_icl
 species:
-  - {id: nh3, smiles: "N"}
-  - {id: icl, xyz: xyz/nh3_icl/icl.xyz}
+  - {id: nh3, smiles: "N", multiplicity: 1}
+  - {id: icl, xyz: xyz/nh3_icl/icl.xyz, multiplicity: 1}
 compositions:
   - {id: nh3_icl, components: {nh3: 1, icl: 1}}

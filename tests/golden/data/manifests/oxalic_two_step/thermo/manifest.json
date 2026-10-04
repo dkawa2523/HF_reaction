@@ -1,0 +1,205 @@
+{
+  "schema_version": "hfauto.manifest.v2",
+  "run_id": "oxalic_two_step",
+  "stage_id": "thermo",
+  "created_at": "2026-10-02T02:26:53+00:00",
+  "artifacts": [
+    {
+      "artifact_id": "species_thermo_min_ctc_ff60c312_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_ctc_ff60c312",
+        "calc_4da70a3048f0fe79",
+        "calc_b7a37768f7ca63f1"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_ctc_ff60c312",
+        "freq_calc": "calc_4da70a3048f0fe79",
+        "energy_calc": "calc_b7a37768f7ca63f1",
+        "T_K": 298.15,
+        "G_hartree": -378.3364590942542,
+        "H_hartree": -378.3021545730119,
+        "zpe_hartree": 0.050547950771336815,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_ttt_ff60c312_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_ttt_ff60c312",
+        "calc_69ea7b8d733485b6",
+        "calc_65246b605caf7ad1"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_ttt_ff60c312",
+        "freq_calc": "calc_69ea7b8d733485b6",
+        "energy_calc": "calc_65246b605caf7ad1",
+        "T_K": 298.15,
+        "G_hartree": -378.32990291142227,
+        "H_hartree": -378.2948163870393,
+        "zpe_hartree": 0.050073961967234085,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_min_spc_ctc_to_ttt_qrc1_0_ff60c312_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "min_spc_ctc_to_ttt_qrc1_0_ff60c312",
+        "calc_40bb9e49461206aa",
+        "calc_38220b45cb8d10d7"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "min_spc_ctc_to_ttt_qrc1_0_ff60c312",
+        "freq_calc": "calc_40bb9e49461206aa",
+        "energy_calc": "calc_38220b45cb8d10d7",
+        "T_K": 298.15,
+        "G_hartree": -378.33279424059714,
+        "H_hartree": -378.2975700010709,
+        "zpe_hartree": 0.05028805221367009,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_calc_113743ed1e962df0_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "calc_113743ed1e962df0",
+        "calc_878689bc888f66de"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "calc_113743ed1e962df0",
+        "freq_calc": "calc_113743ed1e962df0",
+        "energy_calc": "calc_878689bc888f66de",
+        "T_K": 298.15,
+        "G_hartree": -378.3176350552479,
+        "H_hartree": -378.2818877533316,
+        "zpe_hartree": 0.04830753791747241,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "species_thermo_calc_1c294b3b239158f2_298.15K",
+      "type": "species_thermo",
+      "parents": [
+        "calc_1c294b3b239158f2",
+        "calc_6a5386ed69e14311"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "species_thermo",
+        "subject": "calc_1c294b3b239158f2",
+        "freq_calc": "calc_1c294b3b239158f2",
+        "energy_calc": "calc_6a5386ed69e14311",
+        "T_K": 298.15,
+        "G_hartree": -378.3161995086419,
+        "H_hartree": -378.2799690399163,
+        "zpe_hartree": 0.048011789384434095,
+        "settings_sha": "0d95b35f6c36b494",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "reaction_thermo_ctc_to_ttt_298.15K_1atm",
+      "type": "reaction_thermo",
+      "parents": [
+        "ctc_to_ttt"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "reaction_thermo",
+        "reaction_id": "ctc_to_ttt",
+        "T_K": 298.15,
+        "standard_state": "1atm",
+        "dE_act_kcal": null,
+        "dE_rxn_kcal": 4.701498876113775,
+        "dG_act_kcal": null,
+        "dG_rxn_kcal": 4.114066840743087,
+        "dG_assoc_kcal": null,
+        "dG_act_vs_separated_kcal": null,
+        "band_kcal": null,
+        "blockers": [],
+        "dG_eff_kcal": null,
+        "energy_level": "m06-2x-d3zero/def2-tzvpd",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "reaction_thermo_ctc_to_ttt_split1_298.15K_1atm",
+      "type": "reaction_thermo",
+      "parents": [
+        "ctc_to_ttt_split1"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "reaction_thermo",
+        "reaction_id": "ctc_to_ttt_split1",
+        "T_K": 298.15,
+        "standard_state": "1atm",
+        "dE_act_kcal": 14.109823863050652,
+        "dE_rxn_kcal": 2.959294689770885,
+        "dG_act_kcal": 11.812262816616082,
+        "dG_rxn_kcal": 2.29973039087572,
+        "dG_assoc_kcal": null,
+        "dG_act_vs_separated_kcal": null,
+        "band_kcal": [
+          11.725915649050156,
+          11.924486502800201
+        ],
+        "blockers": [],
+        "dG_eff_kcal": 11.812262816616082,
+        "energy_level": "m06-2x-d3zero/def2-tzvpd",
+        "notes": []
+      },
+      "failure": null
+    },
+    {
+      "artifact_id": "reaction_thermo_ctc_to_ttt_split2_298.15K_1atm",
+      "type": "reaction_thermo",
+      "parents": [
+        "ctc_to_ttt_split2"
+      ],
+      "status": "success",
+      "payload": {
+        "kind": "reaction_thermo",
+        "reaction_id": "ctc_to_ttt_split2",
+        "T_K": 298.15,
+        "standard_state": "1atm",
+        "dE_act_kcal": 12.398549848999515,
+        "dE_rxn_kcal": 1.7422041863428903,
+        "dG_act_kcal": 10.413351521457999,
+        "dG_rxn_kcal": 1.8143364498673673,
+        "dG_assoc_kcal": null,
+        "dG_act_vs_separated_kcal": null,
+        "band_kcal": [
+          12.396466257822068,
+          12.96442262697473
+        ],
+        "blockers": [],
+        "dG_eff_kcal": 12.713081912333719,
+        "energy_level": "m06-2x-d3zero/def2-tzvpd",
+        "notes": []
+      },
+      "failure": null
+    }
+  ]
+}

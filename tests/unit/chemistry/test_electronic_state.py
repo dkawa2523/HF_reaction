@@ -8,18 +8,18 @@ from hfauto.chemistry.electronic_state import (
 )
 
 
-def test_elements_declaration_and_parity():
-    check_electronic_state(["N", "H", "H", "H"], 0, 1)
+def test_elements_and_parity_of_the_declared_multiplicity():
+    for symbols, charge, multiplicity in ((["N", "H", "H", "H"], 0, 1), (["Fe"], 2, 5),
+                                          (["F", "C", "F"], 0, 1), (["F", "C", "F"], 0, 3)):
+        check_electronic_state(symbols, charge, multiplicity)  # the declaration is trusted
     for symbols in (["Ce", "Cl", "Cl", "Cl"], ["Fr"], ["D", "H"]):
         with pytest.raises(ValueError, match=f"unsupported_element:{symbols[0]}"):
             check_electronic_state(symbols, 0, 2)
-    for charge, multiplicity in ((0, 2), (1, 1), (0, 0)):
-        with pytest.raises(ValueError):
-            check_electronic_state(["N", "H", "H", "H"], charge, multiplicity)
-    with pytest.raises(ValueError, match="declare_multiplicity: d-block element"):
-        check_electronic_state(["Fe"], 2, 1, declared=False)  # RDKit: [Fe+2] has 0 radicals
-    check_electronic_state(["Fe"], 2, 5, declared=True)
-    check_electronic_state(["O", "O"], 0, 1, declared=False)  # p-block: parity only
+    for symbols, charge, multiplicity in ((["N", "H", "H", "H"], 0, 2),
+                                          (["N", "H", "H", "H"], 1, 1),
+                                          (["C", "H", "H", "H"], 0, 1), (["H"], 0, 4)):
+        with pytest.raises(ValueError, match="parity"):
+            check_electronic_state(symbols, charge, multiplicity)
 
 
 def test_coupled_multiplicities():

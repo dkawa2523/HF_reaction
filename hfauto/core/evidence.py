@@ -125,7 +125,6 @@ class FailureKind(StrEnum):
     GEOMETRY_MAXITER = "geometry_maxiter"
     INCOMPLETE_OUTPUT = "incomplete_output"
     METHOD_MISMATCH = "method_mismatch"
-    BUDGET_EXHAUSTED = "budget_exhausted"
     GATE_REJECTED = "gate_rejected"
 
 

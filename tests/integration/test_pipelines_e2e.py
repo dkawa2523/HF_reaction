@@ -66,9 +66,10 @@ def pipeline(tmp_path, tmp_run, monkeypatch):
     monkeypatch.setattr(engines, "create", lambda capability, name, **_: fake[(capability, name)])
     monkeypatch.setattr(thermo, "species_thermo", fakes.fake_species_thermo)
     monkeypatch.setattr(preflight, "preflight", lambda resolved, dry_run=False: [])
-    ends = [{"id": n, "xyz": f"run/in/{n}.xyz", "role": "endpoint"}
+    ends = [{"id": n, "xyz": f"run/in/{n}.xyz", "multiplicity": 1, "role": "endpoint"}
             for n in ("reactant", "product")]
-    cfg = {"system": {"system_id": "dw", "species": [*ends, {"id": "hf", "xyz": "run/in/hf.xyz"}],
+    cfg = {"system": {"system_id": "dw", "species": [*ends, {"id": "hf", "xyz": "run/in/hf.xyz",
+                                                                 "multiplicity": 1}],
                       "compositions": [{"id": "hf2", "components": {"hf": 2}}],
                       "reactions": [{"id": "rx", "reactant": "reactant", "product": "product"}]},
            "site": {"site": "fake", "scratch_root": str(tmp_path / "scratch"), "cores": 1,

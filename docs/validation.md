@@ -1,6 +1,6 @@
 # 実計算による検証の記録
 
-round 9(r9-PRE〜S6 と FINAL。結果報告 [2026-10-02_round9_result.md](reviews/2026-10-02_round9_result.md))の後の全体の再検証の記録である。今の記録は、コミット済みの HEAD(`4137beb`)で全系を新しい run dir から流し直した **VAL9/R2** で、FINAL の作業ツリーで流した VAL9 と VAL7(round 7)を比べる。期待値は受け入れた最新の再生(CUR)と round 9 の検証 run の値で、VAL7 から変えた期待値は §4 に理由とともに挙げる。wave ごとの詳しい記録は `git show c6eff84:docs/validation.md`(§10〜§25)、round 7 は `git show 1bd2ff5:docs/validation.md` にある。決定表の行番号は今の 14 行の表([design.md](design.md) §6.2)のもの。
+round 9(r9-PRE〜S6 と FINAL。結果報告 [2026-10-02_round9_result.md](reviews/2026-10-02_round9_result.md))の後の全体の再検証の記録である。今の記録は、コミット済みの HEAD(`4137beb`)で全系を新しい run dir から流し直した **VAL9/R2** で、FINAL の作業ツリーで流した VAL9 と VAL7(round 7)を比べる。期待値は受け入れた最新の再生(CUR)と round 9 の検証 run の値で、VAL7 から変えた期待値は §4 に理由とともに挙げる。wave ごとの詳しい記録は `git show c6eff84:docs/validation.md`(§10〜§25)、round 7 は `git show 1bd2ff5:docs/validation.md` にある。決定表の行番号は今の 13 行の表([design.md](design.md) §6.2)のもの(round 10 の W1 で壁時計の行 7 を削除し、旧 8〜14 を 7〜13 に詰めた)。round 10 の wave ごとの記録は §11 にある。
 
 ## 1. 条件
 
@@ -9,7 +9,7 @@ round 9(r9-PRE〜S6 と FINAL。結果報告 [2026-10-02_round9_result.md](revie
 - 手法: 停留点と振動は PBE0-D3BJ/def2-SVPD(I と Te は def2-ECP)、順位のエネルギー層は M06-2X-D3(0)/def2-TZVPD、低レベルは GFN2-xTB。298.15 K・1 atm、順位の量は δG_eff(kcal/mol)。
 - run: `/home/user/hfauto_r9/VAL9/R2/<run>`(VAL9 は `/home/user/hfauto_r9/VAL9/<run>`)に新しい run dir で 1 本ずつ。`/home/user/hfauto_r9/runcase.sh`(共有のロック、`/usr/bin/time -v`、CAP は SIGTERM で送り 60 s 後に SIGKILL、孤児の検査、status と report)。手順は `/home/user/hfauto_r9/val9r2_chain.sh`(VAL9 の `val9_chain.sh` と同じ系・同じ CAP。CAP は既定 3,600 s、R1〜R4 は 1,500 s、S10・S16・S19・S6 は 5,400 s、シュウ酸は 7,200 s)。
 - 対象(41 run と smoke): VAL7 の 35 run(noscreen とパネルの pipeline は `/home/user/hfauto_r9/pipelines/` の写しで、既定と同じ M06-2X の層を持つ)と、round 9 で足した 6 run(`sn2_cl_d3h`、`malonaldehyde_c2v_undeclared`、`h_c2h4`、`bh3_nh3`、ニトロメタン(`g3_soft.yaml`)、`hono_panel`)。
-- 比べ方: 結論の水準で比べる(outcome、生成物の状態の集合、各段の区分、δG_eff)。並列の NWChem と CREST は run ごとに軌跡が分かれる(design.md §10)ので、id ではなく化学的な署名で組む(`/home/user/hfauto_r9/FINAL/concl.py`)。期待の分岐に入らなかった run は未達として記録し、期待値・しきい値・予算は動かさない(分析 §4.4)。
+- 比べ方: 結論の水準で比べる(outcome、生成物の状態の集合、各段の区分、δG_eff)。並列の NWChem と CREST は run ごとに軌跡が分かれる(design.md §10)ので、id ではなく化学的な署名で組む(当時は `/home/user/hfauto_r9/FINAL/concl.py`。今は repo の `validation/check.py` と `hfauto/reporting/validation.py` の `compare`。§11)。期待の分岐に入らなかった run は未達として記録し、期待値・しきい値・予算は動かさない(分析 §4.4)。
 - 時間: 一意のジョブ鍵ごとの core 秒(duration × `-np`、`tools/jobtime.py`)と歩数。壁時計は参考値。比較の出力は `/home/user/hfauto_r9/VAL9/R2/cmp/`。
 
 ## 2. 実計算で通した範囲
@@ -45,7 +45,7 @@ round 9(r9-PRE〜S6 と FINAL。結果報告 [2026-10-02_round9_result.md](revie
 | `dme_c2v_seed` | 高次の鞍点の種 | `follow1:one_side`、degenerate 2.13 | 同 | 同 | 1.96 | 13:39 / 3,163 | 合格 |
 | `hcn_noscreen` | FIND_PATH | `path_hei` から R1 と同じ TS、41.57 | 41.575(−1128.2i) | 同 | 42.18 | 2:34 / 584 | 合格 |
 | `hf_dimer_swap_noscreen` | 縮退転位 | degenerate 0.80 | 0.80 | 同 | 1.39 | 1:50 / 425 | 合格 |
-| `hono_walltime` | 行 7 | `walltime`、report あり、孤児 0 | 同(unresolved_within_budget) | 同 | 同 | 0:53 / 201 | 合格 |
+| `hono_walltime`(W1 で置き換え。§11) | 旧行 7(壁時計の予算。削除) | `walltime`、report あり、孤児 0 | 同(unresolved_within_budget) | 同 | 同 | 0:53 / 201 | 合格 |
 | S1 `s1_sn2_cl` | 恒等 SN2 | degenerate 14.53 | 14.53(−393.6i、χ 0.930) | 同 | 11.08 | 4:48 / 1,106 | 合格 |
 | S2 `s2_sn2_i` | 恒等 SN2(ECP) | degenerate 9.61 | 9.61(χ 0.836) | 同 | 6.88 | 7:01 / 1,625 | 合格 |
 | S3 `s3_h2te` | ECP の極小 | Te の DFT 極小 | 同 | 同 | 同 | 0:15 / 56 | 合格 |
@@ -72,7 +72,7 @@ round 9(r9-PRE〜S6 と FINAL。結果報告 [2026-10-02_round9_result.md](revie
 | S6 `s6_oh_ch4` | OH + CH4 → CH3 + H2O: elementary、一次の TS(ν1 約 −490i、ν2 > −50i、χ ≥ 0.5)、δG_eff 5.5〜6.0(TS が C1 なら Cs より RT ln 2 低い)。CH3 + H2O ↔ CH3OH + H: multi_step、split1 `same_as`、split2 約 44.8 | elementary 5.93(−488.5i、ν2 +45.5、χ 0.675、TS は Cs)。multi_step、split1 `same_as` 20.98、split2 44.83(−1347.5i、χ 0.798)、rc 1 | 5.54(C1)、20.60、44.82 | unresolved | 31:00 / 6,713 | 合格 |
 | S7 `s7_nh3_icl`(`--to explore`) | 生成物 0 | 生成物 0(trial 2) | 同 | 同 | 0:09 / 24 | 合格 |
 | S8 `s8_so2_nme3`(`--to explore`) | trial 19、生成物 0 | 同 | 同 | 同 | 1:09 / 257 | 合格 |
-| S9 `s9_undeclared` / `s9_conformers` | `declare_multiplicity` / 六重項で CREST rc 0 | 同(rc 1 / rc 0) | 同 | 同 | 0:01 / 0:30 | 合格 |
+| S9 `s9_undeclared` / `s9_conformers`(今の s9_undeclared は system の読み込みで拒否される。§11) | `declare_multiplicity` / 六重項で CREST rc 0 | 同(rc 1 / rc 0) | 同 | 同 | 0:01 / 0:30 | 合格 |
 | S10 `s10_amine_pilot2` | 二重 H 交換 degenerate 36.64、C3H9N・C3H10FN は `not_reacting` | 同(χ 0.856) | 同 | 32.29 | 3:24 / 778 | 合格 |
 | S19 `s19_tma_hf2` | same_basin、R6 の seed なし、層の SP と ΔG_assoc なし | 同(CREST の配座 6) | 同 | seed あり、−11.53 | 27:48 / 6,490 | 合格 |
 | `s5_undeclared`(`--to screen`) | CH3·O2 だけが `declare_multiplicity`、単量体は screen まで(rc 1) | 同 | 同 | 同 | 0:01 / 0 | 合格 |
@@ -113,11 +113,11 @@ S6 の 2 回の新しい run(VAL9 と R2)は同じ引き抜きの TS(同じ添�
 
 ## 5. 到達表(今のコード)
 
-VAL9・VAL9/R2 と round 9 の検証 run の case log と diagnostics から数えた(`/home/user/hfauto_r9/F2/reach.py`)。
+VAL9・VAL9/R2 と round 9 の検証 run の case log と diagnostics から数えた(`/home/user/hfauto_r9/F2/reach.py`。行番号は今の 13 行の表)。
 
 | 対象 | 通ったもの | 通っていないもの |
 |---|---|---|
-| 決定表の行 | 1(宣言した平面 NH3、mode_follow 0 の検証 run)、2(水、S19)、3(formaldehyde)、4(多数)、5(oxalic、S5、S6)、6(SCREEN と中点、会合のスキャン)、7(`hono_walltime`)、9・10・12(多数)、11(S5 の split2)、13(noscreen 2 本、S5)、14(S5 の split2) | 8 |
+| 決定表の行 | 1(宣言した平面 NH3、mode_follow 0 の検証 run)、2(水、S19)、3(formaldehyde)、4(多数)、5(oxalic、S5、S6)、6(SCREEN と中点、会合のスキャン)、8・9・11(多数)、10(S5 の split2)、12(noscreen 2 本、S5)、13(S5 の split2。子の試行の予算は偽エンジンのテストでも通す) | 7 |
 | 駆動しない子 | `same_as`(S6 の split1)、`split_depth`(`max_split_depth: 0` の oxalic の検証 run) | — |
 | saddle の種 | `screen_ts`、`screen_hei`、`discovery_ts`、`path_hei` | `higher_order_retry`(M4 の S6 の実 run だけ)、近道の種がすべて失敗した後の NEB |
 | 初期 Hessian | xTB(`xtb:mode`、`xtb:rho`)、DFT(noscreen 2 本) | TS freq(M4 の S6 だけ) |
@@ -144,12 +144,11 @@ rank 2 の site での `--bind-to none` の修正(M4)より前の rank 2 の時�
 
 振る舞いを保つ整理の合格基準(分析 §3 X8)。記録済みの run を今の作業ツリーで JobStore から再生し、新しい QM ジョブが 0 件で、結論の記録が変わらないことを確かめる。
 
-- 道具(repo の外、`/home/user/hfauto_r9/`): `tools/replay.py`(本体)、`tools/runs.json`(再生する run と pipeline の連鎖)、`runcase.sh`(1 本ずつの実行)、`tools/jobtime.py`。
-- 手順: source を `<wave>/replay/<name>` に複製し、pipeline の最初の stage から再ステージする。パネルの run は続けて `RESUME=1` で panel pipeline を再開する。
-- 比べるもの: 再生した stage ごとの `run_state.json`(status、hits、misses、failures_by_kind)、manifest の結論の記録(species、minimum、discovery、reaction、species_thermo、reaction_thermo、report)を欄の単位で、複製の中で走ったジョブ。reason の文字列、FileRef、created_at と壁時計は比べない。
-- 合格(`--strict`): 再生したすべての stage で misses 0、source でジョブを走らせた stage はすべて再生して hits > 0、status と記録が同一。振る舞いを変える wave は `--allow-new` で挙げた run の差を化学的な理由で説明する。
-- CUR: 受け入れた最新の再生への symlink(`/home/user/hfauto_r9/CUR/<name>`、今は `FINAL/replay`)。次の wave は `--src CUR` で再生する。
-- 除外: `hono_walltime`(Deadline は実時間なので、キャッシュの hit で行 7 の発火が変わる)、`s9_*`(遷移金属の DFT は未検証)。
+- 道具(repo の中。round 9 までは `/home/user/hfauto_r9/tools` の replay.py・runs.json・runcase.sh・jobtime.py と CUR の symlink): `validation/replay.py OUT --src DIR [--runs A,B] [--strict]`。OUT は `/home/user/hfauto_r10` の下で、各 pipeline を QM のロックの下で 1 本ずつ流す。連鎖は `validation/cases.yaml` の `chain`。
+- 手順: source の run dir を `OUT/<name>` に複製し、連鎖の最初の pipeline をその最初の stage から再ステージし、後の pipeline(パネル)は続きから再開する。
+- 比べるもの: 再生した stage ごとの `run_state.json`(status、hits、misses)と、manifest の calculation 以外の記録を欄の単位で。reason の文字列と report.html は比べない。
+- 合格(`--strict`): 再生したすべての stage で misses 0、source でジョブを走らせた stage はすべて再生して hits > 0、status と記録が同一。
+- 除外: `superseded` の case(`hono_walltime`。壁時計の予算は W1 で削除)は流さない。`s9_*` は case にしない(遷移金属の DFT は未検証、未宣言の多重度は読み込みで拒否)。
 - 限界: 保証するのは同じ鍵に同じ結果が返る範囲だけ。新しいジョブが 1 本でも出ると、その下流は run 間の比較(結論の水準)になる。古い JobStore の Evidence には勾配がなく、Failure にはエネルギーがない。
 
 ## 8. プローブと実 run で決めたこと
@@ -190,10 +189,23 @@ rank 2 の site での `--bind-to none` の修正(M4)より前の rank 2 の時�
 
 - 層の SP の SCF(結果報告の残る課題 6): `h_c2h4` の H···C2H4 錯体(二重項)の M06-2X/def2-TZVPD の SP は、新しい run 2 回とも atomic guess と cgmin の救済の両方で収束しない(rc 1)。錯体の構造は 2 回で 1e-5 Å しか違わないが、救済の試行は 470 s と 1,851 s(`ga_iter_lsolve` の停滞が 86 回)で、run の QM 時間が 2.4 倍になった。層の SCF は freq の vectors から始めず、救済の試行には反復数のほかに上限がない。barrierless の順位(0.0)は変わらないが、順位の点で起きれば `thermo_unavailable` になる。
 - TS の点群の揺らぎ(残る課題 8): ほぼ Cs の平らな TS の点群が run ごとに Cs と C1 で入れ替わり、δG_eff が RT ln 2 動く(S6: 5.54 と 5.93)。受理の許容は basin の基準のまま。
-- 決定表の行 8 は今のコードの実計算で通っていない。近道の種がすべて失敗した後の NEB、2 倍の振幅の 2 回目の QRC、ケースの例外の閉じ込めは単体テストだけ。
+- 決定表の行 7 は今のコードの実計算で通っていない。近道の種がすべて失敗した後の NEB、2 倍の振幅の 2 回目の QRC、ケースの例外の閉じ込めは単体テストだけ。
 - 極小の Newton の押し出しと TS の `higher_order:not_stationary` は単体テストとプローブだけ。再開の上限は QM なしの評価だけ。
 - 中点の密化が隠れた山を見つけた例はない。会合のスキャンの山から REFINE_SADDLE に進む分岐は単体テストだけ(DFT の山が 1 kcal/mol を超える会合が検証セットにない)。
 - 開殻: 両端の ⟨S²⟩ が違うプロファイル(2 つの guess)、実計算での `scf_branch_jump`、`spin_ok` を通る SCF の救済、四重項の CH3·O2 で AP がかからないこと。
 - TS の停留性: 一次の鞍点の受理には停留性をかけていない(40 cm⁻¹ 未満の大振幅のモードでは二次モデルが成り立たない。acac の TS で 8.6e-3 Eh)。
 - 3 次以上の鞍点の `off_saddle`、`max_trials_per_source` の境界で同値の類を落とす規則は単体テストだけ。3 原子以上の直線分子の NT2 の開始構造は番号付けに依る。
 - 縮退転位の第 2 候補(ギ酸二量体 D2h)、陽イオン(HOC⁺)、遷移金属・Te を含む系の M06-2X の SP、ECP 原子を含む CCSD(T) の参照との比較。
+
+## 11. round 10 の記録
+
+計画は [roadmap.md](roadmap.md)、設計の差分は [design.md](design.md)。証拠は `/home/user/hfauto_r10/<wave>/`。
+
+### 11.1 W1(段階 1 の前半: 予算、σ、多重度、検証の repo への取り込み)
+
+- **予算は件数だけ**: 壁時計の予算(`walltime_h`、Deadline、行 7、`budget_exhausted`)を削除した。偽エンジンのテストで、(1) 兄弟の子 rx_split1 が saddle の試行 2 回を使い切って `attempts_exhausted` で閉じた後も、rx_split2 は 0 回から駆動されて elementary に届く(`test_a_split_child_queued_behind_a_sibling_that_used_its_budget_has_its_own`)、(2) reaction-paths の最初の QM ジョブの中で SIGTERM → paths は `incomplete`・rc 1・`status` も rc 1 → 流し直すと rc 0 で、paths の記録は止めなかった run と同一(`test_sigterm_leaves_the_stage_incomplete_and_a_rerun_resumes_it`)。R2 は件数の予算にほとんど届かないので、この 2 つは再生ではなく偽エンジンで示す。
+- **σ を対称操作から数える**: 文献値(Fernández-Ramos 2007、Gilson–Irikura 2010)をテストに手で書いた: CH4 12、NH3 3、C6H6 12、SF6 24、アレン 4、S4 の C(OH)4 2、キュバン 24、ドデカヘドラン 60、1e-3 Å の揺らぎの D10h C10H10 20、CO2 2、HCN 1。旧コードは S4 で 4 を返し、D10h で KeyError だった。QM なしの thermo の再生(R2 の thermo 38 stage、103 の (run, subject))で点群・σ・m・直線性・対称化した構造は不変、thermo の記録 159 件はビット単位で同一(`/home/user/hfauto_r10/w1_2/`)。
+- **状態の G を閉じる**: 層の SP か G を欠く極小を含む状態の G は None。R2 の `energy_layer_missing` は h_c2h4 1、hono_walltime 2、s19_tma_hf2 3、s3_h2te 1、s5_ch3_o2 1、water_same_basin 1 で、どれも反応に読まれないか、すでに `thermo_unavailable` の反応の参加者なので、R2 の結論は変わらない(計画が例に挙げた h_c2h4 の錯体は、どの反応も読まないので変化しない)。
+- **多重度は必ず宣言**: 全 77 の同梱の化学種で宣言値は旧い暗黙の値と同じ。R2 の structures の SpeciesRecord 83 件(組成、多重度、状態ラベル、xyz の sha、指紋)は同一。基底状態の根拠: 三重項は O2(X³Σg⁻)だけ。二重項は CH3(X²A2″)、H(²S)、OH(X²Π)、CH3O/CH2OH、H3、H···C2H4 と C2H5。六重項は FeCl3(高スピン d⁵、⁶A1′)。ほかはすべて閉殻一重項(NH3、NMe3、HF、H2O、BH3、CH4、C2H4、CH3Cl、Cl⁻、I⁻ 錯体、ICl、SO2、H2Te、HCN/HNC、H2CO と trans-HCOH(三重項は約 25〜30 kcal/mol 上)、HONO、H2O2、エノール、シュウ酸、DME、錯体)。旧い暗黙の値が基底状態でなかった化学種はない(カルベン・ナイトレンは同梱していない)。
+- **検証を repo に**: `validation/check.py /home/user/hfauto_r9/VAL9/R2` は 41/41 PASS(`hono_walltime` は superseded)と DEVIATION 1 件(h_c2h4 の barrierless は BH76 行 33 の 2.0 kcal/mol(分離のゼロ)と矛盾。合格に数えない)。BH76 の部分集合は P0e のファイルそのもの(sha 一致)。実 HCN のテスト(`tests/smoke/test_real_known_endpoints.py`)は 68 s で合格し、smoke は 14 件。
+- **再生ゲート**: `validation/replay.py W1/replay_R2 --src VAL9/R2 --strict` と `W1/replay_VAL9 --src VAL9 --strict` はどちらも 40/40 PASS(新しいジョブ 0、記録は同一)。再生した run にも check.py は 40/40 PASS。統合で見つけた誤り: check.py は run dir のない case を MISSING と出すだけで rc 0 だった。superseded でなければ失敗にした(回帰テストあり)。

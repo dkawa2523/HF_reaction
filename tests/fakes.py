@@ -252,8 +252,7 @@ class FakeQM(_Surface):
     """calls: "energy" (+"+scf_guess"), "optimize" (+"+init_hessian", +"+fixed_bond"),
     "frequencies"."""
 
-    def energy(self, mol, method, *, scf_guess: Evidence | None = None, deadline=None
-               ) -> Evidence | Failure:
+    def energy(self, mol, method, *, scf_guess: Evidence | None = None) -> Evidence | Failure:
         """scf_guess only enters the key and the call, when given (a PES has no SCF branches)."""
         self.calls.append("energy+scf_guess" if scf_guess else "energy")
         guess = (scf_guess.job_key,) if scf_guess else ()
@@ -262,7 +261,7 @@ class FakeQM(_Surface):
 
     def optimize(self, mol, method, *, init_hessian: Evidence | None = None,
                  fixed_bond: tuple[int, int, float] | None = None,
-                 scf_guess: Evidence | None = None, deadline=None) -> Evidence | Failure:
+                 scf_guess: Evidence | None = None) -> Evidence | Failure:
         """Like NWChem: init_hessian within 0.5 Å; fixed_bond (i, j, r) at mol within 1e-4 Å
         and then held exactly; scf_guess only enters the key (a PES has no SCF branches)."""
         self.calls.append("+".join(["optimize", *(["init_hessian"] if init_hessian else []),
@@ -285,7 +284,7 @@ class FakeQM(_Surface):
             return Failure(kind=Kind.GEOMETRY_MAXITER, reason="maxiter", job_key=key)
         return self._evidence("opt", mol, method, key, start, x)
 
-    def frequencies(self, mol, method, *, scf_guess=None, deadline=None) -> Evidence | Failure:
+    def frequencies(self, mol, method, *, scf_guess=None) -> Evidence | Failure:
         self.calls.append("frequencies")
         key = self._key("freq", mol.fingerprint(), method.signature())
         start, h = self._start(mol, key), self.pes.hessian(mol.xyz.coords)
@@ -298,8 +297,8 @@ class FakeQM(_Surface):
 
 
 class FakeSaddle(_Surface):  # calls: "refine"; like NWChemSaddle: a Hessian within 0.5 Å,
-    def refine(self, seed, method, *, hessian: Evidence, mode, deadline=None  # the only
-               ) -> Evidence | Failure:  # negative mode followed, the last frame at maxiter
+    def refine(self, seed, method, *, hessian: Evidence, mode  # the only negative mode
+               ) -> Evidence | Failure:  # followed, the last frame at maxiter
         self.calls.append("refine")
         key = self._key(seed.fingerprint(), method.signature(), hessian.job_key,
                         np.round(np.ravel(mode), 6).tolist())
@@ -326,8 +325,8 @@ class FakePath(_Surface):
         super().__init__(root, pes)
         self.script, self.tsopt = list(script), tsopt
 
-    def find_path(self, start, end, method, *, images: int, initial_path: FileRef,
-                  deadline=None) -> PathProfile | Failure:
+    def find_path(self, start, end, method, *, images: int, initial_path: FileRef
+                  ) -> PathProfile | Failure:
         shape = self.script.pop(0) if self.script else "pes"
         self.calls.append(f"find_path:{shape}")
         key = self._key(start.fingerprint(), end.fingerprint(), method.signature(), images,

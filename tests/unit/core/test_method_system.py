@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from hfauto.core.evidence import Level
-from hfauto.core.method import Deadline, EngineSite, ExecutionSpec, MethodSpec, level_mismatches
+from hfauto.core.method import EngineSite, ExecutionSpec, MethodSpec, level_mismatches
 from hfauto.core.system import load_system
 
 DFT = MethodSpec(id="pbe0", kind="dft", functional="PBE0", basis="def2-SVPD", dispersion="d3bj",
@@ -61,25 +61,20 @@ def test_gas_phase_methods_only():
             ExecutionSpec.model_validate({knob: 1})
 
 
-def test_method_signature_site_pin_and_deadline():
+def test_method_signature_and_site_pin():
     assert "id" not in DFT.signature()
     assert DFT.model_copy(update={"id": "other"}).signature() == DFT.signature()
     with pytest.raises(ValidationError):
         EngineSite()  # type: ignore[call-arg]
     assert EngineSite(version="7.2.3").execution.timeout_s == 14_400
-    assert not Deadline.after(100.0).expired()
-    assert Deadline.after(30.0).expired()  # too little left for any attempt (MIN_ATTEMPT_S)
-    assert 0.0 < Deadline.after(100.0).remaining() <= 100.0
-    past = Deadline.after(-1.0)
-    assert past.expired() and past.remaining() == 0.0
 
 
 SYSTEM = """
 system_id: hcn
 species:
-  - {id: hcn, xyz: xyz/hcn.xyz, role: endpoint}
-  - {id: hnc, xyz: xyz/hnc.xyz, role: endpoint}
-  - {id: hf, smiles: F}
+  - {id: hcn, xyz: xyz/hcn.xyz, role: endpoint, multiplicity: 1}
+  - {id: hnc, xyz: xyz/hnc.xyz, role: endpoint, multiplicity: 1}
+  - {id: hf, smiles: F, multiplicity: 1}
 compositions:
   - {id: hcn_hf, components: {hcn: 1, hf: 1}}
 reactions:
@@ -97,20 +92,20 @@ def test_load_system_resolves_relative_xyz(tmp_path):
     config = load_system(write_system(tmp_path, SYSTEM))
     hcn, _, hf = config.species
     assert hcn.xyz == (tmp_path / "systems" / "xyz" / "hcn.xyz").resolve()
-    assert hf.xyz is None and hf.multiplicity is None and config.compositions[0].multiplicity is None
+    assert hf.xyz is None and hf.multiplicity == 1 and config.compositions[0].multiplicity is None
     assert config.reactions[0].coordinate[0].atoms == (0, 1, 2)
 
 
 @pytest.mark.parametrize(("old", "new", "match"), [
-    ("{id: hf, smiles: F}", "{id: hcn, smiles: F}", "duplicate species"),
+    ("{id: hf, smiles: F,", "{id: hcn, smiles: F,", "duplicate species"),
     ("{id: hcn_hf,", "{id: hf,", "duplicate species/composition"),  # would collide in conformers
     ("reactions:\n", "reactions:\n  - {id: iso, reactant: hnc, product: hcn}\n", "duplicate reac"),
     ("product: hnc", "product: hf", "not an endpoint"),  # product is a monomer
     ("product: hnc", "product: missing", "not an endpoint"),  # unknown species
     ("{hcn: 1, hf: 1}", "{hcn: 1, hcl: 1}", "unknown species"),
     ("{hcn: 1, hf: 1}", "{hcn: 1, hf: 0}", "greater than 0"),
-    ("{id: hf, smiles: F}", "{id: hf}", "exactly one"),
-    ("{id: hf, smiles: F}", "{id: hf, smiles: F, xyz: xyz/hf.xyz}", "exactly one"),
+    ("{id: hf, smiles: F,", "{id: hf,", "exactly one"),
+    ("{id: hf, smiles: F,", "{id: hf, smiles: F, xyz: xyz/hf.xyz,", "exactly one"),
     ("{id: hnc, xyz: xyz/hnc.xyz,", "{id: hnc, smiles: '[C-]#[NH+]',", "must be given as xyz"),
     ("atoms: [0, 1, 2]", "atoms: [0, 1]", "distinct atom"),  # an angle needs three atoms
     ("atoms: [0, 1, 2]", "atoms: [0, -1, 2]", "distinct atom"),

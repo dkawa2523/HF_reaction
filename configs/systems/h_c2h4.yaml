@@ -8,8 +8,8 @@
 # adduct C0-H6 + 1.5 A or beyond. Runs with known_endpoints (declared) or discover (composition).
 system_id: h_c2h4
 species:
-  - {id: h, smiles: "[H]"}
-  - {id: c2h4, smiles: "C=C"}
+  - {id: h, smiles: "[H]", multiplicity: 2}
+  - {id: c2h4, smiles: "C=C", multiplicity: 1}
   - {id: complex, xyz: xyz/h_c2h4_complex.xyz, multiplicity: 2, role: endpoint}
   - {id: adduct, xyz: xyz/h_c2h4_adduct.xyz, multiplicity: 2, role: endpoint}
 compositions:

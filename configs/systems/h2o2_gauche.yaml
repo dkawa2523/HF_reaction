@@ -1,7 +1,7 @@
 # S13 (review §6.1): H2O2 gauche(+) -> gauche(-) torsion through the low trans barrier.
 system_id: h2o2_gauche
 species:
-  - {id: h2o2_p, xyz: xyz/h2o2_gauche/reactant.xyz, role: endpoint}
-  - {id: h2o2_m, xyz: xyz/h2o2_gauche/product.xyz, role: endpoint}
+  - {id: h2o2_p, xyz: xyz/h2o2_gauche/reactant.xyz, multiplicity: 1, role: endpoint}
+  - {id: h2o2_m, xyz: xyz/h2o2_gauche/product.xyz, multiplicity: 1, role: endpoint}
 reactions:
   - {id: h2o2_torsion, reactant: h2o2_p, product: h2o2_m}

@@ -27,7 +27,7 @@ GFN2 = {"gfn2": MethodSpec(id="gfn2", kind="xtb", gfn=2)}
 
 def _species(tmp_path, keys):
     return [SpeciesInput(id=k, xyz=write_xyz(XYZ(s.split(), np.array(x)), tmp_path / f"{k}.xyz"),
-                         role="endpoint" if k in ("hcn", "cnh") else "monomer")
+                         multiplicity=1, role="endpoint" if k in ("hcn", "cnh") else "monomer")
             for k, (s, x) in GEOMS.items() if k in keys]
 
 
@@ -52,8 +52,8 @@ def _crest(rt, calls, n_stops):
 
 
 def test_structures_then_conformers(tmp_path, fake_runtime):
-    species = _species(tmp_path, GEOMS)
-    system = SystemConfig(system_id="t", species=[*species, SpeciesInput(id="pair", smiles="N.F")],
+    pair = SpeciesInput(id="pair", smiles="N.F", multiplicity=1)
+    system = SystemConfig(system_id="t", species=[*_species(tmp_path, GEOMS), pair],
                           compositions=[CompositionInput(id="nh", components={"nh3": 1, "hf": 1}),
                                         CompositionInput(id="hf2", components={"hf": 2})],
                           reactions=[ReactionInput(id="bad", reactant="hcn", product="cnh")])
