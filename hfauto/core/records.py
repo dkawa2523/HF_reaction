@@ -62,34 +62,41 @@ class MinimumRecord(BaseModel):
 
 
 class ReactionTrial(BaseModel):
+    """One edit class of a state (chemistry.trials), as realised on one of its structures."""
+
     model_config = _FROZEN
-    trial_id: str
-    source_minimum: str
-    kind: Literal["transfer", "relay", "formation", "dissociation"]  # chemistry.trials
+    trial_id: str  # of the state's composition and the class only
+    kind: str  # the edit: f<formed>b<broken>
     associations: tuple[tuple[int, int], ...] = ()
     dissociations: tuple[tuple[int, int], ...] = ()
+    source_minimum: str | None = None  # read by nothing; kept so that older manifests parse
 
 
 class DiscoveryRecord(BaseModel):
+    """An edge between two states, low-level (explore) or a DFT-tier saddle's sides
+    (mode_follow), or an explore attempt that added none. An edge (``product``) runs from
+    ``source_species`` to ``product_species``, two species in one atom order: its ends."""
+
     model_config = _FROZEN
     kind: Literal["discovery"] = "discovery"
     discovery_id: str
-    source_minimum: str
     mechanism: Literal["nt2", "relaxation", "mode_follow"]
     trial: ReactionTrial | None = None
-    outcome: Literal["product", "negative", "failed"]
+    # product: an edge reached from the start states; unconnected: an edge not reached (no
+    # hypothesis); not_attempted: a class the budget cut (without a trial: a state left)
+    outcome: Literal["product", "unconnected", "negative", "failed", "not_attempted"]
     reason: str | None = None
-    # the species the discovery started from, in whose atom order product_species is labelled
-    # (nt2: the screen representative; relaxation: the seed as its own species; mode_follow:
-    # side 1): the two ends of its hypothesis
-    source_species: str | None = None
+    source_species: str | None = None  # an attempt's: the structure it started from
     product_species: str | None = None
-    ts: Geometry | None = None  # low-level TS with one projected imaginary mode
-    ts_imag_cm1: float | None = None
-    dE_act_kcal: float | None = None  # low level, at the base electronic temperature
+    ts: Geometry | None = None  # None: an edge without a TS (a relaxation)
+    dE_act_kcal: float | None = None  # low level, from the source end
     dE_rxn_kcal: float | None = None
-    electronic_temperature_K: float = 300.0
+    generation: int | None = None  # explore: edges from the start states to its source end + 1
     ts_calc: str | None = None  # mode_follow: the DFT saddle's opt calculation
+    # read by nothing; kept so that older manifests parse
+    source_minimum: str | None = None
+    ts_imag_cm1: float | None = None
+    electronic_temperature_K: float = 300.0
 
 
 class StoichTerm(BaseModel):

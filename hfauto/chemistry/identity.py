@@ -23,8 +23,7 @@ from hfauto.chemistry.geometry import kabsch
 
 IMAGE_A = 0.005  # an exact image: QRC ± starts at a symmetric TS <= 0.0009 A, others >= 0.025 A
 BASIN_A = 0.05  # one basin: permutation-invariant RMSD (mirror image included) ...
-BASIN_DE_HARTREE = 5.0e-5  # ... and |dE|, with the best match clearly ahead of the runner-up
-_RUNNER_UP_RATIO, _RUNNER_UP_GAP_A = 3.0, 0.1
+BASIN_DE_HARTREE = 5.0e-5  # ... and |dE|
 _MAX_REFINE = 5
 _DEGENERATE_REL = 0.05  # principal moments this close (relative) count as degenerate
 _IN_PLANE_STEP_DEG = 30
@@ -73,7 +72,7 @@ def _spins(moments: np.ndarray) -> list[np.ndarray]:
 
 
 def _assign(labels: Labels, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """perm with b[perm[i]] matched to a[i], atoms of one label (element or WL class) only."""
+    """perm with b[perm[i]] matched to a[i], atoms of one label (element or atom class) only."""
 
     perm = np.arange(len(a))
     la, lb = (np.asarray(x) for x in labels)
@@ -179,36 +178,46 @@ def assign(
     energy: float,
     candidates: Mapping[str, tuple[np.ndarray, float]],
 ) -> str | None:
-    """Id of the candidate (coords, energy) whose basin holds the structure, else None.
+    """Id of the candidate (coords, energy) whose basin holds the structure, else None: among
+    the candidates within 5e-5 Eh, the closest (mirror image included, then the lowest id) when
+    it lies within 0.05 A."""
 
-    Candidates within 5e-5 Eh come first; the closest of them (mirror image included) must lie
-    within 0.05 A and clearly ahead of the runner-up."""
+    radii = _radii(symbols, coords)
+    scored = [(_basin_match(symbols, coords, xyz)[0], key)
+              for key, (xyz, e) in candidates.items() if abs(energy - e) <= BASIN_DE_HARTREE
+              and _rms(radii - _radii(symbols, xyz)) <= BASIN_A]
+    best = min(scored, default=(math.inf, None))
+    return best[1] if best[0] <= BASIN_A else None
 
-    scored = sorted((_basin_match(symbols, coords, xyz)[0], key)
-                    for key, (xyz, e) in candidates.items() if abs(energy - e) <= BASIN_DE_HARTREE)
-    if not scored or scored[0][0] > BASIN_A:
-        return None
-    if len(scored) > 1:
-        best, runner = scored[0][0], scored[1][0]
-        separated = runner - best >= _RUNNER_UP_GAP_A or (
-            runner >= _RUNNER_UP_RATIO * best and runner > best)
-        if not separated:
-            return None
-    return scored[0][1]
+
+def _radii(symbols: Sequence[str], coords: np.ndarray) -> np.ndarray:
+    """Distances to the centroid, sorted within each element. Their RMS difference never exceeds
+    the permutation-invariant RMSD (mirror included): rotation keeps a distance, each atom's
+    moves by at most its displacement, and sorting is the best matching within an element. So
+    it skips a candidate that cannot match (explore compares each new TS with every earlier
+    one: S8 had thousands) without changing any result."""
+    r = np.linalg.norm(_centered(coords), axis=1)
+    order = sorted(range(len(r)), key=lambda i: (symbols[i], r[i]))
+    return r[order]
+
+
+def _rms(v: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(v ** 2)))
 
 
 def basin_coords(symbols: Sequence[str], basin: np.ndarray, own: np.ndarray) -> np.ndarray:
     """The basin's structure in the atom order of ``own`` (a structure of that basin), mirrored
     when the basin is chiral and ``own`` has the other handedness. When ``own`` has the basin's
-    bond graph, an atom maps only onto one of its WL class, so the relabelling keeps own's
-    atom-indexed bonds however far own lies from the basin (an xTB product of a DFT basin);
-    else (own changed state in the basin's relaxation) same elements match."""
+    bond graph, an atom maps only onto one of its class (``topology.atom_classes``), so the
+    relabelling keeps own's atom-indexed bonds however far own lies from the basin (an xTB
+    product of a DFT basin); else (own changed state in the basin's relaxation) same elements
+    match."""
 
     x = np.asarray(basin, dtype=float).reshape(-1, 3)
     y = np.asarray(own, dtype=float).reshape(-1, 3)
     labels = None
     if topology.state_label(symbols, y) == topology.state_label(symbols, x):
-        la, lb = (topology.wl_classes(symbols, topology.bonds(symbols, c)) for c in (y, x))
+        la, lb = (topology.atom_classes(symbols, topology.bonds(symbols, c)) for c in (y, x))
         labels = la, lb
     if not is_chiral(symbols, x):
         return x[permutation_invariant_rmsd(symbols, y, x, labels)[1]]

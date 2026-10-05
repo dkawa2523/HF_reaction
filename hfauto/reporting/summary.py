@@ -110,7 +110,8 @@ def coverage(
     """Attempts, products, negatives and failures per mechanism; negatives per reason
     category; failed artifacts per FailureKind."""
     counts: Counter[tuple[str, str]] = Counter()
-    outcome_metric = {"product": "products", "negative": "negatives", "failed": "failed"}
+    outcome_metric = {"product": "products", "negative": "negatives", "failed": "failed",
+                      "unconnected": "unconnected", "not_attempted": "not_attempted"}
     for discovery in discoveries:
         counts["attempts", discovery.mechanism] += 1
         counts[outcome_metric[discovery.outcome], discovery.mechanism] += 1

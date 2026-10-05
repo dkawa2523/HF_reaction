@@ -12,13 +12,12 @@ dependencies = [
   "rich>=13.0",
   "numpy>=1.24",
   "scipy>=1.13",
+  "rdkit",  # state labels and edit classes (chemistry.topology, chemistry.trials)
 ]
 
 [project.optional-dependencies]
-chem = ["rdkit"]
 # Linux / CPython 3.12 only (the WSL production environment, docs/environment.md).
 production = [
-  "rdkit; platform_system == 'Linux' and python_version == '3.12'",
   "pysisyphus>=1.0,<2; platform_system == 'Linux' and python_version == '3.12'",
   "numba>=0.66,<1; platform_system == 'Linux' and python_version == '3.12'",
   "llvmlite>=0.48,<1; platform_system == 'Linux' and python_version == '3.12'",

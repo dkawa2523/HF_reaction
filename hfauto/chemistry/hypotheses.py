@@ -11,13 +11,15 @@ and changes bonds between its ends: a conformer change, torsion or enantiomeriza
 only when declared (Curtin-Hammett), so one basin gives a degenerate rearrangement that exchanges
 bonded partners. Bonds and degeneracy are judged on the basins' optimized structures in the
 endpoints' atom order and handedness (``identity.member_coords``), never on input coordinates.
-A discovery's ends are its own ``source_species`` and ``product_species``, labelled along the
-structures it followed, so a basin representative's arbitrary labelling never makes or hides a
-bond change; a discovery without both ends gives no hypothesis.
-A mode-follow saddle of the DFT tier is a verified saddle (``ts_calc``); any other discovery TS
-is a low-level TS. Negative discoveries never veto a hypothesis. A relaxation product (a seed
-state lost at screen) runs from the DFT basin of the seed's own job, while it keeps the seed's
-state, to the DFT basin of its collapse basin; it offers no TS.
+A discovery's ends are its own ``source_species`` and ``product_species`` (an edge's two
+species, labelled along the structures it followed), so a basin representative's arbitrary
+labelling never makes or hides a bond change; a discovery without both ends, or not an edge
+reached from the start states (``product``), gives no hypothesis. Each end takes the DFT
+minimum holding its species, or holding the screen basin it fell into. A mode-follow saddle of
+the DFT tier is a verified saddle (``ts_calc``); any other discovery TS is a low-level TS.
+Negative discoveries never veto a hypothesis. An edge without a TS (a structure that relaxed
+into another state at the low level) gives one only while its source keeps its own state at
+DFT; it offers no TS.
 
 A hypothesis that forms exactly one bond, between two fragments of its reactant, and breaks
 none, whose reactant fragments are a declared composition's monomers
@@ -73,12 +75,6 @@ def pair_key(a: MinimumRecord, b: MinimumRecord) -> CaseKey:
     return frozenset((sa, sb)) if sa != sb else frozenset((a.minimum_id, b.minimum_id))
 
 
-def seed_species_id(relaxation: DiscoveryRecord) -> str:
-    """The species a relaxation seed is refined as at DFT, named as explore names a
-    discovery's new structure: the seed itself may represent its collapse basin."""
-    return f"spc_{relaxation.discovery_id}"
-
-
 def _stoich(species: SpeciesRecord | None) -> tuple[StoichTerm, ...]:
     if species is None:
         return ()
@@ -117,20 +113,14 @@ class _Pool:
         sa, sb = (self.species.get(s or "") for s in (d.source_species, d.product_species))
         return None if sa is None or sb is None else (sa, sb)
 
-    def dft_basin(self, minimum_id: str) -> MinimumRecord | None:
-        """DFT minimum holding the representative or a member of ``minimum_id`` (any tier)."""
-        source = self.minima.get(minimum_id)
-        held = (source.species_id, *source.members) if source is not None else ()
-        found = (self.basin_of.get(s) for s in held)
-        return next((m for m in found if m is not None and m.tier == "dft"), None)
-
-    def endpoint_basin(self, species_id: str) -> MinimumRecord | None:
-        """Basin of a declared endpoint: a seed that collapsed into a screen basin is not
+    def basin(self, species_id: str) -> MinimumRecord | None:
+        """The minimum holding a species: a structure that collapsed into a screen basin is not
         refined itself (§8.2), so it takes the DFT minimum of that basin when there is one."""
         own = self.basin_of.get(species_id)
         if own is None or own.tier == "dft":
             return own
-        return self.dft_basin(own.minimum_id) or own
+        held = (self.basin_of.get(s) for s in (own.species_id, *own.members))
+        return next((m for m in held if m is not None and m.tier == "dft"), own)
 
 
 @dataclass(frozen=True)
@@ -138,7 +128,7 @@ class _Candidate:
     """A discovery product as a pair of basins, with the TS the discovery offers."""
 
     source: Source
-    start: MinimumRecord | None  # the DFT basin of the discovery's source (a relaxation's seed)
+    start: MinimumRecord | None  # the basin of the discovery's source
     end: MinimumRecord | None  # the basin of its product
     ends: Ends | None  # the discovery's own source and product species (_Pool.ends)
     low_level_ts: Geometry | None
@@ -193,7 +183,7 @@ def _record(pool: _Pool, rid: str, source: Source, minima: tuple[MinimumRecord, 
 
 def _declared(pool: _Pool, reaction: ReactionInput) -> ReactionRecord:
     sa, sb = pool.species.get(reaction.reactant), pool.species.get(reaction.product)
-    ma, mb = pool.endpoint_basin(reaction.reactant), pool.endpoint_basin(reaction.product)
+    ma, mb = pool.basin(reaction.reactant), pool.basin(reaction.product)
     coordinate = tuple(reaction.coordinate)
     if sa is None or sb is None or ma is None or mb is None:
         # An endpoint without a minimum is kept so that decide() blocks it (row 1).
@@ -209,28 +199,17 @@ def _declared(pool: _Pool, reaction: ReactionInput) -> ReactionRecord:
                    coordinate=coordinate, torsional=reaction.torsional)
 
 
-def _relaxation(pool: _Pool, d: DiscoveryRecord) -> _Candidate:
-    """Seed -> collapse: the DFT basin of the seed's own job (``source_species``), only
-    while it keeps the seed's state (a seed that collapsed at DFT too gives none), and its
-    collapse basin's. Both ends carry the seed's labelling."""
-    ends = pool.ends(d)
-    basin = pool.basin_of.get(ends[0].species_id) if ends else None
-    kept = ends is not None and basin is not None and basin.state_label == ends[0].state_label
-    return _Candidate(source="discovery", start=basin if kept else None,
-                      end=pool.dft_basin(d.source_minimum), ends=ends, low_level_ts=None,
-                      ts_calc=None)
-
-
 def _candidates(pool: _Pool, discoveries: Iterable[DiscoveryRecord]) -> Iterator[_Candidate]:
     products = [d for d in discoveries if d.outcome == "product" and d.product_species]
     for d in sorted(products, key=lambda d: (d.mechanism == "mode_follow", d.ts is None)):
-        if d.mechanism == "relaxation":
-            yield _relaxation(pool, d)
-            continue
+        ends, start = pool.ends(d), pool.basin(d.source_species or "")
+        relaxed = d.ts is None and d.ts_calc is None
+        if relaxed and (ends is None or start is None or start.state_label != ends[0].state_label):
+            start = None  # its source collapsed at DFT as well: nothing to ask
         yield _Candidate(
-            source="mode_follow" if d.mechanism == "mode_follow" else "discovery",
-            start=pool.dft_basin(d.source_minimum), end=pool.basin_of.get(d.product_species or ""),
-            ends=pool.ends(d), low_level_ts=None if d.ts_calc else d.ts, ts_calc=d.ts_calc)
+            source="mode_follow" if d.mechanism == "mode_follow" else "discovery", start=start,
+            end=pool.basin(d.product_species or ""), ends=ends,
+            low_level_ts=None if d.ts_calc else d.ts, ts_calc=d.ts_calc)
 
 
 def _auto(pool: _Pool, c: _Candidate, ma: MinimumRecord, mb: MinimumRecord
@@ -283,7 +262,7 @@ def _lend(pool: _Pool, record: ReactionRecord, c: _Candidate) -> ReactionRecord:
 def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[SpeciesRecord],
            discoveries: Iterable[DiscoveryRecord], declared: Sequence[ReactionInput],
            load_xyz: LoadXYZ, *, window_kcal: float = Policy.reaction_window_kcal,
-           max_per_composition: int = 6, monomers: Monomers | None = None,
+           monomers: Monomers | None = None,
            levels: Mapping[str, Level] | None = None) -> list[ReactionRecord]:
     """One ReactionRecord per hypothesis: each declared reaction, and the first discovery
     candidate of a case key (``pair_key``) no hypothesis has. Every hypothesis of a key then
@@ -298,21 +277,15 @@ def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[S
         if "" not in r.minima:  # an endpoint without a minimum is blocked (row 1)
             a, b = (pool.minima[m] for m in r.minima)
             index.setdefault(pair_key(a, b), []).append(i)
-    # by the composition of the case's ends (an association's reactants are its monomers)
-    per_composition = Counter(t.composition_id for r in records
-                              for t in (r.products or r.reactants)[:1])
     candidates = list(_candidates(pool, discoveries))
     for c in candidates:
         ma, mb = c.start, c.end
         if ma is None or mb is None or (key := pair_key(ma, mb)) in index:
             continue
-        if per_composition[ma.composition_id] >= max_per_composition:
-            continue
         record = _auto(pool, c, ma, mb)
         if record is not None:
             index[key] = [len(records)]
             records.append(record)
-            per_composition[ma.composition_id] += 1
     for c in candidates:
         if c.start is not None and c.end is not None:
             for i in index.get(pair_key(c.start, c.end), []):

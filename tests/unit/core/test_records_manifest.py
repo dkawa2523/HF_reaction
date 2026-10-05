@@ -28,10 +28,9 @@ PAYLOADS = {
         level_key=LEVEL.full_key(), opt_calc="c1", freq_calc="c2", energy_hartree=-93.4,
         state_label="CHN:ab12cd34", members=("s1",), notes=("soft",)),
     AT.DISCOVERY: r.DiscoveryRecord(
-        discovery_id="d1", source_minimum="m1", mechanism="nt2", outcome="product",
-        trial=r.ReactionTrial(trial_id="t1", source_minimum="m1", kind="transfer",
-                              associations=((0, 2),)),
-        source_species="s1", product_species="s2", ts=GEO, ts_imag_cm1=-1200.0, dE_act_kcal=45.4, ts_calc="c3"),
+        discovery_id="d1", mechanism="nt2", outcome="product",
+        trial=r.ReactionTrial(trial_id="t1", kind="f1b0", associations=((0, 2),)),
+        source_species="s1", product_species="s2", ts=GEO, dE_act_kcal=45.4, generation=2),
     AT.REACTION: r.ReactionRecord(
         reaction_id="r1", reactants=TERM, products=TERM, minima=("m1", "m2"),
         endpoints=("s1", "s2"), source="declared", ts_calc="c3",
@@ -87,6 +86,18 @@ def test_every_payload_round_trips(tmp_path):
     path.write_text(path.read_text(encoding="utf-8").replace(".v2", ".v1"), encoding="utf-8")
     with pytest.raises(ValidationError):  # no compatibility with other schema versions
         load_manifest(path)
+
+
+def test_an_older_discovery_still_parses():
+    """The baselines (R2, B1) hold discoveries written before the edges."""
+    trial = {"trial_id": "t", "source_minimum": "m1", "kind": "transfer",
+             "associations": [[0, 2]], "dissociations": [[0, 1]]}
+    old = {"kind": "discovery", "discovery_id": "disc_t_nt2", "source_minimum": "m1",
+           "mechanism": "nt2", "trial": trial, "outcome": "product", "reason": None,
+           "source_species": "s1", "product_species": "s2", "ts": None,
+           "ts_imag_cm1": -300.0, "dE_act_kcal": 1.0, "dE_rxn_kcal": 0.5,
+           "electronic_temperature_K": 300.0, "ts_calc": None}
+    assert r.DiscoveryRecord.model_validate(old).generation is None
 
 
 def test_an_atomic_write_leaves_the_old_file_or_the_new_one(tmp_path):

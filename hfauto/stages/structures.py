@@ -58,8 +58,6 @@ def _species(species: SpeciesInput, rt: StageRuntime) -> Artifact:
             charge=species.charge, multiplicity=mult, geometry=geometry,
             source="input", state_label=state_label(xyz.symbols, xyz.coords),
         )
-    except ImportError as exc:
-        return _failed(species.id, FailureKind.EXECUTABLE_MISSING, f"rdkit: {exc}")
     except (OSError, ValueError) as exc:
         return _failed(species.id, FailureKind.INPUT_INVALID, str(exc))
     return Artifact(artifact_id=species_artifact_id(species.id), type=ArtifactType.SPECIES,

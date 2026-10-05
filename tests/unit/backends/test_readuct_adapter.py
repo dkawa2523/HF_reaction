@@ -12,7 +12,7 @@ from hfauto.backends.protocols import Capability, DiscoveryEngine, DiscoverySett
 from hfauto.backends.readuct import worker
 from hfauto.backends.readuct.engine import _Adapter
 from hfauto.chemistry.modes import amplitude
-from hfauto.chemistry.topology import bond_changes, state_label
+from hfauto.chemistry.topology import bond_changes, same_bonding, state_label
 from hfauto.chemistry.xyz import XYZ, Molecule
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL as KCAL
 from hfauto.core.evidence import FailureKind
@@ -26,73 +26,51 @@ WATER = (["O", "H", "H"], np.array([[0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]]))
 GFN2 = MethodSpec(id="gfn2", kind="xtb", gfn=2)
 
 
-def _product_end(symbols, source, ends):
-    found = worker.irc_product(symbols, source, ends, source)
-    return found if isinstance(found, str) else found[0]
-
-
-def test_worker_helpers():
+def test_worker_helpers(monkeypatch):
     symbols, x = WATER
-    swapped = x[[0, 2, 1]] + 0.01
+    swapped = x[[0, 2, 1]] + 0.01  # the same bonds atom by atom
     opened = np.array([[0, 0, 0], [0.96, 0, 0], [-0.6, 0.77, 0]])  # same graph, RMSD > 0.1
     moved = np.array([[0, 0, 0], [0.96, 0, 0], [1.7, 0, 0]])  # H–H bond: another graph
-    assert worker.matches_source(symbols, x, swapped)  # same bonds atom by atom
-    assert worker.matches_source(symbols, x, opened)  # a conformer is the source
-    assert not worker.matches_source(symbols, x, moved)
-    assert _product_end(symbols, x, [swapped, moved]) == 1
-    assert _product_end(symbols, x, [moved, opened]) == 0
-    assert _product_end(symbols, x, [moved, moved]) == "irc_not_connected_to_source"
-    assert _product_end(symbols, x, [x, swapped]) == "same_as_source"
-    # after an SCC retry at 1000 K the window energies are the base-temperature ones
-    found = worker.Found("product", structures={"source": 0, "ts": 0, "product": 0},
-                         energies={"source": -5.0, "ts": -4.9, "product": -4.95})
-    data = worker.result_dict(found, {"source": -5.5, "ts": -5.44, "product": -5.47},
-                              temperature_K=1000.0, version="6.1.0")
-    assert data["dE_act_kcal"] == (-5.44 + 5.5) * KCAL
-    assert data["dE_rxn_kcal"] == (-5.47 + 5.5) * KCAL
-    assert data["electronic_temperature_K"] == 1000.0
-    negative = worker.Found("negative", "same_as_source", {"source": 0, "ts": 0},
+    cut = np.array([[0, 0, 0], [0.96, 0, 0], [-3.0, 0, 0]])  # O–H cut: a third graph
+    assert worker.irc_ends(symbols, x, [swapped, moved]) == ((0, 1), True)
+    assert worker.irc_ends(symbols, x, [moved, opened]) == ((1, 0), True)  # source end first
+    assert worker.irc_ends(symbols, x, [moved, cut]) == ((0, 1), False)  # two other states
+    assert worker.irc_ends(symbols, x, [x, swapped]) is None  # no bond change: no edge
+    assert worker.irc_ends(symbols, x, [moved, moved + 0.01]) is None
+    # energies from the first end; after an SCC retry at 1000 K they are the base-temperature ones
+    found = worker.Found("product", structures={"source": 0, "ts": 0, "end0": 0, "end1": 0})
+    data = worker.result_dict(found, {"source": -5.5, "ts": -5.44, "end0": -5.49, "end1": -5.47},
+                              version="v")
+    assert data["ends"] == list(worker.END_FILES) and data["ts"] == worker.TS_FILE
+    assert data["dE_act_kcal"] == (-5.44 + 5.49) * KCAL
+    assert data["dE_rxn_kcal"] == (-5.47 + 5.49) * KCAL
+    negative = worker.Found("negative", "no_bond_change", {"source": 0, "ts": 0},
                             {"source": -5.0, "ts": -4.9})  # a negative with a TS keeps its barrier
-    data = worker.result_dict(negative, negative.energies, temperature_K=300.0, version="6.1.0")
+    data = worker.result_dict(negative, negative.energies, version="v")
     assert data["dE_act_kcal"] == pytest.approx(0.1 * KCAL) and data["dE_rxn_kcal"] is None
+    assert data["ends"] is None
+    relaxed = worker.Found("product", structures={"end0": 0, "end1": 0})  # no TS, no energies
+    data = worker.result_dict(relaxed, {}, version="v")
+    assert (data["ts"], data["dE_act_kcal"], data["dE_rxn_kcal"]) == (None, None, None)
     assert worker.is_scc_failure("scf: Self consistent charge iterator did not converge")
+    monkeypatch.setattr(worker.importlib.metadata, "version", lambda name: "1.0")
+    assert worker.version() == (
+        "scine-readuct==1.0,scine-utilities==1.0,scine-xtb-wrapper==1.0")
 
 
-def test_a_degenerate_rearrangement_is_a_product():
+def test_a_degenerate_rearrangement_is_an_edge():
     """U4-P5: the amine_pilot2 double H exchange (−1265i) has the source's state label but other
-    bonds atom by atom; it was discarded as same_as_source."""
+    bonds atom by atom: an edge from the source. An end that is the source relabelled (R5a: S19,
+    S6) is another structure too: the ends stay in IRC order for the caller to place as states."""
     symbols, x, exchanged = NH3_HF_SYMBOLS, NH3_HF, NH3_HF_EXCHANGED
     assert state_label(symbols, exchanged) == state_label(symbols, x)
     assert bond_changes(symbols, x, exchanged) == ({(0, 4), (3, 5)}, {(0, 3), (4, 5)})
-    assert not worker.matches_source(symbols, x, exchanged)
-    assert _product_end(symbols, x, [x + 0.01, exchanged]) == 1
-
-
-def test_an_irc_end_that_is_the_source_relabelled_connects_it():
-    """R5a (S19, S6): no IRC end has the source's bonds atom by atom, but one is the source with
-    two H relabelled, turned and shifted; the other end and the TS come back in the source's atom
-    order and frame. A same-state end beyond one basin (0.05 Å) or ends in two other states stay
-    unconnected."""
-    symbols, x = NH3_HF_SYMBOLS, NH3_HF.copy()
-    x[1, 2] += 0.03  # no mirror plane: one relabelling matches
+    assert worker.irc_ends(symbols, x, [x + 0.01, exchanged]) == ((0, 1), True)
     product = x.copy()
     product[4] = [0.31, -0.98, 0.0]  # the HF proton on N: NH4+ ... F-
-    cut = x.copy()
-    cut[3] = [0.55, 2.6, 0.0]  # an N-H cut
-    c, s = np.cos(0.7), np.sin(0.7)
-    turn = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
-
-    def irc(y):  # the IRC's labelling (H3 <-> H4) and frame
-        return y[[0, 1, 2, 4, 3, 5]] @ turn.T + [1.0, -2.0, 0.5]
-
-    ts = (x + product) / 2
-    assert not worker.matches_source(symbols, x, irc(x))
-    index, got, got_ts = worker.irc_product(symbols, x, [irc(product), irc(x)], irc(ts))
-    assert index == 0 and np.allclose(got, product) and np.allclose(got_ts, ts)
-    assert worker.irc_product(symbols, x, [irc(x * 1.08), irc(product)], ts) == (
-        "irc_not_connected_to_source")
-    assert worker.irc_product(symbols, x, [irc(product), irc(cut)], ts) == (
-        "irc_not_connected_to_source")
+    relabelled = exchanged + [1.0, -2.0, 0.5]
+    assert not same_bonding(symbols, x, relabelled)
+    assert worker.irc_ends(symbols, x, [product, relabelled]) == ((0, 1), False)
 
 
 SADDLE = np.array([[0.0, 0.0, 0.0], [0.74, 0.0, 0.0]])
@@ -146,8 +124,8 @@ def test_explore_writes_the_worker_job_in_the_attempt_directory(tmp_run):
     site = EngineSite(version="6.1.0", python=str(tmp_run / "missing-python"))
     engine = engines.create(Capability.DISCOVERY, "readuct", jobs=jobs, site=site)
     assert isinstance(engine, DiscoveryEngine) and engine.supports(GFN2)
-    trial = ReactionTrial(trial_id="t", source_minimum="m", kind="transfer",
-                          associations=((0, 2),), dissociations=((0, 1),))
+    trial = ReactionTrial(trial_id="t", kind="f1b1", associations=((0, 2),),
+                          dissociations=((0, 1),))
     mol = Molecule(XYZ(["H", "C", "N"], np.eye(3)), 0, 1)
     assert engine.explore(mol, trial, GFN2, DiscoverySettings()).kind == "executable_missing"
     job = json.loads(next((tmp_run / "jobs").glob("*/*/attempt_00/job.json")).read_text())
@@ -167,10 +145,16 @@ def test_result_mapping(tmp_run):
         result = CommandResult(returncode, False, 1.0, workdir / "o", workdir / "stderr.txt")
         return adapter.parse(task, workdir, result)
 
-    found = worker.Found("negative", "irc_not_connected_to_source", {"ts": 0}, ts_imag_cm1=-500.0)
-    data = worker.result_dict(found, {}, temperature_K=300.0, version="6.1.0")
+    found = worker.Found("negative", "no_bond_change", {"ts": 0})
+    data = worker.result_dict(found, {}, version="6.1.0")
     result = parse(data)
-    assert result.ts.file.path == "jobs/a/ts.xyz" and result.product is None
+    assert result.ts.file.path == "jobs/a/ts.xyz" and result.ends is None
+    for name in worker.END_FILES:
+        write_geometry(tmp_run, f"jobs/a/{name}", ["H", "C", "N"], np.eye(3))
+    edge = worker.Found("product", None, {"ts": 0, "end0": 0, "end1": 0}, irc_connected=True)
+    result = parse(worker.result_dict(edge, {}, version="6.1.0"))
+    assert [g.file.path for g in result.ends] == ["jobs/a/end0.xyz", "jobs/a/end1.xyz"]
+    assert result.irc_connected_to_source
     assert parse({**data, "version": "6.0.0"}).kind == FailureKind.METHOD_MISMATCH
     failure = {"version": "6.1.0", "failure": {"kind": "scf_not_converged", "reason": "scc"}}
     assert parse(failure).kind == FailureKind.SCF_NOT_CONVERGED

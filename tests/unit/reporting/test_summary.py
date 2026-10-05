@@ -68,18 +68,20 @@ def test_ranks_follow_dg_eff_with_overlapping_bands_sharing_a_rank():
 
 def test_coverage_counts_mechanisms_negative_reasons_and_failure_kinds():
     def disc(i, mech, outcome, reason=None):
-        return rec.DiscoveryRecord(discovery_id=f"d{i}", source_minimum="m", mechanism=mech,
+        return rec.DiscoveryRecord(discovery_id=f"d{i}", source_species="m", mechanism=mech,
                                    outcome=outcome, reason=reason)
 
     found = [disc(1, "nt2", "product"), disc(2, "nt2", "negative", "ts_imaginary_modes:2"),
              disc(3, "nt2", "negative", "ts_imaginary_modes:3"),
              disc(4, "mode_follow", "failed"),
-             disc(5, "mode_follow", "negative", "out_of_window")]
+             disc(5, "mode_follow", "negative", "out_of_window"),
+             disc(6, "nt2", "unconnected"), disc(7, "nt2", "not_attempted")]
     failure = Failure(kind=FailureKind.TIMEOUT, reason="timeout")
     failed = [Artifact(artifact_id=f"f{i}", type=rec.ArtifactType.CALCULATION, status="failed",
                        failure=failure) for i in range(2)]
     assert {astuple(row) for row in coverage(found, failed)} == {
-        ("attempts", "nt2", 3), ("products", "nt2", 1), ("negatives", "nt2", 2),
+        ("attempts", "nt2", 5), ("products", "nt2", 1), ("negatives", "nt2", 2),
+        ("unconnected", "nt2", 1), ("not_attempted", "nt2", 1),
         ("attempts", "mode_follow", 2), ("failed", "mode_follow", 1),
         ("negatives", "mode_follow", 1),
         ("negative_reason", "ts_imaginary_modes", 2), ("negative_reason", "out_of_window", 1),

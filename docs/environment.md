@@ -12,11 +12,12 @@
 | xTB | 6.7.1 | 公式バイナリを `/home/user/.local/opt/xtb-6.7.1` に置く | `xtb --version`(doctor) |
 | CREST | 3.0.2 | 公式バイナリを `/home/user/.local/opt/crest-3.0.2` に置く | `crest --version`(doctor) |
 | pysisyphus | 1.0 | production extra。xTB ネイティブ計算器の CI-NEB(`pysis_neb`)だけに使う | worker の import(doctor)。pin は xTB の版数 |
-| SCINE ReaDuct | 6.1.0(scine-xtb-wrapper 3.0.2) | production extra | worker の import(doctor) |
+| SCINE ReaDuct | scine-readuct 6.1.0、scine-utilities 10.1.0、scine-xtb-wrapper 3.0.2 | production extra | worker が 3 つの版を `importlib.metadata` で読み、pin(`scine-readuct==6.1.0,scine-utilities==10.1.0,scine-xtb-wrapper==3.0.2`)と照合する |
+| RDKit | 2026.03.3(WSL の prod venv) | 本体の依存 | 状態ラベル(正準 SMILES の hash)、原子クラス、編集の類はその正準化で決まる。**RDKit を変えたら、再生の基準(B1 など)を作り直す**。ラベルの書式が変わる前の run dir は最初の stage から流し直す(途中の stage から再開すると古いラベルと新しいラベルが混ざる) |
 | GoodVibes | 4.3.0 | production extra。thermo stage が同じプロセスで呼ぶ | `hfauto run` の preflight が thermo を含む pipeline で照合する |
 | pymsym | 0.3.5(点群と対称操作の libmsym) | production extra で `pymsym==0.3.5` に固定。入れ直さない(別の libmsym のビルドは σ を変えうる) | `importlib.metadata.version('pymsym')`(WSL の既定テストが照合) |
 
-production extra(`pyproject.toml`)は Linux・CPython 3.12 のときだけ入り、rdkit、numba、llvmlite と、scine_utilities が宣言せずに使う setuptools を含む。本体の依存は pydantic、typer、PyYAML、rich、numpy、scipy だけである。外部プログラムを conda でそろえる場合は `environment.production.yml` を使う。
+production extra(`pyproject.toml`)は Linux・CPython 3.12 のときだけ入り、numba、llvmlite と、scine_utilities が宣言せずに使う setuptools を含む。本体の依存は pydantic、typer、PyYAML、rich、numpy、scipy、rdkit である(rdkit は状態ラベルのためにどの pipeline も使う)。外部プログラムを conda でそろえる場合は `environment.production.yml` を使う。
 
 ## 2. インストール(WSL)
 
@@ -51,7 +52,7 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 
 品質ゲートの合否は WSL の prod venv(dev extra を入れたもの、§2)の結果だけを正とする(Windows のアプリケーション制御は範囲外)。ゲートは、pytest が通ること、ruff の指摘 0、import-linter の 5 契約、pyrefly の指摘 0、`radon cc -n D hfauto` が何も出さないこと(CC 21 以上がない)、`hfauto/` と `tests/` に 500 行を超える `.py` がないことの 6 つである。
 
-既定の `pytest` は `-m 'not real'` で、unit、golden(実出力の抜粋)、integration(fake エンジンで stage をつなぐ)だけが動く。GoodVibes の golden は GoodVibes がなければ、SMILES のテストは rdkit がなければ飛ばされる。
+既定の `pytest` は `-m 'not real'` で、unit、golden(実出力の抜粋)、integration(fake エンジンで stage をつなぐ)だけが動く。GoodVibes の golden は GoodVibes がなければ飛ばされる。状態ラベルを作るテストは RDKit を要するので WSL でだけ動く(Windows の QA venv は RDKit の DLL が止められるので lint と型検査だけに使う)。
 
 ```bash
 # WSL(Git Bash から呼ぶときは、/home で始まる引数を書き換えられないように MSYS_NO_PATHCONV=1 を付ける)
@@ -59,7 +60,7 @@ MSYS_NO_PATHCONV=1 wsl -e bash -lc 'cd /mnt/c/Users/user/Desktop/HF_reaction/hfa
 ```
 
 - pyrefly の設定(`pyproject.toml` の `python-interpreter-path`)は Windows の venv を指すので、WSL では prod venv を渡す。Linux では production extra(GoodVibes、pymsym、SCINE)の型も読むので、Windows の venv では出ない指摘が出うる。Windows 専用の `ctypes` の呼び出しは `if sys.platform == "win32":` のブロックに置く。
-- Windows の `.venv-win-qa`(dev と chem extra)は編集中の手早い確認用で、合否には使わない。GoodVibes(pymsym)が入らず、この PC ではアプリケーション制御が RDKit の DLL を止め、`pyrefly.exe` を止めたこともある。
+- Windows の `.venv-win-qa`(dev extra)は編集中の手早い確認用で、合否には使わない。GoodVibes(pymsym)が入らず、この PC ではアプリケーション制御が RDKit の DLL を止め、`pyrefly.exe` を止めたこともある。
 
 ### 実エンジンの smoke(`pytest -m real`、WSL)
 

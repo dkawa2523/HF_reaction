@@ -772,92 +772,104 @@
   "files": [
    {
     "golden": "manifests/s6_oh_ch4/dft/manifest.json.gz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/dft/manifest.json",
-    "source_sha256": "7b05fb3269db4f86c30c5f22e20dcb5de6eda155e3586014a23852e36c7236b2",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/dft/manifest.json",
+    "source_sha256": "8709c4b0e90084bd8c9d7f726e81d77f4c14af4c33e99fed4a304344459cf64c",
     "method": "copy"
    },
    {
     "golden": "manifests/s6_oh_ch4/paths/manifest.json.gz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/paths/manifest.json",
-    "source_sha256": "a078ef1914e5ee1ed3c68e18000f4bda4b7a4392747fb54775723a4e8e9b7ec5",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/paths/manifest.json",
+    "source_sha256": "95e1cbf8e166685a5cddaae3432f63f821d1de3ae4b9682180fa6cca742a0aa5",
     "method": "copy"
    },
    {
     "golden": "manifests/s6_oh_ch4/thermo/manifest.json",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/thermo/manifest.json",
-    "source_sha256": "9779c8175571104aade5f9c852823702ae1538ceaed17b9ccbde4d508f54fb51",
-    "method": "copy"
-   },
-   {
-    "golden": "manifests/s6_oh_ch4/jobs/13/1344923f70b160d48bba7ac27a485c5dbc84027a2c3fd966517f84e04f4b98a2/attempt_00/final-045.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/13/1344923f70b160d48bba7ac27a485c5dbc84027a2c3fd966517f84e04f4b98a2/attempt_00/final-045.xyz",
-    "source_sha256": "5849c1699a77b424b5d97001c14146d2dde65acdacfc4ca519f3346cda5cc669",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/thermo/manifest.json",
+    "source_sha256": "8a9bd6c800e48c5b6242719c9735e01623276a0557ef8ed32c8a00c3516d2a0d",
     "method": "copy"
    },
    {
     "golden": "manifests/s6_oh_ch4/jobs/1f/1fc4bb1167ccad0c12cddf3e402d75c679f531991755272d1002673bc3e18023/attempt_00/final-002.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/1f/1fc4bb1167ccad0c12cddf3e402d75c679f531991755272d1002673bc3e18023/attempt_00/final-002.xyz",
-    "source_sha256": "9313f915d268170dc4263968a93c3ae1ec5b7c9a3b33d088d49b917e8e283a95",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/1f/1fc4bb1167ccad0c12cddf3e402d75c679f531991755272d1002673bc3e18023/attempt_00/final-002.xyz",
+    "source_sha256": "377e13ffbffb5deb4cd55777e81119450323f5f37c368305f2deebeb77dc74fe",
     "method": "copy"
    },
    {
     "golden": "manifests/s6_oh_ch4/jobs/3c/3cf2fd985436364c896f218802d46fb5b0cdbda5734a39ed26f349ae95745ade/attempt_00/final-015.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/3c/3cf2fd985436364c896f218802d46fb5b0cdbda5734a39ed26f349ae95745ade/attempt_00/final-015.xyz",
-    "source_sha256": "4a7906397e0f31c908f9a4d853c48e2037e74cc553e4920400ea43eca96738f8",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/3c/3cf2fd985436364c896f218802d46fb5b0cdbda5734a39ed26f349ae95745ade/attempt_00/final-015.xyz",
+    "source_sha256": "195177382f7a8985640dcfd753c4ed1d82857ad5b0760b1d340b6b2fdeb96c3c",
     "method": "copy"
    },
    {
     "golden": "manifests/s6_oh_ch4/jobs/41/411a1aab952fe0e68ff98e6591d459c1a87e7260dca3336cc6619aebfd6134a3/attempt_00/final-002.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/41/411a1aab952fe0e68ff98e6591d459c1a87e7260dca3336cc6619aebfd6134a3/attempt_00/final-002.xyz",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/41/411a1aab952fe0e68ff98e6591d459c1a87e7260dca3336cc6619aebfd6134a3/attempt_00/final-002.xyz",
     "source_sha256": "c341ec2e4b47e0005bfd656a06c1cbdb28cbc55ad1c057e97eb54178bec28573",
     "method": "copy"
    },
    {
-    "golden": "manifests/s6_oh_ch4/jobs/6b/6bb966f43981aebf75db65dd08d73f24f9e15d4f147dec26ce59bc2c96497923/attempt_00/final-067.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/6b/6bb966f43981aebf75db65dd08d73f24f9e15d4f147dec26ce59bc2c96497923/attempt_00/final-067.xyz",
-    "source_sha256": "b39c6d9ee57951b00fe84217fe18cc07880c164cec15098a8efc07ea37a238c0",
+    "golden": "manifests/s6_oh_ch4/jobs/46/46e16395f7b8eeeaeaef5651a464a4f8f66127424b8a9d2363c506533aa645c0/attempt_00/final-031.xyz",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/46/46e16395f7b8eeeaeaef5651a464a4f8f66127424b8a9d2363c506533aa645c0/attempt_00/final-031.xyz",
+    "source_sha256": "c87b96f200d33dc83c3dfdfd8760c989cacfe8d4cda7514498d935569ca066e4",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/7d/7d1ed89d5e569fa5a6f481c06875a2d3944bd269603e082fa6fd638f0a1f0293/attempt_00/final-045.xyz",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/7d/7d1ed89d5e569fa5a6f481c06875a2d3944bd269603e082fa6fd638f0a1f0293/attempt_00/final-045.xyz",
+    "source_sha256": "aa132c7d3ac294de149999a551d38a6b4d63c6cfcc1b4da195608402ffe6b18d",
     "method": "copy"
    },
    {
     "golden": "manifests/s6_oh_ch4/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/7e/7ebf6686f620fc955cba891c2d2dc63d8de7ac1d2aa5c787fbe83e286d4a6be5/attempt_00/final-003.xyz",
     "source_sha256": "f179dca13b67084168cf600dd4203de3d5927c890b9d11dbc7a42d6fc5b8c603",
     "method": "copy"
    },
    {
+    "golden": "manifests/s6_oh_ch4/jobs/95/95a6afde1d7388cfda0dfa5f45c21c5f694125de54f43eb3a5fea1941a302d4f/attempt_00/final-033.xyz",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/95/95a6afde1d7388cfda0dfa5f45c21c5f694125de54f43eb3a5fea1941a302d4f/attempt_00/final-033.xyz",
+    "source_sha256": "46e7f416cefd7117d5ff363017f2891da813fc9b769027d08e54c090efea09af",
+    "method": "copy"
+   },
+   {
     "golden": "manifests/s6_oh_ch4/jobs/a9/a92d432a89470debdf7d5d4ceec1e37159a1b65e6d09f2e37898e848f5131b0a/attempt_00/final-002.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/a9/a92d432a89470debdf7d5d4ceec1e37159a1b65e6d09f2e37898e848f5131b0a/attempt_00/final-002.xyz",
-    "source_sha256": "f232903aa288c188817f80c6a7169b275e54ac4fffe0e5cf8359d0c49dfe7bc9",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/a9/a92d432a89470debdf7d5d4ceec1e37159a1b65e6d09f2e37898e848f5131b0a/attempt_00/final-002.xyz",
+    "source_sha256": "3df4efa3808dd62cb9b96d8b03a386103701c6f2e8a851962e3b3cac2e93920e",
     "method": "copy"
    },
    {
-    "golden": "manifests/s6_oh_ch4/jobs/b2/b251378326b0d147664991b342cf569bfbc331f7095ce7f86f5400f4eade198b/attempt_00/final-030.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/b2/b251378326b0d147664991b342cf569bfbc331f7095ce7f86f5400f4eade198b/attempt_00/final-030.xyz",
-    "source_sha256": "2d45042d884da6b4ac09d71bf6b7d2737639827ebbb9710880fb2c610ffe77fd",
+    "golden": "manifests/s6_oh_ch4/jobs/b2/b251378326b0d147664991b342cf569bfbc331f7095ce7f86f5400f4eade198b/attempt_00/final-029.xyz",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/b2/b251378326b0d147664991b342cf569bfbc331f7095ce7f86f5400f4eade198b/attempt_00/final-029.xyz",
+    "source_sha256": "e9d8eae519e5ef2d098048966afcae1821ef0b8171a57bdfd5e1b8200b98bcec",
     "method": "copy"
    },
    {
-    "golden": "manifests/s6_oh_ch4/jobs/bf/bf8be3f5aeb82ab005258d751ad3a169de24049f4e087cadb6ea887f75372c13/attempt_00/final-043.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/bf/bf8be3f5aeb82ab005258d751ad3a169de24049f4e087cadb6ea887f75372c13/attempt_00/final-043.xyz",
-    "source_sha256": "24a7653a49aa3f847c9664d7756827c3a3966f86a8f1719dac167a0f5cbf92f1",
+    "golden": "manifests/s6_oh_ch4/jobs/c5/c55b6e4b5de9b930a6ff7d005a1f2087d51faeb7f9782e28bfdebac9e39778f0/attempt_00/final-056.xyz",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/c5/c55b6e4b5de9b930a6ff7d005a1f2087d51faeb7f9782e28bfdebac9e39778f0/attempt_00/final-056.xyz",
+    "source_sha256": "eef11d071ca107a7d3ad419b858854a531f05b7704d6b124479819113add827d",
     "method": "copy"
    },
    {
-    "golden": "manifests/s6_oh_ch4/jobs/c7/c7db14e611f696c213121924d2f032b483ea7fa9c40dfbcfad5e04deac7ddc02/attempt_00/final-030.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/c7/c7db14e611f696c213121924d2f032b483ea7fa9c40dfbcfad5e04deac7ddc02/attempt_00/final-030.xyz",
-    "source_sha256": "5aee5a76a9d62b115b64e7cffcb9a55c70fa9638ffa9b9addca780a3f7f11780",
+    "golden": "manifests/s6_oh_ch4/jobs/dc/dc7ddcbb348a21ed0e16222574de2b6cf0209d682e4769f619901f1c5cc98eb3/attempt_00/final-021.xyz",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/dc/dc7ddcbb348a21ed0e16222574de2b6cf0209d682e4769f619901f1c5cc98eb3/attempt_00/final-021.xyz",
+    "source_sha256": "f4ca0c2abe74bd1a39bee15353563029bd4416427a0be2aecb9ffd525dde4ef2",
     "method": "copy"
    },
    {
-    "golden": "manifests/s6_oh_ch4/jobs/d1/d1acb9af2728f118930377c5ec23535fab15abe0fb090a01baeaa720cd0269ac/attempt_00/final-034.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/d1/d1acb9af2728f118930377c5ec23535fab15abe0fb090a01baeaa720cd0269ac/attempt_00/final-034.xyz",
-    "source_sha256": "b5bb21a9fe3acaed97ffc37e7b3acbb4a823f45a407aa86c5858bca63fae2ab0",
+    "golden": "manifests/s6_oh_ch4/jobs/e1/e19024528da80a39c11c100daeb6e4e376a7b5779ae308f3c28d35afcf35215e/attempt_00/final-024.xyz",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/e1/e19024528da80a39c11c100daeb6e4e376a7b5779ae308f3c28d35afcf35215e/attempt_00/final-024.xyz",
+    "source_sha256": "508afd7fcc69f118fa262c248b815e9b8b8b6d86abe14739d41ccd038d52f9ea",
     "method": "copy"
    },
    {
-    "golden": "manifests/s6_oh_ch4/jobs/ef/ef761062821b7b2d80b34d87eaed9fb3e3628f69425abd76dd7ef0833b879182/attempt_00/final-015.xyz",
-    "source": "/home/user/hfauto_r10/W3/fresh/s6_oh_ch4/jobs/ef/ef761062821b7b2d80b34d87eaed9fb3e3628f69425abd76dd7ef0833b879182/attempt_00/final-015.xyz",
-    "source_sha256": "b20a420de8d85e1faf83647b51368584e1b094aa7eaba885cffb53db08019ec8",
+    "golden": "manifests/s6_oh_ch4/jobs/ec/ec9904e9c7aed5c4dc9ac770bfa6fa920a8a35e2ac6a2b1c36d73279cd99d83f/attempt_00/final-041.xyz",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/ec/ec9904e9c7aed5c4dc9ac770bfa6fa920a8a35e2ac6a2b1c36d73279cd99d83f/attempt_00/final-041.xyz",
+    "source_sha256": "295aac482471596e44d510d6d5ac9ead7724da2cde2e143e38916a4ced0d5ae1",
+    "method": "copy"
+   },
+   {
+    "golden": "manifests/s6_oh_ch4/jobs/f8/f871e2dcc1da8cbf5884fb410fbd40b6ce2c3b00da1e42534392fed4d0fa1b77/attempt_00/final-012.xyz",
+    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/jobs/f8/f871e2dcc1da8cbf5884fb410fbd40b6ce2c3b00da1e42534392fed4d0fa1b77/attempt_00/final-012.xyz",
+    "source_sha256": "99bc95649da6827a3a6c09d634b0da95a39a72b34c4e18a17b32ae7a9f044075",
     "method": "copy"
    }
   ],

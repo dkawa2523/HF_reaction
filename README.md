@@ -26,8 +26,8 @@ structures → conformers → minima(screen) → explore → minima(dft) → rea
 |---|---|
 | `structures` | system の化学種(xyz / SMILES)を読み、元素・電荷・多重度と宣言反応の原子順序を検査する |
 | `conformers` | 単量体の CREST 配座探索と、組成(錯体)の配置 seed と `--nci` 探索 |
-| `minima` | opt → 別ジョブの freq → 虚振動に沿った mode-follow → 極小の登録。反応する組成だけを DFT にかけ、厳密な像と既知の basin はジョブなしで登録する |
-| `explore` | 元素に依らない結合変化の列挙で反応 trial を作り、ReaDuct の NT2 で生成物を探す。screen で失われた seed の状態は DFT に 1 回問う |
+| `minima` | opt → 別ジョブの freq → 虚振動に沿った mode-follow → 極小の登録。反応する組成だけを DFT にかけ、厳密な像と既知の basin はジョブなしで登録する。DFT の入口で低レベルの辺を DFT//xTB の高さで 1 回だけ選ぶ |
+| `explore` | 結合グラフの編集(形成 1〜2、切断 0〜2、生成物に Lewis 構造)を状態ごとに列挙し、ReaDuct の NT2 で状態の間の辺を探す。届いた状態から世代を重ね、試行は件数の予算 1 つ(`max_trials` 3000)。screen で失われた状態は TS のない辺になる |
 | `reaction-paths` | 反応仮説ごとに、経路の分類 → 鞍点 → TS の振動数検証 → QRC による接続。検証済みの鞍点(mode-follow、分割した親)は探し直さず検証から始める |
 | `sp` | 順位に使う点だけの一点計算(エネルギー層と手法パネル) |
 | `thermo` | qRRHO(GoodVibes 4.3.0)、キラリティ、会合量、順位の量 δG_eff |

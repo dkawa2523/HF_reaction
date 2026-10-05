@@ -9,7 +9,7 @@
 | W1(1、must) | X7-1 予算は件数だけ、X7-2 の一部(外からの停止は incomplete・rc 1)、U3-P1 σ を対称操作から、X4-4 の must 部分(状態の G を閉じる)、U1-P1 多重度の宣言を必須に、X7-7 検証を repo に(cases.yaml、BH76 の参照、compare、replay) | 完了 |
 | W2(1、must) | U6-P1 χ の質量加重、U6-P2(1 つの結合変化の共有。付け替えは棄却)、U6-P6(押した探索の guess)、U6-P9、X3 SCF の来歴と救済の 3 段(P0a)、開殻 CCSD(T) は UHF 参照(P0d)。最後に再生の基準 B1 を作る | 完了(U5-P3a は W6、QRC の側の guess は W7 へ) |
 | W3(2、must) | X5-1 反応が読む点、X4-3 鎖と共通のゼロ(BH76 の分離のゼロ用に h3_doublet と oh_ch4 の単量体を宣言)、U5-P2 捕獲律速、U5-P1、U5-P7、U2-P2・U2-P4 | 完了(U5-P7 は測って不採用、U2-P4 は円錐と表の削除だけ、S5 split2 は新しい run で未達。変更 28〜37) |
-| W4(3、must) | U1-P3・U1-P2 正準のラベル、U4-P1 結合グラフの編集の列挙(電荷分離の規則は P0f)、U4-P2・U4-P4・U4-P7、U4-P3 DFT//xTB の窓、U3-P7 | 未着手 |
+| W4(3、must) | U1-P3・U1-P2 正準のラベル、U4-P1 結合グラフの編集の列挙(電荷分離の規則は P0f)、U4-P2・U4-P4・U4-P7、U4-P3 DFT//xTB の窓、U3-P7 | 完了(P0f は不合格で P0c の規則。gates の帯付きの比較は W2 で済み。変更 38〜50) |
 | W5(4、should) | X1-2 停留性の認証、U3-P4、U6-P4、U5-P5、U5-P6、X2-2・X2-3 対称性の受理と電子準位、U7-P6、U1-P4、X7-2 の残り(rc 2、項目の閉じ込め)、X7-3、U9-P3、U9-P2(a)、エネルギー層の選び直し(BH76) | 未着手 |
 | W6(4、should) | X4-2 事実の登録簿(辺は自分のラベル付きの両端を持ち、貸された TS の χ をそれで測る: U5-P3a)、U5-P4(近道の TS を DFT SP の順に)、U8-P10・U8-P7・U8-P6、X5-3 層の経路の判定 | 未着手 |
 | W7(最後) | 鍵を変える基盤の変更を 1 回で移行(X7-6、U9-P10、X1-3、U0-P3、QRC の側の opt の `scf_guess`)、分割の仕組みの削除(X4-2 段階 2)、整理、VAL10 と BH76 の表 | 未着手 |
@@ -56,6 +56,21 @@
 35. (W3)近道は種だけを出し、判定と ⟨S²⟩ の検査を持たない。DFT SP の順の並べ替えは W6-1(U5-P4)へ移した(今並べ替えると B1 の S6 の 2 つの TS の順と鍵が変わる)。種が待っている間は SCREEN を始めない(行 9)。
 36. (W3)U5-P7(pysisyphus の IDPP)は QM なしのプローブで測って採らなかった(平面の HONO で面内 177.8° の経路、作業ディレクトリへのログ)。
 37. (W3)cases.yaml の期待を理由とともに変えた([validation.md](validation.md) §11.3): h3_doublet 12.71 → 15.55 と S6 の引き抜き [5.5, 6.0] → [9.95, 10.45](ゼロが宣言した分離の単量体になった)、S6 split1 [20.55, 21.05] → [21.15, 21.65](宣言した CH3 + H2O の組成が G で 0.60 kcal/mol 低い錯体の配座を出した)、barrierless の 5 行は null(変更 29)。golden G36・G37・G39 を作り直した。S5 の split2 は W3 の新しい run で unresolved(QRC の側が鞍点に落ちた)だったが、期待は変えず未達として記録し、W5-1 と VAL10 で扱う。
+
+38. (W4)P0f(QM なし)は不合格: 宣言した電荷分離の制限は、P0c が見つけたギ酸エチルの 1,5-H 移動の生成物(1,5-双性イオン)を失い((i))、ibuprofen は 5,200 類で freq 1 本を超えた((iii))。事前の宣言どおり P0c の規則(電荷分離を制限しない)を使い、薬物の大きさの網羅は予算で限られると報告する(ibuprofen 10,708 類、3000 件の予算で f2b2 の 7,708 類が `not_attempted`。report に budget-limited と出す)。
+39. (W4)類は編集のラベルを付けた出発のグラフの正準 SMILES(自己同型の軌道そのもの)にした。`topology.atom_classes` の組では、ベンゼン環の ortho と para の C–C 形成のような等価でない編集がまとまる。trials は atom_classes を使わない(identity.basin_coords だけが使う)。
+40. (W4)世代の数え方: 出発の状態は screen の状態と入力の化学種の状態。S5 の CH3O2 は screen の状態なので、レビューの第 2 世代(CH2OOH)・第 3 世代(β 開裂)は第 1・第 2 世代になる。
+41. (W4)`gates.discovery_verdict` を削除した。worker は射影した虚モードが 1 本の TS と Hessian で確かめた両端の極小のときだけ辺を返すので、呼んでも何も棄却しない。U1-P2 の gates の呼び出し(`_bonds_exchanged`)は W2 で帯付きの `Ctx.change()` の比較になっており、4 つの構造を取る形には変えない(gates の import 規則を破り、両側に共通の傍観の結合変化が打ち消されなくなる)。
+42. (W4)DFT の入口の数の上限は minima(dft) の `select.max_edges`(組成あたり 6、端の組の数)1 つで、`hypotheses.select` の `max_per_composition` を削除した。`rerank_sp` の knob を削除した(混んだ状態は常に SP で並べ直す)。minima の relaxation の seed の写し(`spc_<discovery_id>`、`collapsed_at_dft_from_seed`)は、TS のない辺の source が自分の species を持つので不要になった。
+43. (W4)古い manifest を読むためだけの欄(`ReactionTrial.source_minimum`、`DiscoveryRecord.source_minimum`・`ts_imag_cm1`・`electronic_temperature_K`)は W7-F3 で、鍵の移行と VAL10 の後に削除する。ReaDuct の pin は 3 つの版の正準な文字列で、辞書にするのは W7-F1。
+44. (W4)RDKit を本体の依存にした(状態ラベルはどの pipeline も使う)。structures の rdkit の ImportError の分岐を削除した。RDKit の版は環境の一部として固定し、変えたら再生の基準を作り直す。W4 より前の run dir は最初の stage から流し直す(ラベルの書式が変わった)。
+45. (W4)受け入れ条件のうち「trials のコード行が増えない」「explore.py が短くなる」は満たさなかった(trials 124 → 165: Lewis の MILP、正確な類のキー、複数配座の実現と剛体の配置。explore 159 → 234: 世代のループ、到達と向き、ボトルネックの順、TS の重複除去、予算の記録)。gates・hypotheses・worker・topology・identity は短くなった。
+46. (W4)未緩和の seed の SP を出発の点にすると DFT の入口の高さが甘くなる(S5 の二重項の seed は CH3 + O2 の漸近より約 19 kcal/mol 上)。記録だけで、案(宣言した単量体の seed は単量体の SP の和から測る)は W6-1 の登録簿の出発の点と一緒に扱う。
+
+47. (W4 統合)新しい run で見つけた誤り 2 つを直した(回帰テストあり)。(a) S6 は同じ原子の組成を 2 つ宣言するので、1 つの状態に原子順の違う構造が入り、片方の元素の並びでもう片方を読んでいた(同じ trial_id の重複、S6 の 276 件中 39 組)。explore は原子順ごとに列挙して類でまとめる。(b) DFT の入口の到達を species で判定していたので、別の配座から出る第 2 世代の辺が unreached になった(fluoroethane 51 本中 12 本)。節点を状態にし、状態のエネルギーはその端の構造の SP の最小にした。
+48. (W4 統合)DFT の入口の順は (高さ, 道のエネルギーの幅, 道の辺の数) にした。S5 では未緩和の seed が全体より高く、すべての辺が高さ 0 になり、id の順で会合の辺が `over_cap` になった。窓の規則(出発の状態からの高さ)は変えていない。
+49. (W4 統合)効率: (a) DFT の入口は、出発の状態から高さの低い順にたどり、窓の内側で届いた状態を出る辺にだけ SP をとる(窓の判定は全部とるのと同じ。SP は S10 で辺 850 本に 71 点、S19 で 975 本に 54 点、fluoroethane で 51 本に 36 点(全部とると 84 点)。S5 は辺がすべて seed より下なので 220 本に 257 点)。(b) explore は 1 世代の状態をボトルネックの低い順に、予算を満たすまでだけ列挙する。(c) `identity.assign` は、重心からの距離の列の差(RMSD の下限)で候補を先に除く(結果は同じ。S10 の TS 250 個の重複判定が 34 s → 0.3 s。以前は explore の時間の大半がこの判定だった)。
+50. (W4 統合)cases.yaml: S6 は辺ごとの case になった(引き抜き [9.95, 10.45] はそのまま、CH3 + H2O → CH4O + H elementary 54.62、CH4O + H → CH3O + H2 elementary 13.10、CH2 + H + H2O → CH4O + H barrierless。VAL9 の多段の親と子 2 つは消えた)。golden G36 を W4 の run から作り直した。S7・S8 の生成物の数は 26・1027(世代を重ねた辺)。S5 は変えない: W4 の run は split2 が unresolved(W3 と同じ境界の揺れ)で、入口が入れた辺から行が増えた。2 回流す VAL10 で決める。fluoroethane の 4 中心の HF 脱離の TS は見つかったが、DFT//xTB の高さ 69.5 kcal/mol で窓 40 の外(事前に宣言した衝突。窓は変えない)。
 
 ## 3. 見送り
 

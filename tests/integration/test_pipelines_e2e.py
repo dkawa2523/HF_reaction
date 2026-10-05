@@ -51,11 +51,12 @@ def pipeline(tmp_path, tmp_run, monkeypatch):
 
     def explore(source, trial, method, settings):  # N–H–O reaches the other well
         ok, x = source.xyz.coords.size == 9, source.xyz.coords
+        ends = ("reactant", "product") if x[1, 0] < 0 else ("product", "reactant")
         return DiscoveryResult(
             outcome="product" if ok else "negative", reason=None if ok else "no_nt2_maximum",
-            product=geo["product" if x[1, 0] < 0 else "reactant"] if ok else None,
-            ts=geo["ts"] if ok else None, ts_imag_cm1=-1e3, dE_act_kcal=7.2,
-            dE_rxn_kcal=2.4, irc_connected_to_source=ok, electronic_temperature_K=300.0)
+            ends=(geo[ends[0]], geo[ends[1]]) if ok else None,
+            ts=geo["ts"] if ok else None, dE_act_kcal=7.2, dE_rxn_kcal=2.4,
+            irc_connected_to_source=ok)
 
     qm, path, saddle = (c(tmp_run, pes) for c in (fakes.FakeQM, fakes.FakePath, fakes.FakeSaddle))
     fake = {(Cap.QM, "nwchem"): qm, (Cap.QM, "xtb"): qm, (Cap.SADDLE, "nwchem_saddle"): saddle,

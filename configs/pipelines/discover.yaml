@@ -1,6 +1,7 @@
-# Discovery from monomers and compositions: conformers -> xTB minima -> ReaDuct exploration
-# -> DFT minima -> reaction paths -> energy layer (M06-2X single points) -> thermochemistry
-# -> report. The ranking is M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD.
+# Discovery from species and compositions: conformers -> xTB minima -> ReaDuct edges over
+# generations (max_trials 3000 NT2 attempts) -> DFT//xTB entry and DFT minima -> reaction paths
+# -> energy layer (M06-2X single points) -> thermochemistry -> report. The ranking is
+# M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD.
 pipeline_id: discover
 stages:
   - {id: structures, stage: structures}
@@ -8,7 +9,7 @@ stages:
   - {id: screen, stage: minima, level: screen, engine: xtb, method: gfn2}
   - {id: explore, stage: explore, engine: readuct, method: gfn2}
   - {id: dft, stage: minima, level: dft, engine: nwchem, method: pbe0-d3bj_def2-svpd,
-     select: {include: window, per_state: 3, window_kcal: 6.0, rerank_sp: true},
+     select: {include: window, per_state: 3, window_kcal: 6.0},
      init_hessian: {engine: xtb, method: gfn2}}
   - {id: paths, stage: reaction-paths, method: pbe0-d3bj_def2-svpd,
      engines: {qm: nwchem, saddle: nwchem_saddle, path: nwchem_string},

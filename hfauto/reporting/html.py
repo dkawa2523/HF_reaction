@@ -23,6 +23,7 @@ from hfauto.core.manifest import Manifest
 from hfauto.core.records import (
     ArtifactType,
     CaseOutcome,
+    DiscoveryRecord,
     RankRow,
     ReactionRecord,
     ReactionThermo,
@@ -264,6 +265,15 @@ def _section(reaction: ReactionRecord, thermo: Sequence[ReactionThermo],
             f"<div class='figs'>{''.join(figures)}</div>{table}</section>")
 
 
+def _budget_note(view: Manifest) -> list[str]:
+    """One line when explore's count budget ran out: its coverage is budget-limited."""
+    cut = sum(d.outcome == "not_attempted"
+              for d in view.records(ArtifactType.DISCOVERY, DiscoveryRecord))
+    note = (f"<p class='meta'>Exploration budget-limited: {cut} edit class(es) or state(s) "
+            "not attempted (coverage.csv).</p>")
+    return [note] if cut else []
+
+
 def render(view: Manifest, out_dir: Path, *, load_xyz: Callable[[Geometry], XYZ]) -> Path:
     """Write ``out_dir/report.html`` for the reactions with an outcome and return its path.
 
@@ -289,7 +299,7 @@ def render(view: Manifest, out_dir: Path, *, load_xyz: Callable[[Geometry], XYZ]
     run = escape(view.run_id)
     intro = (f"<h1>hfauto report</h1><p class='meta'>run {run} · view of stage "
              f"{escape(view.stage_id)} · {len(reactions)} reaction(s) · energies in kcal/mol</p>")
-    body = [intro]
+    body = [intro, *_budget_note(view)]
     if summary:
         body.append(_table(_SUMMARY_HEADER, summary, {2, 3, 5, 6, 7, 9, 10}))
     if capture:

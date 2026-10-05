@@ -1,4 +1,4 @@
-"""reporting.validation on the golden manifest excerpts of VAL9/R2 and W3 runs (tests/golden
+"""reporting.validation on the golden manifest excerpts of VAL9/R2, W3 and W4 runs (tests/golden
 G36-G39) and the integrity of validation/: the cases, their inputs and the BH76 references."""
 
 import gzip
@@ -62,9 +62,9 @@ def test_the_signature_value_and_outcome_each_decide():
     wrong = compare(_with("s6_oh_ch4", 0, equation="CH4 + HO -> CH4O + H"), view, load)
     assert f"{abstraction}: 1 reaction(s), expected 0" in wrong
     assert compare(_with("s6_oh_ch4", 0, dG_eff=(5.0, 5.5)), view, load) == [
-        f"{abstraction}: dG_eff 10.39281604833377, expected (5.0, 5.5)"]
+        f"{abstraction}: dG_eff 10.397049320366932, expected (5.0, 5.5)"]
     assert compare(_with("s6_oh_ch4", 0, outcome="degenerate_rearrangement"), view, load)
-    assert compare(_with("s6_oh_ch4", 1, dG_eff=0.0), view, load)  # the parent has no value
+    assert compare(_with("s6_oh_ch4", 3, dG_eff=0.0), view, load)  # barrierless: no value
 
 
 def test_two_steps_with_one_equation_pair_by_value():

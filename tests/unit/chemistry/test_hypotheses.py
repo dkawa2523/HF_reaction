@@ -60,18 +60,18 @@ def methanol(turn_deg: float = 0.0) -> np.ndarray:
 
 
 def product(did: str, source: str, sid: str, ts: Geometry | None = None) -> r.DiscoveryRecord:
-    """An NT2 discovery from the representative of the source minimum (as explore records it)."""
-    return r.DiscoveryRecord(discovery_id=did, source_minimum=source, mechanism="nt2",
-                             outcome="product", source_species=REPRESENTATIVE[source],
-                             product_species=sid, ts=ts)
+    """An NT2 edge from the representative of the source minimum (as explore records it)."""
+    return r.DiscoveryRecord(discovery_id=did, mechanism="nt2", outcome="product",
+                             source_species=REPRESENTATIVE[source], product_species=sid, ts=ts,
+                             generation=1)
 
 
 def saddle(did: str, source: str, sid: str, ts_calc: str | None = "calc_saddle",
            side: str | None = None) -> r.DiscoveryRecord:
     """A mode-follow discovery from side 1 (default: the source minimum's representative) to
     side 2: ts_calc is its verified saddle at the DFT tier, None at screen."""
-    return r.DiscoveryRecord(discovery_id=did, source_minimum=source, mechanism="mode_follow",
-                             outcome="product", source_species=side or REPRESENTATIVE[source],
+    return r.DiscoveryRecord(discovery_id=did, mechanism="mode_follow", outcome="product",
+                             source_species=side or REPRESENTATIVE[source],
                              product_species=sid, ts=GEOMETRY[sid], ts_calc=ts_calc)
 
 
@@ -85,8 +85,8 @@ def test_declared_reaction_comes_first_and_borrows_the_discovery_ts():
     hcn = species("hcn", "HCN", [[0.0, 0, 0], [1.06, 0, 0], [2.22, 0, 0]])
     hnc = species("hnc", "HCN", [[3.22, 0, 0], [1.06, 0, 0], [2.22, 0, 0]])
     minima = [minimum("m_hcn", "hcn"), minimum("m_hnc", "hnc", -0.98)]
-    negative = r.DiscoveryRecord(discovery_id="d2", source_minimum="m_hcn", mechanism="nt2",
-                                 outcome="negative", reason="no_nt2_maximum")
+    negative = r.DiscoveryRecord(discovery_id="d2", mechanism="nt2", outcome="negative",
+                                 reason="no_nt2_maximum", source_species="hcn")
     found = [product("d1", "m_hcn", "hnc", ts=hnc.geometry), negative]
     term = r.CoordinateTerm(kind="distance", atoms=(0, 2))
     iso = ReactionInput(id="iso", reactant="hcn", product="hnc", coordinate=[term])
@@ -102,6 +102,8 @@ def test_declared_reaction_comes_first_and_borrows_the_discovery_ts():
     assert auto.source == "discovery" and auto.reaction_id.startswith("rxn_discovery_")
     assert auto.low_level_ts == (hnc.geometry,)
     assert select(basins(*minima), [hcn, hnc], found, [], load, window_kcal=10.0) == []
+    unconnected = found[0].model_copy(update={"outcome": "unconnected", "generation": None})
+    assert select(basins(*minima), [hcn, hnc], [unconnected], [], load) == []
 
 
 def test_ammonia_inversion_is_a_degenerate_reaction_in_one_basin():
@@ -293,28 +295,28 @@ def test_one_hypothesis_per_state_pair_holds_every_distinct_ts_of_it():
                                                               ("back", (ts[0], ts[1]))]
 
 
-def test_a_relaxation_seed_kept_at_dft_runs_to_its_collapse_basin():
-    """R6 (S6): the seed (H at F) collapsed at screen into H at N and represents that basin. Its
-    own DFT job (seed_species_id) kept the seed state: one hypothesis, seed -> collapse, with no
-    TS. When DFT collapsed it too, it joined the collapse basin: no hypothesis."""
+def test_an_edge_without_a_ts_runs_while_its_source_keeps_its_state_at_dft():
+    """R6 (S6): the seed (H at F) collapsed at screen into H at N and represents that basin. The
+    edge runs from the unrelaxed seed as a species of its own, whose DFT job kept the seed state,
+    to the collapse basin: one hypothesis, with no TS. When DFT collapsed it too, it joined the
+    collapse basin: no hypothesis."""
     seed = species("seed", "FHN", [[0.0, 0, 0], [0.93, 0, 0], [2.83, 0, 0]]).model_copy(
         update={"state_label": "FH+N"})
-    own = seed.model_copy(update={"species_id": "spc_relax_seed"})
+    own = seed.model_copy(update={"species_id": "spc_relax_seed_0"})
     collapsed = species("collapsed", "FHN", [[0.0, 0, 0], [1.40, 0, 0], [2.28, 0, 0]]).geometry
     lost = minimum("s_lost", "seed").model_copy(update={"tier": "screen", "state_label": "HN+F"})
     basin = minimum("d_lost", "seed", -1.01).model_copy(update={"state_label": "HN+F"})
-    kept = minimum("d_seed", "spc_relax_seed").model_copy(update={"state_label": "FH+N"})
-    relax = r.DiscoveryRecord(discovery_id="relax_seed", source_minimum="s_lost",
-                              mechanism="relaxation", outcome="product",
-                              source_species="spc_relax_seed", product_species="seed")
+    kept = minimum("d_seed", "spc_relax_seed_0").model_copy(update={"state_label": "FH+N"})
+    relax = r.DiscoveryRecord(discovery_id="relax_seed", mechanism="relaxation",
+                              outcome="product", source_species="spc_relax_seed_0",
+                              product_species="seed", generation=1)
     minima = [(lost, collapsed), (basin, collapsed), (kept, seed.geometry)]
 
     [rec] = select(minima, [seed, own], [relax], [], load)
     assert (rec.source, rec.minima, rec.endpoints) == ("discovery", ("d_seed", "d_lost"),
-                                                       ("spc_relax_seed", "seed"))
+                                                       ("spc_relax_seed_0", "seed"))
     assert not rec.torsional and (rec.low_level_ts, rec.ts_calc) == ((), None)
-    assert select(minima, [seed, own], [relax], [], load, max_per_composition=0) == []
-    joined = basin.model_copy(update={"members": ("seed", "spc_relax_seed")})
+    joined = basin.model_copy(update={"members": ("seed", "spc_relax_seed_0")})
     assert select([(lost, collapsed), (joined, collapsed)], [seed, own], [relax], [], load) == []
 
 

@@ -195,12 +195,12 @@ nitromethane:
 s7_nh3_icl:
   chain: [{pipeline: discover, system: nh3_icl, args: [--to, explore]}]
   minima: [ClI + H3N]
-  products: 0
+  products: 26  # W4: edges over generations (R2: 0 from 2 trials; docs/validation.md §11.4)
 
 s8_so2_nme3:
   chain: [{pipeline: discover, system: so2_nme3, args: [--to, explore]}]
   minima: [C3H9N + O2S]
-  products: 0
+  products: 1027  # W4: edges over generations, budget-limited (R2: 0 from 19 trials; §11.4)
 
 s5_undeclared:
   chain:
@@ -267,9 +267,9 @@ s6_oh_ch4:
     # W3: zero at the separated OH + CH4 (10.39 at a C1 TS, 9.98 at Cs; complex zero 5.53/5.95)
     - {equation: CH4 + HO -> CH3 + H2O, outcome: elementary_step, dG_eff: [9.95, 10.45],
        bh76: oh_ch4.forward}
-    - {equation: CH3 + H2O -> CH4O + H, outcome: multi_step, dG_eff: null}
-    # split1 repeats the abstraction backwards (same_as) from the lowest CH3···H2O conformer: W3's
-    # declared CH3 + H2O composition sampled one 0.60 kcal/mol below VAL9's (21.60 C1, 21.19 Cs)
-    - {equation: CH3 + H2O -> CH4 + HO, outcome: elementary_step, dG_eff: [21.15, 21.65],
-       bh76: oh_ch4.reverse}
-    - {equation: CH4 + HO -> CH4O + H, outcome: elementary_step, dG_eff: 44.83}  # split2
+    # W4 (docs/validation.md §11.4): the low-level edges reach the DFT entry one by one, so the
+    # CH3OH + H channel is its own step from CH3 + H2O (VAL9's CH4 + HO -> CH4O + H parent and
+    # its two children are gone; the abstraction's reverse is the same case key)
+    - {equation: CH3 + H2O -> CH4O + H, outcome: elementary_step, dG_eff: 54.62}
+    - {equation: CH4O + H -> CH3O + H2, outcome: elementary_step, dG_eff: 13.1}
+    - {equation: CH2 + H + H2O -> CH4O + H, outcome: barrierless_at_resolution, dG_eff: null}

@@ -68,13 +68,13 @@ class DiscoveryResult(BaseModel):
     kind: Literal["discovery_result"] = "discovery_result"
     outcome: Literal["product", "negative"]
     reason: str | None
-    product: Geometry | None
+    # product: the TS's two IRC-end minima, the one with the source's bonds first; without a
+    # TS, the start and the minimum it relaxed into
+    ends: tuple[Geometry, Geometry] | None
     ts: Geometry | None
-    ts_imag_cm1: float | None
-    dE_act_kcal: float | None  # TS - source; kept for a negative that has a TS
-    dE_rxn_kcal: float | None
-    irc_connected_to_source: bool
-    electronic_temperature_K: float
+    dE_act_kcal: float | None  # TS - ends[0] (a negative with a TS: TS - the relaxed start)
+    dE_rxn_kcal: float | None  # ends[1] - ends[0]
+    irc_connected_to_source: bool  # ends[0] has the source's bonds
 
 
 @runtime_checkable

@@ -1,19 +1,18 @@
 """One ReaDuct NT2 attempt, run by ``hfauto.execution.worker`` in the attempt directory.
 
 SCINE is imported only inside ``_Scine``. The decisions (imaginary-mode count on projected
-frequencies, match with the source, choice of the IRC end, result assembly) are pure helpers.
+frequencies, the order of the IRC ends, result assembly) are pure helpers.
 
-Flow (design §6.3): the source is relaxed first (reference energy and structure; linear
-sources arrive bent). NT2 → Bofill TS optimization with
+Flow (design §6.3): the start is relaxed first (reference energy and structure; linear starts
+arrive bent); a start that relaxed into other bonds is an edge without a TS, from the start to
+that minimum. NT2 → Bofill TS optimization with
 ``automatic_mode_selection = sorted(associations ∪ dissociations)`` → projected frequencies
-(exactly one ν < −cutoff) → IRC → both ends optimized to minima → one end must be the source,
-the other is the product. Bond sets are compared atom by atom in the source's atom order, so a
-relabelled image of the source (a degenerate rearrangement such as a double H exchange) is a
-product and a conformer or stereoisomer is not; the product keeps the source's atom order, also
-from an end that is the source relabelled (``irc_product``). The IRC and minimum optimizations
-take up to 500 iterations. An SCC failure reruns the attempt once at the retry electronic
-temperature; the energies of the source, TS and product are then recomputed at the base
-temperature.
+(exactly one ν < −cutoff) → IRC → both ends optimized to minima. The two ends are an edge unless
+they have the same bonds (topology.same_bonding, atom by atom: a relabelled image of the source,
+a degenerate rearrangement's product, is another structure); the end with the source's bonds
+comes first, and the caller identifies both as states. The IRC and minimum optimizations take up
+to 500 iterations. An SCC failure reruns the attempt once at the retry electronic temperature;
+the energies are then recomputed at the base temperature.
 """
 
 from __future__ import annotations
@@ -27,14 +26,15 @@ from typing import Any
 
 import numpy as np
 
-from hfauto.chemistry import identity
 from hfauto.chemistry.modes import amplitude, displace
-from hfauto.chemistry.topology import bonds, state_label
+from hfauto.chemistry.topology import same_bonding
 from hfauto.chemistry.vibrations import projected_frequencies
 from hfauto.chemistry.xyz import XYZ, write_xyz
 from hfauto.core.constants import BOHR_TO_ANGSTROM, HARTREE_TO_KCAL_MOL
 
-PRODUCT_FILE, TS_FILE = "product.xyz", "ts.xyz"
+TS_FILE, END_FILES = "ts.xyz", ("end0.xyz", "end1.xyz")
+# the distributions whose versions are the engine's pin (EngineSite.version), in this order
+DISTRIBUTIONS = ("scine-readuct", "scine-utilities", "scine-xtb-wrapper")
 # scine-xtb-wrapper 3.0.2 accepts only "any" and "restricted_open_shell"; the latter is xTB's
 # own treatment (unpaired electrons from the multiplicity), so it is set explicitly.
 SPIN_MODE = "restricted_open_shell"
@@ -53,61 +53,48 @@ def imaginary_count(freqs_cm1: Sequence[float] | np.ndarray, cutoff_cm1: float) 
     return int(np.count_nonzero(np.asarray(freqs_cm1) < -cutoff_cm1))
 
 
-def matches_source(symbols: Sequence[str], source: np.ndarray, end: np.ndarray) -> bool:
-    """Same atom-indexed bond set: conformers and stereoisomers of the source match, a
-    relabelled image of it (degenerate rearrangement) does not."""
-    return bonds(symbols, end) == bonds(symbols, source)
-
-
-def irc_product(symbols: Sequence[str], source: np.ndarray, ends: Sequence[np.ndarray],
-                ts: np.ndarray) -> tuple[int, np.ndarray, np.ndarray] | str:
-    """(index of the product end, product, TS) in the source's atom order, or the negative
-    reason. The source is the end with its bonds; when no end has them, the first end of its
-    state label within one basin (identity.carry, 0.05 Å, never widened) is the source
-    relabelled, and the ends and the TS are carried into the source's atom order and frame."""
-    if not any(matches_source(symbols, source, end) for end in ends):
-        label = state_label(symbols, source)
-        image = next((end for end in ends if state_label(symbols, end) == label
-                      and identity.carry(symbols, source, end, end)[0] <= identity.BASIN_A), None)
-        if image is not None:
-            ends = [identity.carry(symbols, source, image, x)[1] for x in ends]
-            ts = identity.carry(symbols, source, image, ts)[1]
-    hits = [matches_source(symbols, source, end) for end in ends]
-    if not any(hits):
-        return "irc_not_connected_to_source"
-    if all(hits):
-        return "same_as_source"
-    index = hits.index(False)
-    return index, ends[index], ts
+def irc_ends(symbols: Sequence[str], source: np.ndarray, ends: Sequence[np.ndarray]
+             ) -> tuple[tuple[int, int], bool] | None:
+    """(the order of the two ends, the one with the source's bonds first; whether one has
+    them), or None when the ends have the same bonds (no edge: a conformer change)."""
+    a, b = ends
+    if same_bonding(symbols, a, b):
+        return None
+    if same_bonding(symbols, source, b):
+        return (1, 0), True
+    return (0, 1), same_bonding(symbols, source, a)
 
 
 @dataclass(frozen=True)
 class Found:
     outcome: str  # "product" | "negative"
     reason: str | None = None
-    structures: dict[str, np.ndarray] = field(default_factory=dict)  # source / ts / product, Å
+    structures: dict[str, np.ndarray] = field(default_factory=dict)  # source/ts/end0/end1, Å
     energies: dict[str, float] = field(default_factory=dict)  # same keys, Eh
-    ts_imag_cm1: float | None = None
-    irc_connected: bool = False
+    irc_connected: bool = False  # end0 has the source's bonds
 
 
-def result_dict(found: Found, energies: Mapping[str, float], *, temperature_K: float,
-                version: str) -> dict[str, Any]:
-    """result.json of the attempt; barrier and reaction energy come from ``energies`` (a
-    negative with a TS keeps its barrier)."""
+def version() -> str:
+    """The engine's version pin as installed: each of DISTRIBUTIONS as ``name==version``."""
+    return ",".join(f"{d}=={importlib.metadata.version(d)}" for d in DISTRIBUTIONS)
+
+
+def result_dict(found: Found, energies: Mapping[str, float], *, version: str) -> dict[str, Any]:
+    """result.json of the attempt: energies (kcal/mol) from the first end, or without ends
+    from the relaxed start (a negative with a TS keeps its barrier)."""
+    zero = energies.get("end0", energies.get("source"))
 
     def relative(name: str) -> float | None:
-        if name not in energies or "source" not in energies:
-            return None
-        return (energies[name] - energies["source"]) * HARTREE_TO_KCAL_MOL
+        known = name in energies and zero is not None
+        return (energies[name] - zero) * HARTREE_TO_KCAL_MOL if known else None
 
+    has_ends = found.outcome == "product"
     return {
         "version": version, "outcome": found.outcome, "reason": found.reason,
-        "product": PRODUCT_FILE if found.outcome == "product" else None,
+        "ends": list(END_FILES) if has_ends else None,
         "ts": TS_FILE if "ts" in found.structures else None,
-        "ts_imag_cm1": found.ts_imag_cm1, "dE_act_kcal": relative("ts"),
-        "dE_rxn_kcal": relative("product"), "irc_connected_to_source": found.irc_connected,
-        "electronic_temperature_K": temperature_K,
+        "dE_act_kcal": relative("ts"), "dE_rxn_kcal": relative("end1"),
+        "irc_connected_to_source": found.irc_connected,
     }
 
 
@@ -203,30 +190,32 @@ def _nt2(run: _Scine, source: np.ndarray, trial: Mapping[str, Any]) -> Found:
     if not run.task("run_tsopt_task", "guess", ["ts"], optimizer="bofill",
                     automatic_mode_selection=atoms):
         return Found("negative", "ts_not_converged")
-    n_imag, imag, _ = run.imaginary("ts")
+    n_imag = run.imaginary("ts")[0]
     if n_imag != 1:
         return Found("negative", f"ts_imaginary_modes:{n_imag}")
     ts, energy = {"ts": run.coords("ts")}, {"ts": run.energy("ts")}
     irc = run.task("run_irc_task", "ts", ["irc_f", "irc_b"], strict=False, **MAX_ITERATIONS)
     if not irc or not all(run.minimum(end, f"{end}_opt") for end in ("irc_f", "irc_b")):
-        return Found("negative", "irc_end_not_minimum", ts, energy, ts_imag_cm1=imag)
-    ends = [run.coords("irc_f_opt"), run.coords("irc_b_opt")]
-    found = irc_product(run.symbols, source, ends, ts["ts"])
-    if isinstance(found, str):
-        return Found("negative", found, ts, energy, ts_imag_cm1=imag,
-                     irc_connected=found == "same_as_source")
-    index, product, carried = found
-    return Found("product", None, {"ts": carried, "product": product},
-                 {**energy, "product": run.energy(("irc_f_opt", "irc_b_opt")[index])},
-                 ts_imag_cm1=imag, irc_connected=True)
+        return Found("negative", "irc_end_not_minimum", ts, energy)
+    names = ("irc_f_opt", "irc_b_opt")
+    order = irc_ends(run.symbols, source, [run.coords(name) for name in names])
+    if order is None:
+        return Found("negative", "no_bond_change", ts, energy)
+    (i, j), connected = order
+    ends = {"end0": names[i], "end1": names[j]}
+    return Found("product", None, ts | {k: run.coords(n) for k, n in ends.items()},
+                 energy | {k: run.energy(n) for k, n in ends.items()}, irc_connected=connected)
 
 
 def _explore(job: Mapping[str, Any], workdir: Path, temperature_K: float) -> Found:
     run = _Scine(job, workdir, temperature_K)
-    run.load("start", np.asarray(job["coords"], dtype=float))
+    start = np.asarray(job["coords"], dtype=float)
+    run.load("start", start)
     if not run.task("run_opt_task", "start", ["source"]):
         return Found("negative", "source_not_converged")
     source = run.coords("source")
+    if not same_bonding(run.symbols, start, source):  # no basin of the start's bonds there
+        return Found("product", None, {"end0": start, "end1": source})
     found = _nt2(run, source, job["trial"])
     return replace(found, structures={"source": source, **found.structures},
                    energies={"source": run.energy("source"), **found.energies})
@@ -246,28 +235,26 @@ def _single_points(job: Mapping[str, Any], workdir: Path, found: Found,
 
 def _attempt(job: Mapping[str, Any], workdir: Path, temperature_K: float,
              version: str) -> dict[str, Any]:
-    found = _explore(job, workdir, temperature_K)
-    base_K = job["settings"]["electronic_temperature_K"]
+    found, base_K = _explore(job, workdir, temperature_K), job["settings"]["electronic_temperature_K"]
     energies = found.energies
-    if temperature_K != base_K and len(energies) > 1:  # a TS or a product besides the source
+    if temperature_K != base_K and len(energies) > 1:  # a TS or ends besides the source
         energies = _single_points(job, workdir, found, base_K)
-    for name, file in (("ts", TS_FILE), ("product", PRODUCT_FILE)):
+    for name, file in (("ts", TS_FILE), *zip(("end0", "end1"), END_FILES, strict=True)):
         if name in found.structures:
             write_xyz(XYZ(list(job["symbols"]), found.structures[name]), workdir / file)
-    return result_dict(found, energies, temperature_K=temperature_K, version=version)
+    return result_dict(found, energies, version=version)
 
 
 def run_attempt(job: dict[str, Any], workdir: Path) -> dict[str, Any]:
     """Worker entry: the attempt at the base temperature, once more at the retry one on SCC
     failure; an SCC failure there too is a ``scf_not_converged`` failure."""
-    version = importlib.metadata.version("scine-readuct")
-    settings = job["settings"]
+    pin, settings = version(), job["settings"]
     try:
-        return _attempt(job, workdir, settings["electronic_temperature_K"], version)
+        return _attempt(job, workdir, settings["electronic_temperature_K"], pin)
     except SccFailure:
         pass
     try:
-        return _attempt(job, workdir, settings["scc_retry_temperature_K"], version)
+        return _attempt(job, workdir, settings["scc_retry_temperature_K"], pin)
     except SccFailure as exc:
-        return {"version": version,
-                "failure": {"kind": "scf_not_converged", "reason": str(exc)[-300:]}}
+        failure = {"kind": "scf_not_converged", "reason": str(exc)[-300:]}
+        return {"version": pin, "failure": failure}

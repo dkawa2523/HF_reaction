@@ -9,7 +9,7 @@ from NIST AME2016, covalent radii from Cordero et al., Dalton Trans. 2008, van d
 from Bondi, J. Phys. Chem. 1964 (Be, B, Al, Ca, Ge from Mantina et al., J. Phys. Chem. A 2009).
 The other rows were generated once from the RDKit PeriodicTable (masses; its covalent radii are
 Cordero 2008), with van der Waals radii from Alvarez, Dalton Trans. 2013 (also Sc–Co; Po, At and
-Rn, which Alvarez does not cover, from Mantina 2009). RDKit is not needed at run time.
+Rn, which Alvarez does not cover, from Mantina 2009).
 
 The maximum coordination is the number of bonded neighbours a reaction trial may leave on an
 atom: H 1, B/C/N 4, O 3, halogens 1, the other p-block elements of period ≥ 3 6, metals 9,

@@ -2,8 +2,9 @@
 
 Each ``explore`` call is one JobStore job: an attempt runs ``worker.run_attempt`` in a worker
 subprocess whose cwd is the attempt directory, with the timeout of
-``DiscoverySettings.timeout_s``. The worker reports the observed scine-readuct version, which
-must equal the site pin. There is no continuation: a failed attempt is final.
+``DiscoverySettings.timeout_s``. The worker reports the installed versions of scine-readuct,
+scine-utilities and scine-xtb-wrapper (``worker.version``), which must equal the site pin. There
+is no continuation: a failed attempt is final.
 """
 
 from __future__ import annotations
@@ -88,22 +89,21 @@ class _Adapter:
         data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
         if data["version"] != task.version_pin:
             return Failure(kind=FailureKind.METHOD_MISMATCH,
-                           reason=f"scine-readuct {data['version']} != pin {task.version_pin}")
+                           reason=f"{data['version']} != pin {task.version_pin}")
         if "failure" in data:
             return Failure(kind=FailureKind(data["failure"]["kind"]),
                            reason=data["failure"]["reason"])
+        ends = data["ends"]
         return DiscoveryResult(
             outcome=data["outcome"], reason=data["reason"],
-            product=self._geometry(workdir, data["product"]),
-            ts=self._geometry(workdir, data["ts"]),
-            ts_imag_cm1=data["ts_imag_cm1"], dE_act_kcal=data["dE_act_kcal"],
-            dE_rxn_kcal=data["dE_rxn_kcal"],
-            irc_connected_to_source=data["irc_connected_to_source"],
-            electronic_temperature_K=data["electronic_temperature_K"])
+            ends=None if ends is None else (self._geometry(workdir, ends[0]),
+                                            self._geometry(workdir, ends[1])),
+            ts=None if data["ts"] is None else self._geometry(workdir, data["ts"]),
+            dE_act_kcal=data["dE_act_kcal"], dE_rxn_kcal=data["dE_rxn_kcal"],
+            irc_connected_to_source=data["irc_connected_to_source"])
 
-    def _geometry(self, workdir: Path, name: str | None) -> Geometry | None:
-        return None if name is None else written_geometry(workdir / name,
-                                                          self.jobs.store.file_ref)
+    def _geometry(self, workdir: Path, name: str) -> Geometry:
+        return written_geometry(workdir / name, self.jobs.store.file_ref)
 
     def continuation(self, task: Task, workdir: Path, failure: Failure) -> Task | None:
         return None

@@ -40,7 +40,7 @@ def test_report_stage_writes_tables_from_a_fake_view(fake_runtime, tmp_run):
                                 dG_act_kcal=5.0, dG_rxn_kcal=2.0, band_kcal=(4.5, 5.5),
                                 dG_eff_kcal=5.0, energy_level="wb97x/def2-tzvpd")
     hot = thermo.model_copy(update={"T_K": 400.0, "dG_eff_kcal": 7.0})  # a second temperature
-    found = rec.DiscoveryRecord(discovery_id="d1", source_minimum="reactant", mechanism="nt2",
+    found = rec.DiscoveryRecord(discovery_id="d1", source_species="reactant", mechanism="nt2",
                                 outcome="product")
     failure = Failure(kind=FailureKind.SCF_NOT_CONVERGED, reason="scf")
     arts += [Artifact(artifact_id="r1", type=T.REACTION, payload=reaction),

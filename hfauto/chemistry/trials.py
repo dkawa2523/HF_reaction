@@ -1,192 +1,249 @@
-"""Reaction trials for single-ended discovery (§8.2 explore).
+"""Reaction trials for single-ended discovery (§8.2 explore): one bond-graph edit enumerator.
 
-A trial is a product-free drive (bonds to form and to break); the discovery engine finds the
-product. One element-independent enumerator uses formation candidates (a, b): not bonded,
-r_ab ≤ Σr_vdW, at least three bonds apart (inside or across fragments).
+A reaction is a local edit of the bond graph G (ZStruct, YARP): 1–2 bonds formed, 0–2 broken.
+Mechanism types (1,2-elimination, [3,3], [4+2], 1,n-shifts, SN2, abstraction, adducts) are
+results of the enumeration, never inputs.
 
-- ``transfer`` (T1): form a–b, break b–c (c ≠ a): H transfer, 1,2- / 1,3-shift, SN2, H
-  abstraction, ligand exchange. a–b may be two bonds apart only when c bridges them (1,2-shift).
-- ``relay`` (T2): two chained H transfers, the second H moving into the atom the first one left
-  (an exchange, the second H leaving the first acceptor, needs no contact of its own).
-- ``formation`` (T3): form a–b only (addition, association, ring closure).
-- ``dissociation`` (T4): break one bond; only for open-shell or charged sources (a closed-shell
-  neutral homolysis is not a restricted Kohn–Sham reaction).
+- A formed pair is any pair at graph distance ≥ 2, inside or across fragments.
+- Locality: the edited bonds form one simple path (chain), or every changed atom lies on one
+  simple cycle of ≤ 6 atoms of G + formed (ring).
+- Fit: an atom that gains bonds ends with at most ``elements.max_coordination`` neighbours.
+- The product graph has a Lewis structure (the source graph is not tested, so TMA·(HF)2 with an
+  H bonded to N and F is still enumerated): bond orders 1–3, formal charges in {−1, 0, +1},
+  unpaired electrons = multiplicity − 1, and every atom's bond orders plus radicals in its
+  valence set: min(ve', s − ve') of its ve' = ve − charge valence electrons (s = 2 for H and He,
+  else 8); groups 15–16 from period 3 on also take ve' − 2k up to 6 (P {3, 5}, S {2, 4, 6}).
+  d-block atoms have no such valence, so a source with a bonded one gives no class (out of
+  scope).
+  Charge separation is not limited: probe P0f's limit (ions, ion pairs and 1,2-dipoles only)
+  lost a product state that P0c found (the ethyl formate 1,5-H shift, a 1,5-zwitterion).
 
-An atom that gains bonds may not end above ``elements.max_coordination`` bonded neighbours.
-Drives with the same WL atom classes of their formed and broken bonds and the same formed-pair
-distances (0.1 Å) are one class, one trial. A drive's value is r_ab/Σr_cov: a transfer's then
-its a–b–c angle (closest to linear first), a relay's its farther contact then its nearer one, a
-dissociation's the most stretched bond first. 1,2-shifts come after the through-space contacts:
-their r_ab is set by the bond angle, not by how the source is arranged. A class's trial is its
-drive of least value, then of least canonical rank (each atom's WL class and its sorted
-distances to the atoms of every class). The classes of a template go by their trial's value,
-then their description; the templates take turns T1 → T2 → T3 → T4 up to the cap, and classes
-of one template and value that the cap would split are all left out. A trial's id is its class
-description and its source. So the trials depend on the structure, not on the atom numbering.
-Linear molecules are bent by 10° and displaced by 0.05 Å per atom (seeded), so that NT2 does
-not start on a symmetry line. A torsion is studied only when declared (``hypotheses``).
+A class is an orbit of edits under the automorphisms of the element-labelled source graph: the
+canonical SMILES of G with kept, formed and broken bonds as three bond types. So classes do not
+depend on atom numbering or geometry; paths that only geometry tells apart (syn/anti,
+diastereotopic H, E/Z) are one class (out of scope until a stereo layer exists).
+
+A class runs once per state, realised on the conformer and member edit of least drive value
+Σ r/Σr_cov over its formed pairs. When no intermolecular formed pair is in contact (r ≤ Σr_vdW)
+there, the closest one is placed rigidly at PLACE_RATIO·Σr_cov: the smaller fragment turns
+about its atom to face the partner along the partner's outward direction (from its fragment's
+centroid) and moves there. A linear start is bent by 10° so that NT2 does not start on a
+symmetry line. Trials come in budget order: fewest bond changes, then the drive value in the
+conformer, then the class. The budget is the caller's.
 """
 
 from __future__ import annotations
 
 import itertools
 from collections import Counter, defaultdict
-from collections.abc import Sequence
-from typing import Literal
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 
 import numpy as np
-from scipy.sparse.csgraph import shortest_path
+from scipy.optimize import Bounds, LinearConstraint, milp
+from scipy.spatial.transform import Rotation
 
 from hfauto.chemistry import topology
 from hfauto.chemistry.elements import covalent_radius, max_coordination, vdw_radius
-from hfauto.chemistry.geometry import rotation_about
+from hfauto.chemistry.geometry import neighbours
 from hfauto.chemistry.vibrations import external_basis
-from hfauto.core.hashing import sha256_text
-from hfauto.core.records import ReactionTrial
 
 Pair = tuple[int, int]
-Kind = Literal["transfer", "relay", "formation", "dissociation"]
-Value = tuple[float, ...]  # the order within a template
-Drive = tuple[Value, tuple[Pair, ...], tuple[Pair, ...]]  # value, form, break
-Key = tuple[tuple[Pair, ...], tuple[Pair, ...], tuple[float, ...]]  # the class description
-Print = tuple[int, tuple[tuple[float, ...], ...]]  # WL class, sorted distances per class
+Edit = tuple[frozenset[Pair], frozenset[Pair]]  # (formed, broken)
 
+MAX_RING = 6
+PLACE_RATIO = 1.5  # r/Σr_cov of a placed pair: the lower end of review U4-P2's 1.5–2, not tuned
 LINEAR_BEND_DEG = 10.0
-PERTURB_A = 0.05
-RNG_SEED = 20260925
+_EXPANDED = frozenset({"P", "As", "Sb", "Bi", "S", "Se", "Te", "Po"})  # groups 15–16, period ≥ 3
+
+
+@dataclass(frozen=True, eq=False)
+class Trial:
+    """One edit class of a state, realised on one of its conformers."""
+
+    key: str  # the class
+    formed: tuple[Pair, ...]
+    broken: tuple[Pair, ...]
+    conformer: int  # index into the conformers given to ``trials``
+    drive: float  # Σ r/Σr_cov of the formed pairs in that conformer
+    start: np.ndarray  # NT2 start structure
+
+    @property
+    def order(self) -> tuple[int, float, str]:
+        return len(self.formed) + len(self.broken), self.drive, self.key
 
 
 def _pair(i: int, j: int) -> Pair:
-    return (min(i, j), max(i, j))
+    return (i, j) if i < j else (j, i)
 
 
-class _Source:
-    """Bond graph, contacts and free valences of one source structure."""
+def _subsets(items: Sequence[Pair], sizes: Sequence[int]) -> Iterator[frozenset[Pair]]:
+    return (frozenset(c) for k in sizes for c in itertools.combinations(items, k))
 
-    def __init__(self, symbols: Sequence[str], x: np.ndarray) -> None:
-        self.symbols, self.x = symbols, x
-        self.bonded = topology.bonds(symbols, x)
-        adjacency = np.zeros((len(symbols), len(symbols)), dtype=bool)
-        for i, j in self.bonded:
-            adjacency[i, j] = adjacency[j, i] = True
-        self.nbr = [set(np.flatnonzero(row).tolist()) for row in adjacency]
-        self.hops = shortest_path(adjacency, unweighted=True)  # inf across fragments
-        self.r = np.linalg.norm(x[:, None] - x[None], axis=-1)
-        cov, vdw = (np.array([f(s) for s in symbols]) for f in (covalent_radius, vdw_radius))
-        self.ratio = self.r / (cov[:, None] + cov[None])
-        self.contact = (self.r <= vdw[:, None] + vdw[None]) & (self.hops >= 2)
-        self.room = [max_coordination(s) - len(self.nbr[i]) for i, s in enumerate(symbols)]
-        self.classes = topology.wl_classes(symbols, self.bonded)
-        members = [np.equal(self.classes, c) for c in sorted(set(self.classes))]
-        self.prints: list[Print] = [
-            (c, tuple(tuple(np.sort(self.r[i, m]).tolist()) for m in members))
-            for i, c in enumerate(self.classes)]
 
-    def fits(self, formed: Sequence[Pair], broken: Sequence[Pair]) -> bool:
-        """No atom that gains bonds ends above its maximum coordination."""
+def _chains(nbr: Sequence[set[int]]) -> set[Edit]:
+    """Edits whose edited bonds form one simple path."""
+    out: set[Edit] = set()
+
+    def grow(path: list[int], formed: tuple[Pair, ...], broken: tuple[Pair, ...]) -> None:
+        if formed:
+            out.add((frozenset(formed), frozenset(broken)))
+        for w in set(range(len(nbr))).difference(path):
+            step = (_pair(path[-1], w),)
+            if w in nbr[path[-1]] and len(broken) < 2:
+                grow([*path, w], formed, broken + step)
+            elif w not in nbr[path[-1]] and len(formed) < 2:
+                grow([*path, w], formed + step, broken)
+
+    for v in range(len(nbr)):
+        grow([v], (), ())
+    return out
+
+
+def _rings(nbr: Sequence[set[int]], bonds: frozenset[Pair]) -> set[Edit]:
+    """Edits whose changed atoms lie on one simple cycle of ≤ MAX_RING atoms of G + formed."""
+    cycles: defaultdict[frozenset[int], set[frozenset[Pair]]] = defaultdict(set)
+
+    def walk(path: list[int], new: frozenset[Pair]) -> None:  # new: the formed edges it uses
+        for w in (range(len(nbr)) if len(new) < 2 else nbr[path[-1]]):
+            used = new if w in nbr[path[-1]] else new | {_pair(path[-1], w)}
+            if w == path[0] and len(path) >= 3:
+                cycles[frozenset(path)].add(used)
+            elif w not in path and len(path) < MAX_RING:
+                walk([*path, w], used)
+
+    for v in range(len(nbr)):
+        walk([v], frozenset())
+    out: set[Edit] = set()
+    for atoms, uses in cycles.items():
+        pairs = list(itertools.combinations(sorted(atoms), 2))
+        inner = [p for p in pairs if p in bonds]
+        out.update((formed, broken)
+                   for formed in _subsets([p for p in pairs if p not in bonds], (1, 2))
+                   if any(u <= formed for u in uses) for broken in _subsets(inner, (0, 1, 2)))
+    return out
+
+
+def _class(symbols: Sequence[str], bonds: frozenset[Pair], edit: Edit) -> str:
+    """Canonical SMILES with kept, formed and broken bonds as single, double and triple."""
+    from rdkit import Chem
+    formed, broken = edit
+    mol = Chem.RWMol(Chem.MolFromSmiles(".".join(f"[{s}]" for s in symbols), sanitize=False))
+    for i, j in bonds | formed:
+        mol.AddBond(i, j, Chem.BondType.DOUBLE if (i, j) in formed else
+                    Chem.BondType.TRIPLE if (i, j) in broken else Chem.BondType.SINGLE)
+    return Chem.MolToSmiles(mol, allBondsExplicit=True)
+
+
+def _valences(symbol: str, ve: int) -> range:
+    shell = 2 if symbol in ("H", "He") else 8
+    base = min(ve, shell - ve)  # negative: no valence
+    top = min(ve, 6) if symbol in _EXPANDED else base
+    return range(base, top + 1, 2) if base >= 0 else range(0)
+
+
+def lewis(symbols: Sequence[str], bonds: frozenset[Pair], charge: int, multiplicity: int) -> bool:
+    """Whether the bond graph has a Lewis structure under the module's rules: a MILP over one
+    option (charge, radicals, valence) per atom and a π order 0–2 per bond."""
+    from rdkit import Chem
+    outer, n = Chem.GetPeriodicTable().GetNOuterElecs, len(symbols)
+    edges = np.array(sorted(bonds), dtype=int).reshape(-1, 2)
+    deg = np.bincount(edges.ravel(), minlength=n)
+    opts = np.array([(i, c, r, v - r - deg[i]) for i, s in enumerate(symbols) for c in (-1, 0, 1)
+                     for v in _valences(s, outer(s) - c) for r in range(v - deg[i] + 1)],
+                    dtype=int).reshape(-1, 4)
+    if len(set(opts[:, 0])) < n:
+        return False
+    atom, c, r, spare = opts.T
+    pick = np.equal.outer(np.arange(n), atom).astype(float)
+    incidence = np.eye(n)[:, edges[:, 0]] + np.eye(n)[:, edges[:, 1]]
+    a = np.vstack([np.hstack([pick, 0 * incidence]),  # one option per atom
+                   np.hstack([-pick * spare, incidence]),  # π bonds use the option's spare valence
+                   np.r_[c, 0 * edges[:, 0]], np.r_[r, 0 * edges[:, 0]]])
+    target = np.r_[np.ones(n), np.zeros(n), charge, multiplicity - 1]
+    upper = np.r_[np.ones(len(opts)), np.full(len(edges), 2.0)]
+    return milp(np.zeros(len(upper)), integrality=np.ones(len(upper)), bounds=Bounds(0, upper),
+                constraints=LinearConstraint(a, target, target)).status == 0
+
+
+def edits(symbols: Sequence[str], coords: np.ndarray, charge: int,
+          multiplicity: int) -> dict[str, list[Edit]]:
+    """The structure's edit classes whose product has a Lewis structure: class -> its member
+    edits in this atom numbering."""
+    bonds, members = topology.bonds(symbols, coords), defaultdict(list)
+    partners = neighbours(bonds)
+    nbr = [partners.get(i, set()) for i in range(len(symbols))]
+    room = [max_coordination(s) - len(nbr[i]) for i, s in enumerate(symbols)]
+    for formed, broken in _chains(nbr) | _rings(nbr, bonds):
         net = Counter(i for pair in formed for i in pair)
         net.subtract(i for pair in broken for i in pair)
-        return all(gain <= self.room[i] for i, gain in net.items() if gain > 0)
-
-    def _cos(self, a: int, b: int, c: int) -> float:
-        u, v = self.x[a] - self.x[b], self.x[c] - self.x[b]
-        return float(u @ v / (np.linalg.norm(u) * np.linalg.norm(v)))
-
-    def steps(self) -> list[tuple[Value, float, int, int, int]]:
-        """((1,2-shift, r_ab/Σr_cov), cos a–b–c, a, b, c): form a–b and break b–c, valence not
-        checked."""
-        return [((float(self.hops[a, b] == 2), float(self.ratio[a, b])), self._cos(a, b, c),
-                 a, b, c)
-                for a, b in _pairs(self.contact) for c in self.nbr[b] - {a}
-                if self.hops[a, b] >= 3 or c in self.nbr[a]]
-
-    def relays(self, h_steps: list[tuple[Value, float, int, int, int]]) -> list[Drive]:
-        """h1 moves c -> a, then h2 moves d -> c. An exchange (d = a) needs no second contact:
-        the first transfer already holds a and c together (NH3·HF double H exchange)."""
-        chains = [(s1, a, h1, c, s2, h2, d) for s1, _, a, h1, c in h_steps
-                  for s2, _, into, h2, d in h_steps if into == c and d != a]
-        chains += [(s1, a, h1, c, (0.0, float(self.ratio[c, h2])), h2, a)
-                   for s1, _, a, h1, c in h_steps for h2 in self.nbr[a]
-                   if self.symbols[h2] == "H" and self.hops[c, h2] >= 3]
-        return [(max(s1, s2) + min(s1, s2), (_pair(a, h1), _pair(c, h2)),
-                 (_pair(h1, c), _pair(h2, d))) for s1, a, h1, c, s2, h2, d in chains]
-
-    def templates(self, open_or_charged: bool) -> dict[Kind, list[Drive]]:
-        """Each template's drives; drives that break the valence rule are left out."""
-        steps = self.steps()
-        formations = _pairs(np.triu(self.contact & (self.hops >= 3)))
-        found: dict[Kind, list[Drive]] = {
-            "transfer": [((*s, cos), (_pair(a, b),), (_pair(b, c),)) for s, cos, a, b, c in steps],
-            "relay": self.relays([step for step in steps if self.symbols[step[3]] == "H"]),
-            "formation": [((float(self.ratio[p]),), (p,), ()) for p in formations],
-            "dissociation": [((-float(self.ratio[p]),), (), (p,))
-                             for p in (self.bonded if open_or_charged else ())],
-        }
-        return {kind: [d for d in ds if self.fits(d[1], d[2])] for kind, ds in found.items()}
-
-    def key(self, drive: Drive) -> Key:
-        """WL class pairs of the formed and broken bonds and the formed-pair distances (0.1 Å)."""
-        _, formed, broken = drive
-        f, b = (tuple(sorted(_pair(self.classes[i], self.classes[j]) for i, j in bonds))
-                for bonds in (formed, broken))
-        return f, b, tuple(sorted(round(float(self.r[i, j]), 1) for i, j in formed))
-
-    def rank(self, drive: Drive) -> tuple[tuple[tuple[Print, ...], ...], ...]:
-        """Canonical rank: the formed and the broken bonds as sorted pairs of atom prints."""
-        return tuple(tuple(sorted(tuple(sorted((self.prints[i], self.prints[j])))
-                                  for i, j in bonds)) for bonds in drive[1:])
+        if all(gain <= room[i] for i, gain in net.items() if gain > 0):  # it fits
+            members[_class(symbols, bonds, (formed, broken))].append((formed, broken))
+    return {key: es for key, es in members.items()
+            if lewis(symbols, (bonds - es[0][1]) | es[0][0], charge, multiplicity)}
 
 
-def _pairs(mask: np.ndarray) -> list[Pair]:
-    return [(int(i), int(j)) for i, j in zip(*np.nonzero(mask), strict=True)]
+def trials(symbols: Sequence[str], conformers: Sequence[np.ndarray], charge: int,
+           multiplicity: int) -> list[Trial]:
+    """Every edit class of one state (its conformers in one atom order), realised on the
+    conformer and member edit of least drive, in budget order."""
+    cov = np.array([covalent_radius(s) for s in symbols])
+    xs = [np.asarray(c, dtype=float).reshape(-1, 3) for c in conformers]
+    found: dict[frozenset[Pair], dict[str, list[Edit]]] = {}
+    best: dict[str, tuple[float, int, tuple[Pair, ...], tuple[Pair, ...]]] = {}
+    for k, x in enumerate(xs):
+        bonds = topology.bonds(symbols, x)
+        if bonds not in found:
+            found[bonds] = edits(symbols, x, charge, multiplicity)
+        ratio = np.linalg.norm(x[:, None] - x[None], axis=-1) / np.add.outer(cov, cov)
+        for key, members in found[bonds].items():
+            drive, formed, broken = min((float(sum(ratio[p] for p in f)), tuple(sorted(f)),
+                                         tuple(sorted(b))) for f, b in members)
+            if key not in best or drive < best[key][0]:
+                best[key] = (drive, k, formed, broken)
+    out, starts = [], [_bend_linear(symbols, x) for x in xs]
+    for key, (drive, k, formed, broken) in best.items():
+        x = _place(symbols, xs[k], formed)
+        start = starts[k] if x is xs[k] else _bend_linear(symbols, x)
+        out.append(Trial(key, formed, broken, k, drive, start))
+    return sorted(out, key=lambda t: t.order)
 
 
-def _classes(symbols: Sequence[str], x: np.ndarray, open_or_charged: bool,
-             max_trials: int) -> list[tuple[Kind, Key, Drive]]:
-    """(kind, class description, its trial's drive) up to the cap, the templates taking turns."""
-    source = _Source(symbols, x)
-    turns: list[list[tuple[Value, Key, Kind, Drive]]] = []
-    for kind, template in source.templates(open_or_charged).items():
-        drives: defaultdict[Key, list[Drive]] = defaultdict(list)
-        for drive in template:
-            drives[source.key(drive)].append(drive)
-        best = {key: min(ds, key=lambda d: (d[0], source.rank(d))) for key, ds in drives.items()}
-        turns.append(sorted(((d[0], key, kind, d) for key, d in best.items()),
-                            key=lambda c: c[:2]))
-    order = [c for turn in itertools.zip_longest(*turns) for c in turn if c is not None]
-    cut = {(kind, value) for value, _, kind, _ in order[max_trials:]}
-    return [(kind, key, drive) for value, key, kind, drive in order[:max_trials]
-            if (kind, value) not in cut]
+def _place(symbols: Sequence[str], x: np.ndarray, formed: Sequence[Pair]) -> np.ndarray:
+    """x itself, or a copy with one fragment placed (see the module docstring)."""
+    group = {i: g for g in topology.fragments(symbols, x) for i in g}
+    cov, vdw = ({p: f(symbols[p[0]]) + f(symbols[p[1]]) for p in formed}
+                for f in (covalent_radius, vdw_radius))
+    r = {p: float(np.linalg.norm(x[p[0]] - x[p[1]])) for p in formed}
+    inter = [p for p in formed if group[p[0]] != group[p[1]]]
+    if not inter or any(r[p] <= vdw[p] for p in inter):
+        return x
+    a, b = min(inter, key=lambda p: (r[p] / cov[p], p))
+    distance = PLACE_RATIO * cov[a, b]
+    if len(group[a]) < len(group[b]):
+        a, b = b, a  # b's fragment, the smaller one, moves
+
+    def outward(i: int, default: np.ndarray) -> np.ndarray:
+        v = x[i] - x[list(group[i])].mean(axis=0)
+        return v / np.linalg.norm(v) if np.linalg.norm(v) > 0.1 else default
+
+    axis = outward(a, (x[b] - x[a]) / np.linalg.norm(x[b] - x[a]))
+    turn = Rotation.align_vectors(-axis, outward(b, -axis))[0]
+    moved, guest = x.copy(), list(group[b])
+    moved[guest] = turn.apply(x[guest] - x[b]) + x[a] + distance * axis
+    return moved
 
 
-def is_linear(symbols: Sequence[str], coords: np.ndarray) -> bool:
-    return len(symbols) >= 3 and external_basis(symbols, coords).shape[1] == 5
-
-
-def perturb_linear(coords: np.ndarray) -> np.ndarray:
-    """Bend the atoms on one side of the middle atom by 10°, then displace every atom 0.05 Å."""
-    x = np.asarray(coords, dtype=float).reshape(-1, 3)
+def _bend_linear(symbols: Sequence[str], x: np.ndarray) -> np.ndarray:
+    """A linear structure with its atoms on one side of the middle atom turned by 10° about a
+    fixed normal of the axis; any other structure unchanged."""
+    if len(symbols) < 3 or external_basis(symbols, x).shape[1] != 5:
+        return x
     axis = np.linalg.svd(x - x.mean(axis=0))[2][0]
     along = (x - x.mean(axis=0)) @ axis
     pivot = int(np.argsort(along)[len(along) // 2])
     normal = np.cross(axis, np.eye(3)[int(np.argmin(np.abs(axis)))])
-    rotation = rotation_about(normal / np.linalg.norm(normal), LINEAR_BEND_DEG)
-    bent = x.copy()
-    side = along < along[pivot]
-    bent[side] = (x[side] - x[pivot]) @ rotation.T + x[pivot]
-    step = np.random.default_rng(RNG_SEED).normal(size=x.shape)
-    return bent + PERTURB_A * step / np.linalg.norm(step, axis=1, keepdims=True)
-
-
-def generate(source_minimum: str, symbols: Sequence[str], coords: np.ndarray, *,
-             charge: int = 0, multiplicity: int = 1,
-             max_trials: int = 10) -> tuple[np.ndarray, list[ReactionTrial]]:
-    """(start coordinates, NT2 trials): a linear molecule starts bent."""
-    x = np.asarray(coords, dtype=float).reshape(-1, 3)
-    trials = [
-        ReactionTrial(trial_id="trial_" + sha256_text(f"{source_minimum}|{kind}|{key}"),
-                      source_minimum=source_minimum, kind=kind, associations=drive[1],
-                      dissociations=drive[2])
-        for kind, key, drive in _classes(symbols, x, multiplicity > 1 or charge != 0, max_trials)
-    ]
-    return (perturb_linear(x) if is_linear(symbols, x) else x), trials
+    turn = Rotation.from_rotvec(np.radians(LINEAR_BEND_DEG) * normal / np.linalg.norm(normal))
+    bent, side = x.copy(), along < along[pivot]
+    bent[side] = turn.apply(x[side] - x[pivot]) + x[pivot]
+    return bent

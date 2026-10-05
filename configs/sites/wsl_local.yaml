@@ -29,5 +29,5 @@ engines:
     executables: {crest: /home/user/.local/bin/crest}
     execution: {threads: 4}
   readuct:
-    version: "6.1.0"
+    version: "scine-readuct==6.1.0,scine-utilities==10.1.0,scine-xtb-wrapper==3.0.2"
     python: /home/user/.venvs/hfauto-prod/bin/python

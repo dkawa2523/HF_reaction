@@ -91,9 +91,8 @@ def dft_view(root, pes, points=ENDS):
         arts += [(sid, T.SPECIES, s), (calc_id(out.opt), T.CALCULATION, out.opt),
                  (calc_id(out.freq), T.CALCULATION, out.freq)]
     arts += [(m.minimum_id, T.MINIMUM, m) for m in basins.values()]
-    source = next(m.minimum_id for m in basins.values() if m.species_id == "reactant")
     artifacts = [Artifact(artifact_id=i, type=t, payload=p) for i, t, p in arts]
-    return Manifest(run_id="run", stage_id="dft", created_at="now", artifacts=artifacts), source
+    return Manifest(run_id="run", stage_id="dft", created_at="now", artifacts=artifacts)
 
 
 def run_stage(fake_runtime, root, pes, view, *, screen=True, saddle=None, qm=None,
@@ -110,7 +109,7 @@ def run_stage(fake_runtime, root, pes, view, *, screen=True, saddle=None, qm=Non
 
 
 def test_declared_reaction_becomes_a_typed_elementary_step(tmp_run, fake_runtime) -> None:
-    view, _ = dft_view(tmp_run, fakes.double_well())  # CH-05: typed records end to end
+    view = dft_view(tmp_run, fakes.double_well())  # CH-05: typed records end to end
     reactions, arts, _ = run_stage(fake_runtime, tmp_run, fakes.double_well(), view)
     rx = reactions["rx"]
     assert isinstance(rx, ReactionRecord) and rx.outcome is O.ELEMENTARY_STEP
@@ -139,7 +138,7 @@ def test_a_case_that_raises_keeps_what_it_registered_and_the_next_case_runs(
     pes, again = fakes.triple_well(), ReactionInput(id="rx2", reactant="reactant",
                                                     product="product")
     system = SYSTEM.model_copy(update={"reactions": [*SYSTEM.reactions, again]})
-    view = dft_view(tmp_run, pes)[0]
+    view = dft_view(tmp_run, pes)
     with pytest.raises(KeyError):  # HFAUTO_STRICT=1 re-raises
         run_stage(fake_runtime, tmp_run, pes, view, system=system)
     monkeypatch.delenv("HFAUTO_STRICT")
@@ -161,7 +160,7 @@ def test_a_case_that_raises_keeps_what_it_registered_and_the_next_case_runs(
     (fakes.harmonic, {"reactant": "minimum", "product": "start"}, O.SAME_BASIN),
 ])
 def test_outcomes_on_model_surfaces(tmp_run, fake_runtime, pes, points, outcome) -> None:
-    view = dft_view(tmp_run, pes(), points)[0]
+    view = dft_view(tmp_run, pes(), points)
     reactions, _, engines = run_stage(fake_runtime, tmp_run, pes(), view)
     assert reactions["rx"].outcome is outcome
     assert outcome is not O.BARRIERLESS or reactions["rx"].reasons == ("screen:barrierless",)
@@ -171,7 +170,7 @@ def test_outcomes_on_model_surfaces(tmp_run, fake_runtime, pes, points, outcome)
 
 @pytest.mark.parametrize("screen", [True, False])  # the well on the NEB path or the string
 def test_triple_well_splits_into_two_elementary_children(tmp_run, fake_runtime, screen) -> None:
-    view, _ = dft_view(tmp_run, fakes.triple_well())
+    view = dft_view(tmp_run, fakes.triple_well())
     reactions, arts, _ = run_stage(fake_runtime, tmp_run, fakes.triple_well(), view, screen=screen)
     assert reactions["rx"].outcome is O.MULTI_STEP
     assert reactions["rx"].barrier.verdict == "intermediate"
@@ -188,7 +187,7 @@ def test_a_split_child_queued_behind_a_sibling_that_used_its_budget_has_its_own(
     string's); rx_split2 (I -> P), queued behind it, is still driven from 0 attempts and finds
     its TS."""
     pes = fakes.triple_well()
-    view, _ = dft_view(tmp_run, pes)
+    view = dft_view(tmp_run, pes)
     saddle = FirstStepSaddle(tmp_run, pes)
     reactions = run_stage(fake_runtime, tmp_run, pes, view, saddle=saddle)[0]
     first, second = (reactions[f"rx_split{i}"] for i in (1, 2))
@@ -205,10 +204,10 @@ def test_a_saddle_search_that_falls_into_a_well_goes_on_to_the_screen_path(tmp_r
     """G3-P1: a saddle without an imaginary mode is a failed attempt like any rejected saddle;
     the intermediate comes from the screen profile's well (row 10), not from the saddle."""
     pes = fakes.triple_well()
-    view, source = dft_view(tmp_run, pes)
+    view = dft_view(tmp_run, pes)
     ts = fakes.write_geometry(tmp_run, "ts1.xyz", pes.symbols, pes.points["ts1"])
-    found = DiscoveryRecord(discovery_id="d1", source_minimum=source, mechanism="nt2",
-                            outcome="product", product_species="product", ts=ts)
+    found = DiscoveryRecord(discovery_id="d1", mechanism="nt2", outcome="product",
+                            source_species="reactant", product_species="product", ts=ts)
     view.artifacts.append(Artifact(artifact_id="d1", type=T.DISCOVERY, payload=found))
     reactions, _, _ = run_stage(fake_runtime, tmp_run, pes, view,  # seeded by the shortcut
                                 saddle=CollapsingSaddle(tmp_run, pes), max_split_depth=0)
@@ -227,10 +226,10 @@ def test_a_ts_joining_an_endpoint_to_a_new_basin_splits_and_its_child_replays_it
     steps; the child R -> I validates the parent's TS first (the same freq and QRC jobs, JobStore
     hits) instead of searching again, and I -> P is searched as usual."""
     pes = fakes.triple_well()
-    view, source = dft_view(tmp_run, pes)
+    view = dft_view(tmp_run, pes)
     ts = fakes.write_geometry(tmp_run, "ts1.xyz", pes.symbols, pes.points["ts1"])
-    found = DiscoveryRecord(discovery_id="d1", source_minimum=source, mechanism="nt2",
-                            outcome="product", product_species="product", ts=ts)
+    found = DiscoveryRecord(discovery_id="d1", mechanism="nt2", outcome="product",
+                            source_species="reactant", product_species="product", ts=ts)
     view.artifacts.append(Artifact(artifact_id="d1", type=T.DISCOVERY, payload=found))
     qm = KeyedQM(tmp_run, pes)
     reactions = run_stage(fake_runtime, tmp_run, pes, view, qm=qm)[0]
@@ -251,7 +250,7 @@ def test_a_split_child_takes_the_result_of_a_queued_case_of_its_state_pair(
     the declared ri, queued after rx, so it is not driven and takes ri's result (same_as:ri);
     I -> P is driven."""
     pes, names = fakes.triple_well(), {**ENDS, "intermediate": "intermediate"}
-    view, _ = dft_view(tmp_run, pes, names)
+    view = dft_view(tmp_run, pes, names)
     system = SystemConfig(
         system_id="t", species=[SpeciesInput(id=n, role="endpoint", xyz=Path(f"{n}.xyz"),
                                              multiplicity=1) for n in names],
@@ -268,14 +267,14 @@ def test_a_split_child_takes_the_result_of_a_queued_case_of_its_state_pair(
 def test_low_level_ts_shortcut_and_negative_discoveries_do_not_veto(
         tmp_run, fake_runtime) -> None:
     pes = fakes.double_well()
-    view, source = dft_view(tmp_run, pes)
+    view = dft_view(tmp_run, pes)
     ts = fakes.write_geometry(tmp_run, "ts.xyz", pes.symbols, pes.points["ts"])
-    found = DiscoveryRecord(discovery_id="d1", source_minimum=source, mechanism="nt2",
-                            outcome="product", product_species="product", ts=ts)
-    trial = ReactionTrial(trial_id="t", source_minimum=source, kind="transfer",
-                          associations=((1, 2),), dissociations=((0, 1),))
-    negative = DiscoveryRecord(discovery_id="d2", source_minimum=source, mechanism="nt2",
-                               outcome="negative", reason="no_nt2_maximum", trial=trial)
+    found = DiscoveryRecord(discovery_id="d1", mechanism="nt2", outcome="product",
+                            source_species="reactant", product_species="product", ts=ts)
+    trial = ReactionTrial(trial_id="t", kind="f1b1", associations=((1, 2),),
+                          dissociations=((0, 1),))
+    negative = DiscoveryRecord(discovery_id="d2", mechanism="nt2", outcome="negative",
+                               reason="no_nt2_maximum", trial=trial, source_species="reactant")
     for record in (found, negative):  # X1: a matching negative discovery changes nothing
         view.artifacts.append(Artifact(artifact_id=record.discovery_id, type=T.DISCOVERY,
                                        payload=record))

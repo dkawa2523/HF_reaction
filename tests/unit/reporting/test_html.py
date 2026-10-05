@@ -51,6 +51,15 @@ def test_a_view_without_reactions_still_gives_a_page(tmp_path):
     assert page.startswith("<!doctype html>") and "No reactions" in page and "3Dmol" not in page
 
 
+def test_a_budget_cut_marks_the_exploration_budget_limited(tmp_path):
+    cut = rec.DiscoveryRecord(discovery_id="d", mechanism="nt2", outcome="not_attempted")
+    page = render(view(Artifact(artifact_id="d", type=T.DISCOVERY, payload=cut)),
+                  tmp_path / "cut", load_xyz=xyz_loader(tmp_path)).read_text(encoding="utf-8")
+    assert "budget-limited: 1 edit class" in page
+    page = render(view(), tmp_path / "empty", load_xyz=xyz_loader(tmp_path)).read_text("utf-8")
+    assert "budget-limited" not in page
+
+
 def test_a_barrierless_step_is_listed_apart_with_its_dg_rxn(tmp_path):
     """No TST barrier: the step leaves the summary (ranked by dG_eff) for the capture-limited
     table, with dG_rxn and dG_assoc; the summary shows each dG_eff's zero. An association's

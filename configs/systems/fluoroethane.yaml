@@ -1,0 +1,5 @@
+# Fluoroethane alone, undeclared (stage 3): the discover pipeline must find the 4-centre
+# 1,2-HF elimination C2H5F -> C2H4 + HF by itself; no reaction or endpoint is declared.
+system_id: fluoroethane
+species:
+  - {id: fluoroethane, xyz: xyz/fluoroethane.xyz, multiplicity: 1}

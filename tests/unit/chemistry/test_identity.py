@@ -94,7 +94,7 @@ def test_member_coords_return_the_representatives_input_bit_for_bit():
 def test_basin_coords_keep_the_bonds_of_a_member_far_from_the_basin():
     """S6 (W5, VAL7): an xTB product CH3OH + H, 0.96 A from the PBE0 basin that holds it. As
     elements alone the nearest match moves H1 onto O and H6 onto C (a fake H scramble); within
-    WL classes the member's atom-indexed bonds are kept."""
+    atom classes the member's atom-indexed bonds are kept."""
     symbols = ["C", "H", "H", "H", "H", "O", "H"]
     basin = np.array([[-0.3753, -0.5165, 0.3011], [-0.8441, -1.5066, 0.3711],
                       [0.6085, 0.4446, -1.0785], [0.3826, -0.4401, 1.1004],
@@ -118,17 +118,19 @@ def test_rotated_permuted_copy_is_recovered():
     assert [order[i] for i in perm] == [0, 1, 2, 3]
 
 
-def test_one_criterion_energy_first_then_a_unique_structure():
+def test_one_criterion_energy_first_then_the_best_structure():
     squeezed = NH3 * [1.0, 1.0, 0.5]
     assert idn.assign(NH3_SYMBOLS, NH3, 3e-5, {"up": (NH3, 0.0)}) == "up"  # 5e-5 Eh
     assert idn.assign(NH3_SYMBOLS, NH3, 6e-5, {"up": (NH3, 0.0)}) is None
     assert idn.assign(NH3_SYMBOLS, squeezed, 0.0, {"up": (NH3, 0.0)}) is None  # 0.05 A
     candidates = {"up": (NH3, 0.0), "flat": (squeezed, 0.0)}
     assert idn.assign(NH3_SYMBOLS, NH3 + 1e-4, 1e-6, candidates) == "up"
-    twins = {"a": (NH3, 0.0), "b": (NH3 + 0.004, 0.0)}
-    assert idn.assign(NH3_SYMBOLS, NH3 + 0.002, 0.0, twins) is None  # not unique
-    twins["b"] = (NH3 + 0.004, 1e-3)  # another energy never competes as the runner-up
+    near = NH3 * [1.0, 1.0, 0.98]  # both within 0.05 A: the closer one joins (U3-P7)
+    assert idn.assign(NH3_SYMBOLS, NH3, 0.0, {"a": (near, 0.0), "b": (NH3, 0.0)}) == "b"
+    twins = {"b": (NH3, 0.0), "a": (NH3 + 0.004, 0.0)}  # one structure: the lowest id
     assert idn.assign(NH3_SYMBOLS, NH3 + 0.002, 0.0, twins) == "a"
+    twins["a"] = (NH3 + 0.004, 1e-3)  # another energy never competes
+    assert idn.assign(NH3_SYMBOLS, NH3 + 0.002, 0.0, twins) == "b"
 
 
 @pytest.mark.parametrize("name", ["nh3", "sn2_cl"])
@@ -168,3 +170,17 @@ def test_periodic_nearest_wraps():
     assert idn.periodic_nearest(170.0, [-170.0, 90.0]) == 0
     with pytest.raises(ValueError):
         idn.periodic_nearest(0.0, [])
+
+
+def test_the_radial_prefilter_is_a_lower_bound_of_the_basin_rmsd():
+    """W4 (S8: thousands of TSs compared): the sorted centroid distances never differ by more
+    than the permutation-invariant RMSD, so assign skips only candidates that cannot match."""
+    from hfauto.chemistry.identity import _basin_match, _radii, _rms
+    rng = np.random.default_rng(7)
+    symbols = ["C", "H", "H", "H", "O", "H", "H"]
+    x = rng.normal(size=(7, 3))
+    for scale in (0.01, 0.03, 0.1, 0.5):
+        y = (x + rng.normal(scale=scale, size=(7, 3)))[[0, 2, 1, 3, 4, 6, 5]]
+        y = y @ np.linalg.qr(rng.normal(size=(3, 3)))[0]  # rotated (or mirrored)
+        sym = [symbols[i] for i in [0, 2, 1, 3, 4, 6, 5]]
+        assert _rms(_radii(symbols, x) - _radii(sym, y)) <= _basin_match(symbols, x, y)[0] + 1e-12

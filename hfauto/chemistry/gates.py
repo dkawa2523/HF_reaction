@@ -44,7 +44,6 @@ class Policy:
 
 
 _DEFAULT = Policy()
-LOW_LEVEL_BARRIER_MAX_KCAL = 50.0  # explore's xTB barrier cap; the DFT stages judge the rest
 SCF_NOISE_FACTOR = 20.0  # x scf_tol: the SCF noise of an energy difference at one geometry
 QRC_MIN_DROP_HARTREE = 1.0e-5  # the floor of that noise (H2Te freq vs opt: 3.1e-6 Eh)
 # in the empty mass-weighted χ gap (0.065, 0.63) over R2, VAL9, r7, M3 and W5
@@ -261,25 +260,6 @@ def connection(
     if reasons:
         return _gate(reasons), "failed"
     return Gate(True), label
-
-
-def discovery_verdict(
-    *,
-    ts_validated: bool,
-    dE_act_kcal: float | None,
-    dE_rxn_kcal: float | None,
-    policy: Policy = _DEFAULT,
-) -> str | None:
-    """None when a low-level NT2 product is kept, else the negative reason. It needs its
-    validated TS and IRC; the reaction window is the DFT one (a narrower low-level sieve
-    only adds false negatives) and an unevaluated reaction energy lies outside it."""
-    if not ts_validated:
-        return "ts_not_validated"
-    if dE_rxn_kcal is None or dE_rxn_kcal > policy.reaction_window_kcal:
-        return "out_of_window"
-    if dE_act_kcal is not None and dE_act_kcal > LOW_LEVEL_BARRIER_MAX_KCAL:
-        return "out_of_window"
-    return None
 
 
 def rankable(reaction: ReactionRecord, thermo: ReactionThermo | None) -> Gate:
