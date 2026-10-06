@@ -44,8 +44,8 @@ SIGTERM_PARENT = "import os, signal, time; os.kill(os.getppid(), signal.SIGTERM)
 
 class JobQM(fakes.FakeQM):
     """FakeQM whose calls are JobRunner jobs; ``crash`` interrupts the seventh call (the dft
-    stage's second optimization); the process of the call numbered ``term`` (from 0) sends
-    SIGTERM to this one, as a batch system would."""
+    stage's first freq: its two opts run first); the process of the call numbered ``term``
+    (from 0) sends SIGTERM to this one, as a batch system would."""
 
     def __init__(self, root, jobs, crash=False, term=None):
         super().__init__(root, fakes.double_well())
@@ -93,10 +93,10 @@ def test_interrupted_run_resumes_and_from_reruns_the_downstream_stages(tmp_path,
     monkeypatch.setattr(engines, "create", create)
     with pytest.raises(RuntimeError, match="interrupted"):
         run()
-    assert len(made[0].calls) == 6  # opt + freq per endpoint in screen, one in dft
+    assert len(made[0].calls) == 6  # opt + freq per endpoint in screen, the two opts in dft
     done = {s["id"]: "done" for s in STAGES}
-    assert run() == (done, (2, 2))  # screen is skipped; dft's finished opt + freq are hits
-    assert made[1].calls == ["optimize", "frequencies"]
+    assert run() == (done, (2, 2))  # screen is skipped; dft's finished opts are hits
+    assert made[1].calls == ["frequencies", "frequencies"]
     assert run(start="screen", stop="screen") == (
         {**done, "dft": "stale", "report": "stale"}, (4, 0))
     assert not made[2].calls and run() == (done, (4, 0))  # dft and report run again
@@ -107,9 +107,10 @@ def test_interrupted_run_resumes_and_from_reruns_the_downstream_stages(tmp_path,
 
 @pytest.fixture
 def stop_run(tmp_path, monkeypatch):
-    """``stop_run(run_dir, term=None)``: ``hfauto run`` of structures → dft → reaction-paths on
-    the double well, its QM calls JobRunner jobs (JobQM, the one numbered ``term`` sending
-    SIGTERM); -> (exit code, {stage id: StageState}). Every run starts as a new process would."""
+    """``stop_run(run_dir, term=None, crash=False)``: ``hfauto run`` of structures → dft →
+    reaction-paths on the double well, its QM calls JobRunner jobs (JobQM, the one numbered
+    ``term`` sending SIGTERM); -> (exit code, {stage id: StageState}). Every run starts as a new
+    process would."""
     pes = fakes.double_well()
     (tmp_path / "pipelines" / "methods").mkdir(parents=True)
     files = {
@@ -135,11 +136,11 @@ def stop_run(tmp_path, monkeypatch):
     saved = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     monkeypatch.setattr(preflight, "preflight", lambda resolved, dry_run=False: [])
 
-    def run(run_dir, term=None):
+    def run(run_dir, term=None, crash=False):
         def create(capability, name, *, jobs, site):
             root = jobs.store.run_dir
             if capability is Capability.QM:
-                return JobQM(root, jobs, term=term)
+                return JobQM(root, jobs, crash=crash, term=term)
             return (fakes.FakeSaddle if capability is Capability.SADDLE else fakes.FakePath)(
                 root, pes)
 
@@ -162,7 +163,7 @@ def test_sigterm_leaves_the_stage_incomplete_and_a_rerun_resumes_it(tmp_path, st
     freq) kills that job, stores nothing for it and leaves the stage incomplete with exit code 1;
     the rerun skips the done stages and gives the records of an uninterrupted run."""
     run, other = tmp_path / "run", tmp_path / "other"
-    code, states = stop_run(run, term=4)  # calls 0-3: opt + freq per endpoint in dft
+    code, states = stop_run(run, term=4)  # calls 0-3: the opts and freqs of dft
     assert code == 1 and {k: s.status for k, s in states.items()} == {
         "structures": "done", "dft": "done", "paths": "incomplete"}
     assert len(list((run / "jobs").glob("*/*/result.json"))) == 4  # the killed job left none
@@ -178,3 +179,15 @@ def test_sigterm_leaves_the_stage_incomplete_and_a_rerun_resumes_it(tmp_path, st
         return [(a.artifact_id, a.type, a.payload) for a in manifest.artifacts]
 
     assert records(run) == records(other) and records(run)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
+def test_a_stage_that_raises_exits_2_and_a_rerun_resumes_it(tmp_path, stop_run):
+    """X7-2: an exception that no item contains (HFAUTO_STRICT=1 re-raises the paths case's)
+    fails the stage: exit code 2 for run and status; the rerun resumes from the JobStore."""
+    run = tmp_path / "run"
+    code, states = stop_run(run, crash=True)  # the seventh QM call raises: in paths
+    assert code == 2 and (states["dft"].status, states["paths"].status) == ("done", "failed")
+    assert CliRunner().invoke(app, ["status", str(run)]).exit_code == 2
+    code, states = stop_run(run)
+    assert code == 0 and states["paths"].status == "done"

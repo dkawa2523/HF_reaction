@@ -25,12 +25,13 @@ class Out(BaseModel):
 
 class ScriptAdapter:
     """Runs inputs['codes'][0] after dropping a unique marker file; continuation drops that code.
-    ``seen`` holds the execution of every attempt."""
+    ``seen`` holds the execution of every attempt, ``continued`` (attempt, failure kind) of
+    every continuation asked."""
 
     result_type = Out
 
     def __init__(self, store, marker):
-        self.store, self.marker, self.seen = store, marker, []
+        self.store, self.marker, self.seen, self.continued = store, marker, [], []
 
     def prepare(self, task, workdir):
         self.seen.append(task.execution)
@@ -48,6 +49,7 @@ class ScriptAdapter:
         return Out(value=out.read_text(), file=self.store.file_ref(out))
 
     def continuation(self, task, workdir, failure):
+        self.continued.append((workdir.name, failure.kind))
         codes = task.inputs["codes"][1:]
         return replace(task, inputs={"codes": codes}, execution=ExecutionSpec()) if codes else None
 
@@ -100,35 +102,57 @@ def test_ladder_limits_and_failure_memory(tmp_path):
     assert isinstance(retry.run(_task(BAD, BAD, OK), adapter), Failure) and _runs(tmp_path) == 6
 
 
-def test_timeouts_rerun_and_missing_executable(tmp_path):
+def test_environment_failures_are_not_stored_and_rerun_after_a_site_fix(tmp_path):
+    """X7-3: a timeout, a missing executable and a job out of memory are never stored."""
     runner, adapter = _setup(tmp_path)
     before, slow = runner.stats(), _task(SLOW, name="slow", timeout_s=0.5)  # no continuation
     assert [runner.run(slow, adapter).kind for _ in range(2)] == [FailureKind.TIMEOUT] * 2
     assert runner.stats().since(before) == JobStats(misses=2, failures_by_kind={"timeout": 2})
     missing = replace(_task(OK, name="m"), inputs={"codes": (OK,), "exe": "hfauto-no-such-exe"})
-    missing = runner.run(missing, adapter)
-    assert missing.kind is FailureKind.EXECUTABLE_MISSING
-    assert (runner.store.job_dir(missing.job_key) / "result.json").exists()
+    assert runner.run(missing, adapter).kind is FailureKind.EXECUTABLE_MISSING
+    assert not runner.store.has_result(runner.store.key(missing))
+    fixed = runner.run(replace(missing, inputs={"codes": (OK,)}), adapter)  # the same key
+    assert isinstance(fixed, Out) and fixed.job_key == runner.store.key(missing)
+    oom = "import sys; sys.stderr.write('ga_create failed: Cannot allocate memory'); sys.exit(1)"
+    for code, kind in ((oom, FailureKind.OUT_OF_MEMORY),
+                       ("import sys; sys.exit(1)", FailureKind.NONZERO_EXIT)):
+        task = _task(code, name=code)
+        assert runner.run(task, adapter).kind is kind
+        assert runner.store.has_result(runner.store.key(task)) is (kind is FailureKind.NONZERO_EXIT)
 
 
-def test_parse_exception_is_a_remembered_incomplete_output(tmp_path, monkeypatch):
+def test_a_parse_exception_is_the_items_and_stores_nothing(tmp_path):
+    """A parser that raises fails the item that ran the job (StageRuntime.contain), not the
+    job: nothing is stored, so a fixed parser reads the job again."""
     runner, adapter = _setup(tmp_path)
+    parse = adapter.parse
 
-    def parse(task, workdir, result):
-        raise ValueError("no energy line\nin the output")
+    def broken(task, workdir, result):
+        raise ValueError("no energy line")
 
-    adapter.parse = parse
+    adapter.parse = broken
     task = _task(OK, OK, name="p")  # a continuation exists but is not offered
-    with pytest.raises(ValueError, match="no energy line"):  # HFAUTO_STRICT=1 re-raises
+    with pytest.raises(ValueError, match="no energy line"):
         runner.run(task, adapter)
-    monkeypatch.delenv("HFAUTO_STRICT")
-    out = runner.run(task, adapter)
-    assert out == Failure(kind=FailureKind.INCOMPLETE_OUTPUT, job_key=runner.store.key(task),
-                          reason="parse:ValueError: no energy line")
-    fresh, _ = _setup(tmp_path)  # replayed from the JobStore on disk
-    assert fresh.run(task, adapter) == out and _runs(tmp_path) == 2
-    retry, _ = _setup(tmp_path, retry_failed=["incomplete_output"])
-    assert retry.run(task, adapter) == out and _runs(tmp_path) == 3
+    assert not runner.store.has_result(runner.store.key(task)) and not adapter.continued
+    adapter.parse = parse
+    assert isinstance(runner.run(task, adapter), Out)
+
+
+def test_an_attempt_that_left_no_result_is_continued_once(tmp_path):
+    """U9-P3: a stopped run left attempt_00 without a result; the next run continues it as
+    after a timeout, in attempt_01; with no continuation it starts afresh."""
+    runner, adapter = _setup(tmp_path)
+    for name, codes in (("stopped", (BAD, OK)), ("one", (OK,))):
+        task = _task(*codes, name=name)
+        key = runner.store.key(task)
+        runner.store.begin(key, task)
+        runner.store.attempt_dir(key, 0).mkdir()  # killed before it wrote anything
+        adapter.continued.clear()
+        assert isinstance(runner.run(task, adapter), Out)  # BAD is never run
+        assert adapter.continued == [("attempt_00", FailureKind.TIMEOUT)]
+        assert (runner.store.attempt_dir(key, 1) / "out.txt").is_file()
+    assert _runs(tmp_path) == 2
 
 
 def _meet(runner, adapter, room, wait_s, **execution):

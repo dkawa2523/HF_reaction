@@ -1,4 +1,5 @@
-"""decide(): the 13 rows of design §7.3 (ports tests/test_reaction_classification.py cases)."""
+"""decide(): the 9 rows of design §7.3 and its one stop rule (every search without an answer
+is one failure token)."""
 
 from __future__ import annotations
 
@@ -7,7 +8,6 @@ from dataclasses import replace
 import pytest
 
 from hfauto.core import records as r
-from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import FileRef, Geometry
 from hfauto.drivers.reaction_case import state as st
 from hfauto.drivers.reaction_case.state import Action, CaseState, Decision, decide, record_profile
@@ -21,126 +21,87 @@ ASSOCIATION = CASE.model_copy(update={"monomers": ("m_ch3", "m_o2")})  # X4: fro
 GEO = Geometry(file=FileRef(path="seed.xyz", sha256="0" * 64), fingerprint="f", symbols=("H",))
 SEED = st.Seed(geometry=GEO, source="screen_ts")
 OTHER_TS = st.Seed(geometry=GEO, source="discovery_ts")
-HIGHER = st.Seed(geometry=GEO, source="higher_order_retry", depth=1)
+CONTINUED = st.Seed(geometry=GEO, source="continuation", depth=1)
 CLAIM = r.SaddleClaim(saddle_calc="s", freq_calc="f", imag_cm1=-1131.0, energy_hartree=-93.0)
-SOFT = CLAIM.model_copy(update={"imag_cm1": -30.0})  # |nu| < saddle_cm1 = 50
 RULES = st.CaseRules()
-
-
-def minimum(mid: str, basin: str, kcal: float = 0.0) -> r.MinimumRecord:
-    return r.MinimumRecord(minimum_id=mid, basin_id=basin, composition_id="CHN_q0_m1",
-                           species_id="s" + mid, tier="dft", level_key="L", opt_calc="o",
-                           freq_calc="f", energy_hartree=-93.0 + kcal / HARTREE_TO_KCAL_MOL,
-                           state_label="x")
-
-
-MA, MB = minimum("ma", "A"), minimum("mb", "B", 10.0)
-BASE = CaseState(minima=(MA, MB))  # nothing done yet
+BASE = CaseState()  # nothing done yet
 S = replace(BASE, screen=BV(verdict="single", source="screen"), neb_done=True)  # one peak
-SHORTCUT = replace(BASE, shortcut_done=True, saddle_attempts=1,
-                   last_saddle="failed")  # the seed of a low-level TS has failed; no verdict
+SHORTCUT = replace(BASE, shortcut_done=True, attempts=1)  # the seed of a low-level TS failed
 STRING = BV(verdict="single", source="string")
-BLOCKED = Decision(A.BLOCKED, "endpoint_without_dft_minimum", C.BLOCKED)
 DFT_PATH = Decision(A.FIND_PATH, "dft_path")
 VALIDATE = Decision(A.VALIDATE_AND_CONNECT, "saddle_converged")
 EXHAUSTED = Decision(A.COMPLETE, "attempts_exhausted", C.UNRESOLVED)
 ELEMENTARY = Decision(A.COMPLETE, "connection:elementary", C.ELEMENTARY_STEP)
 DISTINCT = Decision(A.COMPLETE, "intermediate_distinct", C.MULTI_STEP)
-FAILED = Decision(A.COMPLETE, "connection_failed", C.UNRESOLVED)
 
 
 ROW_CASES = [  # (row, id, case, state, rules, expected decision)
-    (1, "reactant_missing", CASE, replace(BASE, minima=(None, MB)), RULES, BLOCKED),
-    (1, "product_missing", CASE, replace(S, minima=(MA, None), path_runs=2), RULES, BLOCKED),
-    (2, "same_basin", CASE, replace(BASE, minima=(MA, minimum("mb", "A")), claim=CLAIM), RULES,
-     Decision(A.COMPLETE, "same_basin", C.SAME_BASIN)),
-    # X4: a complex that relaxed into its adduct leaves one basin; the monomers are the reactant
-    (9, "association_from_the_adduct_basin", ASSOCIATION, replace(BASE, minima=(MA, MA)), RULES,
-     Decision(A.SCREEN, "screen")),
-    (3, "uphill", CASE, replace(BASE, minima=(MA, minimum("mb", "B", 41.0))), RULES,
-     Decision(A.COMPLETE, "out_of_window", C.OUT_OF_WINDOW)),
-    (4, "elementary", CASE, replace(S, claim=CLAIM, connection="elementary"), RULES, ELEMENTARY),
-    (4, "degenerate", DEGENERATE, replace(S, minima=(MA, MA), claim=CLAIM,
-                                          connection="degenerate"), RULES,
+    (1, "elementary", CASE, replace(S, claim=CLAIM, connection="elementary"), RULES, ELEMENTARY),
+    (1, "degenerate", DEGENERATE, replace(S, claim=CLAIM, connection="degenerate"), RULES,
      Decision(A.COMPLETE, "connection:degenerate", C.DEGENERATE)),
-    (4, "reassigned", CASE, replace(S, claim=CLAIM, connection="reassigned"), RULES,
+    (1, "reassigned", CASE, replace(S, claim=CLAIM, connection="reassigned"), RULES,
      Decision(A.COMPLETE, "connection:reassigned", C.REASSIGNED)),
-    (5, "distinct", CASE, replace(S, intermediate="distinct"), RULES, DISTINCT),
-    (6, "screen", CASE, replace(S, screen=BV(verdict="barrierless", source="screen"),
+    (2, "distinct", CASE, replace(S, intermediate="distinct"), RULES, DISTINCT),
+    (3, "screen", CASE, replace(S, screen=BV(verdict="barrierless", source="screen"),
                                 seeds=(SEED,)), RULES,
      Decision(A.COMPLETE, "screen:barrierless", C.BARRIERLESS)),
-    (6, "string", CASE, replace(S, screen=BV(verdict="barrierless", source="string"),
+    (3, "string", CASE, replace(S, screen=BV(verdict="barrierless", source="string"),
                                 path_runs=1), RULES,
      Decision(A.COMPLETE, "string:barrierless", C.BARRIERLESS)),
-    (6, "association_scan", ASSOCIATION, replace(S, screen=BV(verdict="barrierless",
+    (3, "association_scan", ASSOCIATION, replace(S, screen=BV(verdict="barrierless",
                                                               source="scan")), RULES,
      Decision(A.COMPLETE, "scan:barrierless", C.BARRIERLESS)),
-    (7, "failed", CASE, replace(S, claim=CLAIM, connection="failed"), RULES, FAILED),
-    (7, "same_basin_without_attempts", CASE, replace(S, claim=CLAIM, connection="same_basin",
-                                                     saddle_attempts=2), RULES, FAILED),
-    (7, "same_state_without_attempts", CASE, replace(S, claim=CLAIM, connection="same_state",
-                                                     saddle_attempts=2), RULES, FAILED),
-    (8, "converged", CASE, replace(S, last_saddle="converged", saddle_attempts=1), RULES,
-     VALIDATE),
-    (8, "given_ts_calc", CASE.model_copy(update={"ts_calc": "calc_ts"}),
-     replace(BASE, last_saddle="converged"), RULES, VALIDATE),
-    (9, "screen", CASE, BASE, RULES, Decision(A.SCREEN, "screen")),
-    (9, "degenerate_goes_on", DEGENERATE, replace(BASE, minima=(MA, MA)), RULES,
-     Decision(A.SCREEN, "screen")),
-    (9, "after_the_shortcut_seeds", CASE, SHORTCUT, RULES, Decision(A.SCREEN, "screen")),
-    (9, "a_given_ts_failed", CASE, replace(BASE, last_saddle="failed"), RULES,
-     Decision(A.SCREEN, "screen")),
-    (9, "association_without_a_low_level_engine", ASSOCIATION, BASE,
+    (4, "converged", CASE, replace(S, saddle_pending=True, attempts=1), RULES, VALIDATE),
+    (4, "given_ts_calc", CASE.model_copy(update={"ts_calc": "calc_ts"}),
+     replace(BASE, saddle_pending=True), RULES, VALIDATE),
+    (5, "screen", CASE, BASE, RULES, Decision(A.SCREEN, "screen")),
+    (5, "degenerate_goes_on", DEGENERATE, BASE, RULES, Decision(A.SCREEN, "screen")),
+    (5, "after_the_shortcut_seeds", CASE, SHORTCUT, RULES, Decision(A.SCREEN, "screen")),
+    (5, "association_without_a_low_level_engine", ASSOCIATION, BASE,
      replace(RULES, screen=False), Decision(A.SCREEN, "screen")),
-    (10, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
-                                       seeds=(SEED,)), RULES,
+    (6, "intermediate", CASE, replace(S, screen=BV(verdict="intermediate", source="screen"),
+                                      seeds=(SEED,)), RULES,
      Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")),
-    (11, "seed", CASE, replace(S, seeds=(SEED,)), RULES,
-     Decision(A.REFINE_SADDLE, "seed:screen_ts")),
-    (11, "higher_order_retry", CASE, replace(S, seeds=(HIGHER,), last_saddle="failed",
-                                             saddle_attempts=1), RULES,
-     Decision(A.REFINE_SADDLE, "seed:higher_order_retry")),
-    (11, "the_next_shortcut_seed", CASE, replace(SHORTCUT, seeds=(OTHER_TS,)), RULES,
+    (7, "seed", CASE, replace(S, seeds=(SEED,)), RULES, Decision(A.REFINE_SADDLE, "seed:screen_ts")),
+    (7, "continuation", CASE, replace(S, seeds=(CONTINUED,), attempts=1), RULES,
+     Decision(A.REFINE_SADDLE, "seed:continuation")),
+    (7, "the_next_shortcut_seed", CASE, replace(SHORTCUT, seeds=(OTHER_TS,)), RULES,
      Decision(A.REFINE_SADDLE, "seed:discovery_ts")),
-    (12, "no_path", CASE, replace(S, last_saddle="failed", saddle_attempts=1), RULES, DFT_PATH),
-    (12, "screen_off", CASE, BASE, replace(RULES, screen=False), DFT_PATH),
-    (12, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
+    (8, "no_path", CASE, replace(S, attempts=1), RULES, DFT_PATH),
+    (8, "screen_off", CASE, BASE, replace(RULES, screen=False), DFT_PATH),
+    (8, "unavailable", CASE, replace(S, screen=BV(verdict="unavailable", source="screen")),
      RULES, DFT_PATH),
-    (12, "after_the_screen_path", CASE, replace(SHORTCUT, neb_done=True), RULES, DFT_PATH),
-    (12, "its_seed_failed", CASE, replace(S, screen=STRING, path_runs=1, saddle_attempts=1,
-                                          last_saddle="failed"), RULES, DFT_PATH),
-    (12, "after_an_endpoint_well", CASE, replace(S, screen=BV(verdict="intermediate",
-                                                              source="string"),
-                                                 intermediate="same_as_endpoint", path_runs=1,
-                                                 saddle_attempts=1), RULES, DFT_PATH),
-    (13, "exhausted", CASE, replace(S, path_runs=1, seeds=(SEED,), saddle_attempts=2,
-                                    last_saddle="failed"), RULES, EXHAUSTED),
-    (13, "a_push_at_the_limit", CASE, replace(S, seeds=(HIGHER,), saddle_attempts=2), RULES,
+    (8, "after_the_screen_path", CASE, replace(SHORTCUT, neb_done=True), RULES, DFT_PATH),
+    (8, "its_seed_failed", CASE, replace(S, screen=STRING, path_runs=1, attempts=1), RULES,
+     DFT_PATH),
+    # U6-P4: an unavailable string is a token itself, so the next chunk follows it
+    (8, "after_an_unavailable_string", CASE, replace(S, screen=BV(
+        verdict="unavailable", source="string"), path_runs=1, attempts=1), RULES, DFT_PATH),
+    (8, "after_an_endpoint_well", CASE, replace(S, screen=BV(verdict="intermediate",
+                                                             source="string"),
+                                                intermediate="same_as_endpoint", path_runs=1,
+                                                attempts=1), RULES, DFT_PATH),
+    (9, "exhausted", CASE, replace(S, path_runs=1, seeds=(SEED,), attempts=2), RULES, EXHAUSTED),
+    (9, "a_continuation_at_the_limit", CASE, replace(S, seeds=(CONTINUED,), attempts=2), RULES,
      EXHAUSTED),
     # G3-P2: the second string left no seed that was tried
-    (13, "a_string_without_a_seed", CASE, replace(S, screen=STRING, path_runs=2,
-                                                  saddle_attempts=1), RULES, EXHAUSTED),
-    (13, "string_failed", CASE, replace(S, path_runs=1, saddle_attempts=1), RULES, EXHAUSTED),
-    (13, "unavailable_string", CASE, replace(S, screen=BV(verdict="unavailable", source="string"),
-                                             path_runs=1, saddle_attempts=1), RULES, EXHAUSTED),
-    # R3: no string whose peak seed could never be refined
-    (13, "no_string_without_attempts", CASE, replace(S, saddle_attempts=2, last_saddle="failed"),
+    (9, "a_string_without_a_seed", CASE, replace(S, screen=STRING, path_runs=2, attempts=1),
      RULES, EXHAUSTED),
-    (13, "no_chunk_without_attempts", CASE, replace(S, screen=STRING, path_runs=1,
-                                                    saddle_attempts=2), RULES, EXHAUSTED),
+    (9, "no_string_without_attempts", CASE, replace(S, attempts=2), RULES, EXHAUSTED),
+    (9, "no_chunk_without_attempts", CASE, replace(S, screen=STRING, path_runs=1, attempts=2),
+     RULES, EXHAUSTED),
     # X4: no string joins an association's monomers, after a failed scan or its failed seed
-    (13, "association_scan_point_failed", ASSOCIATION, replace(S, screen=BV(
+    (9, "association_scan_point_failed", ASSOCIATION, replace(S, screen=BV(
         verdict="unavailable", source="scan", reasons=("scan_point",))), RULES, EXHAUSTED),
-    (13, "association_seed_failed", ASSOCIATION, replace(S, screen=BV(verdict="single",
-                                                                      source="scan"),
-                                                         saddle_attempts=1, last_saddle="failed"),
-     RULES, EXHAUSTED),
+    (9, "association_seed_failed", ASSOCIATION, replace(S, screen=BV(verdict="single",
+                                                                     source="scan"),
+                                                        attempts=1), RULES, EXHAUSTED),
 ]
 
 
-def test_table_has_13_rows_and_every_row_is_covered():
-    assert len(st.ROWS) == 13
-    assert {row for row, *_ in ROW_CASES} == set(range(1, 14))
+def test_table_has_9_rows_and_every_row_is_covered():
+    assert len(st.ROWS) == 9
+    assert {row for row, *_ in ROW_CASES} == set(range(1, 10))
 
 
 @pytest.mark.parametrize(("row", "case", "state", "rules", "expected"),
@@ -169,72 +130,50 @@ def test_a_profile_seeds_only_a_single_step_and_keeps_its_seeds_in_order():
         assert record_profile(S, BV(verdict=verdict, source="string"), (hei,)).seeds == ()
 
 
-def test_a_new_profile_reopens_the_checks_of_an_earlier_saddle():
-    """A string after a validated saddle and an earlier well: its own well is validated."""
-    old = replace(S, saddle_attempts=2, claim=CLAIM, intermediate="same_as_endpoint")
+def test_a_new_profile_reopens_the_checks_of_an_earlier_well():
+    """A string after an earlier well: its own well is validated."""
+    old = replace(S, attempts=2, intermediate="same_as_endpoint")
     state = record_profile(old, BV(verdict="intermediate", source="string"))
-    assert (state.last_saddle, state.intermediate) == (None, None)
+    assert state.intermediate is None
     assert decide(CASE, state, RULES) == Decision(A.VALIDATE_INTERMEDIATE, "path_intermediate")
     assert record_profile(BASE, BV(verdict="single", source="screen")).path_runs == 0
 
 
-def test_seeds_share_one_attempt_budget():
-    """U6-P3: a higher-order push is an ordinary counted seed; a used budget ends the case
-    without a string (R3). A stalled search's restart runs inside its attempt (refine_saddle)."""
-    first = replace(S, seeds=(HIGHER,), last_saddle="failed", saddle_attempts=1, path_runs=1)
-    assert decide(CASE, first, RULES) == Decision(A.REFINE_SADDLE, "seed:higher_order_retry")
-    assert decide(CASE, replace(first, saddle_attempts=2), RULES) == EXHAUSTED
+def test_every_failure_is_one_token_and_the_search_goes_on_while_the_budget_lasts():
+    """U6-P4: a rejected connection, a rejected TS or an unconverged search leaves the state
+    without claim or connection, one token spent: the next seed, else the next path, while
+    max_saddle_attempts lasts (R2 never reached the old connection_failed row)."""
+    failed = replace(S, attempts=1)  # what any failed attempt leaves
+    assert decide(CASE, failed, RULES) == DFT_PATH
+    assert decide(CASE, replace(failed, seeds=(SEED,)), RULES) == Decision(
+        A.REFINE_SADDLE, "seed:screen_ts")
+    assert decide(CASE, replace(failed, path_runs=1), RULES) == DFT_PATH  # its next chunk
+    assert decide(CASE, replace(failed, path_runs=2), RULES) == EXHAUSTED
+    assert decide(CASE, replace(failed, attempts=2), RULES) == EXHAUSTED
+    larger = replace(RULES, budget=st.ReactionPathsPolicy(max_saddle_attempts=3))
+    assert decide(CASE, replace(failed, attempts=2, path_runs=1), larger) == DFT_PATH
 
 
 def test_the_screen_path_runs_once_after_the_failed_shortcut_seeds():
     """R4 / G8-P7: the shortcut's seeds (the low-level TSs whose DFT SP lies at least one
     resolution above both minima) go first, in order, and give no verdict; once they have
     failed, the low-level path runs before any string, and never again."""
-    seeded = replace(SHORTCUT, seeds=(SEED, OTHER_TS), saddle_attempts=0, last_saddle=None)
+    seeded = replace(SHORTCUT, seeds=(SEED, OTHER_TS), attempts=0)
     assert decide(CASE, seeded, RULES) == Decision(A.REFINE_SADDLE, "seed:screen_ts")
     assert decide(CASE, SHORTCUT, RULES) == Decision(A.SCREEN, "screen")
     assert decide(CASE, replace(SHORTCUT, neb_done=True), RULES) == DFT_PATH
-    screen_off = replace(RULES, screen=False)
-    assert decide(CASE, SHORTCUT, screen_off) == DFT_PATH
+    assert decide(CASE, SHORTCUT, replace(RULES, screen=False)) == DFT_PATH
 
 
 def test_strings_run_only_after_the_seed_of_each_earlier_string():
     """G3-P2: one FIND_PATH row. The first string, then a next chunk once the latest string's
     seed has failed, while attempts are left; a string whose verdict left no seed to try (an
-    intermediate whose well relaxed to an end and rose no peak) ends the case instead of running
-    up to three chunks as before."""
+    intermediate whose well relaxed to an end and rose no peak) ends the case."""
     first = replace(BASE, neb_done=True)
     assert decide(CASE, first, replace(RULES, screen=False)) == DFT_PATH
     unseeded = replace(first, screen=BV(verdict="intermediate", source="string"), path_runs=1,
                        intermediate="relax_failed")
     assert decide(CASE, unseeded, RULES) == EXHAUSTED
-    tried = replace(unseeded, saddle_attempts=1)  # SCREEN's or the string's seed was tried
+    tried = replace(unseeded, attempts=1)  # SCREEN's or the string's seed was tried
     assert decide(CASE, tried, RULES) == DFT_PATH
     assert decide(CASE, replace(tried, path_runs=2), RULES) == EXHAUSTED
-
-
-@pytest.mark.parametrize("claim", [CLAIM, SOFT])
-def test_a_ts_whose_sides_join_one_basin_leaves_the_search_open(claim):
-    """VAL7/s6_oh_ch4: a -73i reorientation saddle of the OH...CH4 complex (both QRC sides in
-    its basin at both amplitudes) is not the abstraction TS; with a saddle attempt left the case
-    goes on to the string (the W3 run found the -481i TS there) instead of stopping. G3-P1: a
-    soft TS (|nu| < saddle_cm1) is a TS like any other; its failed QRC splits no well."""
-    other = replace(S, claim=claim, saddle_attempts=1, connection="same_basin")
-    assert decide(CASE, other, RULES) == DFT_PATH
-    seeded = replace(other, seeds=(SEED,))
-    assert decide(CASE, seeded, RULES) == Decision(A.REFINE_SADDLE, "seed:screen_ts")
-    assert decide(CASE, replace(other, path_runs=1), RULES) == EXHAUSTED
-    assert decide(CASE, replace(other, saddle_attempts=2), RULES) == FAILED
-    failed = replace(other, connection="failed")  # a side did not optimize: no new evidence
-    assert decide(CASE, failed, RULES) == FAILED
-
-
-@pytest.mark.parametrize("claim", [CLAIM, SOFT])
-def test_a_ts_whose_sides_join_one_state_is_not_retried_and_the_search_goes_on(claim):
-    """X2-2: both QRC sides in one case key but two basins (one state of a bond-changing case):
-    a wider displacement cannot help; with a saddle attempt left the search goes on, the next
-    saddle search dropping the claim."""
-    other = replace(S, claim=claim, saddle_attempts=1, connection="same_state")
-    assert decide(CASE, other, RULES) == DFT_PATH
-    seeded = replace(other, seeds=(SEED,))
-    assert decide(CASE, seeded, RULES) == Decision(A.REFINE_SADDLE, "seed:screen_ts")

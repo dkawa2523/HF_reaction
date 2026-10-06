@@ -3,7 +3,7 @@ of concurrent items (design §7.1)."""
 
 from __future__ import annotations
 
-import os
+import re
 import threading
 from collections import Counter
 from collections.abc import Callable, Generator, Mapping, Sequence
@@ -35,6 +35,12 @@ LADDER: dict[FailureKind, int] = {
 }
 # Set by thread_map in its workers: the MPI ranks one of several concurrent items may use.
 _RANK_SHARE: ContextVar[int | None] = ContextVar("rank_share", default=None)
+# A nonzero exit that is an allocation failure (OOM, MPI / GA / MA, malloc) in the output's tail.
+_OUT_OF_MEMORY = re.compile(
+    r"out of memory|cannot allocate memory|bad_alloc|MemoryError|insufficient memory"
+    r"|not enough memory|(?:ga_create|ma_push_get|ma_alloc_get|armci_malloc)\b.{0,40}fail"
+    r"|signal 9 \(Killed\)", re.IGNORECASE)
+_TAIL_BYTES = 20_000
 
 
 @dataclass(frozen=True)
@@ -128,9 +134,16 @@ class JobRunner:
             )
 
     def _execute(self, key: str, task: Task, adapter: Adapter[T]) -> T | Failure:
+        """Attempts along LADDER. An earlier attempt that left no result (a stopped run, a
+        timeout, an environment failure) is continued once as after a timeout (from its last
+        frame, when the adapter has one); otherwise the task starts afresh."""
         index = self.store.begin(key, task)
         used: Counter[FailureKind] = Counter()
         current = task
+        if index and not self.store.has_result(key):
+            stopped = Failure(kind=FailureKind.TIMEOUT, reason="no result")
+            current = adapter.continuation(task, self.store.attempt_dir(key, index - 1),
+                                           stopped) or task
         while True:
             current = replace(current, execution=_shared(current.execution))
             workdir = self.store.attempt_dir(key, index)
@@ -150,14 +163,11 @@ class JobRunner:
                 result = run_command(cmd, timeout_s=task.execution.timeout_s)
             except (FileNotFoundError, PermissionError) as exc:
                 return Failure(kind=FailureKind.EXECUTABLE_MISSING, reason=f"{cmd.argv[0]}: {exc}")
-        try:
-            return adapter.parse(task, workdir, result)
-        except Exception as exc:  # an unforeseen output fails this job only
-            if os.environ.get("HFAUTO_STRICT") == "1":
-                raise
-            first = (str(exc).splitlines() or [""])[0][:200]
-            return Failure(kind=FailureKind.INCOMPLETE_OUTPUT,
-                           reason=f"parse:{type(exc).__name__}: {first}")
+        outcome = adapter.parse(task, workdir, result)  # an exception is the item's (contain)
+        if isinstance(outcome, Failure) and outcome.kind is FailureKind.NONZERO_EXIT and (
+                _out_of_memory(result)):
+            return outcome.model_copy(update={"kind": FailureKind.OUT_OF_MEMORY})
+        return outcome
 
     def _record(self, hit: bool, result: BaseModel) -> None:
         with self._lock:
@@ -167,6 +177,19 @@ class JobRunner:
                 self._misses += 1
             if isinstance(result, Failure):
                 self._failures[str(result.kind)] += 1
+
+
+def _out_of_memory(result: CommandResult) -> bool:
+    """Killed by SIGKILL (the kernel's OOM killer, a scheduler's memory limit) or an allocation
+    failure reported at the end of stdout or stderr."""
+    if result.returncode in (-9, 137):
+        return True
+    for path in (result.stdout, result.stderr):
+        with path.open("rb") as stream:
+            stream.seek(max(path.stat().st_size - _TAIL_BYTES, 0))
+            if _OUT_OF_MEMORY.search(stream.read().decode("utf-8", errors="replace")):
+                return True
+    return False
 
 
 def _shared(execution: ExecutionSpec) -> ExecutionSpec:
@@ -205,7 +228,8 @@ def thread_map(
     The items run in waves of up to ``workers``, and the jobs of an item run with at most
     workers // (items in its wave) MPI ranks: independent small jobs run side by side instead
     of each on all ranks, and a short last wave (9 items on 4 cores: 4, 4, 1) gets the cores
-    it leaves free. Serial code keeps full ranks."""
+    it leaves free. Serial code keeps full ranks. An exception (or a stop) cancels the items
+    not yet started; the running ones end first."""
     if workers <= 1 or len(items) <= 1:
         return [fn(item) for item in items]
     at_once = min(workers, len(items))
@@ -215,5 +239,8 @@ def thread_map(
         _RANK_SHARE.set(workers // min(at_once, len(items) - i // at_once * at_once))
         return fn(item)
 
-    with ThreadPoolExecutor(max_workers=at_once) as pool:
+    pool = ThreadPoolExecutor(max_workers=at_once)
+    try:
         return list(pool.map(shared, enumerate(items)))
+    finally:
+        pool.shutdown(cancel_futures=True)

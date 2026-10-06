@@ -11,7 +11,6 @@ import pytest
 from hfauto.backends.protocols import Capability as Cap
 from hfauto.chemistry.xyz import composition_key
 from hfauto.core.evidence import Failure, FailureKind
-from hfauto.core.ids import species_artifact_id
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
 from hfauto.core.records import ArtifactType as T
@@ -25,8 +24,7 @@ from hfauto.core.records import (
 )
 from hfauto.core.system import ReactionInput, SpeciesInput, SystemConfig
 from hfauto.drivers.minimum import Registry, calc_id, relax_to_minimum
-from hfauto.drivers.reaction_case import driver
-from hfauto.drivers.reaction_case.state import Action
+from hfauto.stages import reaction_paths
 from hfauto.stages.reaction_paths import ReactionPathsConfig, ReactionPathsStage
 
 pytestmark = pytest.mark.integration
@@ -58,8 +56,8 @@ class KeyedQM(fakes.FakeQM):  # the calculation id of every result, as a JobStor
         self.jobs[calc_id(ev)] += 1
         return ev
 
-    def optimize(self, mol, method, *, init_hessian=None):
-        ev = super().optimize(mol, method, init_hessian=init_hessian)
+    def optimize(self, mol, method, **kw):
+        ev = super().optimize(mol, method, **kw)
         self.jobs[calc_id(ev)] += 1
         return ev
 
@@ -120,38 +118,36 @@ def test_declared_reaction_becomes_a_typed_elementary_step(tmp_run, fake_runtime
     assert (tmp_run / "stage" / rx.log).read_text().count("\n") >= 5
 
 
-def test_a_case_that_raises_keeps_what_it_registered_and_the_next_case_runs(
-        tmp_run, fake_runtime, monkeypatch) -> None:
-    """G3-P4: an exception right after _register (rx's well on the triple-well screen path)
-    leaves rx UNRESOLVED (error:<type>) and still emits the minimum, species and calculations it
-    registered (rx2 joins that basin without a freq, so the species and freq are rx's own); the
-    next case runs. HFAUTO_STRICT=1 re-raises."""
-    validate = driver.HANDLERS[Action.VALIDATE_INTERMEDIATE]
+def test_a_case_that_raises_fails_alone_and_takes_back_what_it_registered(
+        tmp_run, fake_runtime, monkeypatch, caplog) -> None:
+    """X7-2: a case that raises (here rx, after it registered the triple well's intermediate) is
+    contained by StageRuntime.contain: a failed reaction artifact error:<type>. The basin it
+    registered is taken back, so the next case, rx2, registers it again as its own, and every
+    reaction reads minima that are emitted. HFAUTO_STRICT=1 re-raises."""
+    drive = reaction_paths.drive_case
 
-    def validate_then_raise(ctx, state, decision):
-        state = validate(ctx, state, decision)
-        if ctx.case.reaction_id == "rx":
+    def drive_then_raise(case, rt, rules):
+        result = drive(case, rt, rules)
+        if case.reaction_id == "rx":
             raise KeyError("Te")
-        return state
+        return result
 
-    monkeypatch.setitem(driver.HANDLERS, Action.VALIDATE_INTERMEDIATE, validate_then_raise)
+    monkeypatch.setattr(reaction_paths, "drive_case", drive_then_raise)
     pes, again = fakes.triple_well(), ReactionInput(id="rx2", reactant="reactant",
                                                     product="product")
     system = SYSTEM.model_copy(update={"reactions": [*SYSTEM.reactions, again]})
     view = dft_view(tmp_run, pes)
-    with pytest.raises(KeyError):  # HFAUTO_STRICT=1 re-raises
+    with pytest.raises(KeyError):
         run_stage(fake_runtime, tmp_run, pes, view, system=system)
     monkeypatch.delenv("HFAUTO_STRICT")
     reactions, arts, _ = run_stage(fake_runtime, tmp_run, pes, view, system=system)
-    rx = reactions["rx"]
-    assert rx.outcome is O.UNRESOLVED and rx.reasons == ("error:KeyError",)
-    log = (tmp_run / "stage" / rx.log).read_text().splitlines()
-    assert json.loads(log[-1]) == {"action": "error", "reason": "error:KeyError", "detail": "'Te'"}
-    out = {a.artifact_id: a.payload for a in arts}
-    [well] = [m for m in out.values() if isinstance(m, MinimumRecord)]
-    assert well.species_id.startswith("spc_rx_")  # registered by rx
-    assert {species_artifact_id(well.species_id), well.opt_calc, well.freq_calc} <= set(out)
-    assert reactions["rx2"].outcome is O.MULTI_STEP
+    failed = {a.artifact_id: a.failure for a in arts if a.status == "failed"}
+    assert failed == {"rx": Failure(kind=FailureKind.ERROR, reason="error:KeyError: 'Te'")}
+    assert "item 'rx' raised" in caplog.text and reactions["rx2"].outcome is O.MULTI_STEP
+    [well] = [a.payload for a in arts if isinstance(a.payload, MinimumRecord)]
+    assert well.species_id.startswith("spc_rx2_")  # registered again by rx2
+    emitted = {a.artifact_id for a in [*view.artifacts, *arts]}
+    assert {m for r in reactions.values() if r is not None for m in r.minima} <= emitted
 
 
 @pytest.mark.parametrize("pes,points,outcome", [

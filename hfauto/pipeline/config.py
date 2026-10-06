@@ -17,7 +17,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from hfauto.chemistry.gates import Policy
-from hfauto.core.method import EngineSite, MethodSpec
+from hfauto.core.method import EngineSite, MethodSpec, expand_path
 from hfauto.core.system import SystemConfig, load_system
 from hfauto.execution.process import Command, resolve_executable, run_command
 
@@ -35,6 +35,11 @@ class SiteConfig(BaseModel):
     scratch_root: str
     cores: int = Field(ge=1)
     engines: dict[str, EngineSite] = {}
+
+    @field_validator("scratch_root")
+    @classmethod
+    def _expand(cls, value: str) -> str:
+        return expand_path(value)
 
 
 class StageEntry(BaseModel):

@@ -1,6 +1,7 @@
-"""chemistry.symmetry: one point group, accepted by the basin criterion (analysis 2026-09-30
-X3-2), with sigma and m from its operations. Model Hessians: k·I (Eh/bohr²), so a
-symmetrization rises ½ k |δx|²."""
+"""chemistry.symmetry: one point group, from permutation candidates accepted by the zero-point
+criterion (review X2-2), with sigma and m from its operations. Model Hessians k·I (Eh/bohr²): the
+symmetrisation d (bohr) passes when k |d|² · Σ m_i |d_i|² <= 1 (atomic units), the projection of
+the external motion only lowering the left side."""
 
 import itertools
 import math
@@ -8,9 +9,9 @@ import math
 import numpy as np
 import pytest
 
-from hfauto.chemistry.identity import BASIN_DE_HARTREE
+from hfauto.chemistry.elements import mass
 from hfauto.chemistry.symmetry import analyze
-from hfauto.core.constants import BOHR_TO_ANGSTROM
+from hfauto.core.constants import AMU_TO_ME, BOHR_TO_ANGSTROM
 
 pytest.importorskip("pymsym")
 NH3_SYMBOLS = ["N", "H", "H", "H"]
@@ -25,6 +26,7 @@ SN2_I = np.array([[-0.00040698, -1.12e-06, 0.04484225], [1.04164864, -8.4e-07, 0
                   [0.00429119, 3.12e-06, 3.5046527], [-0.00444641, 3e-06, -2.1462068]])
 SIGNS = list(itertools.product((1, -1), repeat=3))
 PHI = (1 + 5**0.5) / 2
+SHIFTED_NH3 = NH3 + [[0.0, 0.0, 0.0], [0.1, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]  # Cs
 
 
 def _ring(n: int, r: float) -> list[list[float]]:
@@ -56,8 +58,8 @@ def _iso(x: np.ndarray, k: float = 0.5) -> np.ndarray:
     return k * np.eye(np.size(x))
 
 
-def _key(symbols, x, hessian=None):
-    s = analyze(symbols, x, _iso(x) if hessian is None else hessian)
+def _key(symbols, x, hessian=None, *, open_shell=False):
+    s = analyze(symbols, x, _iso(x) if hessian is None else hessian, open_shell=open_shell)
     return s.point_group, s.sigma, s.linear, s.m
 
 
@@ -84,7 +86,7 @@ def _hcn(angle_deg: float) -> np.ndarray:
     (["C"] * 10 + ["H"] * 10, NOISY_C10H10, ("D10h", 20, False, 1)),  # 1e-3 Å noise
     (["O", "O", "H", "H"], H2O2, ("C2", 2, False, 2)),  # chiral: no improper operation
     (["C", "H", "F", "Cl", "Br"], CH4, ("C1", 1, False, 2)),
-    (SN2_I_SYMBOLS, SN2_I, ("C3v", 3, False, 1)),
+    (SN2_I_SYMBOLS, SN2_I, ("C3v", 3, False, 1)),  # libmsym's default finds Cs only
     (["C", "N", "H"], _hcn(180.0), ("Cinfv", 1, True, 1)),
     (["O", "O"], np.array([[0, 0, 0], [0, 0, 1.2]]), ("Dinfh", 2, True, 1)),
     (["O", "C", "O"], np.array([[-1.160, 0, 0], [0, 0, 0], [1.161, 0, 0]]), ("Dinfh", 2, True, 1)),
@@ -92,26 +94,14 @@ def _hcn(angle_deg: float) -> np.ndarray:
 ])
 def test_known_point_groups(symbols, x, expected):
     """sigma as tabulated by Fernández-Ramos et al., Theor. Chem. Acc. 118, 813 (2007) and
-    Gilson and Irikura, J. Phys. Chem. B 114, 16304 (2010), typed in here (the pymsym table
-    errs for S4, S6, S8, T, O and I and lacks n > 8, e.g. D10h)."""
+    Gilson and Irikura, J. Phys. Chem. B 114, 16304 (2010), typed in here."""
     assert _key(symbols, x) == expected
 
 
-def test_libmsym_default_splits_the_complex_the_accepted_group_does_not():
-    import pymsym
-
-    elements = [pymsym.Element(name=s, coordinates=[float(v) for v in c])
-                for s, c in zip(SN2_I_SYMBOLS, SN2_I, strict=True)]
-    with pymsym.Context(elements=elements) as ctx:
-        assert ctx.find_symmetry() == "Cs"
-    sym = analyze(SN2_I_SYMBOLS, SN2_I, _iso(SN2_I))
-    assert sym.point_group == "C3v" and sym.coords.shape == SN2_I.shape
-
-
 def test_a_symmetrized_linear_structure_is_exactly_linear_in_the_input_frame():
-    """S18: H...H2 0.006 Å off the axis is one basin with its C∞v projection."""
+    """S18: H...H2 0.006 Å off the axis, a doublet: C∞v by the noise criterion."""
     x = np.array([[0.0, 0.0, -1.8], [0.0, 0.006, 0.0], [0.0, 0.0, 0.74]])
-    sym = analyze(["H", "H", "H"], x, _iso(x))
+    sym = analyze(["H", "H", "H"], x, _iso(x), open_shell=True)
     centred = sym.coords - sym.coords.mean(axis=0)
     assert (sym.point_group, sym.linear) == ("Cinfv", True)
     assert np.linalg.matrix_rank(centred, tol=1e-10) == 1
@@ -122,32 +112,37 @@ def test_a_bent_molecule_is_not_projected_onto_a_line():
     assert _key(["C", "N", "H"], _hcn(170.0)) == ("Cs", 1, False, 1)
 
 
-def test_a_group_counts_only_within_the_basin_energy():
-    """NH3 with one H 0.02 Å out of its C3v place, within a mirror plane: the C3v structure is
-    ½ k |δx|² away, inside the basin on a soft surface and outside it on a stiff one."""
-    x = NH3.copy()
-    x[1] += [0.02, 0.0, 0.0]
-    soft, stiff = _key(NH3_SYMBOLS, x, _iso(x, 0.01)), _key(NH3_SYMBOLS, x, _iso(x, 0.5))
-    assert soft == ("C3v", 3, False, 1) and stiff == ("Cs", 1, False, 1)
-    sym = analyze(NH3_SYMBOLS, x, _iso(x, 0.01))
-    d = (sym.coords - x).ravel() / BOHR_TO_ANGSTROM
-    assert 0.5 * 0.5 * d @ d > BASIN_DE_HARTREE >= 0.5 * 0.01 * d @ d  # the stiff rise is too high
+def test_a_group_counts_only_within_the_zero_point_energy():
+    """NH3 with one H 0.1 Å out of its C3v place, within a mirror plane: C3v when the rise along
+    the symmetrisation stays within ½ħω_d (k below k* = 1/(|d|² Σ m |d|²)), else Cs."""
+    soft = analyze(NH3_SYMBOLS, SHIFTED_NH3, _iso(SHIFTED_NH3, 0.2))
+    assert soft.point_group == "C3v"
+    d = (soft.coords - SHIFTED_NH3) / BOHR_TO_ANGSTROM
+    m = np.array([mass(s) for s in NH3_SYMBOLS])[:, None] * AMU_TO_ME
+    k_star = 1.0 / (np.sum(d**2) * np.sum(m * d**2))  # about 0.9 Eh/bohr²
+    assert _key(NH3_SYMBOLS, SHIFTED_NH3, _iso(SHIFTED_NH3, 0.5 * k_star))[0] == "C3v"
+    assert _key(NH3_SYMBOLS, SHIFTED_NH3, _iso(SHIFTED_NH3, 2.0 * k_star)) == ("Cs", 1, False, 1)
 
 
-def test_a_group_counts_only_within_the_basin_rmsd():
-    """A flat surface (H = 0) accepts any rise; the RMSD to the group's structure still has to
-    stay within BASIN_A."""
-    x = NH3.copy()
-    x[1] += [0.15, 0.0, 0.0]  # C3v lies ~0.06 Å RMSD away, Cs holds
-    assert _key(NH3_SYMBOLS, x, np.zeros((12, 12))) == ("Cs", 1, False, 1)
-    x[1] -= [0.1, 0.0, 0.0]
-    assert _key(NH3_SYMBOLS, x, np.zeros((12, 12))) == ("C3v", 3, False, 1)
+def test_an_open_shell_enters_a_degenerate_group_only_within_noise():
+    """Jahn-Teller: the soft C3v symmetrisation that a closed shell accepts is refused for an
+    open shell (C3v has E representations); Cs has none and stays; noise still passes."""
+    soft = _iso(SHIFTED_NH3, 0.2)
+    assert _key(NH3_SYMBOLS, SHIFTED_NH3, soft, open_shell=True) == ("Cs", 1, False, 1)
+    noise = NH3 + [[0.0, 0.0, 0.0], [1e-4, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+    assert _key(NH3_SYMBOLS, noise, soft, open_shell=True)[0] == "C3v"
+
+
+def test_a_mirror_far_beyond_libmsym_thresholds_is_found():
+    """The VAL9 S6 TS case: Cs 0.03 Å (RMS) off, where libmsym proposes no group; the
+    permutation candidates give it, and the criterion takes it but not C3v on a stiff surface."""
+    noisy = SHIFTED_NH3 + np.random.default_rng(3).normal(size=(4, 3)) * 0.03 / np.sqrt(3)
+    assert _key(NH3_SYMBOLS, noisy, _iso(noisy, 1.0)) == ("Cs", 1, False, 1)
 
 
 def test_a_saddle_counts_its_negative_curvature_by_magnitude():
-    x = NH3.copy()
-    x[1] += [0.02, 0.0, 0.0]
-    assert _key(NH3_SYMBOLS, x, -_iso(x, 0.5)) == _key(NH3_SYMBOLS, x, _iso(x, 0.5))
+    hessian = _iso(SHIFTED_NH3, 2.0)
+    assert _key(NH3_SYMBOLS, SHIFTED_NH3, -hessian) == _key(NH3_SYMBOLS, SHIFTED_NH3, hessian)
 
 
 @pytest.mark.parametrize(("symbols", "x"), [

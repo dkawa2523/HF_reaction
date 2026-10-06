@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict
 from hfauto.backends.protocols import Capability, Engine
 from hfauto.chemistry.gates import Policy
 from hfauto.chemistry.xyz import XYZ
-from hfauto.core.evidence import FileRef, Geometry
+from hfauto.core.evidence import Failure, FileRef, Geometry
 from hfauto.core.manifest import Artifact, Manifest
 from hfauto.core.method import MethodSpec
 from hfauto.core.records import ArtifactType
@@ -60,6 +60,10 @@ class StageRuntime(Protocol):
     def thread_map(  # in input order; each item's jobs get cores // (items in its wave) ranks
         self, fn: Callable[[ItemT], ResultT], items: Sequence[ItemT]
     ) -> list[ResultT]: ...
+
+    def contain(  # fn(), or Failure(error) when it raised: the only containment of an item
+        self, item_id: str, fn: Callable[[], ResultT]
+    ) -> ResultT | Failure: ...
 
 
 class Stage(Protocol):

@@ -1,6 +1,8 @@
 # 実計算による検証の記録
 
-round 9(r9-PRE〜S6 と FINAL。結果報告 [2026-10-02_round9_result.md](reviews/2026-10-02_round9_result.md))の後の全体の再検証の記録である。今の記録は、コミット済みの HEAD(`4137beb`)で全系を新しい run dir から流し直した **VAL9/R2** で、FINAL の作業ツリーで流した VAL9 と VAL7(round 7)を比べる。期待値は受け入れた最新の再生(CUR)と round 9 の検証 run の値で、VAL7 から変えた期待値は §4 に理由とともに挙げる。wave ごとの詳しい記録は `git show c6eff84:docs/validation.md`(§10〜§25)、round 7 は `git show 1bd2ff5:docs/validation.md` にある。決定表の行番号は今の 13 行の表([design.md](design.md) §6.2)のもの(round 10 の W1 で壁時計の行 7 を削除し、旧 8〜14 を 7〜13 に詰めた)。round 10 の wave ごとの記録は §11 にある。
+本書は版ごとの実計算と品質検証の記録である。§1〜§10はコミット`4137beb`に対する **VAL9/R2** とVAL7の比較であり、現在の作業ツリーの全面合格を示さない。R10の記録は§11、今回の基盤整理の非QM検証は§12。進捗の正本は [roadmap.md](roadmap.md)。過去の行番号は当時の決定表を指し、現行W5の9行の表と混同しない。
+
+R9の期待値変更の理由は§4、waveごとの詳しい記録は`git show c6eff84:docs/validation.md`、round 7は`git show 1bd2ff5:docs/validation.md`にある。過去のPASSは当時の評価ツールによる期待照合で、参照との矛盾や未実施を含む場合がある。現在の評価ツールはこれらを明示する（§12）。
 
 ## 1. 条件
 
@@ -215,7 +217,7 @@ rank 2 の site での `--bind-to none` の修正(M4)より前の rank 2 の時�
 ### 11.2 W2(段階 1 の後半: χ の質量加重、SCF の来歴、UHF-CCSD(T)、基準 B1)
 
 - **χ(質量加重)**: `validation/chi_table.py /home/user/hfauto_r9/VAL9/R2 /home/user/hfauto_r9/VAL9 /home/user/hfauto_r7/VAL7 /home/user/hfauto_r9/M3/replay /home/user/hfauto_r9/M3/real /home/user/hfauto_r7/W5`(QM なし。証拠 `/home/user/hfauto_r10/W2/chi/all.txt`)で 154 行、一次の鞍点 113。接続した TS 97 行は 0.882〜1.000、ただし 2 行が 0.727(r7・W5 の S6 の多段の親 f9bc3a1cd8 を自分の 2 結合の変化で測ったもの)。回転子・会合の鞍点 9 行は 0.0054〜0.0653、S5 split2(O–O 開裂)は 6 行で 0.635〜0.714。事前の期待(接続 ≥ 0.88、split2 0.69〜0.72)とは 2 点で違うが、期待もしきい値も動かさず実測を記録した。`REACTION_MODE_MIN` 0.3 は空白 (0.0653, 0.635) の中にある。判定が変わるのは S5 split2 だけ(棄却 2 → 0。R2・VAL9・M3)。旧い r7・W5 の S6 の 790468f505(0.065、接続しない鞍点)は QRC でなく χ で棄却されるようになるが、結論は変わらない。縮退の判定(帯付きの変化の比較)は R2 の縮退の接続 16 件すべてで旧い 4 グラフの判定と同じ。
-- **等価な原子の付け替え(U6-P2)は棄却**: 実装して R2 で測ると、結合の組を変えた 2 件(S6 の Walden の ts_calc: χ 0.940 → 0.726、S10 のリレー: ≥ 0.88 → 0.692)はどちらも誤った等価原子を選んだ([roadmap.md](roadmap.md) 変更 19)。
+- **等価な原子の付け替え(U6-P2)は棄却**: 実装して R2 で測ると、結合の組を変えた 2 件(S6 の Walden の ts_calc: χ 0.940 → 0.726、S10 のリレー: ≥ 0.88 → 0.692)はどちらも誤った等価原子を選んだ([旧R10履歴](history/round10.md) 変更 19)。
 - **X3 を hfauto で**(`/home/user/hfauto_r10/W2/x3_p0a`、`W2/tools/x3_accept.py`): P0a の 5 点を R2 の freq を親にして流した。射影の deck(`vectors input project parent`)と出力の 'Orbital projection guess' はすべての (1) にあり、SP の鍵はすべて R2 と違う。⟨S²⟩ は親の類のまま(CH3O 0.7543 → 0.7544、S6 の TS 0.7578 → 0.7587、S5 の BS 錯体 1.7115 → 1.735 / 1.715 / 1.728、H···C2H4 錯体 0.7501 → 0.7506)。エネルギーは P0a の同じ段と ≤ 2.5e-9 Eh、HONO は atomic guess の解と 7.7e-9 Eh。H···C2H4 錯体は (1) が発散し(110 s)、(2) cgmin 31 回 + (3) で E −79.068928358 と P0a の (3) に 3.9e-10 Eh(合計 296 s。以前は救済が約 7.4k core-s 停滞)。ΔE_rxn(b3febc8052) は M06-2X −35.997、PBE0/TZVPD −34.386、ωB97X-D3 −34.714 kcal/mol(P0a −36.00 / −34.39 / −34.71)。CH3O の UHF-CCSD(T) は −114.873944099508 で P0d と 4e-13 Eh(鍵は `reference: uhf`)。
 - **基準 B1**(`validation/replay.py B1 --src /home/user/hfauto_r9/VAL9/R2`、`/home/user/hfauto_r10/B1`、比較 `/home/user/hfauto_r10/W2/b1_analysis.txt`): 40 case(`hono_walltime` は superseded)。sp より前の新しいジョブは S5 の paths の 12 件だけ(χ で split2 の鞍点を受理した。事前に挙げた変化)。DFT の SP 121 件はすべて射影の guess で新しい鍵。結論(outcome・順位・blocker・notes)の変化 0、δG_eff の差は最大 2.4e-3 kcal/mol。手法パネルの変化は事前に挙げたものだけ: S5 の BS 錯体の M06-2X ΔE_rxn −83.15 → −36.00(`spin_contaminated:dE_rxn` が付いた。以前は層の SP が ⟨S²⟩ 0.759 の別の解で spin_ok を通っていた)、CH3O の CCSD(T) ΔE‡ 33.37 → 33.47・ΔE_rxn −7.80 → −7.81(UHF)、h_c2h4 の M06-2X の行が加わった(錯体の層の SP が (2)(3) で収束し、sp stage は 2,019 → 311 s)。`check.py B1` は s5 以外 PASS(DEVIATION は h_c2h4 の 1 件で W1 と同じ)。s5 は R2 の経路の再生なので split2 は unresolved のまま: 1 本目の鞍点の QRC は両側が同じ basin(`same_state`)、2 本目は側が鞍点に落ちた(`unassigned_side`)。
   - 事前の期待との違い: (a) h_c2h4 で「dG_assoc が出る」としたが、会合の ΔG_assoc は設計上 ΔG_rxn なので出ない。変わったのは錯体の G が `energy_layer_missing` でなくなったこと。(b) S5 の QRC の側 qrc1_1(CH3OO と同じ状態ラベルで、PBE0 では CH3OO の極小より 22.5 kcal/mol 上)の層の SP は、射影で freq の解に留まり atomic guess の解より 19.0 kcal/mol 上になった(⟨S²⟩ 0.754 と 0.756)。同じ多重度の別の空間状態(CH3OO• の Ã 状態は約 0.9 eV 上で、それと推測する)は ⟨S²⟩ では区別できない。この極小は状態の G の最小ではないので順位には効かない。
@@ -228,7 +230,7 @@ rank 2 の site での `--bind-to none` の修正(M4)より前の rank 2 の時�
 - **B1 の再生**(`validation/replay.py W3/replay --src /home/user/hfauto_r10/B1`、設定・スキャン・組成の変わらない 31 case): すべての stage で新しいジョブ 0(SCREEN・string の中点の SP も同じ鍵)。記録の差は意図したものだけ: h2o_hf_inversion と water_dimer_as の δG_eff 0.0 → null と順位の削除、SN2(s1、s20)の `reference` complex、種の注記 `thermo_unavailable` の削除(water_same_basin、s3)。ほかは和の順序による 1e-9 未満の差。`check.py` は 31/31 PASS(`W3/replay.check.txt`)。
 - **新しい run**(`/home/user/hfauto_r10/W3/fresh`、各 1 回。`check.py` は 8 PASS、s5 FAIL: `W3/fresh.check.txt`):
   - h3_doublet: 鎖に分離した H + H2 の点(min_h、min_h2)があり、ゼロは separated。δG_eff 15.55(錯体ゼロでは 12.71、ΔG_assoc +2.83)。cases.yaml を 15.55 にした(理由: ゼロの定義の変更。BH76 の行 47/48 と同じゼロ)。
-  - S6: 引き抜き 10.39(幅 10.04〜10.68、separated、C1 の TS で ΔG‡ 5.95)。生成物側の分離した CH3 + H2O の点(min_ch3、min_h2o)がある。宣言した ch3_h2o の組成は CREST rc 0 で入力状態の候補 6 個を出し、そのうち 1 つが VAL9 の CH3···H2O より G で 0.60 kcal/mol 低い。そのため逆向きの split1 は 20.98 → 21.60 になった(状態の G は最低の配座)。split2 44.83 は不変。cases.yaml の引き抜きを [9.95, 10.45](Cs なら 9.98)、split1 を [21.15, 21.65] にした。2 回目の run は VAL10。
+  - S6: 引き抜き 10.39(幅 10.04〜10.68、separated、C1 の TS で ΔG‡ 5.95)。生成物側の分離した CH3 + H2O の点(min_ch3、min_h2o)がある。宣言した ch3_h2o の組成は CREST rc 0 で入力状態の候補 6 個を出し、そのうち 1 つが VAL9 の CH3···H2O より G で 0.60 kcal/mol 低い。そのため逆向きの split1 は 20.98 → 21.60 になった(状態の G は最低の配座)。split2 44.83 は不変。cases.yaml の引き抜きを [9.95, 10.45] (Cs なら 9.98)、split1 を [21.15, 21.65] にした。2 回目の run は VAL10。
   - h_c2h4、bh3_nh3: 会合のスキャンに中点が 1 回足され(`scan_midpoints:barrierless`)、barrierless のまま。ΔG_rxn −30.65 と −17.83 は B1 と同じ。h_c2h4 の錯体の層の SP はこの run では救済の (2)(3) でも収束せず(`scf_unavailable:scf`)、補助の点なので ΔG_assoc が空になるだけで blocker も rc も出ない(B1 の再計算では R2 の freq から +4.21)。
   - S5: 会合は `scan_mid:ap:4` と `scan_midpoints:barrierless` で barrierless、ΔG_rxn −23.48。split1 46.85。**split2 は unresolved_within_budget**(未達): W2 と同じ鞍点(E −189.8523359 Eh)の QRC の側 1 が鞍点に落ちた(`unassigned_side`)。W2 の run では同じ鞍点の QRC が same_state になり、string の種から結ばれた。QRC は W3 で変えていないので並列の NWChem の非決定性と判断し、期待(elementary 0.13)は変えない。W5-1 の下りと VAL10 の 2 回の run で扱う。
   - S10 36.63(complex)、S19 same_basin、S7・S8(explore まで)は B1 と同じ。近道の case(S5・S6 の親、S10)の記録の判定は None になった。
@@ -249,5 +251,48 @@ rank 2 の site での `--bind-to none` の修正(M4)より前の rank 2 の時�
   - DFT の入口: S10 は 850 本のうち 1 本(32.95、R2 の 7334d674 と同じリレー)だけが入り、縮退転位 36.63 は R2 と同じ。S19 は 975 本のうち 1 本(9.10)で same_basin は R2 と同じ。S6 は 67 本のうち 14 本(引き抜きの辺 0.00、CH3 + H2O → CH4O + H 35.75 など。eddde71 に当たる辺は 41.41 で窓の外)。結果は引き抜き 10.40(帯の中)、CH3 + H2O → CH4O + H elementary 54.62、CH4O + H → CH3O + H2 elementary 13.10、CH2 + H + H2O → CH4O + H barrierless で、cases.yaml を変えた(変更 50)。
   - S5(宣言なし): CH3 + O2 → CH3OO(TS のない辺、第 1 世代)、CH3OO → CH2OOH(第 1 世代、GFN2 ΔE‡ 36.5)は辺として出た。CH2OOH → CH2O + OH の β 開裂は直接の辺としては出ず、CH2O + OH の状態には第 3 世代で CH2O2 + H からの TS のない辺で届いた。入口では未緩和の seed が全体より高く、220 本すべてが高さ 0 になり、順は道のエネルギーの幅で決まった(CH3OO の井戸から出る幅は 51.3)。会合 barrierless、split1 46.85 は VAL9 と同じ。split2 は unresolved(W3 と同じ境界の揺れ。期待は変えない)。入口が入れた辺から CHO + H2O → CH3O2 elementary 38.20・42.48 などの行が増えた。S5 の期待は 2 回流す VAL10 で決める。
   - fluoroethane: 4 中心の 1,2-HF 脱離の TS は第 1 世代で出た(f1b2、GFN2 ΔE‡ 72.2)が、DFT//xTB の高さは 69.5 で窓 40 の外。受け入れ条件「DFT の case が elementary」は満たさない(事前に宣言した衝突。窓は変えない)。
-- **統合で直した誤り**(回帰テストあり。[roadmap.md](roadmap.md) 変更 47〜49): (1) S6 の 1 つの状態に原子順の違う構造が入り、別の元素の並びで読んでいた(276 件中 39 組の trial_id が重複)。(2) 入口の到達を species で見ていて、別の配座から出る辺が unreached になった(fluoroethane 12/51)。(3) 入口の同じ高さの順が id の順で、S5 の会合の辺が `over_cap` になった。(4) 入口がすべての辺で SP をとった(S10 で約 2,500 点になる)。(5) 予算の最後の世代で全状態を列挙していた。(6) TS の重複判定が全 TS との RMSD で 2 乗に増えた。(4)〜(6) を直した後、S10・S19 の explore はキャッシュから 42・61 s(以前は 93・103 分)で、辺は同じだった。
+- **統合で直した誤り**(回帰テストあり。[旧R10履歴](history/round10.md) 変更 47〜49): (1) S6 の 1 つの状態に原子順の違う構造が入り、別の元素の並びで読んでいた(276 件中 39 組の trial_id が重複)。(2) 入口の到達を species で見ていて、別の配座から出る辺が unreached になった(fluoroethane 12/51)。(3) 入口の同じ高さの順が id の順で、S5 の会合の辺が `over_cap` になった。(4) 入口がすべての辺で SP をとった(S10 で約 2,500 点になる)。(5) 予算の最後の世代で全状態を列挙していた。(6) TS の重複判定が全 TS との RMSD で 2 乗に増えた。(4)〜(6) を直した後、S10・S19 の explore はキャッシュから 42・61 s(以前は 93・103 分)で、辺は同じだった。
 - **efficiency の所見**: 世代を重ねる探索は、中くらいの系(16〜17 原子)で予算をすべて使い、辺の大部分は窓のはるか外にある(S10: 849/850 が窓の外)。NT2 の 1 試行は約 10 s・4 並列で、3000 件に約 2 時間かかる。
+
+
+### 11.5 W5の部分結果と未完了項目
+
+2026年10月6日08:43 JSTの保存結果の読み取り。コードは`46d6acc`にW5の未コミット差分を加えたもの。全面的なW5統合完了やVAL10の結果ではない。証拠は`/home/user/hfauto_r10/W5/fresh/summary.json`、各runの`run_state.json`、`W5/`の試験ログにある。
+
+| freshの系 | 保存結果の状態 |
+|---|---|
+| sn2_cl_d3h、s4_ch3o_doublet、nh3_planar_seed、dme_c2v_seed、malonaldehyde_c2v_undeclared | rc 0、当時の期待照合に一致 |
+| s16_acac | rc 0、期待照合に一致。ただしTSに`not_stationary`が残り順位対象外 |
+| s19_tma_hf2 | 停止試験による`explore incomplete`、rc 1。後段と最終評価は未完了 |
+| s5_ch3_o2 | exploreとDFTは終了、paths実行中。SP・thermo・reportと2回目の確認が未完了 |
+
+停留性の部分評価では、B1の極小73点は降下量≤1.2e-5 Eh、受理されたTS31本のうちacacはΔE_TR 2.05e-4 Ehで基準5e-5 Ehを超えた。継続後も認証未達として残す。S19のminima並列試験は、core秒の削減と引換えに壁時計が直列見積もりより約14%長くなり、一律の速度向上とは扱わない。これらは[旧R10履歴](history/round10.md)のW5記録であり、最終VAL10での再測定ではない。
+
+エネルギー層の比較は[validation/bh76/table.md](../validation/bh76/table.md)にある。M06-2Xを維持したが、選定集合の平均誤差と個々の許容外・未収束・TS欠損は別々に残る。層の選定完了を全面的な科学精度の合格としない。
+
+### 11.6 評価ツールの現在の判定
+
+歴史的な`PASS`や`RAN`は当時の意味で保存する。現在の`validation/check.py`は要求stageの欠落・未完了を`INCOMPLETE`、外部参照とoutcomeの矛盾を`DEVIATION`として終了コード1にする。期待照合が一致しても参照矛盾があれば`PASS`を表示しない。
+
+2回目がない旧単独runの比較は`NOT_CHECKED`と明示する。最終fresh評価は`--require-complete`を付け、必須の2回目欠落を`MISSING`として失敗にする。`replay.py`の`RAN`は実行記録、再生の`PASS`はキャッシュ同等性であり、精度や未知反応の網羅性を保証しない。
+
+## 12. 基盤整理の検証
+
+2026年10月6日。基準コミット`46d6acc`＋既存W5差分＋今回の整理に対する**非QM検証**。ライブラリの追加・置換、計算鍵・schema・化学的な探索規則・閾値は変更していない。
+
+| 検証 | 結果 |
+|---|---|
+| WSL prod venvの既定pytest | **761 passed、14 deselected、93.79秒**。realマーカーの試験は対象外 |
+| Ruff全体 | 指摘0。既存W5テストのlambda代入も通常の関数に整理 |
+| pyrefly | エラー0 |
+| import-linter | 既存5項目すべて維持、違反0 |
+| radon cc -n D hfauto | D以上の関数なし |
+| 文書の参照と差分 | 9文書のローカルリンク79件、欠落0。git diff --checkの違反0 |
+
+反応actionの未使用`decision`引数を除き、driverが判断とログを所有する形を明確にした。本体で未使用の`geometry.rotation_about`を削除し、テストの構造生成には既存依存のSciPy Rotationを使う。立体ラベルに関する古い説明を現在の探索制約へ修正した。
+
+評価ツールの新しい試験は、未完了stage、参照矛盾、2回目の欠落、指定した処理区間、歴史的な置換済みcase、実行チェーンの中断を検証する。保存済みS5・S19の読み取りでも未完了と2回目未実施を検出した。
+
+README、進捗、改良計画、現行設計、運用、過去の証拠の責務を分けた。旧R10の計画・変更履歴と未統合案は`docs/history/round10.md`に保存し、今後の作業方針は`AGENTS.md`に置いた。
+
+新規QMと進行中計算の停止・再起動は実施していない。W5の実計算の未達とVAL10未実施は残る。これらの結果で反応ネットワークや主要生成物予測の新機能が完成したとは扱わない。

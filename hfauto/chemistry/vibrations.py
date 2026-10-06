@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
+from scipy.optimize import root_scalar
 
 from hfauto.chemistry.elements import mass
 from hfauto.core.constants import AMU_TO_ME, BOHR_TO_ANGSTROM, CM1_TO_HARTREE
@@ -101,19 +102,6 @@ def projected_frequencies(
     return freqs, modes, k
 
 
-def stationarity_gap(hessian_eh_bohr2: np.ndarray, gradient_eh_bohr: Sequence[float],
-                     symbols: Sequence[str], coords_A: np.ndarray) -> float:
-    """ΔE_N = Σ g_i²/(2|λ_i|) (Eh) over the modes of projected_frequencies: the energy one
-    Newton step of the quadratic model from the gradient and Hessian at ``coords`` moves by. A
-    point is stationary when it is within an identity basin's energy (identity.
-    BASIN_DE_HARTREE): an optimization converged on a flat surface can stop on a shoulder
-    whose frequencies show nothing. |λ| is not floored: a floor (shape_hessian's) caps the soft
-    modes' terms, which carry the shoulder."""
-    values, vectors, inv_root, _ = _mass_weighted_internal(hessian_eh_bohr2, symbols, coords_A)
-    g = vectors.T @ (np.ravel(gradient_eh_bohr) * inv_root)
-    return float(np.sum(g**2 / (2.0 * np.abs(values))))
-
-
 def _internal_eigen(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray
                     ) -> tuple[np.ndarray, np.ndarray]:
     """Eigenvalues and Cartesian eigenvectors (3N, 3N − k) of P_r·H·P_r on the internal
@@ -149,18 +137,31 @@ def shape_hessian(hessian_eh_bohr2: np.ndarray, coords_A: np.ndarray,
     return p @ positive @ p - kappa * np.outer(d, d)
 
 
-def newton_step(hessian_eh_bohr2: np.ndarray, gradient_eh_bohr: Sequence[float],
-                coords_A: np.ndarray, *, signed: bool = False) -> np.ndarray:
-    """One Newton step −Σ g_i/λ'_i v_i (N, 3; Å) on shape_hessian's internal modes, |λ'| =
-    max(|λ|, _CURVATURE_FLOOR): with λ' > 0, −H₊⁺g, downhill along every mode, imaginary ones
-    included (a minimum's, as the optimization from H₊ would start); ``signed``, λ' with λ's
-    sign, to the quadratic model's stationary point (a saddle's)."""
+def trust_region_step(hessian_eh_bohr2: np.ndarray, gradient_eh_bohr: Sequence[float],
+                      coords_A: np.ndarray, radius_A: float) -> tuple[float, np.ndarray]:
+    """(ΔE_TR, s): the step s (N, 3; Å) that minimizes m(s) = gᵀs + ½sᵀ|H|s within ‖s‖ ≤
+    ``radius_A`` and the decrease ΔE_TR = −m(s) ≥ 0 (Eh) it predicts, on the internal motions of
+    every driver model (rigid motions projected out, unweighted Cartesian; |H| on its
+    eigenvectors, unfloored). |H| is convex, so the subproblem (Moré & Sorensen 1983) has one
+    solution: the Newton step −|H|⁻¹g when it fits, else (|H| + μ)⁻¹ on the boundary, μ > 0 the
+    root of ‖s(μ)‖ = radius. A soft mode can then contribute at most its slope times the radius,
+    where the unbounded quadratic model (Σ g²/2|λ|) diverged (acac TS: 8.6e-3 Eh, here 2.1e-4)."""
     values, modes = _internal_eigen(hessian_eh_bohr2, coords_A)
-    curvature = np.maximum(np.abs(values), _CURVATURE_FLOOR)
-    if signed:
-        curvature = np.where(values < 0.0, -curvature, curvature)
-    step = -modes @ ((modes.T @ np.ravel(gradient_eh_bohr)) / curvature)
-    return step.reshape(-1, 3) * BOHR_TO_ANGSTROM
+    curvature, gamma = np.abs(values), modes.T @ np.ravel(gradient_eh_bohr)
+    radius = radius_A / BOHR_TO_ANGSTROM
+
+    def sigma(mu: float) -> np.ndarray:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(gamma == 0.0, 0.0, -gamma / (curvature + mu))
+
+    mu = 0.0
+    if not np.linalg.norm(sigma(0.0)) <= radius:  # also inf: a flat mode with a slope
+        bracket = (1e-12 * float(np.abs(gamma).max()), float(np.linalg.norm(gamma)) / radius)
+        mu = root_scalar(lambda m: float(np.linalg.norm(sigma(m))) - radius, bracket=bracket,
+                         method="brentq").root
+    q = sigma(mu)
+    decrease = -float(gamma @ q + 0.5 * curvature @ q**2)
+    return decrease, (modes @ q).reshape(-1, 3) * BOHR_TO_ANGSTROM
 
 
 def rotational_constants_ghz(symbols: Sequence[str], coords: np.ndarray, linear: bool

@@ -5,7 +5,7 @@
 stages in the order they were (last) executed; a stage's input is the union of the
 manifests of the done stages before it (so another pipeline can append to a run).
 Pending entries have not run yet: their position carries no meaning. An ``incomplete`` stage was
-stopped from outside; like every stage that is not done, a resume runs it again.
+stopped from outside; like every stage that is not done, or ``unfinished``, a resume runs it again.
 """
 
 from __future__ import annotations
@@ -19,10 +19,12 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
+from hfauto.core.evidence import FailureKind
 from hfauto.core.files import write_atomic
 from hfauto.core.hashing import sha256_file
 from hfauto.core.manifest import Manifest, load_manifest
 from hfauto.execution.jobs import JobStats
+from hfauto.execution.jobstore import VOLATILE
 from hfauto.pipeline.config import ResolvedConfig
 
 Status = Literal["pending", "running", "done", "failed", "incomplete", "stale"]
@@ -38,8 +40,15 @@ class StageState(BaseModel):
     started: str | None = None
     finished: str | None = None
     n_ok: int = 0
-    n_failed: int = 0
+    n_failed: int = 0  # failed artifacts: chemistry and job failures, shown in the coverage
+    n_errors: int = 0  # items that raised (StageRuntime.contain)
     jobs: JobStats = JobStats()  # of this stage's last execution
+
+    def unfinished(self) -> bool:
+        """A rerun has work left: the stage was stopped (incomplete, or left running), an item
+        raised, or a job failed for its environment (jobstore.VOLATILE: not stored)."""
+        return (self.status in ("incomplete", "running") or self.n_errors > 0
+                or any(FailureKind(kind) in VOLATILE for kind in self.jobs.failures_by_kind))
 
 
 _STATES = TypeAdapter(list[StageState])

@@ -170,6 +170,27 @@ def test_edges_over_generations_under_one_budget(monkeypatch, fake_runtime, tmp_
     assert np.allclose(started[f"trial_{_ids()['c']}"], HCN + 0.3)  # its own start
 
 
+def test_a_trial_that_raises_fails_alone(monkeypatch, fake_runtime, tmp_run):
+    """X7-2: an exception in one attempt is contained by StageRuntime.contain: its discovery
+    is failed (error:<type>), the stage counts one error (exit code 1) and the others stand."""
+    monkeypatch.delenv("HFAUTO_STRICT")
+    run, rt, fake, _ = _hcn(monkeypatch, fake_runtime, tmp_run)
+    scripted, broken = fake._script, f"trial_{_ids()['d']}"
+
+    def script(source, trial, *args):
+        if trial.trial_id == broken:
+            raise RuntimeError("parser broke")
+        return scripted(source, trial, *args)
+
+    fake._script = script
+    found = {a.artifact_id: a for a in run(rt) if a.type == DISCOVERY}
+    failed = found[f"disc_{broken}"]
+    assert failed.payload.outcome == "failed" and failed.failure.kind == FailureKind.ERROR
+    assert failed.payload.reason == "error:error:RuntimeError: parser broke"
+    assert rt.errors == [broken] and found[f"disc_trial_{_ids()['a']}"].payload.outcome == (
+        "product")
+
+
 def test_a_state_left_once_the_budget_is_spent_is_not_attempted(monkeypatch, fake_runtime,
                                                                  tmp_run):
     """With 4 attempts generation 1 spends the budget: HNC is reached but not run from, and its

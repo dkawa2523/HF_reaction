@@ -35,18 +35,20 @@ PAYLOADS = {
         reaction_id="r1", reactants=TERM, products=TERM, minima=("m1", "m2"),
         endpoints=("s1", "s2"), source="declared", ts_calc="c3",
         coordinate=(r.CoordinateTerm(kind="angle", atoms=(0, 1, 2)),),
-        barrier=r.BarrierVerdict(verdict="single", source="string"),
+        barrier=r.BarrierVerdict(verdict="single", source="string", points=("c7", "c3", "c8")),
         saddle=r.SaddleClaim(saddle_calc="c3", freq_calc="c4", imag_cm1=-1131.6,
                              energy_hartree=-93.3),
         connection=r.ConnectionClaim(side_calcs=("c5", "c6"), minima=("m1", "m2")),
-        outcome=ELEMENTARY, log="cases/r1/log.jsonl"),
+        outcome=ELEMENTARY, log="cases/r1/log.jsonl", steps=("r1_split1", "r1_split2")),
     AT.SPECIES_THERMO: r.SpeciesThermo(
         subject="m1", freq_calc="c2", T_K=298.15, G_hartree=None, H_hartree=None,
-        zpe_hartree=None, settings_sha="abc", notes=("thermo_unavailable",)),
+        zpe_hartree=None, settings_sha="abc", point_group="C2v", sigma=2, m=1,
+        notes=("energy_layer_missing",)),
     AT.REACTION_THERMO: r.ReactionThermo(
         reaction_id="r1", T_K=298.15, standard_state="1M", dE_act_kcal=46.7, dE_rxn_kcal=14.0,
         dG_act_kcal=42.3, dG_rxn_kcal=12.7, band_kcal=(42.0, 42.6),
-        dG_eff_kcal=42.3, notes=("submerged_barrier",)),
+        dG_eff_kcal=42.3, layer_verdict="single", dE_act_path_kcal=46.9,
+        notes=("submerged_barrier",)),
     AT.REPORT: r.ReportRecord(
         rows=(r.RankRow(reaction_id="r1", outcome=ELEMENTARY, tier="connected", rankable=True,
                         rank=1, dG_act_kcal=42.3, band_kcal=(42.0, 42.6), blockers=(),
@@ -98,6 +100,18 @@ def test_an_older_discovery_still_parses():
            "ts_imag_cm1": -300.0, "dE_act_kcal": 1.0, "dE_rxn_kcal": 0.5,
            "electronic_temperature_K": 300.0, "ts_calc": None}
     assert r.DiscoveryRecord.model_validate(old).generation is None
+
+
+def test_payloads_written_before_the_provenance_fields_still_parse():
+    """B1 and the golden manifests hold thermo, reaction and verdict payloads without them."""
+    thermo = PAYLOADS[AT.SPECIES_THERMO].model_dump(exclude={"point_group", "sigma", "m"})
+    assert r.SpeciesThermo.model_validate(thermo).point_group is None
+    rx = PAYLOADS[AT.REACTION_THERMO].model_dump(exclude={"layer_verdict", "dE_act_path_kcal"})
+    assert r.ReactionThermo.model_validate(rx).layer_verdict is None
+    case = PAYLOADS[AT.REACTION].model_dump(exclude={"steps"})
+    case["barrier"].pop("points")
+    old = r.ReactionRecord.model_validate(case)
+    assert old.steps == () and old.barrier is not None and old.barrier.points == ()
 
 
 def test_an_atomic_write_leaves_the_old_file_or_the_new_one(tmp_path):

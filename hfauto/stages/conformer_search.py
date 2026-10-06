@@ -203,7 +203,11 @@ class ConformersStage:
     def run(self, inputs: Manifest, config: StageConfig, rt: StageRuntime) -> list[Artifact]:
         cfg = cast(ConformersConfig, config)
         engine = cast(bp.ConformerEngine, rt.engine(bp.Capability.CONFORMERS, cfg.engine))
-        search = partial(_search, engine, rt.method(cfg.method), rt.load_xyz)
+        run = partial(_search, engine, rt.method(cfg.method), rt.load_xyz)
+
+        def search(item: _Item) -> _Found:  # a raising search fails its item alone
+            found = rt.contain(item.base, lambda: run(item))
+            return _Found(item, list(item.fallback), found) if isinstance(found, Failure) else found
         species = {s.species_id: s for s in inputs.records(ArtifactType.SPECIES, SpeciesRecord)
                    if s.source == "input"}
         # the JobRunner core semaphore limits concurrent CREST jobs by the site threads

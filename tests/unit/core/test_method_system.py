@@ -66,7 +66,13 @@ def test_method_signature_and_site_pin():
     assert DFT.model_copy(update={"id": "other"}).signature() == DFT.signature()
     with pytest.raises(ValidationError):
         EngineSite()  # type: ignore[call-arg]
-    assert EngineSite(version="7.2.3").execution.timeout_s == 14_400
+    assert EngineSite(version="7.2.3").execution.timeout_s == 86_400  # hang detection only
+
+
+def test_site_scratch_paths_expand_their_variables_once_at_load(monkeypatch):
+    monkeypatch.setenv("HFAUTO_T_SCRATCH", "/scratch/x")
+    site = EngineSite(version="7.2.3", scratch_dir="$HFAUTO_T_SCRATCH/nwchem")
+    assert site.scratch_dir == "/scratch/x/nwchem"
 
 
 SYSTEM = """

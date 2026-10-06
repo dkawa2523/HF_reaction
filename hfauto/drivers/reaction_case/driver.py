@@ -4,7 +4,6 @@ seen only through ``hfauto.backends.protocols``; the stage builds the CaseRuntim
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,7 +27,7 @@ from hfauto.core.records import (
 )
 from hfauto.drivers.minimum import Registry
 from hfauto.drivers.reaction_case import actions, connection, paths
-from hfauto.drivers.reaction_case.state import Action, CaseRules, CaseState, Decision, decide
+from hfauto.drivers.reaction_case.state import Action, CaseRules, CaseState, decide
 
 if TYPE_CHECKING:
     from hfauto.backends.protocols import PathEngine, QMEngine, SaddleRefiner
@@ -107,7 +106,7 @@ def _artifacts(record: ReactionRecord, work: actions.Work) -> tuple[Artifact, ..
     return (*out, reaction_artifact(record))
 
 
-Handler = Callable[[actions.Ctx, CaseState, Decision], CaseState]
+Handler = Callable[[actions.Ctx, CaseState], CaseState]
 HANDLERS: dict[Action, Handler] = {
     Action.SCREEN: paths.screen,
     Action.REFINE_SADDLE: actions.refine_saddle,
@@ -119,10 +118,12 @@ HANDLERS: dict[Action, Handler] = {
 
 def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules) -> CaseResult:
     """Loop decide → action until a terminal decision (the table is bounded by its counts);
-    a re-run replays finished jobs from the JobStore. An exception leaves only this case
-    UNRESOLVED (``error:<type>``; HFAUTO_STRICT=1 re-raises) with the evidence in hand and the
-    artifacts it added, so the minima, species and calculations it registered are emitted.
-    Registry writes happen on the case thread; rt.map runs only engine calls."""
+    a re-run replays finished jobs from the JobStore. A hypothesis that hypotheses.select closed
+    is emitted as it is (no job, no log). An exception propagates: the stage runtime contains it
+    as this item's failure. Registry writes happen on the case thread; rt.map runs only engine
+    calls."""
+    if case.outcome is not None:
+        return CaseResult(case, (), (reaction_artifact(case),))
     folder = rt.case_dir / path_token(case.reaction_id)
     folder.mkdir(parents=True, exist_ok=True)
     log_path = folder / "log.jsonl"
@@ -132,29 +133,20 @@ def drive_case(case: ReactionRecord, rt: CaseRuntime, rules: CaseRules) -> CaseR
         with log_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(entry, sort_keys=True) + "\n")
 
-    a, b = (rt.registry.minima.get(m) for m in case.minima)
-    state = CaseState(minima=(a[0] if a else None, b[0] if b else None),
-                      last_saddle="converged" if case.ts_calc else None)
-    if case.ts_calc:  # validated first (row 8); a failed gate goes on to SCREEN
+    state = CaseState(saddle_pending=bool(case.ts_calc))
+    if case.ts_calc:  # validated first (row 4); a failed gate goes on to SCREEN
         log({"note": f"ts_calc:{case.ts_calc}"})
     ctx: actions.Ctx | None = None
-    children: tuple[ReactionRecord, ...] = ()
-    try:
-        while True:
-            decision = decide(case, state, rules)
-            log({"action": decision.action.value, "reason": decision.reason,
-                 "outcome": decision.outcome.value if decision.outcome else None})
-            if decision.outcome is not None:
-                break
-            ctx = ctx or open_case(case, rt, rules, folder, log)
-            state = HANDLERS[decision.action](ctx, state, decision)
-        if decision.outcome is CaseOutcome.MULTI_STEP and ctx is not None:
-            children = _children(case, rt, ctx)
-    except Exception as exc:
-        if os.environ.get("HFAUTO_STRICT") == "1":
-            raise
-        decision = Decision(Action.COMPLETE, f"error:{type(exc).__name__}", CaseOutcome.UNRESOLVED)
-        log({"action": "error", "reason": decision.reason, "detail": str(exc)[:500]})
+    while True:
+        decision = decide(case, state, rules)
+        log({"action": decision.action.value, "reason": decision.reason,
+             "outcome": decision.outcome.value if decision.outcome else None})
+        if decision.outcome is not None:
+            break
+        ctx = ctx or open_case(case, rt, rules, folder, log)
+        state = HANDLERS[decision.action](ctx, state)
+    children = (_children(case, rt, ctx) if decision.outcome is CaseOutcome.MULTI_STEP
+                and ctx is not None else ())
     work = ctx.work if ctx is not None else actions.Work()
     record = finalize(case, decision, barrier=state.screen, claim=state.claim,
                       connection=work.connection)

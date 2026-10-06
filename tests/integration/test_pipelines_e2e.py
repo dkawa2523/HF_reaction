@@ -144,7 +144,7 @@ def test_a_run_whose_inputs_all_fail_still_writes_the_report(pipeline, tmp_path,
             str(tmp_path / "doublets.yaml"), "--site", str(tmp_path / "site.yaml"),
             "--run-dir", str(tmp_run)]
     result = CliRunner().invoke(app, args)
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 0, result.output  # every stage done: the failures are coverage
     states = {s.stage_id: s for s in RunLayout(tmp_run).read_state()}
     assert (states["structures"].n_ok, states["structures"].n_failed) == (0, 3)
     assert all((states[s].status, states[s].n_ok, states[s].n_failed) == ("done", 0, 0)

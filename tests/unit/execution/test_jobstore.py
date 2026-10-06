@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from hfauto.core.evidence import Failure, FailureKind, FileRef, Geometry
 from hfauto.core.method import ExecutionSpec
 from hfauto.execution.jobs import Task
-from hfauto.execution.jobstore import JobStore
+from hfauto.execution.jobstore import VOLATILE, JobStore
 
 
 class Out(BaseModel):
@@ -54,7 +54,7 @@ def test_restores_result_type_and_checks_file_shas(tmp_path):
 def test_failures_are_remembered_unless_retried(tmp_path):
     store = JobStore(tmp_path / "jobs")
     key = store.key(_task())
-    for kind in set(FailureKind) - {FailureKind.TIMEOUT}:
+    for kind in set(FailureKind) - VOLATILE:
         store.save(key, Failure(kind=kind, reason="r"))
         assert store.load(key, Out) == Failure(kind=kind, reason="r")
     frame = store.attempt_dir(key, 2) / "last.xyz"  # a saddle search stopped at maxiter
@@ -70,11 +70,17 @@ def test_failures_are_remembered_unless_retried(tmp_path):
     assert store.load(key, Out) is None
 
 
-def test_timeouts_are_never_stored(tmp_path):
+def test_environment_failures_are_never_stored(tmp_path):
+    """X7-3: a timeout, a missing executable or a job out of memory clears the old record, and
+    one stored by an older version is a miss."""
     store = JobStore(tmp_path / "jobs")
     key = store.key(_task())
-    store.save(key, Failure(kind=FailureKind.INPUT_INVALID, reason="autoz"))
-    store.save(key, Failure(kind=FailureKind.TIMEOUT, reason="timeout"))  # clears the old record
-    assert store.load(key, Out) is None
-    assert not (store.job_dir(key) / "result.json").exists()
+    for kind in VOLATILE:
+        store.save(key, Failure(kind=FailureKind.INPUT_INVALID, reason="autoz"))
+        store.save(key, Failure(kind=kind, reason="r"))
+        assert store.load(key, Out) is None and not store.has_result(key)
+    path = store.job_dir(key) / "result.json"
+    path.write_text(json.dumps({"kind": "failure", "files": {},
+                                "data": {"kind": "executable_missing", "reason": "r"}}))
+    assert store.has_result(key) and store.load(key, Out) is None
 

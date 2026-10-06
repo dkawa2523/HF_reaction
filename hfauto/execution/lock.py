@@ -1,13 +1,16 @@
 """Lock files created with O_EXCL; a lock whose holder pid is dead is taken over.
 
 The same primitive serves ``SiteLock`` (one run per scratch root, design §7.1) and the
-per-job ``.lock`` of the JobStore; plain files, so it works on Windows and POSIX alike.
+per-job ``.lock`` of the JobStore; plain files, so it works on Windows and POSIX alike. A
+holder on another host counts as alive (its pid cannot be checked from here): a lock that a
+crashed node left behind is removed by hand.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import socket
 import sys
 import time
 import uuid
@@ -20,6 +23,7 @@ SITE_LOCK_NAME = ".hfauto_site.lock"
 _UNREADABLE_STALE_S = 10.0  # a holder writes its JSON right after creating the file
 # Tells this process apart from an earlier, dead one that had the same pid.
 _TOKEN = uuid.uuid4().hex
+_HOST = socket.gethostname()
 
 
 def pid_alive(pid: object) -> bool:
@@ -61,6 +65,8 @@ if sys.platform == "win32":  # a block, so type checkers off Windows skip the ct
 
 
 def holder_alive(holder: Mapping[str, Any]) -> bool:
+    if holder.get("host", _HOST) != _HOST:
+        return True
     pid = holder.get("pid")
     if pid == os.getpid():
         return holder.get("token") == _TOKEN
@@ -68,7 +74,7 @@ def holder_alive(holder: Mapping[str, Any]) -> bool:
 
 
 def try_acquire(path: Path, holder: Mapping[str, Any]) -> dict[str, Any] | None:
-    """Create ``path`` exclusively and write ``holder`` (plus this process's token) into it.
+    """Create ``path`` exclusively and write ``holder`` (plus this host and process token).
 
     Returns None on success, otherwise the current (live) holder. A lock whose holder is
     dead, or that stays unreadable, is removed and creation is retried.
@@ -85,7 +91,7 @@ def try_acquire(path: Path, holder: Mapping[str, Any]) -> dict[str, Any] | None:
             release(path)
             continue
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump({**holder, "token": _TOKEN}, stream)
+            json.dump({**holder, "host": _HOST, "token": _TOKEN}, stream)
         return None
 
 
@@ -112,7 +118,8 @@ class SiteLock:
     """``<scratch_root>/.hfauto_site.lock``, held for a whole ``hfauto run``.
 
     Entering raises RuntimeError naming the holder when another live process (or this
-    one) already holds the lock; a lock left by a dead pid is taken over.
+    one, or any process on another host) already holds the lock; a lock left by a dead pid of
+    this host is taken over.
     """
 
     def __init__(self, scratch_root: Path, run_dir: Path) -> None:
@@ -129,8 +136,9 @@ class SiteLock:
         current = try_acquire(self.path, holder)
         if current is not None:
             raise RuntimeError(
-                f"site lock {self.path} is held by pid {current.get('pid')} "
-                f"(run {current.get('run_dir')}, since {current.get('time')})"
+                f"site lock {self.path} is held by pid {current.get('pid')} on"
+                f" {current.get('host')} (run {current.get('run_dir')}, since"
+                f" {current.get('time')}); a lock of a dead host is removed by hand"
             )
         return self
 

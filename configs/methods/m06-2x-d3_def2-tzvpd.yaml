@@ -2,6 +2,8 @@
 # points; thermo energy_method of discover and known_endpoints). NWChem 7.2.3 applies Grimme's
 # M06-2X zero-damping D3 (s6 1, sr6 1.619, s8 0). Grid fine vs xfine changes the probe
 # barriers by <= 0.01 kcal/mol (docs/reviews/2026-09-30_remaining_issues_analysis.md §2.6).
+# Kept as the layer on the BH76 selection rows and SCF health (validation/bh76/table.md): from
+# the atomic guess its SCF fails on the open-shell H···C2H4 complex on both ladder rungs.
 id: m06-2x-d3_def2-tzvpd
 kind: dft
 functional: m06-2x

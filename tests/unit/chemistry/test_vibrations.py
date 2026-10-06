@@ -114,47 +114,34 @@ def test_without_a_direction_the_model_is_positive_definite_on_the_same_modes():
         pytest.approx(1e-3))  # the floor
 
 
-def _mass_weighted_model(curvatures, gamma, rigid=0.0):
-    """(H Eh/bohr², g Eh/bohr) of water with mass-weighted internal curvatures ``curvatures`` and
-    mass-weighted internal gradient components ``gamma`` (on one internal basis), plus ``rigid``
-    times a mass-weighted rigid motion in g."""
-    symbols, x = WATER
-    external = vib.external_basis(symbols, x)
-    q, _ = np.linalg.qr(np.hstack([external, np.random.default_rng(7).standard_normal((9, 3))]))
-    internal = q[:, 6:]
-    root = np.sqrt(np.repeat([mass(s) for s in symbols], 3))
-    h = (internal @ np.diag(curvatures) @ internal.T) * np.outer(root, root)
-    g = (internal @ np.asarray(gamma) + rigid * external[:, 0]) * root
-    return symbols, x, h, g
-
-
-def test_the_stationarity_gap_weighs_a_residual_gradient_by_the_curvature_of_its_mode():
-    """G5-P1: ΔE_N = Σ γ_i²/(2|λ_i|) over the modes of projected_frequencies, rigid motions out.
-    The same residual gradient is a shoulder (W3 1ee97b40: 2.7e-4 Eh) along a soft mode and a
-    stationary point (VAL7 minima: ≤ 1.2e-5 Eh) along stiff ones; |λ| of an imaginary mode."""
-    shoulder = _mass_weighted_model([2e-5, 0.2, 0.5], [1e-4, 1e-5, 1e-5], rigid=0.3)
-    stiff = _mass_weighted_model([2e-5, 0.2, 0.5], [0.0, 1e-4, 1e-5], rigid=0.3)
-    imaginary = _mass_weighted_model([-2e-5, 0.2, 0.5], [1e-4, 1e-5, 1e-5])
-    gap = 1e-8 / 4e-5 + 1e-10 / 0.4 + 1e-10 / 1.0
-    assert vib.stationarity_gap(shoulder[2], shoulder[3], *shoulder[:2]) == pytest.approx(gap)
-    assert vib.stationarity_gap(imaginary[2], imaginary[3], *imaginary[:2]) == pytest.approx(gap)
-    assert gap > BASIN_DE_HARTREE > 1e3 * vib.stationarity_gap(stiff[2], stiff[3], *stiff[:2])
-
-
-def test_the_newton_step_descends_every_internal_mode_of_the_positive_model():
-    """−H₊⁺g on shape_hessian's modes (|λ| floored at 1e-3): the quadratic model's minimum
-    along a positive mode, downhill along a negative one, rigid motions untouched."""
+def test_the_trust_region_step_inside_the_radius_is_newtons_on_the_absolute_model():
+    """X1: −|H|⁻¹g on the internal modes (rigid motions out), downhill along a negative mode
+    too, and ΔE_TR = Σ γ²/(2|λ|): the quadratic model's decrease when the step fits."""
     x, rigid, internal, h, _ = _model_input()
-    gamma = np.array([1e-3, -2e-3, 1e-4, 0.0, 4e-3, -6e-3])
-    step = vib.newton_step(h, internal @ gamma + 0.1 * rigid[:, 1], x)
-    assert step.shape == (4, 3)
-    curvature = np.maximum(np.abs([-0.2, -0.1, 2.8e-3, 2.9e-3, 0.4, 0.6]), 1e-3)
+    gamma = np.array([1e-3, -2e-3, 1e-5, 0.0, 4e-3, -6e-3])  # Eh/bohr on the internal modes
+    curvature = np.abs([-0.2, -0.1, 2.8e-3, 2.9e-3, 0.4, 0.6])
+    gap, step = vib.trust_region_step(h, internal @ gamma + 0.1 * rigid[:, 1], x, 1.0)
     q = step.ravel() / BOHR_TO_ANGSTROM
+    assert step.shape == (4, 3) and np.abs(rigid.T @ q).max() < 1e-12
     assert internal.T @ q == pytest.approx(-gamma / curvature, abs=1e-12)
-    assert np.abs(rigid.T @ q).max() < 1e-12
-    soft = internal @ np.diag([1e-6, 0.1, 0.2, 0.3, 0.4, 0.5]) @ internal.T
-    assert internal[:, 0] @ vib.newton_step(soft, internal[:, 0] * 1e-3, x).ravel() == (
-        pytest.approx(-BOHR_TO_ANGSTROM))  # 1e-3 / max(1e-6, 1e-3) bohr
+    assert gap == pytest.approx(float(np.sum(gamma**2 / (2 * curvature))))
+    assert vib.trust_region_step(h, np.zeros(12), x, 1.0)[0] == 0.0
+
+
+def test_a_soft_mode_is_bounded_by_the_radius_where_the_unbounded_model_diverged():
+    """X1 (acac TS: Σ g²/2|λ| 8.6e-3 Eh, trust region 2.1e-4): the slope along a nearly flat
+    mode moves the step to the boundary, ‖s‖ = radius, and ΔE_TR stays below slope × radius; a
+    flat mode with a slope (|λ| = 0) gives the same bound, a stiff one a negligible decrease."""
+    x, _, internal, h, _ = _model_input()
+    radius = 0.05 * math.sqrt(4)  # one basin (identity.BASIN_A · √N)
+    flat = internal @ np.diag([1e-7, 0.1, 0.2, 0.3, 0.4, 0.5]) @ internal.T
+    for hessian in (flat, internal @ np.diag([0.0, 0.1, 0.2, 0.3, 0.4, 0.5]) @ internal.T):
+        gap, step = vib.trust_region_step(hessian, internal[:, 0] * 1e-3, x, radius)
+        assert np.linalg.norm(step) == pytest.approx(radius)
+        assert 1e-3 * radius / BOHR_TO_ANGSTROM * 0.99 < gap < 1e-3 * radius / BOHR_TO_ANGSTROM
+        assert gap > BASIN_DE_HARTREE and gap < 1e-8 / (2 * 1e-7)  # the divergent model's
+    stiff = vib.trust_region_step(h, internal[:, 5] * 1e-4, x, radius)[0]
+    assert stiff == pytest.approx(1e-8 / (2 * 0.6)) and stiff < 1e-3 * BASIN_DE_HARTREE
 
 
 def test_canonical_npy(tmp_path):

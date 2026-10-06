@@ -11,9 +11,6 @@ from pathlib import Path
 import fakes
 import numpy as np
 import pytest
-from unit.drivers.test_reaction_case_actions import act
-from unit.drivers.test_reaction_case_actions import case_ctx as well_case
-from unit.drivers.test_reaction_case_saddle import HigherOrderQM
 
 from hfauto.chemistry.classification import finalize
 from hfauto.chemistry.profile import Profile
@@ -31,7 +28,7 @@ from hfauto.core.records import (
     SpeciesRecord,
     StoichTerm,
 )
-from hfauto.drivers.minimum import Registry, relax_to_minimum
+from hfauto.drivers.minimum import Registry, Relaxer, relax_to_minimum
 from hfauto.drivers.reaction_case import connection, driver
 from hfauto.drivers.reaction_case.state import (
     Action,
@@ -94,27 +91,30 @@ def case_ctx(root: Path, ends=("reactant", "product"), known=(), kcal=None):
                           minima=(ids[ends[0]], ids[ends[1]]), endpoints=ends,
                           source="discovery")
     ctx = driver.open_case(case, rt, CaseRules(screen=False), root, lambda _: None)
-    return ctx, CaseState(minima=tuple(registry.minima[m][0] for m in case.minima))
+    return ctx, CaseState()
 
 
-def qrc(ctx, state, monkeypatch, names, ts_kcal=20.0, amplitudes=None):
+def qrc(ctx, state, monkeypatch, names, ts_kcal=20.0, runs=None):
     """VALIDATE_AND_CONNECT on a TS ``ts_kcal`` above the reactant that passes its checks and
-    whose QRC sides optimize to the named structures at every amplitude (``amplitudes``
-    collects them; the checks and the QRC optimization: test_reaction_case_saddle)."""
+    whose QRC sides optimize to the named structures, then settle as any side does (``runs``
+    collects the descents; the checks and the QRC optimization: test_reaction_case_saddle)."""
     sides = tuple(ctx.rt.qm.optimize(ctx.mol(POINTS[n]), DFT) for n in names)
     ctx.work.calcs["freq"] = Evidence.model_validate({
         **sides[0].model_dump(), "task": "freq", "energy_hartree": ts_kcal * K, "n_external": 6,
         "frequencies_cm1": (-1500.0, 100.0, 200.0, 300.0, 400.0, 500.0),
         "imaginary_modes": (tuple(np.eye(12)[3]),), "hessian": sides[0].output})
-    finals = tuple(ctx.coords(s.final) for s in sides)
-    monkeypatch.setattr(connection, "_sides", lambda _ctx, _freq, _starts, attempt: (
-        (amplitudes if amplitudes is not None else []).append(attempt), (sides, finals))[1])
+
+    class Named(Relaxer):
+        def descend(self, x, freq, step, **kw):
+            (runs if runs is not None else []).append(kw["name"])
+            return [self.settle(opt, ("opt:qrc",)) for opt in sides]
+
+    monkeypatch.setattr(connection, "Relaxer", Named)
     claim = SaddleClaim(saddle_calc="ts", freq_calc="freq", imag_cm1=-1500.0,
                         energy_hartree=ts_kcal * K)
     monkeypatch.setattr(connection, "validate_ts",
-                        lambda _ctx, s: replace(s, last_saddle=None, claim=claim))
-    return connection.validate_and_connect(ctx, replace(state, last_saddle="converged"),
-                                           Decision(Action.VALIDATE_AND_CONNECT, "test"))
+                        lambda _ctx, s: replace(s, saddle_pending=False, claim=claim))
+    return connection.validate_and_connect(ctx, replace(state, saddle_pending=True))
 
 
 def minimum_of(ctx, name: str) -> str:
@@ -146,34 +146,34 @@ def test_a_bond_changing_case_is_judged_by_chemical_state(tmp_path, monkeypatch)
 def test_a_ts_whose_sides_join_one_state_is_rejected_and_the_search_goes_on(
         tmp_path, monkeypatch):
     """Both sides in the product's state, in two basins: a saddle of another process (a
-    conformer change of H2O···H) at any energy. No wider displacement, no claim, no split; the
-    search goes on while saddle attempts are left, else connection_failed."""
+    conformer change of H2O···H) at any energy. No claim, no split: a failure token, so the
+    search goes on while attempts are left, and the case ends unresolved once they are spent."""
     ctx, state = case_ctx(tmp_path, kcal={"product": -10.0, "side": -2.0})
     jobs = len(ctx.rt.qm.calls)
-    state = qrc(ctx, state, monkeypatch, ("side", "product"), ts_kcal=15.0)
-    assert state.connection == "same_state" and ctx.work.connection is None
+    state = qrc(ctx, replace(state, attempts=1), monkeypatch, ("side", "product"), ts_kcal=15.0)
+    assert (state.connection, state.claim, ctx.work.connection) == (None, None, None)
     assert ctx.work.intermediate is None and ctx.work.split_ts is None
     assert ctx.rt.qm.calls[jobs:] == ["optimize", "optimize", "frequencies"]  # its new basin
     assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "dft_path")
-    spent = replace(state, saddle_attempts=ctx.rules.budget.max_saddle_attempts)
-    assert decide(ctx.case, spent, ctx.rules) == Decision(Action.COMPLETE, "connection_failed",
+    spent = replace(state, attempts=ctx.rules.budget.max_saddle_attempts)
+    assert decide(ctx.case, spent, ctx.rules) == Decision(Action.COMPLETE, "attempts_exhausted",
                                                           CaseOutcome.UNRESOLVED)
 
 
-@pytest.mark.parametrize("names,amplitudes,label", [
-    (("product", "product"), [1, 2], "same_basin"),  # one basin at both amplitudes
-    (("side", "product"), [1], "same_state"),  # two basins of one state: no wider QRC
-    (("reactant", "product"), [1], "elementary"),
+@pytest.mark.parametrize("names,label", [
+    (("product", "product"), None),  # one basin: no wider second QRC (U6-P3), a token
+    (("side", "product"), None),  # two basins of one state
+    (("reactant", "product"), "elementary"),
 ])
-def test_sides_in_one_basin_are_retried_wider_within_the_action(tmp_path, monkeypatch, names,
-                                                                amplitudes, label):
-    """G7-P5: one action from the TS checks to QRC; only sides in one basin get the second,
-    wider amplitude. Row 7 then searches on while attempts are left."""
+def test_one_qrc_per_ts_and_a_rejected_one_is_a_token(tmp_path, monkeypatch, names, label):
+    """G7-P5: one action from the TS checks to QRC, at one amplitude; a connection that fails
+    leaves neither claim nor connection, and the search goes on while attempts are left."""
     ctx, state = case_ctx(tmp_path)
     ran = []
-    state = qrc(ctx, state, monkeypatch, names, amplitudes=ran)
-    assert (ran, state.connection, state.last_saddle) == (amplitudes, label, None)
-    if label != "elementary":
+    state = qrc(ctx, state, monkeypatch, names, runs=ran)
+    assert (ran, state.connection, state.saddle_pending) == (["qrc"], label, False)
+    assert (state.claim is None) is (label is None)
+    if label is None:
         assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "dft_path")
 
 
@@ -194,7 +194,7 @@ def test_a_new_state_on_one_side_splits_and_none_at_an_end_is_reassigned(tmp_pat
 
 
 @pytest.mark.parametrize("side_kcal,ts_kcal,expected", [
-    (0.5, 0.8, "same_state"),  # G5-P2: the well and the TS lie within the resolution
+    (0.5, 0.8, None),  # G5-P2: the well and the TS lie within the resolution: one state
     (0.5, 2.0, "distinct"),  # a hill of 1.5 kcal/mol between the well and the end
     (1.5, 2.0, "distinct"),  # 1.5 kcal/mol from the end
 ])
@@ -233,8 +233,7 @@ def test_a_profile_well_is_an_end_by_state_or_at_the_resolution(tmp_path, ends, 
     frames = [POINTS[n] for n in names]
     ctx.work.path = Profile(frames, tuple(e * K for e in kcal), "string")
     state = record_profile(state, BarrierVerdict(verdict="intermediate", source="string"))
-    state = connection.validate_intermediate(
-        ctx, state, Decision(Action.VALIDATE_INTERMEDIATE, "path_intermediate"))
+    state = connection.validate_intermediate(ctx, state)
     assert state.intermediate == expected
     assert (ctx.work.intermediate is not None) is (expected == "distinct")
     if expected == "same_as_endpoint":  # the profile goes on from its highest peak
@@ -254,8 +253,7 @@ def by_profile(ctx, state, monkeypatch):
     ctx.work.path = Profile([POINTS[n] for n in names], tuple(e * K for e in (0, 3, -1, 3, 0)),
                             "string")
     state = record_profile(state, BarrierVerdict(verdict="intermediate", source="string"))
-    decision = Decision(Action.VALIDATE_INTERMEDIATE, "path_intermediate")
-    return connection.validate_intermediate(ctx, state, decision)
+    return connection.validate_intermediate(ctx, state)
 
 
 @pytest.mark.parametrize("reach", [by_qrc, by_profile])
@@ -306,41 +304,3 @@ def test_an_intermediate_in_a_new_basin_is_the_cases_own_species(tmp_path, monke
     assert well.members == (own.species_id,) and list(ctx.work.species) == [own.species_id]
     assert np.allclose(driver._endpoint(ctx.rt, well.minimum_id, own.species_id),
                        POINTS["bridged"])
-
-
-# a higher-order verdict at a stationary point only ---------------------------------------------
-
-class SteppedQM(HigherOrderQM):  # ν2 at the saddle only: a freq anywhere else has no second mode
-    def frequencies(self, mol, method, **kw):
-        self.freqs = getattr(self, "freqs", 0) + 1
-        if self.freqs == 1:
-            return super().frequencies(mol, method, **kw)
-        return fakes.FakeQM.frequencies(self, mol, method, **kw)
-
-
-@pytest.mark.parametrize(("bend", "qm", "newton"), [(2e-3, SteppedQM, True),
-                                                    (2e-3, HigherOrderQM, False),
-                                                    (0.0, HigherOrderQM, False)])
-def test_a_second_imaginary_mode_counts_only_where_the_saddle_is_stationary(tmp_path, bend, qm,
-                                                                            newton):
-    """S3 (carried M4): a saddle whose final gradient (H off the A-H-B axis) leaves ΔE_N above
-    BASIN_DE_HARTREE gets a freq at its signed Newton step (down the bend). When ν2 is gone
-    there, the retry starts at that step; when it persists, or the saddle is stationary, the
-    saddle is pushed along its second mode (+y). Either seed is the same retry: TS freq
-    Hessian, reaction mode, one continuation deeper. S6 790468f505: ν2 -54.8i and -77.1i
-    turned real one Newton step away (validation §22)."""
-    ctx, state = well_case(tmp_path, fakes.double_well())
-    state = act(ctx, act(ctx, state, Action.FIND_PATH), Action.REFINE_SADDLE)
-    gradient = np.zeros(9)
-    gradient[4] = bend  # Eh/bohr on H along y
-    ctx.work.saddle = ctx.work.saddle.model_copy(update={"gradient": tuple(gradient)})
-    x = ctx.coords(ctx.work.saddle.final)
-    ctx.rt = replace(ctx.rt, qm=qm(tmp_path, ctx.rt.qm.pes))
-    ctx.log = (logged := []).append
-    state = act(ctx, state, Action.VALIDATE_AND_CONNECT)
-    (seed,) = state.seeds
-    assert (seed.source, seed.depth, seed.hessian.task) == ("higher_order_retry", 1, "freq")
-    assert seed.mode == seed.hessian.imaginary_modes[0]
-    assert ({"note": "higher_order:not_stationary"} in logged) is newton
-    h_y = (ctx.coords(seed.geometry) - x)[1, 1]
-    assert h_y < -0.01 if newton else h_y > 0.05

@@ -35,6 +35,7 @@ block = re.search(r"^geometry[^\n]*\n(.*?)^end", deck, re.M | re.S).group(1)
 atoms = [row for row in block.splitlines() if len(row.split()) == 4]  # not the zcoord lines
 task = deck.rsplit("task ", 1)[1].strip()
 frame = lambda rows: f"{len(rows)}\n geometry\n" + "\n".join(rows) + "\n"
+rec = lambda b: len(b).to_bytes(4, "little") + b + len(b).to_bytes(4, "little")  # Fortran record
 if os.environ.get("STUB_AUTOZ") and "zcoord" in block:
     sys.exit(print(" !! There are insufficient internal variables: expected    11 got    12"))
 if task == "dft string":
@@ -51,7 +52,7 @@ print("".join(g07.splitlines(True)[:2]) + ' Geometry "geometry" -> ""\n'
       + " Output coordinates in angstroms\n" + echo + "".join(g07.splitlines(True)[13:50])
       + " Total DFT energy =  -93.166994283613\n")
 vectors = re.search(r"vectors input (?:project \S+ )?(\S+)(?: output (\S+))?", deck)
-Path((vectors.group(2) or vectors.group(1)) if vectors else "job.movecs").write_text("v")  # as NWChem
+Path((vectors.group(2) or vectors.group(1)) if vectors else "job.movecs").write_bytes(rec(b"v"))
 if task == "dft frequencies":
     shutil.copyfile(here / "G07.hess", "job.hess")
     print(g07[g07.index("  Vibrational analysis"):g07.index(" Task  times")])
@@ -62,7 +63,7 @@ if task in ("dft optimize", "dft saddle"):
     frames = [atoms] * (3 if restarted else 1) + ([] if restarted else [moved])
     for n, rows in enumerate(frames):
         Path(f"final-{n:03d}.xyz").write_text(frame(rows))
-    Path("job.drv.hess").write_text("h")
+    Path("job.drv.hess").write_bytes(rec(b"h"))
     print(" DFT ENERGY GRADIENTS\n" + "".join(
         f"{i:4d} {r.split()[0]} " + " ".join(f"{float(v) / 0.529177210903:.6f}" for v in
                                              r.split()[1:]) + " 0.000010 0.000000 0.000000\n"
@@ -96,6 +97,11 @@ def nwchem(golden, tmp_path):
         exe.chmod(0o755)
     site = EngineSite(version="7.2.3", executables={"nwchem": str(exe)})
     return JobRunner(JobStore(tmp_path / "run" / "jobs"), cores=1), site
+
+
+def _record(data: bytes) -> bytes:
+    """One Fortran unformatted record, as NWChem writes job.movecs and job.drv.hess."""
+    return len(data).to_bytes(4, "little") + data + len(data).to_bytes(4, "little")
 
 
 def _hcn_ts(golden) -> Molecule:
@@ -137,7 +143,7 @@ def test_a_freq_or_a_single_point_starts_from_the_converged_vectors_of_its_guess
         decks = [(jobs.store.attempt_dir(ev.job_key, 0) / "job.nw").read_text()
                  for ev in (guided, plain)]
         assert "vectors input guess.movecs" in decks[0] and "vectors input" not in decks[1]
-        assert (first / "guess.movecs").read_text() == "v"  # the opt's vectors
+        assert (first / "guess.movecs").read_bytes() == _record(b"v")  # the opt's vectors
     sp = {"method": FINE.signature(), "molecule": final.fingerprint()}
     keys = [jobs.store.key(Task(engine="nwchem", version_pin="7.2.3", kind="energy",
                                 key_payload=p, execution=site.execution))
@@ -168,10 +174,10 @@ def test_a_job_started_from_a_guess_still_leaves_vectors_for_the_next(nwchem, go
 
 def test_a_first_order_saddle_hessian_starts_a_minimization_as_its_positive_definite_model(
         nwchem, golden):
-    """K1: the TS Hessian of G07 (one mode below -saddle_cm1) is written as its positive-definite
-    model under a new job key, and so is the same Hessian with no saddle mode (a minimum's or an
-    R6 seed's, X1); with a second saddle mode (a higher-order saddle) it is written as it is
-    under the old key."""
+    """K1: the TS Hessian of G07 is written as its positive-definite model under a new job key
+    when the caller declares ``hessian_model="positive"`` (the default), whatever its saddle
+    modes; declared ``as_is`` (the minimum driver's choice at a higher-order saddle) it is
+    written as it is under the old key. The model is declared, not inferred."""
     jobs, site = nwchem
     engine, mol = NWChemEngine(jobs=jobs, site=site), _hcn_ts(golden)
     ts = engine.frequencies(mol, FINE)
@@ -182,7 +188,8 @@ def test_a_first_order_saddle_hessian_starts_a_minimization_as_its_positive_defi
     model = shape_hessian(raw, side.xyz.coords)
     decks = []
     for freq, written, reshaped in ((ts, model, True), (none, model, True), (higher, raw, False)):
-        opt = engine.optimize(side, FINE, init_hessian=freq)
+        declared = "positive" if reshaped else "as_is"
+        opt = engine.optimize(side, FINE, init_hessian=freq, hessian_model=declared)
         assert isinstance(opt, Evidence) and opt.task == "opt"
         payload = {"method": FINE.signature(), "molecule": side.fingerprint(),
                    "hessian": freq.hessian.sha256}
@@ -407,7 +414,7 @@ def test_an_opt_autoz_failure_continues_from_its_latest_frame_in_cartesians(nwch
     start, first = Molecule(XYZ(list(symbols), coords), 0, 1), tmp_path / "attempt_00"
     first.mkdir()
     for name in ("job.movecs", "job.drv.hess"):
-        (first / name).write_text("x")
+        (first / name).write_bytes(_record(b"x"))
 
     def retry(kind: str) -> Task:
         task = Task(engine="nwchem", version_pin="7.2.3", kind=kind, key_payload={},

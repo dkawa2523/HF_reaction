@@ -33,18 +33,21 @@ def test_run_dry_run_resolves_names_and_writes_nothing(tmp_path, monkeypatch, ex
     assert not (tmp_path / "run").exists()
 
 
-def test_status_sums_failures_by_kind_and_job_reuse(tmp_path):
-    dft = StageState(stage_id="dft", pipeline_id="p", status="done", n_ok=3,
-                     jobs=JobStats(hits=1, misses=3, failures_by_kind={"timeout": 2}))
-    RunLayout(tmp_path).write_state([dft])
-    assert cli.invoke(app, ["status", str(tmp_path)]).exit_code == 0
-    for status in ("failed", "incomplete"):  # exit code 1, as for run
-        RunLayout(tmp_path).write_state([dft, StageState(
-            stage_id="paths", pipeline_id="p", status=status,
-            jobs=JobStats(hits=1, failures_by_kind={"timeout": 1, "nonzero_exit": 1}))])
+def test_status_exit_code_is_the_runs_completeness(tmp_path):
+    """X7-2: 0 when every stage is done, failed artifacts and chemical job failures included
+    (coverage only); 1 when a stage is stopped, an item raised or a job failed for its
+    environment (a rerun resumes it); 2 when a stage failed. As for run."""
+    dft = StageState(stage_id="dft", pipeline_id="p", status="done", n_ok=3, n_failed=2,
+                     jobs=JobStats(hits=1, misses=3, failures_by_kind={"scf_not_converged": 2}))
+    paths = {"stage_id": "paths", "pipeline_id": "p", "status": "done",
+             "jobs": JobStats(hits=1, failures_by_kind={"nonzero_exit": 1})}
+    for change, code in (({}, 0), ({"status": "incomplete"}, 1), ({"n_errors": 1}, 1),
+                         ({"jobs": JobStats(failures_by_kind={"timeout": 1})}, 1),
+                         ({"status": "failed"}, 2)):
+        RunLayout(tmp_path).write_state([dft, StageState.model_validate(paths | change)])
         result = cli.invoke(app, ["status", str(tmp_path)])
-        assert result.exit_code == 1, result.output
-    assert "job failures: nonzero_exit=1, timeout=3" in result.output
+        assert result.exit_code == code, (change, result.output)
+    assert "job failures: nonzero_exit=1, scf_not_converged=2" in result.output
     assert "job reuse: 2/5 (40%)" in result.output
     assert cli.invoke(app, ["status", str(tmp_path / "missing")]).exit_code == 2
 

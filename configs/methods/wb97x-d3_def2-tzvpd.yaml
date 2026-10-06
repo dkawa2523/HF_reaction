@@ -1,4 +1,5 @@
-# Method panel: range-separated hybrid; the D3 term belongs to the functional.
+# Method panel: range-separated hybrid; the D3 term belongs to the functional. An energy-layer
+# candidate on the BH76 subset, not adopted (validation/bh76/table.md).
 id: wb97x-d3_def2-tzvpd
 kind: dft
 functional: wb97x-d3

@@ -121,11 +121,13 @@ class FailureKind(StrEnum):
     INPUT_INVALID = "input_invalid"
     TIMEOUT = "timeout"
     NONZERO_EXIT = "nonzero_exit"
+    OUT_OF_MEMORY = "out_of_memory"  # a nonzero exit with an allocation failure, or SIGKILL
     SCF_NOT_CONVERGED = "scf_not_converged"
     GEOMETRY_MAXITER = "geometry_maxiter"
     INCOMPLETE_OUTPUT = "incomplete_output"
     METHOD_MISMATCH = "method_mismatch"
     GATE_REJECTED = "gate_rejected"
+    ERROR = "error"  # an exception in hfauto, contained to one item (StageRuntime.contain)
 
 
 class Failure(BaseModel):

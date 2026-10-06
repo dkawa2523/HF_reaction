@@ -1,22 +1,31 @@
-"""MinimumDriver: opt → separate freq → mode-follow, and the minimum Registry (design §7.2).
+"""MinimumDriver: opt → separate freq → certification → mode-follow, the one way down from a
+saddle (``Relaxer.descend``) and the minimum Registry (design §6.1).
 
 Imports are limited to hfauto.core, hfauto.chemistry and hfauto.backends.protocols.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 from hfauto.chemistry.gates import Policy, imaginary_tier, is_minimum, spin_ok
-from hfauto.chemistry.identity import BASIN_DE_HARTREE, assign, same_as_labelled
-from hfauto.chemistry.modes import capped, classify_mode_follow, off_saddle
+from hfauto.chemistry.identity import (
+    BASIN_A,
+    BASIN_DE_HARTREE,
+    assign,
+    carry,
+    is_image,
+    same_as_labelled,
+)
+from hfauto.chemistry.modes import classify_mode_follow, off_saddle
 from hfauto.chemistry.topology import state_label
-from hfauto.chemistry.vibrations import newton_step, stationarity_gap
+from hfauto.chemistry.vibrations import trust_region_step
 from hfauto.chemistry.xyz import XYZ, Molecule, composition_key
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, Geometry
 from hfauto.core.method import MethodSpec
@@ -28,7 +37,13 @@ if TYPE_CHECKING:
 Status = Literal["minimum", "saddle", "known", "failed"]
 LoadXYZ = Callable[[Geometry], XYZ]
 Resolve = Callable[[FileRef], Path]
+Find = Callable[[Evidence, np.ndarray], str | None]  # (opt, its coordinates) -> a known basin
+Map = Callable[[Callable[[Any], Any], Sequence[Any]], list[Any]]
 _GATES = Policy()
+
+
+def _serial(fn: Callable[[Any], Any], items: Sequence[Any]) -> list[Any]:
+    return [fn(x) for x in items]
 
 
 @dataclass(frozen=True)
@@ -41,7 +56,8 @@ class MinimumOutcome:
     failure: Failure | None = None
     # ± reached two minima distinct as labelled: a free TS candidate, with each side's outcome
     ts_candidate: tuple[MinimumOutcome, MinimumOutcome] | None = None
-    notes: tuple[str, ...] = ()  # MinimumRecord.notes: *_imaginary_mode, spin_contaminated
+    # MinimumRecord.notes: *_imaginary_mode, spin_contaminated, not_stationary
+    notes: tuple[str, ...] = ()
 
 
 def calc_id(ev: Evidence) -> str:
@@ -49,147 +65,190 @@ def calc_id(ev: Evidence) -> str:
     return f"calc_{ev.job_key[:16]}"
 
 
-def newton_push(hessian: np.ndarray, gradient: Sequence[float], xyz: XYZ, *,
-                signed: bool = False) -> np.ndarray | None:
-    """The Newton step (vibrations.newton_step, capped at the upper bound) from a point that is
-    not stationary: ΔE_N (vibrations.stationarity_gap, its final gradient and freq Hessian) >
-    BASIN_DE_HARTREE, the energy within which two minima are one basin. None at a stationary
-    point. ``signed`` (a saddle): to the quadratic model's stationary point."""
-    if stationarity_gap(hessian, gradient, xyz.symbols, xyz.coords) <= BASIN_DE_HARTREE:
+def not_stationary(freq: Evidence, gradient: Sequence[float] | None, coords: np.ndarray,
+                   resolve: Resolve | None) -> np.ndarray | None:
+    """The trust-region step (N, 3; Å) from a point whose certification fails (design §6.1):
+    ΔE_TR of vibrations.trust_region_step, from its final gradient and the Hessian of ``freq``
+    at ``coords``, within one basin's radius BASIN_A·√N (the identity RMSD), exceeds
+    BASIN_DE_HARTREE, the energy of one basin. Minima and TSs alike, |H| over all modes: without
+    the reaction mode a TS off its ridge would pass. None at a stationary point; not judged
+    without a gradient, a Hessian or ``resolve`` (an older stored result)."""
+    if gradient is None or freq.hessian is None or resolve is None:
         return None
-    return capped(newton_step(hessian, gradient, xyz.coords, signed=signed))
+    x = np.reshape(coords, (-1, 3))
+    gap, step = trust_region_step(np.load(resolve(freq.hessian)), gradient, x,
+                                  BASIN_A * math.sqrt(len(x)))
+    return step if gap > BASIN_DE_HARTREE else None
 
 
-@dataclass(frozen=True)
-class _Point:
-    """An optimized structure with its separate freq job; ``newton`` is the Newton step of a
-    point that is not stationary."""
+@dataclass(frozen=True, eq=False)
+class Settled:
+    """An optimized structure at ``x`` (an image side: the other side's optimum carried onto
+    its own start), settled: in a known ``basin`` (no freq job), or with its freq, imaginary
+    tier and notes."""
 
     opt: Evidence
-    freq: Evidence
-    xyz: XYZ
-    tier: str
-    notes: tuple[str, ...]
-    newton: np.ndarray | None = None
+    x: np.ndarray
+    history: tuple[str, ...]
+    basin: str | None = None
+    freq: Evidence | None = None
+    tier: str = "none"
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
-class _Ctx:
-    template: Molecule  # charge and multiplicity of every structure
+class Relaxer:
+    """What settling and descending need: ``template`` gives charge and multiplicity, ``known``
+    finds a known basin (Registry.find; a case adds its own fallback), ``map`` runs independent
+    optimizations at once."""
+
+    template: Molecule
     method: MethodSpec
     qm: QMEngine
     load: LoadXYZ
-    max_mode_follow: int
-    gates: Policy
-    resolve: Resolve | None
+    gates: Policy = _GATES
+    resolve: Resolve | None = None
+    known: Find | None = None
+    map: Map = field(default=_serial)
+    max_mode_follow: int = 2
 
-    def molecule(self, xyz: XYZ) -> Molecule:
+    def molecule(self, coords: np.ndarray) -> Molecule:
+        xyz = XYZ(symbols=list(self.template.xyz.symbols), coords=np.reshape(coords, (-1, 3)))
         return Molecule(xyz=xyz, charge=self.template.charge,
                         multiplicity=self.template.multiplicity)
 
-    def frequencies(self, opt: Evidence) -> _Point | Failure:
-        """freq → is_minimum. A point below saddle order that is not stationary (``newton``) is
-        soft whatever its frequencies, noted soft_imaginary_mode: noise_cm1 is numerical noise
-        only at a stationary point."""
-        xyz = self.load(opt.final)
-        freq = self.qm.frequencies(self.molecule(xyz), self.method, scf_guess=opt)
+    def settle(self, opt: Evidence, history: Sequence[str] = (), relaxed: bool = False
+               ) -> Settled | Failure:
+        """A known basin needs no freq; else freq → is_minimum. A point below saddle order is
+        certified (``not_stationary``); one that fails relaxes once from x + s with its freq as
+        the positive model, settled again, and is noted not_stationary when it still fails
+        (thermo blocks it). noise_cm1 is the numerical noise of a stationary point only."""
+        x = np.asarray(self.load(opt.final).coords, dtype=float)
+        basin = None if self.known is None else self.known(opt, x)
+        if basin is not None:
+            return Settled(opt, x, (*history, f"known:{basin}"), basin=basin)
+        freq = self.qm.frequencies(self.molecule(x), self.method, scf_guess=opt)
         if isinstance(freq, Failure):
             return freq
         gate = is_minimum(freq, opt=opt, policy=self.gates)
-        hard = [reason for reason in gate.reasons if reason != "imaginary_mode"]
-        if hard:
+        if hard := [reason for reason in gate.reasons if reason != "imaginary_mode"]:
             return Failure(kind=FailureKind.GATE_REJECTED, reason=",".join(hard),
                            job_key=freq.job_key)
-        tier, notes = imaginary_tier(freq.frequencies_cm1 or (), self.gates), gate.notes
-        newton = None if tier == "saddle" else self.newton(opt, freq, xyz)
-        if newton is not None:
-            tier, notes = "soft", ("soft_imaginary_mode",)
-        return _Point(opt, freq, xyz, tier, notes + spin_ok(freq, self.gates).reasons, newton)
+        tier = imaginary_tier(freq.frequencies_cm1 or (), self.gates)
+        point = Settled(opt, x, (*history, f"freq:{tier}"), freq=freq, tier=tier,
+                        notes=(*gate.notes, *spin_ok(freq, self.gates).reasons))
+        step = None if tier == "saddle" else not_stationary(freq, opt.gradient, x, self.resolve)
+        if step is None:
+            return point
+        uncertified = replace(point, notes=(*point.notes, "not_stationary"))
+        if relaxed:
+            return uncertified
+        moved = self.qm.optimize(self.molecule(x + step), self.method, init_hessian=freq)
+        again = moved if isinstance(moved, Failure) else self.settle(
+            moved, (*point.history, "tr_relax"), relaxed=True)
+        return uncertified if isinstance(again, Failure) else again
 
-    def newton(self, opt: Evidence, freq: Evidence, xyz: XYZ) -> np.ndarray | None:
-        """newton_push −H₊⁺g from the opt's final structure; not judged without a gradient (an
-        opt stored before Evidence carried one)."""
-        if opt.gradient is None or freq.hessian is None or self.resolve is None:
-            return None
-        return newton_push(np.load(self.resolve(freq.hessian)), opt.gradient, xyz)
+    def descend(self, x: np.ndarray, freq: Evidence, step: np.ndarray, *, both: bool,
+                name: str, carried: bool = False, past_saddles: bool = False
+                ) -> list[Settled | Failure]:
+        """The one way down from a saddle at ``x`` with its ``freq``: ± ``step`` (one side
+        unless ``both``), each optimized from that freq (its positive model from a first-order
+        saddle, as is from a higher-order one, whose side must stay free to leave its other
+        saddle directions), at once. ``carried``: a minus start that is an exact image of the
+        plus one (identity.is_image) is not optimized; the plus optimum carried onto it stands
+        for it. Each side is then settled, a known basin with no freq and a side in the basin of
+        the side before it (an image) with that side's. ``past_saddles``: a side that stops on a
+        saddle goes on down once, away from ``x`` along its imaginary modes."""
+        starts = [x + step, x - step][:2 if both else 1]
+        image = carried and both and is_image(self.template.xyz.symbols, starts[1], starts[0])
+        order = sum(nu < -self.gates.saddle_cm1 for nu in freq.frequencies_cm1 or ())
+        runs = self.map(lambda y: self.qm.optimize(
+            self.molecule(y), self.method, init_hessian=freq,
+            hessian_model="positive" if order <= 1 else "as_is"), starts[:1] if image else starts)
+        sides: list[Settled | Failure] = []
+        for opt in runs:
+            side = opt if isinstance(opt, Failure) else self._side(opt, sides, f"opt:{name}")
+            if past_saddles and isinstance(side, Settled) and side.tier == "saddle":
+                side = self._past(side, x, name)
+            sides.append(side)
+        if image:
+            plus = sides[0]
+            sides.append(plus if isinstance(plus, Failure) else replace(plus, x=carry(
+                self.template.xyz.symbols, starts[1], starts[0], plus.x)[1]))
+        return sides
 
-    def relax(self, coords: np.ndarray, source: _Point) -> _Point | None:
-        """opt → freq from coordinates displaced from ``source``, whose freq Hessian starts the
-        opt (the engine writes it as its positive-definite model unless it is a higher-order
-        saddle's; trust 0.3); None when either job fails."""
-        xyz = XYZ(symbols=list(self.template.xyz.symbols), coords=coords)
-        opt = self.qm.optimize(self.molecule(xyz), self.method, init_hessian=source.freq)
-        if isinstance(opt, Failure):
-            return None
-        point = self.frequencies(opt)
-        return point if isinstance(point, _Point) else None
+    def _side(self, opt: Evidence, earlier: Sequence[Settled | Failure], step: str
+              ) -> Settled | Failure:
+        """A side in the basin of an earlier one shares its settlement; else its own."""
+        x, symbols = np.asarray(self.load(opt.final).coords), self.template.xyz.symbols
+        settled = [s for s in earlier if isinstance(s, Settled)]
+        found = assign(symbols, x, opt.energy_hartree,
+                       {str(k): (s.x, s.opt.energy_hartree) for k, s in enumerate(settled)})
+        if found is None:
+            return self.settle(opt, (step,))
+        return replace(settled[int(found)], opt=opt, x=x, history=(step, "same_basin"))
+
+    def _past(self, side: Settled, x: np.ndarray, name: str) -> Settled | Failure:
+        """``side`` (a saddle) settled once more, one side down along its modes below
+        -saddle_cm1, the sign leading away from ``x``."""
+        assert side.freq is not None
+        step = off_saddle(side.freq, self.template.xyz.symbols, below_cm1=self.gates.saddle_cm1)
+        sign = 1.0 if float(np.vdot(step, side.x - np.reshape(x, side.x.shape))) >= 0 else -1.0
+        (down,) = self.descend(side.x, side.freq, sign * step, both=False, name=f"{name}_past")
+        return down
 
 
-def _labels(source: _Point, sides: list[_Point | None]) -> list[str | None]:
+def _labels(source: Settled, sides: list[Settled | Failure]) -> list[str | None]:
     """Identity labels (source, plus, minus): equal labels mean one structure as labelled, so
     the two structures of a degenerate rearrangement (the NH3 inversion) get two labels."""
-    seen: list[tuple[_Point, str]] = [(source, "source")]
+    seen: list[tuple[Settled, str]] = [(source, "source")]
     labels: list[str | None] = ["source"]
-    for name, side in zip(("plus", "minus"), sides, strict=True):
-        if side is None:
+    for name, side in zip(("plus", "minus"), sides, strict=False):
+        if isinstance(side, Failure):
             labels.append(None)
             continue
         label = next((known for p, known in seen if same_as_labelled(
-            side.xyz.coords, p.xyz.coords, side.opt.energy_hartree, p.opt.energy_hartree)), name)
+            side.x, p.x, side.opt.energy_hartree, p.opt.energy_hartree)), name)
         seen.append((side, label))
         labels.append(label)
-    return labels
+    return labels + [None] * (3 - len(labels))
 
 
-def _follow(ctx: _Ctx, point: _Point, history: list[str]
-            ) -> tuple[_Point, tuple[MinimumOutcome, MinimumOutcome] | None]:
+def _follow(r: Relaxer, point: Settled, history: list[str]
+            ) -> tuple[Settled, tuple[Settled, Settled] | None]:
     """Up to max_mode_follow cycles from a saddle, along its modes below -saddle_cm1
-    (modes.off_saddle): ± along the one of a first-order saddle, its QRC step (a TS candidate
-    when both sides are minima, each side settled as its own outcome); one side along all of a
+    (modes.off_saddle, Relaxer.descend): ± along the one of a first-order saddle, its QRC step (a
+    TS candidate when both sides are minima distinct as labelled); one side along all of a
     higher-order one (± would mostly stop at first-order saddles)."""
-    for cycle in range(1, ctx.max_mode_follow + 1):
-        if point.tier != "saddle" or not point.freq.imaginary_modes:
+    for cycle in range(1, r.max_mode_follow + 1):
+        if point.tier != "saddle" or point.freq is None or not point.freq.imaginary_modes:
             break
-        step = off_saddle(point.freq, point.xyz.symbols, below_cm1=ctx.gates.saddle_cm1)
-        order = sum(nu < -ctx.gates.saddle_cm1 for nu in point.freq.frequencies_cm1 or ())
-        sides = [ctx.relax(point.xyz.coords + step, point),
-                 ctx.relax(point.xyz.coords - step, point) if order == 1 else None]
+        order = sum(nu < -r.gates.saddle_cm1 for nu in point.freq.frequencies_cm1 or ())
+        step = off_saddle(point.freq, r.template.xyz.symbols, below_cm1=r.gates.saddle_cm1)
+        sides = r.descend(point.x, point.freq, step, both=order == 1, name=f"follow{cycle}")
         labels = _labels(point, sides)
         verdict = classify_mode_follow(*labels)
         history.append(f"follow{cycle}:{verdict}")
         if verdict == "same_as_source":
             break
-        reached = [s for s, label in zip(sides, labels[1:], strict=True)
-                   if s is not None and label != "source"]
+        reached = [s for s, label in zip(sides, labels[1:], strict=False)
+                   if isinstance(s, Settled) and label != "source"]
         if verdict == "ts_candidate" and all(s.tier != "saddle" for s in reached):
-            a, b = (_outcome(ctx, s, [f"opt:follow{cycle}", f"freq:{s.tier}"]) for s in reached)
-            return point, (a, b)
+            return point, (reached[0], reached[1])
         point = min(reached, key=lambda s: (s.tier == "saddle", s.opt.energy_hartree))
     return point, None
 
 
-def _soften(ctx: _Ctx, point: _Point, history: list[str]) -> _Point:
-    """One push from a soft point, then relax: its Newton step when it is not stationary
-    (whether or not it has imaginary modes), else along its soft imaginary modes
-    (modes.off_saddle). The relaxed point when it is no longer soft (soft:resolved); else the
-    point itself (soft:persisted, noted soft_imaginary_mode)."""
-    step = point.newton if point.newton is not None else off_saddle(
-        point.freq, point.xyz.symbols, below_cm1=ctx.gates.noise_cm1)
-    side = ctx.relax(point.xyz.coords + step, point)
-    if side is not None and side.tier in ("none", "noise"):
-        history.append("soft:resolved")
-        return side
-    history.append("soft:persisted")
-    return point
-
-
-def _outcome(ctx: _Ctx, point: _Point, history: list[str],
-             pair: tuple[MinimumOutcome, MinimumOutcome] | None = None) -> MinimumOutcome:
-    """A saddle as it is; else a minimum, after one push when it is soft."""
+def _outcome(point: Settled, history: Sequence[str],
+             pair: tuple[Settled, Settled] | None = None) -> MinimumOutcome:
+    """A known basin, a saddle as it is, or a minimum; a TS candidate with its sides."""
+    sides = None if pair is None else (_outcome(pair[0], pair[0].history),
+                                       _outcome(pair[1], pair[1].history))
+    if point.basin is not None:
+        return MinimumOutcome("known", point.opt, None, tuple(history), known_basin=point.basin,
+                              ts_candidate=sides)
     status: Status = "saddle" if point.tier == "saddle" else "minimum"
-    if point.tier == "soft":
-        point = _soften(ctx, point, history)
-    return MinimumOutcome(status, point.opt, point.freq, tuple(history), ts_candidate=pair,
+    return MinimumOutcome(status, point.opt, point.freq, tuple(history), ts_candidate=sides,
                           notes=point.notes)
 
 
@@ -211,31 +270,27 @@ def relax_to_minimum(
     load_xyz: LoadXYZ | None = None,
     resolve: Resolve | None = None,
 ) -> MinimumOutcome:
-    """opt (with init_hessian) → known check → freq → mode-follow (saddle) / one push (soft).
+    """opt (with init_hessian) → Relaxer.settle (a known basin: no freq) → mode-follow (saddle).
 
     A converged ``opt`` is taken as it is (``mol`` then gives only charge and multiplicity).
     ``load_xyz`` (default ``known.load_xyz``) reads the optimized geometry for the freq job;
-    ``resolve`` opens a freq's Hessian, which judges stationarity (not judged without it).
+    ``resolve`` opens a freq's Hessian for the certification (not judged without it).
     """
     load = load_xyz or (known.load_xyz if known is not None else None)
     if load is None:
         raise ValueError("relax_to_minimum needs load_xyz or a known Registry")
-    ctx = _Ctx(mol, method, qm, load, max_mode_follow, gates, resolve)
+    find = None if known is None else (lambda ev, x: known.find(ev, coords=x))
+    r = Relaxer(mol, method, qm, load, gates, resolve, find, max_mode_follow=max_mode_follow)
     history = ["opt" if opt is None else "opt:reused"]
     done = opt if opt is not None else qm.optimize(mol, method, init_hessian=init_hessian)
     if isinstance(done, Failure):
         return _failed(history, done)
-    if known is not None:
-        basin = known.find(done)
-        if basin is not None:
-            history.append(f"known:{basin}")
-            return MinimumOutcome("known", done, None, tuple(history), known_basin=basin)
-    point = ctx.frequencies(done)
+    point = r.settle(done)
     if isinstance(point, Failure):
         return _failed(history, point, done)
-    history.append(f"freq:{point.tier}")
-    point, pair = _follow(ctx, point, history)
-    return _outcome(ctx, point, history, pair)
+    history += point.history
+    point, pair = _follow(r, point, history)
+    return _outcome(point, history, pair)
 
 
 @dataclass

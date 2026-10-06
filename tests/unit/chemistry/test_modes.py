@@ -56,7 +56,7 @@ def test_amplitude_is_clipped_and_mass_weighted():
     assert 0.05 < light < 0.4 and light == pytest.approx(heavy, rel=1e-3)
 
 
-def test_qrc_step_is_one_mode_at_the_qrc_target_capped():
+def test_qrc_step_is_one_mode_at_the_qrc_target():
     """The bundled methods' 3 x qrc_drop (3e-5 Eh) lies below TARGET_HARTREE, so their QRC and
     mode-follow steps take TARGET_HARTREE; a looser SCF (qrc_drop 2e-3 Eh) takes 6e-3 Eh."""
     freq = _freq((-900.0, -100.0, 50.0), AXES[:2])
@@ -65,8 +65,6 @@ def test_qrc_step_is_one_mode_at_the_qrc_target_capped():
     loose = modes.qrc_step(_freq((-900.0,), AXES[:1], scf_tol=1e-4), 0, H4)
     assert np.abs(loose).max() == pytest.approx(modes.amplitude(-900.0, AXES[0], H4,
                                                                 target_hartree=6e-3))
-    assert np.abs(modes.qrc_step(freq, 0, H4, factor=2.0)).max() == pytest.approx(2 * s)
-    assert np.abs(modes.qrc_step(freq, 0, H4, factor=8.0)).max() == modes.BOUNDS_A[1]
 
 
 def test_off_saddle_leaves_a_third_order_saddle_along_both_other_modes():

@@ -264,7 +264,8 @@ def connection(
 
 def rankable(reaction: ReactionRecord, thermo: ReactionThermo | None) -> Gate:
     """A connected outcome and a thermo record without blockers. The thermo stage is the only
-    source of the blockers (thermo_unavailable, mixed_level_of_theory, spin_contaminated); a
+    source of the blockers (thermo_unavailable, mixed_level_of_theory, spin_contaminated,
+    not_stationary); a
     barrierless outcome is reported apart (capture-limited), never in the ordinal ranking."""
     outcome = () if reaction.outcome in RANKABLE_OUTCOMES else (f"outcome:{reaction.outcome}",)
     facts = thermo.blockers if thermo is not None else ("thermo_record_missing",)

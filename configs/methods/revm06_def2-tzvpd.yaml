@@ -1,0 +1,9 @@
+# An energy-layer candidate on the BH76 subset, not adopted (validation/bh76/table.md): revM06
+# (Wang, Jin, Verma, Truhlar, PNAS 115, 10257 (2018)), NWChem 7.2.3 xc keyword revm06, as
+# published: no dispersion term.
+id: revm06_def2-tzvpd
+kind: dft
+functional: revm06
+basis: def2-tzvpd
+grid: fine
+scf_energy_tol: 1.0e-7

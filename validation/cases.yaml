@@ -11,8 +11,10 @@
 # minima       fragment formulas of minima the run holds (runs that stop before reactions).
 # refusals     reason categories of refused records.  products: discovery products.
 # bh76         the reference row of validation/bh76/subset.yaml (<reaction>.<direction>). An
-#              outcome without a barrier against a referenced row is a deviation, never a pass;
-#              the numeric comparison (electronic barriers, never dG_eff) is a separate table.
+#              outcome without a barrier against a referenced row is a deviation, never a pass.
+#              The numeric comparison (electronic barriers, never dG_eff) is
+#              validation/bh76/table.md: every row of the referenced reaction is read from this
+#              case's reaction (a reverse row from its product end).
 # twice        a boundary system: a fresh validation runs it twice (<name> and <name>.2).
 # superseded   evidence only: no new run is made; the text names what replaces it.
 #
@@ -70,7 +72,8 @@ nh3_planar_seed:
 dme_c2v_seed:
   chain: [{pipeline: known_endpoints, system: dme_c2v_seed}]
   reactions:
-    - {equation: C2H6O -> C2H6O, outcome: degenerate_rearrangement, dG_eff: 2.13}
+    # W5: QH on the methyl torsions, dE unchanged (fresh W5 run 2.145; VAL9: 2.13)
+    - {equation: C2H6O -> C2H6O, outcome: degenerate_rearrangement, dG_eff: 2.15}
 
 hcn_noscreen:
   chain:
@@ -98,7 +101,8 @@ hono_walltime:
 s1_sn2_cl:
   chain: [{pipeline: known_endpoints, system: sn2_cl}]
   reactions:
-    - {equation: CH3Cl + Cl -> CH3Cl + Cl, outcome: degenerate_rearrangement, dG_eff: 14.53,
+    # W5: H is QH (the complex's G -0.61 at the same structures; dE unchanged). VAL9: 14.53
+    - {equation: CH3Cl + Cl -> CH3Cl + Cl, outcome: degenerate_rearrangement, dG_eff: 15.09,
        bh76: cl_ch3cl_sn2.complex}
 
 s2_sn2_i:
@@ -169,7 +173,8 @@ malonaldehyde_c2v_undeclared:
 sn2_cl_d3h:
   chain: [{pipeline: known_endpoints, system: sn2_cl_d3h}]
   reactions:
-    - {equation: CH3Cl + Cl -> CH3Cl + Cl, outcome: degenerate_rearrangement, dG_eff: 14.53,
+    # W5: QH as in s1_sn2_cl (fresh W5 run; VAL9: 14.53)
+    - {equation: CH3Cl + Cl -> CH3Cl + Cl, outcome: degenerate_rearrangement, dG_eff: 15.09,
        bh76: cl_ch3cl_sn2.complex}
 
 h_c2h4:
@@ -261,15 +266,18 @@ s5_ch3_o2:
     - {equation: CH3O2 -> CH2O + HO, outcome: elementary_step, dG_eff: 0.13}
 
 s6_oh_ch4:
-  twice: true  # the near-Cs TS is Cs or C1 by run: dG_eff moves by RT ln 2
+  twice: true  # the near-Cs TS (W5: Cs by the zero-point criterion from the VAL9 and R2 TSs)
   chain: [{pipeline: discover, system: oh_ch4}]
   reactions:
-    # W3: zero at the separated OH + CH4 (10.39 at a C1 TS, 9.98 at Cs; complex zero 5.53/5.95)
-    - {equation: CH4 + HO -> CH3 + H2O, outcome: elementary_step, dG_eff: [9.95, 10.45],
+    # W3: zero at the separated OH + CH4 (10.39 at a C1 TS, 9.98 at Cs; complex zero 5.53/5.95).
+    # W5: +0.16 on the same W4 structures (QH -0.29; OH's declared 2Pi levels +0.44): the band
+    # moves by the model change; the zero-point criterion makes the TS Cs from both geometries
+    - {equation: CH4 + HO -> CH3 + H2O, outcome: elementary_step, dG_eff: [10.10, 10.60],
        bh76: oh_ch4.forward}
     # W4 (docs/validation.md §11.4): the low-level edges reach the DFT entry one by one, so the
     # CH3OH + H channel is its own step from CH3 + H2O (VAL9's CH4 + HO -> CH4O + H parent and
     # its two children are gone; the abstraction's reverse is the same case key)
-    - {equation: CH3 + H2O -> CH4O + H, outcome: elementary_step, dG_eff: 54.62}
-    - {equation: CH4O + H -> CH3O + H2, outcome: elementary_step, dG_eff: 13.1}
+    # W5 (QH, same W4 structures): 54.62 -> 54.57 and 13.1 -> 13.73 (complex G -0.6)
+    - {equation: CH3 + H2O -> CH4O + H, outcome: elementary_step, dG_eff: 54.57}
+    - {equation: CH4O + H -> CH3O + H2, outcome: elementary_step, dG_eff: 13.73}
     - {equation: CH2 + H + H2O -> CH4O + H, outcome: barrierless_at_resolution, dG_eff: null}

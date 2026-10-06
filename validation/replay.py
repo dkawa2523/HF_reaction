@@ -11,8 +11,10 @@ stage stays incomplete). Superseded cases are not run.
            stage and the later pipelines resume. A replay passes when every re-staged stage ran
            no new job (misses 0), hit the cache where the source stage ran jobs, ends in the
            source's status, and leaves the same records (the artifacts except calculations;
-           reason strings and report.html are not compared). --strict: exit 1 on a failure.
-no --src   fresh runs, a twice case also in OUT/<name>.2; validation/check.py compares them.
+           reason strings and report.html are not compared). PASS here means replay equivalence,
+           not chemical accuracy. --strict: exit 1 on a replay or execution failure.
+no --src   fresh runs, a twice case also in OUT/<name>.2. RAN records execution only;
+           validation/check.py OUT --require-complete evaluates their expectations and references.
 
 Writes OUT/summary.json (merged over calls into one OUT) and OUT/logs/<name>.log. An existing
 OUT without summary.json is refused.
@@ -134,9 +136,26 @@ def replay(case: Case, src: Path, dest: Path, log: Path, cap: int) -> dict[str, 
     t0 = datetime.now(UTC).replace(microsecond=0)  # run_state times have whole seconds
     rcs = run_chain(case, dest, log, cap, restage=True)
     problems, replayed = stage_problems(src, dest, t0)
+    problems += chain_problems(case, dest, rcs)
     diffs = record_diffs(src, dest, replayed)
     return {"verdict": "FAIL" if problems or diffs else "PASS", "rcs": rcs,
             "problems": problems, "diffs": diffs}
+
+
+def chain_problems(case: Case, run: Path, rcs: list[int]) -> list[str]:
+    """An expected chemistry rc 1 is allowed; stopped chains and abnormal exits are not."""
+    problems = ([f"{run.name}: ran {len(rcs)} of {len(case.chain)} pipelines"]
+                if len(rcs) != len(case.chain) else [])
+    return problems + [f"{run.name}: pipeline {i} exited {rc}" for i, rc in enumerate(rcs, 1)
+                       if rc not in (0, 1)]
+
+
+def fresh(case: Case, dirs: list[Path], log: Path, cap: int) -> dict[str, Any]:
+    """Record executions without claiming validation PASS; abnormal exits fail --strict."""
+    codes = [run_chain(case, run, log, cap, False) for run in dirs]
+    problems = [p for run, rcs in zip(dirs, codes, strict=True)
+                for p in chain_problems(case, run, rcs)]
+    return {"verdict": "RAN", "rcs": codes, "problems": problems}
 
 
 def _plan(args: argparse.Namespace, cases: dict[str, Case]) -> dict[str, list[Path]]:
@@ -186,14 +205,15 @@ def main(argv: list[str]) -> int:
     for name, dirs in plan.items():
         log = out / "logs" / f"{name}.log"
         result = (replay(cases[name], args.src / name, dirs[0], log, args.cap) if args.src else
-                  {"verdict": "RAN", "rcs": [run_chain(cases[name], d, log, args.cap, False)
-                                             for d in dirs]})
+                  fresh(cases[name], dirs, log, args.cap))
         summary[name] = {"code": code, "src": str(args.src or ""), **result}
         path.write_text(json.dumps(summary, indent=1) + "\n")
         print(f"{result['verdict']:5s} {name} rc {result['rcs']}", flush=True)
         for line in [*result.get("problems", []), *result.get("diffs", [])[:15]]:
             print(f"    {line}")
-        failed = failed or result["verdict"] == "FAIL"
+        failed = failed or result["verdict"] == "FAIL" or bool(result.get("problems"))
+    if not args.src:
+        print("RAN is execution only; evaluate with validation/check.py OUT --require-complete")
     return 1 if failed and args.strict else 0
 
 

@@ -1,10 +1,11 @@
 """SCREEN's relaxed scan of an association (design X4, G2-P4) on a fake constrained optimizer:
-the point order and count, each point from the previous optimum and its SCF, the profile from
-the separated monomers' energy sum, its verdicts (``profile.judge``: densified once when
-barrierless, unavailable on a branch jump) and a failed point; the approximate spin projection
-of a low-spin-coupled pair's points and new nodes (G2-P3). An open shell's profile SPs on its
-DFT minima's SCF branch, the branch-jump verdict on the r9 audit's real profiles (G2-P1), and
-the shortcut's three points, which only pick seeds (U5-P1)."""
+the point order and count, each point from the previous optimum and its SCF, its reach out to
+the separated monomers' energy sum (U5-P6), the profile from that sum, its verdicts
+(``profile.judge``: densified once when barrierless, unavailable on a branch jump) and a failed
+point; the approximate spin projection of a low-spin-coupled pair's points and new nodes
+(G2-P3). An open shell's profile SPs on its DFT minima's SCF branch, the branch-jump verdict on
+the r9 audit's real profiles (G2-P1), and the shortcut's three points, which only pick seeds
+(U5-P1)."""
 
 from pathlib import Path
 
@@ -20,10 +21,10 @@ from hfauto.core import records as R
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.method import MethodSpec
-from hfauto.drivers.minimum import Registry
+from hfauto.drivers.minimum import Registry, calc_id
 from hfauto.drivers.reaction_case import paths
 from hfauto.drivers.reaction_case.driver import HANDLERS, CaseRuntime, open_case
-from hfauto.drivers.reaction_case.paths import SCAN_POINTS, SCAN_REACH_A, projected
+from hfauto.drivers.reaction_case.paths import SCAN_MAX_POINTS, SCAN_POINTS, SCAN_STEP_A, projected
 from hfauto.drivers.reaction_case.state import Action, CaseRules, CaseState, Decision, decide
 
 K = 1.0 / HARTREE_TO_KCAL_MOL
@@ -35,7 +36,7 @@ WATER = np.array([[-0.24, 0.93, 0.0], [0.0, 0.0, 0.0], [0.96, 0.0, 0.0]])
 R_P = float(np.linalg.norm(WATER[1] - WATER[0]))
 APART = WATER + np.outer([0, 1, 1], 1.5 * (WATER[1] - WATER[0]) / R_P)  # the complex, O-H0 2.46 A
 E_H, E_OH, D_E, MORSE_A = -0.5, -75.7, 0.05, 3.0  # Eh, Eh, Eh, 1/A
-TARGETS = [R_P + SCAN_REACH_A * (1 - k / (SCAN_POINTS - 1)) for k in range(SCAN_POINTS - 1)]
+TARGETS = [R_P + SCAN_STEP_A * k for k in range(SCAN_POINTS - 1, 0, -1)]  # the first 7, inwards
 # probe G2-1v, S5 CH3 + O2 doublet on its 11 IDPP frames (kcal/mol, <S2>): the frame-by-frame
 # continuation, the atomic guess, and the reactant end's vectors for 1-3 with the adduct's after
 CHAIN = ((0.0, 0.124, 0.448, 0.802, 0.779, -0.496, -4.683, -12.841, -22.612, -31.848, -36.503),
@@ -69,13 +70,16 @@ CH2OH = np.array([[0.0, 0.0, 0.0], [1.36, 0.05, -0.02], [1.75, 0.90, 0.10],
 TURN = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
 
 
-def energy(x: np.ndarray, bump_kcal: float) -> float:
-    """A Morse well along r(O1-H0) below the separated monomers, with a Gaussian bump at the
-    third scan point."""
+def energy(x: np.ndarray, bump_kcal: float, morse_a: float = MORSE_A, well_kcal: float = 0.0
+           ) -> float:
+    """A Morse well along r(O1-H0) below the separated monomers (range 1/``morse_a``), with a
+    Gaussian bump at the third scan point and a Gaussian precursor well 1.6 A beyond r_P."""
     a = np.reshape(x, (-1, 3))
     r = float(np.linalg.norm(a[0] - a[1]))
-    morse = D_E * ((1.0 - np.exp(-MORSE_A * (r - R_P))) ** 2 - 1.0)
-    return E_H + E_OH + morse + bump_kcal * K * float(np.exp(-0.5 * ((r - TARGETS[2]) / 0.15) ** 2))
+    morse = D_E * ((1.0 - np.exp(-morse_a * (r - R_P))) ** 2 - 1.0)
+    gauss = [float(np.exp(-0.5 * ((r - at) / w) ** 2)) for at, w in ((TARGETS[2], 0.15),
+                                                                      (R_P + 1.6, 0.3))]
+    return E_H + E_OH + morse + (bump_kcal * gauss[0] - well_kcal * gauss[1]) * K
 
 
 def bs_s2(r: float) -> float:  # a broken-symmetry pair's <S2>: 0.75 bonded, ~1.72 apart
@@ -107,9 +111,9 @@ class ScanQM(fakes.FakeQM):
         return ev.model_copy(update={
             "energy_hartree": E_H + E_OH + 0.03 * np.exp(-2.0 * (r - R_P)), "s2": s2})
 
-    def optimize(self, mol, method, *, init_hessian=None, fixed_bond=None, scf_guess=None):
+    def optimize(self, mol, method, *, fixed_bond=None, scf_guess=None, **kw):
         if fixed_bond is None:
-            return super().optimize(mol, method, init_hessian=init_hessian)
+            return super().optimize(mol, method, **kw)
         self.points.append((fixed_bond, scf_guess, np.array(mol.xyz.coords)))
         key = self._key("scan", mol.fingerprint(), fixed_bond)
         if len(self.points) - 1 == self.fail:
@@ -149,16 +153,16 @@ def context(root: Path, qm, minima, species, case, calcs=None):
 
 def association(root: Path, bump_kcal: float = 0.0, fail: int | None = None,
                 collapsed: bool = False, spins=(1, 1, 1), dirty: int | None = None,
-                jump: int | None = None):
+                jump: int | None = None, **surface: float):
     """The case H0·OH (complex) -> H2O (adduct) with the separated H and OH as its monomers;
     ``collapsed``: the complex relaxed into the adduct's basin (minima[0] is the adduct's).
     ``spins``: the multiplicities of the pair, H and OH ((2, 2, 3) couples H and a triplet
     partner to a doublet, as CH3 + O2); the pair's minima have opts of <S2> ``bs_s2``. ``jump``:
-    the scan point on another SCF branch."""
-    pes = fakes.PES(SYMBOLS, lambda x: energy(x, bump_kcal), {})
+    the scan point on another SCF branch; ``surface``: energy's morse_a and well_kcal."""
+    pes = fakes.PES(SYMBOLS, lambda x: energy(x, bump_kcal, **surface), {})
     found = {mid: minimum(root, mid, symbols, x, e, m, f"opt_{mid}")
              for mid, symbols, x, e, m in (
-                 ("m_complex", SYMBOLS, APART, energy(APART, bump_kcal), spins[0]),
+                 ("m_complex", SYMBOLS, APART, energy(APART, bump_kcal, **surface), spins[0]),
                  ("m_adduct", SYMBOLS, WATER, E_H + E_OH - D_E, spins[0]),
                  ("m_h", ("H",), [[0.0, 0, 0]], E_H, spins[1]),
                  ("m_oh", ("O", "H"), [[0.0, 0, 0], [0.97, 0, 0]], E_OH, spins[2]))}
@@ -174,21 +178,20 @@ def association(root: Path, bump_kcal: float = 0.0, fail: int | None = None,
                             monomers=("m_h", "m_oh"))
     ctx, notes = context(root, ScanQM(root, pes, spins[0], fail, dirty, jump), minima,
                          {mid: s for mid, (s, _) in found.items()}, case, calcs)
-    return ctx, CaseState(minima=(minima[first][0], minima["m_adduct"][0])), notes
+    return ctx, CaseState(), notes
 
 
 def test_the_scan_runs_from_the_separated_monomers_inwards_to_the_adduct(tmp_path) -> None:
-    """X4: without a low-level engine SCREEN scans the formed O1-H0 bond from r_P + 1.5 A in
-    SCAN_POINTS - 1 constrained points, the first moved out of the adduct (H0 stays, the OH
-    fragment translates rigidly), each next from the previous optimum and its SCF. The profile
-    starts at the separated monomers' energy sum, not the complex's, and ends at the adduct; a
-    monotonic one is barrierless once one new node, the SP at the midpoint beside its highest
-    node (the longest point: none toward the monomers' sum standing on its frame), started from
-    that point's SCF, confirms it; it completes the case."""
+    """X4: SCREEN scans the formed O1-H0 bond from r_P + 1.5 A in SCAN_POINTS - 1 constrained
+    points, the first moved out of the adduct (H0 stays, OH translates rigidly), each next from
+    the previous optimum and its SCF; the longest lies within a resolution of the monomers' sum,
+    so no further. The profile runs from that sum to the adduct; a monotonic one is barrierless
+    once the SP at the midpoint beside its highest node (none toward the sum on its frame),
+    from that point's SCF, confirms it. Each node's calculation: none for the sum."""
     ctx, state, notes = association(tmp_path)
     assert ctx.energies == (E_H + E_OH, E_H + E_OH - D_E)
     assert decide(ctx.case, state, ctx.rules) == SCREEN
-    state = HANDLERS[Action.SCREEN](ctx, state, SCREEN)
+    state = HANDLERS[Action.SCREEN](ctx, state)
     points, results = ctx.rt.qm.points, ctx.rt.qm.results
     assert len(points) == SCAN_POINTS - 1 == 7
     assert [p[0][:2] for p in points] == [(0, 1)] * 7
@@ -208,9 +211,11 @@ def test_the_scan_runs_from_the_separated_monomers_inwards_to_the_adduct(tmp_pat
     assert np.allclose(path.frames[0], path.frames[1])  # the longest point stands for the monomers
     assert np.allclose(path.frames[2], 0.5 * (path.frames[1] + path.frames[3]))
     assert guess is results[0] and pdist(mid) == pytest.approx(pdist(path.frames[2]))
-    assert state.screen == R.BarrierVerdict(verdict="barrierless", source="scan")
+    assert (state.screen.verdict, state.screen.source) == ("barrierless", "scan")
+    assert state.screen.points == ("", calc_id(results[0]), calc_id(ctx.work.calcs[
+        list(ctx.work.calcs)[-1]]), *map(calc_id, results[1:]), "opt_m_adduct")
     assert state.neb_done and not state.seeds and state.path_runs == 0
-    assert f"scan:0-1:{R_P:.3f}+1.5A:8_points" in notes and "scan:barrierless:" in notes
+    assert f"scan:0-1:{R_P:.3f}:7_points" in notes and "scan:barrierless:" in notes
     assert notes.count("scan_midpoints:barrierless") == 1
     assert decide(ctx.case, state, ctx.rules) == Decision(
         Action.COMPLETE, "scan:barrierless", R.CaseOutcome.BARRIERLESS)
@@ -220,24 +225,23 @@ def test_a_maximum_on_the_scan_seeds_the_saddle_search(tmp_path) -> None:
     """A 4 kcal/mol bump at the third point (H + C2H4-like): one peak, whose parabola-refined
     structure seeds the saddle search; no string follows a failed seed."""
     ctx, state, _ = association(tmp_path, bump_kcal=4.0)
-    state = HANDLERS[Action.SCREEN](ctx, state, SCREEN)
+    state = HANDLERS[Action.SCREEN](ctx, state)
     assert state.screen.verdict == "single" and state.seeds[0].source == "path_hei"
     seed = ctx.coords(state.seeds[0].geometry)
     assert TARGETS[2] < np.linalg.norm(seed[1] - seed[0]) < TARGETS[1]
     assert decide(ctx.case, state, ctx.rules) == Decision(Action.REFINE_SADDLE, "seed:path_hei")
-    failed = CaseState(minima=state.minima, screen=state.screen, neb_done=True,
-                       saddle_attempts=1, last_saddle="failed")
+    failed = CaseState(screen=state.screen, neb_done=True, attempts=1)
     assert decide(ctx.case, failed, ctx.rules).reason == "attempts_exhausted"
 
 
 def test_a_failed_scan_point_leaves_the_profile_unavailable(tmp_path) -> None:
     """No point is dropped: the fourth point's failure ends the scan without a profile."""
     ctx, state, notes = association(tmp_path, fail=3)
-    state = HANDLERS[Action.SCREEN](ctx, state, SCREEN)
+    state = HANDLERS[Action.SCREEN](ctx, state)
     assert state.screen == R.BarrierVerdict(verdict="unavailable", source="scan",
                                             reasons=("scan_point",))
     assert len(ctx.rt.qm.points) == 4 and ctx.work.path is None and not state.seeds
-    assert "scan3:geometry_maxiter" in notes
+    assert "scan4:geometry_maxiter" in notes  # the fourth point, 4 steps from the adduct
     assert decide(ctx.case, state, ctx.rules) == Decision(
         Action.COMPLETE, "attempts_exhausted", R.CaseOutcome.UNRESOLVED)
 
@@ -248,11 +252,33 @@ def test_a_complex_relaxed_into_its_adduct_ends_at_its_own_structure(tmp_path) -
     ctx, state, _ = association(tmp_path, collapsed=True)
     assert np.allclose(ctx.raw[0], APART) and ctx.energies[0] == E_H + E_OH
     assert decide(ctx.case, state, ctx.rules) == SCREEN
-    state = HANDLERS[Action.SCREEN](ctx, state, SCREEN)
+    state = HANDLERS[Action.SCREEN](ctx, state)
     points = ctx.rt.qm.points
     assert [p[0][:2] for p in points] == [(0, 1)] * 7
     assert [p[0][2] for p in points] == pytest.approx(TARGETS)
-    assert state.screen == R.BarrierVerdict(verdict="barrierless", source="scan")
+    assert (state.screen.verdict, state.screen.source) == ("barrierless", "scan")
+
+
+@pytest.mark.parametrize("surface,points", [
+    ({"morse_a": 1.5}, 13),  # a long-range well: 6 points more, out to 1 kcal/mol
+    ({"well_kcal": 3.0}, 10),  # through a precursor complex 3 kcal/mol deep at r_P + 1.6 A
+])
+def test_the_scan_reaches_out_to_the_separated_monomers(tmp_path, surface, points) -> None:
+    """U5-P6: while its longest point lies a resolution or more off the monomers' sum, the scan
+    reaches out a step at a time (from the longest point and its SCF), through any precursor
+    complex: its first segment hides nothing of a resolution. No fixed reach."""
+    ctx, state, notes = association(tmp_path, **surface)
+    state = HANDLERS[Action.SCREEN](ctx, state)
+    scan, results = ctx.rt.qm.points, ctx.rt.qm.results
+    assert [p[0][2] for p in scan] == pytest.approx(
+        TARGETS + [R_P + SCAN_STEP_A * k for k in range(SCAN_POINTS, points + 1)])
+    assert [p[1] for p in scan[7:]] == [results[0], *results[7:-1]]  # the longest one's SCF
+    e = ctx.work.path.energies
+    assert len(results) == points and f"scan:0-1:{R_P:.3f}:{points}_points" in notes
+    assert abs(e[1] - e[0]) < K and min(e[1:-1]) < e[0] - 2 * K * ("well_kcal" in surface)
+    ctx, state, _ = association(tmp_path / "far", morse_a=0.3)  # not reached: no profile
+    state = HANDLERS[Action.SCREEN](ctx, state)
+    assert state.screen.reasons == ("scan_reach",) and len(ctx.rt.qm.results) == SCAN_MAX_POINTS
 
 
 def test_the_approximate_spin_projection() -> None:
@@ -277,23 +303,24 @@ def test_a_low_spin_coupled_scan_is_spin_projected_point_by_point(tmp_path) -> N
     energies on the scan points only (the monomers' sum and the adduct keep theirs), the verdict
     on them; a point whose quartet is itself contaminated keeps its BS energy, noted. The new
     node of the barrierless profile has the same energy function: its broken-symmetry SP from
-    the point before it and its quartet."""
+    the point before it and its quartet. The projected doublet lies 1.5 kcal/mol below the sum
+    at r_P + 1.5 A, so the scan reaches one point further (its quartet too) before it is judged."""
     ctx, state, notes = association(tmp_path, spins=(2, 2, 3), dirty=2)
-    state = HANDLERS[Action.SCREEN](ctx, state, SCREEN)
+    state = HANDLERS[Action.SCREEN](ctx, state)
     qm, path = ctx.rt.qm, ctx.work.path
-    assert [m for m, _ in qm.high] == [4] * 8 and "scan:ap:4" in notes
+    assert [m for m, _ in qm.high] == [4] * 9 and len(qm.results) == 8
     assert all(np.allclose(x, ctx.coords(bs.final)) for (_, x), bs in zip(qm.high, qm.results))
     sps = [ev for ev in ctx.work.calcs.values() if ev.task == "sp"]  # the new node's 2 last
-    assert len(sps) == 7 + 2 and "scan2:ap_skipped:s2=3.95" in notes
+    assert len(sps) == 8 + 2 and "scan5:ap_skipped:s2=3.95" in notes
     expected = [projected(bs.energy_hartree, bs.s2, hs.energy_hartree, hs.s2, 0.5)
-                for bs, hs in zip(qm.results, sps[:7], strict=True)]
+                for bs, hs in zip(qm.results, sps[:8], strict=True)]
     expected[2] = qm.results[2].energy_hartree
     [(guess, mid)] = qm.low
-    assert guess is qm.results[0] and "scan_mid:ap:4" in notes
-    assert path.energies == pytest.approx((E_H + E_OH, expected[0], ap(mid), *expected[1:],
+    assert guess is qm.results[7]  # the longest point, the new node's neighbour
+    assert path.energies == pytest.approx((E_H + E_OH, expected[7], ap(mid), *expected[:7],
                                            E_H + E_OH - D_E))
-    assert all(e < bs.energy_hartree for e, bs in zip(path.energies[1:3], qm.results))
-    assert state.screen == R.BarrierVerdict(verdict="barrierless", source="scan")
+    assert all(expected[k] < qm.results[k].energy_hartree for k in (0, 1, 7))  # AP below BS
+    assert (state.screen.verdict, state.screen.source) == ("barrierless", "scan")
 
 
 @pytest.mark.parametrize("spins", [(4, 2, 3), (2, 2, 1), (1, 1, 1)])
@@ -301,8 +328,8 @@ def test_no_projection_without_a_low_spin_coupling(tmp_path, spins) -> None:
     """The quartet declared for H + a triplet is the high-spin coupling, a doublet of H and a
     closed shell has one open-shell monomer, a closed-shell pair none: no SP, BS energies."""
     ctx, state, notes = association(tmp_path, bump_kcal=4.0, spins=spins)  # no new node
-    HANDLERS[Action.SCREEN](ctx, state, SCREEN)
-    assert not ctx.rt.qm.high and not any(n and n.startswith("scan:ap") for n in notes)
+    HANDLERS[Action.SCREEN](ctx, state)
+    assert not ctx.rt.qm.high and not any(n and "ap_skipped" in n for n in notes)
     assert ctx.work.path.energies[1:-1] == tuple(ev.energy_hartree for ev in ctx.rt.qm.results)
 
 
@@ -312,7 +339,7 @@ def test_a_scan_hill_off_its_scf_branch_has_no_class(tmp_path, jump, verdict) ->
     point) with that point's <S2> on another branch (0.76 between 1.68 and 1.43) is
     unavailable, so it seeds nothing; on its branch it is a single step."""
     ctx, state, _ = association(tmp_path, bump_kcal=4.0, spins=(2, 2, 1), jump=jump)
-    state = HANDLERS[Action.SCREEN](ctx, state, SCREEN)
+    state = HANDLERS[Action.SCREEN](ctx, state)
     assert state.screen.verdict == verdict and bool(state.seeds) is (jump is None)
     assert state.screen.reasons == (("scf_branch_jump",) if jump is not None else ())
 
@@ -404,7 +431,7 @@ def test_only_an_open_shell_starts_its_sps_from_the_nearer_minimum(tmp_path) -> 
     assert rms[0] < 0.2 and rms[1] > 0.5
     ctx.rt.qm.sps.clear()
     flat = Profile(frames, (0.0,) * 6, "screen", (0.754,) * 6)  # barrierless, densified
-    paths.judged(ctx, flat, ctx.points)
+    paths.judged(ctx, flat, ("",) * 6, ctx.points)
     assert len(ctx.rt.qm.sps) == 2 and all(g is not None for g, _ in ctx.rt.qm.sps)
 
 
@@ -435,7 +462,7 @@ def test_a_branch_jump_leaves_the_profile_without_a_class(tmp_path, profile, ver
     ctx, _, _ = radical(tmp_path, **ends(profile))
     energies, s2 = profile
     v = paths.judged(ctx, Profile(path(ctx, 11), tuple(e * K for e in energies), "screen", s2),
-                     ctx.points)
+                     ("",) * 11, ctx.points)
     assert v.verdict == verdict and len(ctx.work.path.energies) == 11
     assert v.reasons == (("scf_branch_jump",) if verdict == "unavailable" else ())
 
@@ -447,7 +474,7 @@ def test_the_densified_profile_is_judged_with_its_midpoints_s2(tmp_path) -> None
                             script=[(-0.2 * K, 0.7591), (-1.5 * K, 1.66)])
     profile = Profile(path(ctx), tuple(e * K for e in (0.0, -1.0, -2.0, -3.0, -4.0)), "screen",
                       (1.7115, 1.6785, 1.6261, 1.5439, 1.65))
-    v = paths.judged(ctx, profile, ctx.points)
+    v = paths.judged(ctx, profile, ("",) * 5, ctx.points)
     assert len(ctx.work.path.energies) == 7 and "screen_midpoints:unavailable" in notes
     assert v.reasons == ("scf_branch_jump",)
 
@@ -469,5 +496,5 @@ def test_the_shortcut_points_only_pick_seeds(tmp_path, monkeypatch, profile, see
     assert len(ctx.rt.qm.sps) == 1
     assert [seed.source for seed in seeds] == ["discovery_ts"] * seeded
     if seeded:
-        state = paths.screen(ctx, CaseState(), SCREEN)  # its SP again (the second script)
+        state = paths.screen(ctx, CaseState())  # its SP again (the second script)
         assert (state.screen, state.seeds, state.shortcut_done) == (None, seeds, True)

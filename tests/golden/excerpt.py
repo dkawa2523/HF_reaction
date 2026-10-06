@@ -4,7 +4,8 @@ Absolute sources (G25/G26, G27/G28, G29 and G31-G35: WSL job dirs under
 /home/user/hfauto_r6/m0/golden, /home/user/hfauto_r6/m1/golden, /home/user/hfauto_r6/SA/sac_golden,
 /home/user/hfauto_r7/VAL7, /home/user/hfauto_r6/SB/sba and /home/user/hfauto_r9/S1a, and the
 case excerpts G36-G39: G38 from /home/user/hfauto_r9/VAL9/R2, G39 from the W3 fresh run
-/home/user/hfauto_r10/W3/fresh, G36 from the W4 fresh run /home/user/hfauto_r10/W4/fresh, G37 from
+/home/user/hfauto_r10/W3/fresh, G36 from the W4 fresh run /home/user/hfauto_r10/W4/fresh (its
+thermo restaged with the W5 code in /home/user/hfauto_r10/W5/thermo_replay), G37 from
 /home/user/hfauto_r10/W3/s5_w2_from_sp) are read as they
 are; regenerate those on WSL."""
 

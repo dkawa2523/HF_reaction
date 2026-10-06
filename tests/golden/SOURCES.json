@@ -784,8 +784,8 @@
    },
    {
     "golden": "manifests/s6_oh_ch4/thermo/manifest.json",
-    "source": "/home/user/hfauto_r10/W4/fresh/s6_oh_ch4/thermo/manifest.json",
-    "source_sha256": "8a9bd6c800e48c5b6242719c9735e01623276a0557ef8ed32c8a00c3516d2a0d",
+    "source": "/home/user/hfauto_r10/W5/thermo_replay/s6_oh_ch4/thermo/manifest.json",
+    "source_sha256": "4a97573ca3d100dcb9378b178e19b8e1cf91dce945ac80e03c059c716379af6d",
     "method": "copy"
    },
    {

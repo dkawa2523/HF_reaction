@@ -56,7 +56,7 @@ def test_a_freq_evidence_holds_3n_minus_external_modes_and_its_imaginary_ones(fr
 
 
 def test_failure_kinds_and_constants():
-    assert len(FailureKind) == 9
+    assert len(FailureKind) == 11
     failure = Failure(kind="gate_rejected", reason="no_collision_free_seed")
     assert failure.kind is FailureKind.GATE_REJECTED and failure.energy_hartree is None
     assert CM1_TO_HARTREE * 219474.6313705 == pytest.approx(1.0, rel=1e-9)

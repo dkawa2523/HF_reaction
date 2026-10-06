@@ -120,6 +120,7 @@ class BarrierVerdict(BaseModel):
     verdict: Literal["barrierless", "single", "intermediate", "unavailable"]
     source: ProfileSource
     reasons: tuple[str, ...] = ()
+    points: tuple[str, ...] = ()  # the calc ids of the profile's nodes, in path order
 
 
 class SaddleClaim(BaseModel):
@@ -186,6 +187,7 @@ class ReactionRecord(BaseModel):
     outcome: CaseOutcome | None = None
     reasons: tuple[str, ...] = ()
     log: str | None = None  # cases/<reaction_id>/log.jsonl (write-only)
+    steps: tuple[str, ...] = ()  # a multi-step parent: its child reaction ids, in path order
 
 
 class SpeciesThermo(BaseModel):
@@ -199,6 +201,10 @@ class SpeciesThermo(BaseModel):
     H_hartree: float | None
     zpe_hartree: float | None
     settings_sha: str
+    # the point group the G counts (chemistry.symmetry); None in manifests written before it
+    point_group: str | None = None
+    sigma: int | None = None
+    m: int | None = None
     notes: tuple[str, ...] = ()
 
 
@@ -221,6 +227,9 @@ class ReactionThermo(BaseModel):
     dG_eff_kcal: float | None = None
     reference: Literal["complex", "separated"] | None = None  # dG_eff's zero, with R_sep only
     energy_level: str | None = None  # method/basis of the energies, e.g. m06-2x-d3/def2-tzvpd
+    # the profile judged again on the energy layer, and its highest point above the reactant
+    layer_verdict: Literal["barrierless", "single", "unavailable"] | None = None
+    dE_act_path_kcal: float | None = None
     notes: tuple[str, ...] = ()  # submerged_barrier
 
 

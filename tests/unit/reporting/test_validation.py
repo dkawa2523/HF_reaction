@@ -62,7 +62,7 @@ def test_the_signature_value_and_outcome_each_decide():
     wrong = compare(_with("s6_oh_ch4", 0, equation="CH4 + HO -> CH4O + H"), view, load)
     assert f"{abstraction}: 1 reaction(s), expected 0" in wrong
     assert compare(_with("s6_oh_ch4", 0, dG_eff=(5.0, 5.5)), view, load) == [
-        f"{abstraction}: dG_eff 10.397049320366932, expected (5.0, 5.5)"]
+        f"{abstraction}: dG_eff 10.553401178563945, expected (5.0, 5.5)"]
     assert compare(_with("s6_oh_ch4", 0, outcome="degenerate_rearrangement"), view, load)
     assert compare(_with("s6_oh_ch4", 3, dG_eff=0.0), view, load)  # barrierless: no value
 
@@ -102,13 +102,31 @@ def test_every_case_input_and_reference_exists():
 
 
 def test_the_bh76_copies_are_verbatim():
-    sources = json.loads((VALIDATION / "bh76" / "SOURCES.json").read_text(encoding="utf-8"))
-    stored = {p.relative_to(VALIDATION / "bh76").as_posix()
-              for p in (VALIDATION / "bh76").rglob("*") if p.is_file()}
-    assert stored == {f["path"] for f in sources["files"]} | {"SOURCES.json"}
+    bh76 = VALIDATION / "bh76"
+    sources = json.loads((bh76 / "SOURCES.json").read_text(encoding="utf-8"))
+    copies = {p.relative_to(bh76).as_posix()
+              for p in [bh76 / "subset.yaml", *(bh76 / "xyz").iterdir()]}
+    assert copies == {f["path"] for f in sources["files"]}
     for f in sources["files"]:
-        data = (VALIDATION / "bh76" / f["path"]).read_bytes()
+        data = (bh76 / f["path"]).read_bytes()
         assert hashlib.sha256(data).hexdigest() == f["sha256"], f["path"]
+
+
+def test_the_bh76_table_renders_its_measurements_and_the_pipelines_use_its_layer():
+    """validation/bh76/table.md is table.render of measured.json, and the energy layer that the
+    declared rule chose is the thermo energy_method (and the sp method) of both pipelines."""
+    spec = importlib.util.spec_from_file_location("bh76_table", VALIDATION / "bh76" / "table.py")
+    assert spec is not None and spec.loader is not None
+    table = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(table)
+    measured = json.loads((VALIDATION / "bh76" / "measured.json").read_text(encoding="utf-8"))
+    assert table.render(measured) == (VALIDATION / "bh76" / "table.md").read_text(encoding="utf-8")
+    chosen = table.decide(measured, table.rows())[0]
+    for name in ("discover", "known_endpoints"):
+        config = yaml.safe_load((REPO / "configs" / "pipelines" / f"{name}.yaml").read_text(
+            encoding="utf-8"))
+        stages = {s["id"]: s for s in config["stages"]}
+        assert stages["sp"]["methods"] == [stages["thermo"]["energy_method"]] == [chosen]
 
 
 def test_every_bh76_reference_is_cited_and_the_split_is_disjoint():

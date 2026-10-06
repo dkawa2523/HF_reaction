@@ -1,9 +1,11 @@
 # S6 (review §6.1): OH. + CH4 complex (doublet) for the explore stage: H abstraction.
 # CH3 + H2O are the product side's monomers: the separated zero of the reverse reaction (BH76
 # row 46) and the product end of the chain; the composition is a real reaction partner pair.
+# OH X2Pi: Omega = 3/2 below 1/2 by |A| = 139.21 cm-1 (Huber & Herzberg, NIST WebBook), each
+# level twofold: q_el(298 K) 3.02, E_SO -0.20 kcal/mol.
 system_id: oh_ch4
 species:
-  - {id: oh, xyz: xyz/oh_ch4/oh.xyz, multiplicity: 2}
+  - {id: oh, xyz: xyz/oh_ch4/oh.xyz, multiplicity: 2, electronic_levels: [[2, 0.0], [2, 139.21]]}
   - {id: ch4, smiles: "C", multiplicity: 1}
   - {id: ch3, smiles: "[CH3]", multiplicity: 2}
   - {id: h2o, smiles: "O", multiplicity: 1}

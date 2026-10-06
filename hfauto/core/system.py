@@ -23,11 +23,18 @@ class SpeciesInput(BaseModel):
     charge: int = 0
     multiplicity: PositiveInt  # 2S + 1, always declared: no structure implies its spin state
     role: Literal["monomer", "endpoint"] = "monomer"
+    # (degeneracy, cm⁻¹) of the ground term's levels for a linear radical with Λ > 0 (OH, SH,
+    # NO, ClO): its electronic term and spin-orbit lowering; others get the spin multiplet (an
+    # isolated atom its NIST term)
+    electronic_levels: tuple[tuple[PositiveInt, float], ...] | None = None
 
     @model_validator(mode="after")
     def _one_source(self) -> SpeciesInput:
         if (self.xyz is None) == (self.smiles is None):
             raise ValueError(f"species {self.id}: give exactly one of xyz or smiles")
+        if self.electronic_levels and sum(g for g, _ in self.electronic_levels) % self.multiplicity:
+            raise ValueError(f"species {self.id}: the levels' degeneracies must add up to a "
+                             "multiple of the multiplicity")
         return self
 
 

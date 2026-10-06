@@ -27,12 +27,11 @@ def test_in_process_thermo_matches_the_cli(real_engine, tmp_path):
     xyz, hessian = read_xyz(run / freq.final.file.path), np.load(run / freq.hessian.path)
     sym = analyze(xyz.symbols, xyz.coords, hessian)
     assert (sym.point_group, sym.sigma) == ("C2v", 2)
-    thermal = species_thermo(xyz.symbols, sym, thermal_modes(xyz.symbols, sym, hessian,
-                                                             saddle=False),
-                             multiplicity=1, settings=ThermoSettings(), T=298.15)
+    modes = thermal_modes(xyz.symbols, xyz.coords, hessian, linear=sym.linear, saddle=False)
+    thermal = species_thermo(xyz.symbols, sym, modes, settings=ThermoSettings(), T=298.15)
     (tmp_path / "freq.out").write_bytes((run / freq.output.path).read_bytes())  # CLI: *.out
     argv = (sys.executable, "-m", "goodvibes", "freq.out", "-v", "1", "--zpe-vscal", "1",
-            "--symm", "--json=gv")
+            "--symm", "-q", "--json=gv")  # species_thermo is QH
     assert run_command(Command(argv=argv, cwd=tmp_path), timeout_s=600).returncode == 0
     cli = json.loads((tmp_path / "gv").read_text())["results"][0]["thermo"]
     # the CLI reads NWChem's printed frequencies and rotational constants

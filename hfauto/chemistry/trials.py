@@ -20,8 +20,10 @@ results of the enumeration, never inputs.
 
 A class is an orbit of edits under the automorphisms of the element-labelled source graph: the
 canonical SMILES of G with kept, formed and broken bonds as three bond types. So classes do not
-depend on atom numbering or geometry; paths that only geometry tells apart (syn/anti,
-diastereotopic H, E/Z) are one class (out of scope until a stereo layer exists).
+depend on atom numbering or geometry. State labels distinguish stereoisomers, but edit
+classes do not: paths that only geometry tells apart (syn/anti, diastereotopic H, E/Z) share
+one class. Only one realization per class and state is tried, so distinct stereochemical
+paths within that state are not exhaustively sampled.
 
 A class runs once per state, realised on the conformer and member edit of least drive value
 Σ r/Σr_cov over its formed pairs. When no intermolecular formed pair is in contact (r ≤ Σr_vdW)

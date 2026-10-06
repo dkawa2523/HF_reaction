@@ -6,9 +6,10 @@ A job directory holds ``job.json`` (the key document), ``result.json`` and the
 lists every FileRef inside the result or failure (paths relative to the run directory).
 
 The store is the memory of one run, not determinism between runs: a key gives back its
-outcome, the Failure at the end of the ladder included, so a replay reruns no job. Only a
-timeout is forgotten (it depends on the machine and the site's timeout, not on the job);
-``--retry-failed`` makes remembered failures of its kinds misses.
+outcome, the Failure at the end of the ladder included, so a replay reruns no job. A failure
+of the environment (``VOLATILE``: a timeout, a missing executable, a job out of memory) is
+never stored: it depends on the machine and the site, not on the job, so a rerun after a site
+fix runs the job again. ``--retry-failed`` makes remembered failures of its kinds misses.
 """
 
 from __future__ import annotations
@@ -36,6 +37,8 @@ T = TypeVar("T", bound=BaseModel)
 
 _FAILURE_KIND = "failure"
 _LOCK_POLL_S = 0.05
+VOLATILE = frozenset({FailureKind.TIMEOUT, FailureKind.EXECUTABLE_MISSING,
+                      FailureKind.OUT_OF_MEMORY})
 
 
 def key_document(task: Task) -> dict[str, Any]:
@@ -116,7 +119,8 @@ class JobStore:
         """The stored result or failure, or None (cache miss).
 
         Changed or missing files (a failure's last frame too), data that no longer validate
-        and failures of a ``retry_failed`` kind are cache misses.
+        and failures of a ``retry_failed`` or VOLATILE kind (stored by an older version) are
+        cache misses.
         """
         path = self.job_dir(key) / "result.json"
         if not path.is_file():
@@ -127,7 +131,7 @@ class JobStore:
         try:
             if record["kind"] == _FAILURE_KIND:
                 failure = Failure.model_validate(record["data"])
-                return None if failure.kind in self.retry_failed else failure
+                return None if failure.kind in self.retry_failed | VOLATILE else failure
             return result_type.model_validate(record["data"])
         except ValidationError:
             return None
@@ -139,10 +143,15 @@ class JobStore:
         _write_json(job_dir / "job.json", key_document(task))
         return len(list(job_dir.glob("attempt_*")))
 
+    def has_result(self, key: str) -> bool:
+        """A result or a failure is stored (valid or not)."""
+        return (self.job_dir(key) / "result.json").is_file()
+
     def save(self, key: str, result: BaseModel) -> None:
-        """Store a result or a failure; a timeout is never stored and clears the old record."""
+        """Store a result or a failure; a VOLATILE failure is never stored and clears the old
+        record."""
         path = self.job_dir(key) / "result.json"
-        if isinstance(result, Failure) and result.kind is FailureKind.TIMEOUT:
+        if isinstance(result, Failure) and result.kind in VOLATILE:
             path.unlink(missing_ok=True)
             return
         kind = _FAILURE_KIND if isinstance(result, Failure) else getattr(result, "kind", None)

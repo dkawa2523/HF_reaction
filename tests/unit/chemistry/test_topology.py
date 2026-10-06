@@ -1,10 +1,12 @@
 """Additive bond rule, fragments, bond changes resolved by one band (analysis X3), canonical atom
-classes and state labels (design §5.5, review U1-P2/U1-P3). RDKit: WSL only."""
+classes and state labels with stereo (design §5.5, review U1-P2/U1-P3/U1-P4). RDKit: WSL only."""
 
+import hashlib
 import re
 
 import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation
 
 from hfauto.chemistry import topology as top
 from hfauto.chemistry.elements import covalent_radius
@@ -113,6 +115,58 @@ def test_labels_and_classes_are_invariant_under_100_atom_permutations():
         assert top.state_label(symbols, coords) == label
         assert top.atom_classes(symbols, top.bonds(symbols, coords)) == tuple(
             classes[i] for i in order)
+
+
+def _turned(x: np.ndarray, symbols: list[str], i: int, j: int) -> np.ndarray:
+    """x with the side of bond i-j that holds j turned by 180° about it."""
+    bonded = top.bonds(symbols, x) - {(min(i, j), max(i, j))}
+    side = next(g for g in top._components(len(symbols), bonded) if j in g)
+    u = (x[j] - x[i]) / np.linalg.norm(x[j] - x[i])
+    y = x.copy()
+    y[list(side)] = Rotation.from_rotvec(np.pi * u).apply(x[list(side)] - x[j]) + x[j]
+    return y
+
+
+def _label(smiles: str) -> str:
+    x = smiles_to_xyz(smiles, 0)
+    return top.state_label(x.symbols, x.coords)
+
+
+def test_double_bond_stereo_separates_states_and_single_bonds_carry_none():
+    """U1-P4: E- and Z-2-butene are two states; s-cis/s-trans butadiene and the two amide
+    rotamers of N-methylformamide are one (their C-C and C-N bonds are single in the Lewis
+    structure); a charge-separated double bond (C-=O+ of hydroxymethylene) carries none."""
+    assert _label("C/C=C/C") != _label("C/C=C\\C")
+    for smiles, (i, j) in (("C=CC=C", (1, 2)), ("CNC=O", (1, 2)), ("[CH-]=[OH+]", (0, 1))):
+        x = smiles_to_xyz(smiles, 0)
+        turned = _turned(x.coords, x.symbols, i, j)
+        assert top.state_label(x.symbols, turned) == top.state_label(x.symbols, x.coords)
+
+
+def test_mirror_images_are_one_state_and_diastereomers_two():
+    """The lower stereo text of a structure and its mirror image counts; one centre alone tells
+    nothing and keeps the bond graph's label (a flattened centre splits nothing); a radical
+    keeps its tetrahedral centres."""
+    rr, ss, meso = (_label(s) for s in ("C[C@@H](F)[C@@H](F)C", "C[C@H](F)[C@H](F)C",
+                                        "C[C@@H](F)[C@H](F)C"))
+    assert rr == ss != meso
+    x = smiles_to_xyz("C[C@H](F)Cl", 0)
+    graph = top._canonical(x.symbols, top.bonds(x.symbols, x.coords))[0]
+    plain = f"C2H4ClF_{hashlib.sha256(graph.encode()).hexdigest()[:16]}"
+    assert top.state_label(x.symbols, x.coords) == top.state_label(x.symbols, -x.coords) == plain
+    assert _label("C[C@H](F)[C@H](F)[CH2]") != _label("C[C@H](F)[C@@H](F)[CH2]")
+
+
+@pytest.mark.parametrize("smiles", ["C/C=C/C", "C[C@H](F)[C@H](F)C", "C[CH-][NH+]=C",
+                                    "C1CCC2CCCCC2C1"])
+def test_stereo_labels_are_invariant_under_atom_permutations(smiles):
+    """The Lewis structure is perceived in canonical atom order: a resonance form (the ylide's)
+    does not depend on the input order."""
+    x = smiles_to_xyz(smiles, 0)
+    label, rng = top.state_label(x.symbols, x.coords), np.random.default_rng(13)
+    for _ in range(30):
+        order = rng.permutation(len(x.symbols))
+        assert top.state_label([x.symbols[i] for i in order], x.coords[order]) == label
 
 
 def test_atom_classes_are_the_refined_equivalence():

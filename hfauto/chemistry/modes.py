@@ -75,17 +75,16 @@ def capped(step: np.ndarray) -> np.ndarray:
     return step * min(1.0, BOUNDS_A[1] / largest) if largest > 0.0 else step
 
 
-def qrc_step(freq: Evidence, index: int, symbols: Sequence[str], factor: float = 1.0
-             ) -> np.ndarray:
+def qrc_step(freq: Evidence, index: int, symbols: Sequence[str]) -> np.ndarray:
     """The displacement (N, 3) along imaginary mode ``index`` of ``freq`` (QRC, Goodman & Silva
     2003): its ``amplitude`` for the energy target max(3 x qrc_drop, TARGET_HARTREE), as a QRC
-    side must end a qrc_drop below the TS, times ``factor``, capped at BOUNDS_A[1]. With the
+    side must end a qrc_drop below the TS (within BOUNDS_A). With the
     bundled methods (scf_energy_tol 1e-7) 3 x qrc_drop is 3e-5 Eh: the target is TARGET_HARTREE."""
 
     mode = np.asarray(freq.imaginary_modes[index])
     target = max(3.0 * qrc_drop(freq.level), TARGET_HARTREE)
     s = amplitude((freq.frequencies_cm1 or ())[index], mode, symbols, target_hartree=target)
-    return min(s * factor, BOUNDS_A[1]) * _unit_max_displacement(mode)
+    return s * _unit_max_displacement(mode)
 
 
 def off_saddle(freq: Evidence, symbols: Sequence[str], *, below_cm1: float,

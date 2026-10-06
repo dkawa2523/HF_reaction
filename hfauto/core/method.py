@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import math
+import os
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from hfauto.core.evidence import Level
 
@@ -95,6 +96,11 @@ def level_mismatches(requested: MethodSpec, observed: Level, *, version_pin: str
     return out + _diff_ci("version", version_pin, observed.version)
 
 
+def expand_path(value: str) -> str:
+    """A site path with its $VARS and ~ expanded once, at load (decks and locks use it)."""
+    return os.path.expanduser(os.path.expandvars(value))
+
+
 class ExecutionSpec(BaseModel):
     """Site execution settings, which do not change a result; not part of the JobStore key."""
 
@@ -102,7 +108,7 @@ class ExecutionSpec(BaseModel):
     ranks: int = 1
     threads: int = 1
     memory_mb_per_rank: int = 1200
-    timeout_s: float = 14_400
+    timeout_s: float = 86_400  # hang detection: a stopped driver job continues on rerun
     env: dict[str, str] = {}
 
 
@@ -115,6 +121,11 @@ class EngineSite(BaseModel):
     execution: ExecutionSpec = ExecutionSpec()
     python: str | None = None  # worker interpreter (None means sys.executable)
     scratch_dir: str | None = None  # absolute path on ext4
+
+    @field_validator("scratch_dir")
+    @classmethod
+    def _expand(cls, value: str | None) -> str | None:
+        return None if value is None else expand_path(value)
 
 
 class ThermoSettings(BaseModel):

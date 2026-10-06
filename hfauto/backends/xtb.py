@@ -6,9 +6,9 @@ phase only). An optimization counts as converged only with return code 0, no
 ``FAILED TO CONVERGE`` in the output and no ``NOT_CONVERGED`` file; a
 continuation restarts from ``xtbopt.xyz``. The ``hessian`` file (Eh/bohr², input frame)
 becomes the canonical ``.npy`` and the frequencies come from ``chemistry.vibrations``.
-``init_hessian`` and ``scf_guess`` are accepted and ignored: every optimization is vtight,
-xTB builds its own model Hessian and keeps no SCF vectors. A ``fixed_bond`` is refused
-(``constraint_unsupported``).
+``init_hessian``, ``hessian_model`` and ``scf_guess`` are accepted and ignored: every
+optimization is vtight, xTB builds its own model Hessian and keeps no SCF vectors. A
+``fixed_bond`` is refused (``constraint_unsupported``).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 
-from hfauto.backends.protocols import Requirements
+from hfauto.backends.protocols import HessianModel, Requirements
 from hfauto.chemistry.vibrations import projected_frequencies, to_canonical_npy
 from hfauto.chemistry.xyz import XYZ, Molecule, geometry_fingerprint, read_xyz
 from hfauto.core.evidence import Evidence, Failure, FailureKind, FileRef, Geometry, Level
@@ -212,7 +212,8 @@ class XTBEngine:
     def optimize(self, mol: Molecule, method: MethodSpec, *,
                  init_hessian: Evidence | None = None,
                  fixed_bond: tuple[int, int, float] | None = None,
-                 scf_guess: Evidence | None = None) -> Evidence | Failure:
+                 scf_guess: Evidence | None = None,
+                 hessian_model: HessianModel = "positive") -> Evidence | Failure:
         if fixed_bond is not None:
             return _fail(FailureKind.INPUT_INVALID, "constraint_unsupported")
         return self.jobs.run(self.task("optimize", mol, method), self.adapter)

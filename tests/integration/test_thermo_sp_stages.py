@@ -1,6 +1,7 @@
 """sp -> thermo with FakeQM and fake_species_thermo: energy layer (parents, label, spin state),
-band, the chain's separated zero (declared monomers NH + O), association, mixed LOT, m = 2, the
-state G (lowest spin-clean minimum, closed when one lacks its energy layer) and dG_eff (submerged
+band, the chain's separated zero (declared monomers NH + O(3P)), association, mixed LOT, m = 2,
+the electronic term (the O atom's NIST levels, declared levels; E_SO in dE and G), the state G
+(lowest spin-clean minimum, closed when one lacks its energy layer) and dG_eff (submerged
 barrier; none for a barrierless step)."""
 
 import dataclasses
@@ -13,6 +14,7 @@ from fakes import PES, FakeQM, double_well, fake_species_thermo, write_geometry,
 
 from hfauto.backends.protocols import Capability
 from hfauto.chemistry import symmetry, thermo
+from hfauto.chemistry.electronic_state import atom_levels
 from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.vibrations import projected_frequencies
 from hfauto.core import records as R
@@ -26,7 +28,7 @@ from hfauto.stages.thermochemistry import ThermoConfig, ThermoStage
 
 T = R.ArtifactType
 DFT, BIG = (MethodSpec(id=b, kind="dft", functional="xfake", basis=b) for b in ("svp", "tzvp"))
-NEUTRAL = {"complex": (0, 1), "nh": (0, 1), "o": (0, 1)}  # (charge, multiplicity)
+NEUTRAL = {"complex": (0, 1), "nh": (0, 1), "o": (0, 3)}  # (charge, multiplicity)
 # the monomers' states: the reactant's fragments (N-H 1.0 A, O 2.8 A away) are NH and O
 LABEL = {"nh": state_label(["N", "H"], np.eye(3)[:2]), "o": state_label(["O"], np.eye(3)[:1])}
 
@@ -41,9 +43,10 @@ def _state(ev, charge, multiplicity):
     return ev.model_copy(update={"level": level})
 
 
-def _setup(fake_runtime, tmp_run, states=NEUTRAL):
+def _setup(fake_runtime, tmp_run, states=NEUTRAL, nh_levels=None):
     """The double well as composition c = NH + O (p2: the product at another grid; o2: a second
-    minimum of the O state), rx1 = reactant -> product and rx2 = reactant -> p2."""
+    minimum of the O state), rx1 = reactant -> product and rx2 = reactant -> p2; ``nh_levels``:
+    NH's declared electronic_levels."""
     well = double_well()
     part = well.energy(well.points["reactant"]) / 2 + 0.05  # NH and O: 63 kcal/mol up
     pes = PES(well.symbols, lambda x: well.energy(x) if np.size(x) == 9 else part, well.points)
@@ -80,9 +83,10 @@ def _setup(fake_runtime, tmp_run, states=NEUTRAL):
                              energy_hartree=0.0))
     rx2 = rx1.model_copy(update={"reaction_id": "rx2", "minima": ("m_reactant", "m_p2")})
     arts += [Artifact(artifact_id=r.reaction_id, type=T.REACTION, payload=r) for r in (rx1, rx2)]
-    system = SystemConfig(system_id="s", species=[SpeciesInput(id=t, xyz=Path(f"{t}.xyz"), multiplicity=1)
-                                                  for t in ("nh", "o")],  # never read
-                          compositions=[CompositionInput(id="c", components={"nh": 1, "o": 1})])
+    system = SystemConfig(system_id="s", species=[  # only the levels are read
+        SpeciesInput(id="nh", xyz=Path("nh.xyz"), multiplicity=1, electronic_levels=nh_levels),
+        SpeciesInput(id="o", xyz=Path("o.xyz"), multiplicity=3)],
+        compositions=[CompositionInput(id="c", components={"nh": 1, "o": 1})])
     rt = fake_runtime(system, {(Capability.QM, "nwchem"): qm}, methods={"svp": DFT, "tzvp": BIG})
     return Manifest(run_id="r", stage_id="v", created_at="t", artifacts=arts), rt, ev
 
@@ -120,6 +124,11 @@ def test_sp_then_thermo(fake_runtime, tmp_run):
     assert composite["m_reactant_298.15K"].energy_calc  # the sp its parents name
     assert composite["rx1_298.15K_1atm"].energy_level == "xfake/tzvp"
     assert composite["rx1_298.15K_1atm"].blockers == ()
+    uncertified = [a.model_copy(update={"payload": a.payload.model_copy(update={  # X1-2
+        "saddle": a.payload.saddle.model_copy(update={"notes": ("not_stationary",)})})})
+        if a.type == T.REACTION else a for a in view.artifacts]  # rx1 and rx2 share the TS
+    blocked = _thermo(view.model_copy(update={"artifacts": uncertified}), rt, "tzvp")
+    assert blocked["rx1_298.15K_1atm"].blockers == ("not_stationary",)
 
     ts = calc_id(ev["ts"])  # X3: the layer counts on its freq's spin state (S5's -83.15 row)
 
@@ -198,8 +207,9 @@ def test_an_association_refers_to_its_separated_monomers(fake_runtime, tmp_run):
     assert rx.dG_rxn_kcal == pytest.approx(dG_rxn) and dG_rxn < 0
     assert molar.dG_rxn_kcal == pytest.approx(dG_rxn - 1.894, abs=1e-3)  # dn = -1
     assert (rx.dG_eff_kcal, rx.dG_act_kcal, rx.reference, rx.blockers) == (None, None, None, ())
+    so = thermo.spin_orbit(atom_levels("O", 0, 3))  # the O(3P) atom's E_SO is in its E
     assert rx.dE_rxn_kcal == pytest.approx((ev["product"].energy_hartree - ev["nh"].energy_hartree
-                                            - ev["o"].energy_hartree) * HARTREE_TO_KCAL_MOL)
+                                            - ev["o"].energy_hartree - so) * HARTREE_TO_KCAL_MOL)
     assert rx.dG_assoc_kcal == pytest.approx(
         (G["reactant"] - G["nh"] - G["o"]) * HARTREE_TO_KCAL_MOL)
     ts = out["bound_298.15K_1atm"]  # the TS lies below the monomers: submerged, dropped
@@ -311,8 +321,8 @@ def test_chiral_minimum_and_ts_gain_minus_rt_ln2(fake_runtime, tmp_run, monkeypa
     mirrored = [rt.load_xyz(ev[k].final).coords for k in ("ts", "product")]  # p2: the product's
     analyze = symmetry.analyze
 
-    def chiral_group(symbols, coords, hessian):  # the TS and the product as if their group
-        sym = analyze(symbols, coords, hessian)  # had no improper operation
+    def chiral_group(symbols, coords, hessian, **kw):  # the TS and the product as if their
+        sym = analyze(symbols, coords, hessian, **kw)  # group had no improper operation
         return dataclasses.replace(sym, m=2) if any(
             np.array_equal(coords, x) for x in mirrored) else sym
 
@@ -323,3 +333,28 @@ def test_chiral_minimum_and_ts_gain_minus_rt_ln2(fake_runtime, tmp_run, monkeypa
         before, after = plain[name], chiral[name]
         assert after.dG_act_kcal - before.dG_act_kcal == pytest.approx(shift[0], abs=1e-9)
         assert after.dG_rxn_kcal - before.dG_rxn_kcal == pytest.approx(shift[1], abs=1e-9)
+
+
+def test_the_electronic_term_enters_e_and_g_of_isolated_species_only(fake_runtime, tmp_run):
+    """Declared levels on NH and the O(3P) atom's NIST levels: E_SO joins E (dE and G) and G_el
+    replaces the spin multiplet in G of those minima; the complex, the product and the TS keep
+    the multiplet alone. The point group of each subject is recorded."""
+    levels = ((1, 0.0), (1, 200.0))
+    plain_inputs, plain_rt, _ = _setup(fake_runtime, tmp_run)
+    plain = _thermo(plain_inputs, plain_rt)
+    inputs, rt, ev = _setup(fake_runtime, tmp_run / "declared", nh_levels=levels)
+    out = _thermo(inputs, rt)
+    T = 298.15
+    nh = thermo.spin_orbit(levels) + thermo.electronic(levels, T) - thermo.electronic(((1, 0.0),), T)
+    for key, shift in (("m_nh_298.15K", nh), ("m_reactant_298.15K", 0.0),
+                       (f"{calc_id(ev['ts'])}_298.15K", 0.0)):
+        assert out[key].G_hartree - plain[key].G_hartree == pytest.approx(shift, abs=1e-12)
+    o = out["m_o_298.15K"]
+    oxygen = atom_levels("O", 0, 3)
+    assert (o.point_group, o.sigma, o.m) == ("Kh", 1, 1)
+    assert (out["m_nh_298.15K"].point_group, out["m_nh_298.15K"].sigma) == ("Cinfv", 1)
+    assert thermo.electronic(oxygen, T) * HARTREE_TO_KCAL_MOL == pytest.approx(
+        -R_KCAL_MOL_K * T * math.log(6.73), abs=2e-3)
+    rx, before = out["rx1_298.15K_1atm"], plain["rx1_298.15K_1atm"]
+    assert rx.dE_act_kcal == pytest.approx(before.dE_act_kcal)  # complex and TS: quenched
+    assert rx.dG_assoc_kcal - before.dG_assoc_kcal == pytest.approx(-nh * HARTREE_TO_KCAL_MOL)

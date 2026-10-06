@@ -23,6 +23,11 @@ if TYPE_CHECKING:
     from hfauto.execution.jobs import JobRunner
 
 _FROZEN = ConfigDict(frozen=True, extra="forbid")
+# How an optimization writes its initial Hessian: its positive-definite model (|λ| on its
+# internal modes: a minimization from a TS's side, a low-level start) or the freq as it is (a
+# side of a higher-order saddle, free to leave its other saddle directions). A saddle search's
+# model is fixed: negative along its ``mode`` only (SaddleRefiner.refine).
+HessianModel = Literal["positive", "as_is"]
 
 
 class Capability(StrEnum):
@@ -115,6 +120,7 @@ class QMEngine(Engine, Protocol):
         *,
         # freq Evidence at mol or within 0.5 Å per atom of it (same atom order and frame)
         init_hessian: Evidence | None = None,
+        hessian_model: HessianModel = "positive",  # how init_hessian is written
         # (i, j, r): atoms i and j (0-based) held r Å apart, as mol already has them; an
         # engine without constraints fails INPUT_INVALID "constraint_unsupported"
         fixed_bond: tuple[int, int, float] | None = None,

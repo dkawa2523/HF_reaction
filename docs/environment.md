@@ -13,9 +13,9 @@
 | CREST | 3.0.2 | 公式バイナリを `/home/user/.local/opt/crest-3.0.2` に置く | `crest --version`(doctor) |
 | pysisyphus | 1.0 | production extra。xTB ネイティブ計算器の CI-NEB(`pysis_neb`)だけに使う | worker の import(doctor)。pin は xTB の版数 |
 | SCINE ReaDuct | scine-readuct 6.1.0、scine-utilities 10.1.0、scine-xtb-wrapper 3.0.2 | production extra | worker が 3 つの版を `importlib.metadata` で読み、pin(`scine-readuct==6.1.0,scine-utilities==10.1.0,scine-xtb-wrapper==3.0.2`)と照合する |
-| RDKit | 2026.03.3(WSL の prod venv) | 本体の依存 | 状態ラベル(正準 SMILES の hash)、原子クラス、編集の類はその正準化で決まる。**RDKit を変えたら、再生の基準(B1 など)を作り直す**。ラベルの書式が変わる前の run dir は最初の stage から流し直す(途中の stage から再開すると古いラベルと新しいラベルが混ざる) |
+| RDKit | 2026.03.3(WSL の prod venv) | 本体の依存 | 状態ラベル(正準 SMILES と立体の hash。立体は `rdDetermineBonds` の結合次数から読む)、原子クラス、編集の類はその正準化で決まる。**RDKit を変えたら、再生の基準(B1 など)を作り直す**。ラベルの書式が変わる前の run dir は最初の stage から流し直す(途中の stage から再開すると古いラベルと新しいラベルが混ざる) |
 | GoodVibes | 4.3.0 | production extra。thermo stage が同じプロセスで呼ぶ | `hfauto run` の preflight が thermo を含む pipeline で照合する |
-| pymsym | 0.3.5(点群と対称操作の libmsym) | production extra で `pymsym==0.3.5` に固定。入れ直さない(別の libmsym のビルドは σ を変えうる) | `importlib.metadata.version('pymsym')`(WSL の既定テストが照合) |
+| pymsym | 0.3.5(libmsym) | production extra で `pymsym==0.3.5` に固定。受理した点群に名前を付けるだけ(候補は置換の探索、σ は受理した操作から数える) | `importlib.metadata.version('pymsym')`(WSL の既定テストが照合) |
 
 production extra(`pyproject.toml`)は Linux・CPython 3.12 のときだけ入り、numba、llvmlite と、scine_utilities が宣言せずに使う setuptools を含む。本体の依存は pydantic、typer、PyYAML、rich、numpy、scipy、rdkit である(rdkit は状態ラベルのためにどの pipeline も使う)。外部プログラムを conda でそろえる場合は `environment.production.yml` を使う。
 
@@ -39,25 +39,34 @@ uv pip install --python /home/user/.venvs/hfauto-prod/bin/python -e ".[productio
 | `.wslconfig` | `C:\Users\user\.wslconfig` に `processors=4`、`memory=12GB`、`swap=2GB`(WSL から 4 vCPU・約 11.9 GB)。site は `cores: 4` |
 | scratch | ext4 上の `/home/user/hfauto_scratch`(NWChem は `/home/user/hfauto_scratch/nwchem`)。`/mnt/<ドライブ>` 上の scratch は preflight が拒否する。`/tmp` も使わない |
 | run ディレクトリ | `--run-dir` で ext4 上に置く(例 `/home/user/hfauto_runs/<run>`)。省略するとリポジトリ内の `runs/<system_id>_<pipeline_id>` になる |
-| NWChem | 4 rank × `memory_mb_per_rank` 2,000 MB、`timeout_s` 14,400。ranks × メモリの合計は MemTotal の 0.8 倍以下にする(4 × 2,000 MB = 8 GB)。`OMP_NUM_THREADS=1`(MPI rank で並列化)。反応ケースの中で同時に走る SP・QRC の側は rank を分け合い(cores // 同時の数)、timeout を同じ倍率で延ばす。mpirun には常に `--bind-to none` を付ける。CCSD(T) の deck は GA の global にメモリの 70%(4 × 1,400 MB = 5.6 GB)を置き、これは `/dev/shm`(WSL で 5.9 GB)に載るので、それより大きな WFT のジョブは `/dev/shm` で先に止まりうる |
+| NWChem | 4 rank × `memory_mb_per_rank` 2,000 MB、`timeout_s` 86,400(ハングの検出だけ。止まった opt・saddle は再実行で最後の frame から続く)。ranks × メモリの合計は MemTotal の 0.8 倍以下にする(4 × 2,000 MB = 8 GB)。`OMP_NUM_THREADS=1`(MPI rank で並列化)。反応ケースの中で同時に走る SP・QRC の側は rank を分け合い(cores // 同時の数)、timeout を同じ倍率で延ばす。mpirun には常に `--bind-to none` を付ける。CCSD(T) の deck は GA の global にメモリの 70%(4 × 1,400 MB = 5.6 GB)を置き、これは `/dev/shm`(WSL で 5.9 GB)に載るので、それより大きな WFT のジョブは `/dev/shm` で先に止まりうる |
 | xTB・CREST・ReaDuct | `OMP_NUM_THREADS=<threads>,1`、`OMP_STACKSIZE=4G`(アダプタが設定する)。CREST の `-T` は site の `engines.crest.execution.threads`(4)から決まる |
 | コア数 | 実行中のジョブの ranks × threads の合計を `cores` 以下に保つ(`JobRunner` のセマフォ)。極小の stage は全 rank で直列 |
-| 系のサイズ | 4 コア・def2-SVPD では解析 freq が約 35 原子でジョブの timeout(4 h)に達し、途中継続がないので全損する。大きな系は ranks を増やす |
-| シグナル | `hfauto run` は SIGINT・SIGTERM・SIGHUP で外部プログラム(NWChem の MPI ランクを含むプロセスグループ)を止め、実行中の stage を incomplete と記録して終了コード 1 で終わる(流し直せば JobStore から続ける)。SIGKILL は捕まえられないので、`timeout` は既定の SIGTERM で使い(`-s KILL` にしない)、スケジューラの SIGTERM から SIGKILL までの猶予(Slurm の KillWait)は数秒以上にする |
+| 系のサイズ | 4 コア・def2-SVPD では解析 freq が約 35 原子で 4 h を超える(15 原子で約 11 分、40 原子で約 6 h)。freq と sp は途中継続がなく、止まればやり直す。大きな系は ranks を増やす |
+| シグナル | `hfauto run` は SIGINT・SIGTERM・SIGHUP で外部プログラム(NWChem の MPI ランクを含むプロセスグループ)を止め、実行中の stage を incomplete と記録して終了コード 1 で終わる(流し直せば JobStore から続け、止めた opt・saddle はその最後の frame から続く。読めない movecs・drv.hess は使わない)。SIGKILL は捕まえられないので、`timeout` は既定の SIGTERM で使い(`-s KILL` にしない)、スケジューラの SIGTERM から SIGKILL までの猶予(Slurm の KillWait)は数秒以上にする |
 | SiteLock | `hfauto run` は実行中ずっと `<scratch_root>/.hfauto_site.lock` を保持し、別の run は保持者(pid、run ディレクトリ、時刻)を示して直ちに失敗する。pid が死んだロックは奪う。run を止めるシグナルは hfauto の python プロセスに送る(`time` などの親だけに送ると python が残り、ロックを持ち続ける) |
 
 `.wslconfig` を 16 vCPU / 48 GB に広げたときの site の値(cores 16、NWChem 16 rank × 2,000 MB、CREST threads 4)は `configs/sites/wsl_local.yaml` のコメントにある。
 
 ## 4. テストと品質ゲート
 
-品質ゲートの合否は WSL の prod venv(dev extra を入れたもの、§2)の結果だけを正とする(Windows のアプリケーション制御は範囲外)。ゲートは、pytest が通ること、ruff の指摘 0、import-linter の 5 契約、pyrefly の指摘 0、`radon cc -n D hfauto` が何も出さないこと(CC 21 以上がない)、`hfauto/` と `tests/` に 500 行を超える `.py` がないことの 6 つである。
+品質チェックの合否は WSL の prod venv(dev extra を入れたもの、§2)で判定する。統合時は非QMのpytest、ruffの指摘0、既存importチェックの5項目、pyreflyのエラー0を確認する。複雑度と行数は責務分割の目安として測り、短くするためだけの分割や抽象化を増やさない。
+
+日常の変更は関連するunit・golden・fakeのintegrationから確認する。文書だけの変更で新規QMを起動しない。化学的な分岐を変えた場合は保存証拠の再判定、少数の実計算、独立評価の順で進め、対象と予算を開始前に決める。非QM検証と実エンジン検証の完了を分けて記録する。
 
 既定の `pytest` は `-m 'not real'` で、unit、golden(実出力の抜粋)、integration(fake エンジンで stage をつなぐ)だけが動く。GoodVibes の golden は GoodVibes がなければ飛ばされる。状態ラベルを作るテストは RDKit を要するので WSL でだけ動く(Windows の QA venv は RDKit の DLL が止められるので lint と型検査だけに使う)。
 
 ```bash
-# WSL(Git Bash から呼ぶときは、/home で始まる引数を書き換えられないように MSYS_NO_PATHCONV=1 を付ける)
-MSYS_NO_PATHCONV=1 wsl -e bash -lc 'cd /mnt/c/Users/user/Desktop/HF_reaction/hfauto_final_baseline && P=/home/user/.venvs/hfauto-prod/bin && $P/python -m pytest -q -p no:cacheprovider && $P/ruff check . && $P/lint-imports && $P/pyrefly check --python-interpreter-path $P/python && $P/radon cc -n D hfauto'
+# WSL内でリポジトリ直下から実行する
+QA_BIN=/home/user/.venvs/hfauto-prod/bin
+$QA_BIN/python -m pytest -q -p no:cacheprovider
+$QA_BIN/ruff check .
+$QA_BIN/lint-imports
+$QA_BIN/pyrefly check --python-interpreter-path $QA_BIN/python
+$QA_BIN/radon cc -n D hfauto
 ```
+
+freshの最終評価は`python validation/check.py RUNS --require-complete`で全系と境界系の2回目を確認する。`INCOMPLETE`・`FAIL`・`DEVIATION`は終了コード1。旧runや再生の単独比較で2回目がなければ`NOT_CHECKED`と表示する。`replay.py`の`RAN`は起動・終了の記録、再生の`PASS`は同等性であり、科学精度の合格ではない。
 
 - pyrefly の設定(`pyproject.toml` の `python-interpreter-path`)は Windows の venv を指すので、WSL では prod venv を渡す。Linux では production extra(GoodVibes、pymsym、SCINE)の型も読むので、Windows の venv では出ない指摘が出うる。Windows 専用の `ctypes` の呼び出しは `if sys.platform == "win32":` のブロックに置く。
 - Windows の `.venv-win-qa`(dev extra)は編集中の手早い確認用で、合否には使わない。GoodVibes(pymsym)が入らず、この PC ではアプリケーション制御が RDKit の DLL を止め、`pyrefly.exe` を止めたこともある。

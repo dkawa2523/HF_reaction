@@ -1,7 +1,7 @@
 """Reaction hypotheses (design §8.2): priority, degeneracy on basin structures (declared and
 discovered), undeclared pairs only with a bond change (CH-07), one hypothesis per case key with
 every distinct TS of it (G8-P7), R6, a discovery's own ends (X2: never a basin representative's
-labelling) and associations (X4)."""
+labelling), associations (X4) and the hypotheses closed by a static check (U5-P5)."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from hfauto.chemistry import identity, topology
 from hfauto.chemistry.hypotheses import select
 from hfauto.chemistry.xyz import XYZ
 from hfauto.core import records as r
+from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import FileRef, Geometry, Level
 from hfauto.core.system import ReactionInput
 
@@ -101,7 +102,9 @@ def test_declared_reaction_comes_first_and_borrows_the_discovery_ts():
     [auto] = select(basins(*minima), [hcn, hnc], found, [], load)
     assert auto.source == "discovery" and auto.reaction_id.startswith("rxn_discovery_")
     assert auto.low_level_ts == (hnc.geometry,)
-    assert select(basins(*minima), [hcn, hnc], found, [], load, window_kcal=10.0) == []
+    [closed] = select(basins(*minima), [hcn, hnc], found, [], load, window_kcal=10.0)
+    assert (closed.outcome, closed.reasons) == (r.CaseOutcome.OUT_OF_WINDOW, ("out_of_window",))
+    assert closed.low_level_ts == (hnc.geometry,) and closed.log is None  # no job, no log
     unconnected = found[0].model_copy(update={"outcome": "unconnected", "generation": None})
     assert select(basins(*minima), [hcn, hnc], [unconnected], [], load) == []
 
@@ -116,7 +119,9 @@ def test_ammonia_inversion_is_a_degenerate_reaction_in_one_basin():
     inv, rel = select(basins(basin), [up, down, copy], [], [inversion, same], load)
     assert inv.degenerate and inv.minima == ("m_nh3", "m_nh3")
     assert inv.endpoints == ("nh3_up", "nh3_down") and inv.torsional
-    assert not rel.degenerate and rel.minima == ("m_nh3", "m_nh3")  # decide(): SAME_BASIN
+    assert not rel.degenerate and rel.minima == ("m_nh3", "m_nh3")
+    assert (inv.outcome, rel.outcome, rel.reasons) == (None, r.CaseOutcome.SAME_BASIN,
+                                                       ("same_basin",))
 
 
 def test_rough_inputs_are_judged_on_the_basin_structure():
@@ -210,6 +215,11 @@ def test_declared_endpoint_without_minimum_is_kept_for_blocking():
     hcn = species("hcn2", "HCN", [[0.0, 0, 0], [1.06, 0, 0], [2.22, 0, 0]])
     [rec] = select([], [hcn], [], [ReactionInput(id="r", reactant="hcn2", product="gone")], load)
     assert rec.minima == ("", "") and rec.products == ()
+    assert (rec.outcome, rec.reasons) == (r.CaseOutcome.BLOCKED, ("endpoint_without_dft_minimum",))
+    screen = minimum("s_hcn", "hcn2").model_copy(update={"tier": "screen"})
+    [only] = select(basins(screen), [hcn], [], [ReactionInput(id="r", reactant="hcn2",
+                                                               product="hcn2")], load)
+    assert only.outcome is r.CaseOutcome.BLOCKED  # a screen minimum is no DFT minimum
 
 
 def test_declared_endpoint_collapsed_at_screen_takes_the_dft_basin():
@@ -219,7 +229,8 @@ def test_declared_endpoint_collapsed_at_screen_takes_the_dft_basin():
     screen = minimum("s_a", "pt_a", members=("pt_b",)).model_copy(update={"tier": "screen"})
     declared = ReactionInput(id="pt", reactant="pt_a", product="pt_b")
     [rec] = select(basins(screen, minimum("d_a", "pt_a")), [a, b], [], [declared], load)
-    assert rec.minima == ("d_a", "d_a") and not rec.degenerate  # decide(): SAME_BASIN
+    assert rec.minima == ("d_a", "d_a") and not rec.degenerate
+    assert rec.outcome is r.CaseOutcome.SAME_BASIN
 
 
 def test_conformers_of_one_state_are_no_hypothesis_but_a_declared_torsion_is():
@@ -469,3 +480,21 @@ def test_a_complex_that_relaxed_into_its_adduct_is_judged_on_its_own_structure()
     assert not rec.degenerate and not rec.torsional
     [plain] = select(basins(adduct, *parts), ends, [], declared, load)
     assert plain.monomers == () and plain.reactants == plain.products
+    assert rec.outcome is None and plain.outcome is r.CaseOutcome.SAME_BASIN
+
+
+def test_the_window_is_measured_from_the_reactant_asymptote():
+    """U5-P5: one window function: an association's product lies 25 kcal/mol above its
+    separated monomers (inside the 40 kcal/mol window) though 56 above its complex; without the
+    monomers the complex is the reactant and the hypothesis closes out of the window."""
+    ends = [species("cpx_w", "COOHHH", CH3_O2), species("add_w", "COOHHH", CH3OO)]
+    k = 1.0 / HARTREE_TO_KCAL_MOL
+    pairs = [minimum("m_cpx_w", "cpx_w", -0.9 - 31 * k), minimum("m_add_w", "add_w", -0.9 + 25 * k)]
+    parts = [monomer("m_ch3", CH3, -0.5), monomer("m_o2", O2, -0.4)]
+    levels = {"m_cpx_w": level(2), "m_add_w": level(2), "m_ch3": level(2), "m_o2": level(3)}
+    declared = [ReactionInput(id="assoc", reactant="cpx_w", product="add_w")]
+    [assoc] = select(basins(*pairs, *parts), ends, [], declared, load, monomers=MONOMERS,
+                     levels=levels)
+    assert assoc.monomers == ("m_ch3", "m_o2") and assoc.outcome is None
+    [plain] = select(basins(*pairs, *parts), ends, [], declared, load)
+    assert plain.outcome is r.CaseOutcome.OUT_OF_WINDOW

@@ -241,9 +241,12 @@ class _Surface(_Fake):
 
     def _evidence(self, task: Any, mol: Molecule, method: MethodSpec, key: str, start: Geometry,
                   final: np.ndarray | None = None, **extra: Any) -> Evidence:
+        """A driver job (``final`` given) reports its final gradient (Eh/bohr), as NWChem's."""
         end = start if final is None else write_geometry(
             self.root, f"fake/{key[:16]}/final.xyz", mol.xyz.symbols, final)
         energy = self.pes.energy(mol.xyz.coords if final is None else final)
+        if final is not None:
+            extra.setdefault("gradient", tuple(self.pes.gradient(final) * BOHR))
         return Evidence(engine=self.name, task=task, level=fake_level(method, mol), start=start,
                         final=end, energy_hartree=energy, output=end.file, job_key=key, **extra)
 
@@ -251,6 +254,10 @@ class _Surface(_Fake):
 class FakeQM(_Surface):
     """calls: "energy" (+"+scf_guess"), "optimize" (+"+init_hessian", +"+fixed_bond"),
     "frequencies"."""
+
+    def __init__(self, root: Path, pes: PES) -> None:
+        super().__init__(root, pes)
+        self.models: list[str] = []  # the declared Hessian model of each opt from a freq
 
     def energy(self, mol, method, *, scf_guess: Evidence | None = None) -> Evidence | Failure:
         """scf_guess only enters the key and the call, when given (a PES has no SCF branches)."""
@@ -260,14 +267,18 @@ class FakeQM(_Surface):
         return self._evidence("sp", mol, method, key, self._start(mol, key))
 
     def optimize(self, mol, method, *, init_hessian: Evidence | None = None,
+                 hessian_model: bp.HessianModel = "positive",
                  fixed_bond: tuple[int, int, float] | None = None,
                  scf_guess: Evidence | None = None) -> Evidence | Failure:
-        """Like NWChem: init_hessian within 0.5 Å; fixed_bond (i, j, r) at mol within 1e-4 Å
-        and then held exactly; scf_guess only enters the key (a PES has no SCF branches)."""
+        """Like NWChem: init_hessian within 0.5 Å, its model in the key and in ``models``;
+        fixed_bond (i, j, r) at mol within 1e-4 Å and then held exactly; scf_guess only enters
+        the key (a PES has no SCF branches)."""
         self.calls.append("+".join(["optimize", *(["init_hessian"] if init_hessian else []),
                                     *(["fixed_bond"] if fixed_bond else [])]))
+        if init_hessian is not None:
+            self.models.append(hessian_model)
         key = self._key("opt", mol.fingerprint(), method.signature(),
-                        init_hessian and init_hessian.job_key, fixed_bond,
+                        init_hessian and (init_hessian.job_key, hessian_model), fixed_bond,
                         scf_guess and scf_guess.job_key)
         start = self._start(mol, key)
         h0 = None if init_hessian is None else self._hessian(init_hessian, start, key, 0.5)
@@ -373,7 +384,7 @@ class FakeDiscovery(_Scripted):
         return self._next(source, trial, method, settings)
 
 
-def fake_species_thermo(symbols, sym, modes_cm1, *, multiplicity, settings, T) -> Thermal:
+def fake_species_thermo(symbols, sym, modes_cm1, *, settings, T) -> Thermal:
     """chemistry.thermo.species_thermo without GoodVibes (monkeypatch it in): H = ZPE and
     G = ZPE - 1e-6 Eh x cutoff x n_modes, so the cutoff variants spread the band."""
     zpe = 0.5 * settings.vib_scale * sum(modes_cm1) * CM1_TO_HARTREE

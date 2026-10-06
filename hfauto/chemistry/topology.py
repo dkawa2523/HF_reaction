@@ -7,17 +7,29 @@ r_thr on both sides, so ``bond_changes`` is symmetric and a contact the threshol
 basin is no change. Two structures can then differ in ``bonds`` and state label with no bond
 change: a split label only makes another state, never a merge. Graph identity is RDKit's
 canonicalisation (Schneider, Sayle & Landrum 2015), whose version the environment fixes.
+
+A state label also carries stereo (review U1-P4): each fragment's bond orders come from
+``DetermineBondOrders`` at charge 0 in canonical atom order, so they depend on the graph alone;
+where it finds a Lewis structure, E/Z of its double bonds between uncharged atoms and
+tetrahedral stereo are read from 3D, elsewhere (radicals, ions) tetrahedral only. A structure
+and its mirror image are one state: the lower of the two stereo texts counts, and one
+tetrahedral centre alone counts as none. A structure without stereo keeps the label of its bond
+graph.
 """
 
 from __future__ import annotations
 
 import hashlib
 from collections.abc import Collection, Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from hfauto.chemistry.elements import covalent_radius
 from hfauto.chemistry.xyz import hill_formula
+
+if TYPE_CHECKING:
+    from rdkit.Chem import Mol
 
 Bond = tuple[int, int]  # (i, j) with i < j
 BOND_TOLERANCE_A = 0.4
@@ -86,9 +98,9 @@ def same_bonding(symbols: Sequence[str], a: np.ndarray, b: np.ndarray) -> bool:
     return not any(bond_changes(symbols, a, b))
 
 
-def _canonical(symbols: Sequence[str], bonded: Collection[Bond]) -> tuple[str, tuple[int, ...]]:
-    """(canonical SMILES, canonical ranks without tie breaking) of the connectivity molecule:
-    one neutral atom per atom, single bonds, no implicit H, not sanitised."""
+def _molecule(symbols: Sequence[str], bonded: Collection[Bond]) -> Mol:
+    """The connectivity molecule: one neutral atom per atom, single bonds, no implicit H, not
+    sanitised."""
 
     from rdkit import Chem
     editable = Chem.RWMol()
@@ -98,8 +110,90 @@ def _canonical(symbols: Sequence[str], bonded: Collection[Bond]) -> tuple[str, t
         editable.AddAtom(atom)
     for i, j in sorted(bonded):
         editable.AddBond(i, j, Chem.BondType.SINGLE)
-    mol = editable.GetMol()
+    return editable.GetMol()
+
+
+def _canonical(symbols: Sequence[str], bonded: Collection[Bond]) -> tuple[str, tuple[int, ...]]:
+    """(canonical SMILES, canonical ranks without tie breaking) of the connectivity molecule."""
+
+    from rdkit import Chem
+    mol = _molecule(symbols, bonded)
     return Chem.MolToSmiles(mol), tuple(Chem.CanonicalRankAtoms(mol, breakTies=False))
+
+
+def _lewis(symbols: Sequence[str], bonded: Collection[Bond], group: Sequence[int]
+           ) -> tuple[list[int], Mol]:
+    """A fragment's atoms in canonical order (ties broken) and its molecule in that order with
+    the bond orders of its Lewis structure at charge 0, single bonds where there is none. In
+    canonical order the Lewis structure depends on the bond graph alone, not on the atom order
+    (a resonance form, e.g. of an ylide, is picked by order). A double bond to a formally
+    charged atom is one resonance form's (C=N+ of an ylide, O+=S, C-=O+): it stays single, so
+    it carries no E/Z."""
+
+    from rdkit import Chem
+    from rdkit.Chem import rdDetermineBonds
+
+    def build(atoms: Sequence[int]) -> Mol:
+        index = {atom: k for k, atom in enumerate(atoms)}
+        return _molecule([symbols[a] for a in atoms],
+                         [(index[i], index[j]) for i, j in bonded if i in index])
+
+    order = [group[k] for k in np.argsort(list(Chem.CanonicalRankAtoms(build(group))))]
+    mol = build(order)
+    perceived = Chem.Mol(mol)
+    try:
+        rdDetermineBonds.DetermineBondOrders(perceived, charge=0, embedChiral=False)
+    except ValueError:  # no Lewis structure at charge 0 (a radical, an ion)
+        return order, mol
+    for bond in perceived.GetBonds():
+        if bond.GetBondType() == Chem.BondType.DOUBLE and (
+                bond.GetBeginAtom().GetFormalCharge() or bond.GetEndAtom().GetFormalCharge()):
+            bond.SetBondType(Chem.BondType.SINGLE)
+    return order, perceived
+
+
+def _placed(mol: Mol, order: Sequence[int], coords: np.ndarray) -> Mol:
+    """mol with the stereo of coords (its atoms in ``order``): E/Z and tetrahedral; a
+    hypervalent centre's trigonal-bipyramidal or octahedral tag is fluxional and dropped."""
+
+    from rdkit import Chem
+    from rdkit.Geometry import Point3D
+    tetrahedral = (Chem.ChiralType.CHI_TETRAHEDRAL_CW, Chem.ChiralType.CHI_TETRAHEDRAL_CCW)
+    placed = Chem.Mol(mol)
+    conformer = Chem.Conformer(len(order))
+    for k, atom in enumerate(order):
+        conformer.SetAtomPosition(k, Point3D(*coords[atom]))
+    placed.AddConformer(conformer, assignId=True)
+    Chem.AssignStereochemistryFrom3D(placed)
+    for atom in placed.GetAtoms():
+        if atom.GetChiralTag() not in tetrahedral:
+            atom.SetChiralTag(Chem.ChiralType.CHI_UNSPECIFIED)
+    return placed
+
+
+def _stereo(symbols: Sequence[str], coords: np.ndarray, bonded: Collection[Bond],
+            groups: Sequence[Sequence[int]]) -> tuple[str, str]:
+    """The stereo texts of the structure and of its mirror image: the sorted isomeric SMILES of
+    the fragments that have stereo. '' without stereo, and with one tetrahedral centre and no
+    E/Z: the mirror image is the same state, so it tells nothing (and a flattened centre that
+    goes unassigned splits nothing)."""
+
+    from rdkit import Chem
+    texts: tuple[list[str], list[str]] = ([], [])
+    centres = double = 0
+    for group in groups:
+        order, mol = _lewis(symbols, bonded, group)
+        here, image = (_placed(mol, order, sign * coords) for sign in (1.0, -1.0))
+        for placed, out in zip((here, image), texts, strict=True):
+            isomeric = Chem.MolToSmiles(placed)
+            if isomeric != Chem.MolToSmiles(placed, isomericSmiles=False):
+                out.append(isomeric)
+        centres += sum(a.GetChiralTag() != Chem.ChiralType.CHI_UNSPECIFIED
+                       for a in here.GetAtoms())
+        double += sum(b.GetStereo() != Chem.BondStereo.STEREONONE for b in here.GetBonds())
+    if centres <= 1 and not double:
+        return "", ""
+    return ".".join(sorted(texts[0])), ".".join(sorted(texts[1]))
 
 
 def atom_classes(symbols: Sequence[str], bonded: Collection[Bond]) -> tuple[int, ...]:
@@ -111,10 +205,14 @@ def atom_classes(symbols: Sequence[str], bonded: Collection[Bond]) -> tuple[int,
 
 def state_label(symbols: Sequence[str], coords: np.ndarray) -> str:
     """Sorted fragment formulas plus the first 16 hex digits of the sha256 of the canonical
-    SMILES of the bond graph."""
+    SMILES of the bond graph, followed by the lower stereo text of the structure and its mirror
+    image when there is one."""
 
-    bonded = bonds(symbols, coords)
+    x = np.asarray(coords, dtype=float).reshape(-1, 3)
+    bonded = bonds(symbols, x)
     groups = _components(len(symbols), bonded)
     formulas = sorted(hill_formula([symbols[i] for i in g]) for g in groups)
-    digest = hashlib.sha256(_canonical(symbols, bonded)[0].encode()).hexdigest()
+    stereo = min(_stereo(symbols, x, bonded, groups))
+    text = _canonical(symbols, bonded)[0] + (f" {stereo}" if stereo else "")
+    digest = hashlib.sha256(text.encode()).hexdigest()
     return f"{'+'.join(formulas)}_{digest[:16]}"

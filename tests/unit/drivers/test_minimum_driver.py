@@ -61,33 +61,42 @@ class BiasedQM(StalledQM):  # a residual O-H stretch gradient that no relaxation
     bias = 1e-2 * np.array([-0.96, 0.0, 0.0, 0.96, 0.0, 0.0, 0.0, 0.0, 0.0])
 
 
-def test_harmonic_start_gives_a_minimum_and_a_stuck_soft_mode_persists_as_a_noted_one(tmp_run):
-    """G3-P5: a soft mode that one push does not resolve leaves a minimum noted
-    soft_imaginary_mode (there is no soft_minimum status)."""
-    out = relax(tmp_run, fakes.harmonic(), "start")
+def test_harmonic_start_gives_a_minimum_and_a_stationary_soft_mode_is_only_noted(tmp_run):
+    """X1: a certified stationary point with a soft imaginary mode is a minimum noted
+    soft_imaginary_mode (no push: noise_cm1 is the noise of a stationary point)."""
+    def resolve(ref):
+        return tmp_run / ref.path
+
+    out = relax(tmp_run, fakes.harmonic(), "start", resolve=resolve)
     assert out.status == "minimum" and out.history == ("opt", "freq:none") and not out.ts_candidate
     assert out.freq.start.fingerprint == out.opt.final.fingerprint
-    soft = relax(tmp_run, fakes.harmonic(), "start", SoftQM(tmp_run, fakes.harmonic()))
+    qm = SoftQM(tmp_run, fakes.harmonic())
+    soft = relax(tmp_run, fakes.harmonic(), "start", qm, resolve=resolve)
     assert soft.status == "minimum" and soft.notes == ("soft_imaginary_mode",)
-    assert soft.history == ("opt", "freq:soft", "soft:persisted")
+    assert soft.history == ("opt", "freq:soft") and qm.calls == ["optimize", "frequencies"]
 
 
-def test_a_point_short_of_stationary_gets_one_newton_push_whatever_its_frequencies(tmp_run):
-    """G5-P1: an opt stopped short of the harmonic minimum has no imaginary mode, but its
-    gradient and the freq Hessian give ΔE_N far above a basin's energy: soft, pushed by its
-    Newton step (near the minimum) and relaxed. A residual gradient that persists leaves the
-    point noted; an opt without a gradient (or a driver without resolve) is not judged."""
+def test_an_uncertified_point_relaxes_once_from_its_trust_region_step(tmp_run):
+    """X1: an opt stopped short of the harmonic minimum has no imaginary mode, but its gradient
+    and freq Hessian give ΔE_TR above a basin's energy: one relax from x + s (s within one
+    basin's radius, the freq as the positive model) reaches the minimum. A residual gradient
+    that persists appends not_stationary to the notes; an opt without a gradient (or a driver
+    without resolve) is not judged."""
     pes, resolve = fakes.harmonic(), lambda ref: tmp_run / ref.path
     qm = StalledQM(tmp_run, pes)
     out = relax(tmp_run, pes, "start", qm, resolve=resolve)
-    assert out.status == "minimum" and out.history == ("opt", "freq:soft", "soft:resolved")
+    assert out.status == "minimum" and out.history == ("opt", "freq:none", "tr_relax",
+                                                       "freq:none")
     assert out.notes == () and qm.calls == ["optimize", "frequencies",
                                             "optimize+init_hessian", "frequencies"]
-    pushed = fakes.xyz_loader(tmp_run)(out.opt.start).coords
-    assert pdist(pushed) == pytest.approx(pdist(pes.points["minimum"]), abs=0.01)
+    assert qm.models == ["positive"]
+    start, x = (fakes.xyz_loader(tmp_run)(g).coords for g in (out.opt.start, out.opt.final))
+    step = start - pes.points["start"]
+    assert 0 < np.linalg.norm(step) <= 0.05 * np.sqrt(3) + 1e-9  # one basin's radius
+    assert pdist(x) == pytest.approx(pdist(pes.points["minimum"]), abs=1e-4)
     stuck = relax(tmp_run, pes, "start", BiasedQM(tmp_run, pes), resolve=resolve)
-    assert stuck.status == "minimum" and stuck.notes == ("soft_imaginary_mode",)
-    assert stuck.history == ("opt", "freq:soft", "soft:persisted")
+    assert stuck.status == "minimum" and stuck.notes == ("not_stationary",)
+    assert stuck.history == ("opt", "freq:none", "tr_relax", "freq:none")
     unjudged = relax(tmp_run, pes, "start", StalledQM(tmp_run, pes))
     assert unjudged.status == "minimum" and unjudged.history == ("opt", "freq:none")
 
@@ -123,26 +132,46 @@ def two_barrier_tops() -> fakes.PES:
     return fakes.PES(("F", "H", "F") * 2, energy, {"top": x0})
 
 
-@pytest.mark.parametrize("pes", [fakes.double_well(), fakes.symmetric_double_well()])
-def test_a_first_order_saddle_goes_both_ways_from_its_own_hessian(tmp_run, pes) -> None:
+@pytest.mark.parametrize("pes,image", [(fakes.double_well(), False),
+                                       (fakes.symmetric_double_well(), True)])
+def test_a_first_order_saddle_goes_both_ways_from_its_own_hessian(tmp_run, pes, image) -> None:
+    """U3-P4: both sides are optimized (the edge needs each labelled structure) from the
+    saddle's freq as the positive model; a side in the basin of the side before it (the F1/F2
+    image) takes that side's freq: one freq job fewer."""
     qm = fakes.FakeQM(tmp_run, pes)
     out = relax(tmp_run, pes, "ts", qm)
     assert out.status == "saddle" and out.history[-1] == "follow1:ts_candidate"
     ends = sorted(pes.energy(pes.points[p]) for p in ("reactant", "product"))
     assert sorted(side.opt.energy_hartree for side in out.ts_candidate) == pytest.approx(ends)
-    for side in out.ts_candidate:  # each side's outcome, from its one opt and freq
-        assert side.status == "minimum" and side.history == ("opt:follow1", "freq:none")
-        assert side.freq.start.fingerprint == side.opt.final.fingerprint
-    assert qm.calls == ["optimize", "frequencies", *["optimize+init_hessian", "frequencies"] * 2]
+    plus, minus = out.ts_candidate
+    assert plus.status == minus.status == "minimum" and qm.models == ["positive"] * 2
+    assert plus.history == ("opt:follow1", "freq:none")
+    assert plus.freq.start.fingerprint == plus.opt.final.fingerprint
+    assert minus.history == (("opt:follow1", "same_basin") if image else plus.history)
+    assert (minus.freq is plus.freq) is image
+    assert qm.calls == ["optimize", "frequencies", *["optimize+init_hessian"] * 2,
+                        *["frequencies"] * (1 if image else 2)]  # the opts at once
 
 
-def test_a_soft_side_of_a_ts_candidate_gets_its_own_push(tmp_run) -> None:
+def test_a_known_side_needs_no_freq(tmp_run) -> None:
+    """U3-P4: a side that falls into a registered basin is known without a freq job."""
+    pes, load = fakes.double_well(), fakes.xyz_loader(tmp_run)
+    qm, registry = fakes.FakeQM(tmp_run, pes), Registry([], load)
+    reactant = add(registry, relax(tmp_run, pes, "reactant", qm), "r")
+    qm.calls.clear()
+    out = relax_to_minimum(pes.molecule("ts"), M, qm, known=registry)
+    known = [side for side in out.ts_candidate if side.status == "known"]
+    assert [side.known_basin for side in known] == [reactant.basin_id]
+    assert qm.calls.count("frequencies") == 2  # the saddle's and the product side's
+
+
+def test_a_soft_side_of_a_ts_candidate_is_noted(tmp_run) -> None:
     pes = fakes.double_well()
     out = relax(tmp_run, pes, "ts", SoftQM(tmp_run, pes))
     assert out.status == "saddle" and out.history[-1] == "follow1:ts_candidate"
     for side in out.ts_candidate:
         assert side.status == "minimum" and side.notes == ("soft_imaginary_mode",)
-        assert side.history == ("opt:follow1", "freq:soft", "soft:persisted")
+        assert side.history == ("opt:follow1", "freq:soft")
 
 
 @pytest.mark.parametrize("symbols", [("N", "H", "H", "H"), ("N", "H", "F", "Cl")])
@@ -152,10 +181,12 @@ def test_a_planar_amine_gives_an_inversion_ts_candidate(tmp_run, symbols) -> Non
     pyramid = np.array([[0.0, 0.0, 0.38], [0.94, 0.0, 0.0], [-0.47, 0.814, 0.0],
                         [-0.47, -0.814, 0.0]])
     pes = springs(symbols, pyramid, {"planar": pyramid * [1.0, 1.0, 0.0]})
-    out = relax(tmp_run, pes, "planar")
+    qm = fakes.FakeQM(tmp_run, pes)
+    out = relax(tmp_run, pes, "planar", qm)
     assert out.status == "saddle" and out.history[-1] == "follow1:ts_candidate"
     plus, minus = (fakes.xyz_loader(tmp_run)(side.opt.final).coords for side in out.ts_candidate)
     assert plus[0, 2] * minus[0, 2] < 0  # N above and below the H3 plane
+    assert qm.calls.count("frequencies") == 2  # the saddle's and one side's: one basin
 
 
 def test_a_second_order_saddle_descends_one_side_without_a_ts_candidate(tmp_run) -> None:
@@ -165,6 +196,7 @@ def test_a_second_order_saddle_descends_one_side_without_a_ts_candidate(tmp_run)
     assert out.history == ("opt", "freq:saddle", "follow1:one_side")
     assert out.status == "minimum" and out.ts_candidate is None
     assert qm.calls == ["optimize", "frequencies", "optimize+init_hessian", "frequencies"]
+    assert qm.models == ["as_is"]  # free to leave its other saddle direction
     x = fakes.xyz_loader(tmp_run)(out.opt.final).coords.reshape(2, 3, 3)
     off_centre = np.linalg.norm(x[:, 1] - 0.5 * (x[:, 0] + x[:, 2]), axis=1)
     assert (off_centre > 0.35).all()  # each H in a well of its own unit (0.4 Å off centre)

@@ -1,7 +1,7 @@
 """hfauto command line (design §7.4): doctor, run, status, report and case.
 
 PIPELINE, --system and --site take a file path or a name under ``configs/<kind>/`` of the
-working directory.
+working directory. ``run`` and ``status`` exit with the completeness of the run (``exit_code``).
 """
 
 from __future__ import annotations
@@ -77,11 +77,15 @@ def _site_probe(site: config.SiteConfig) -> config.ResolvedConfig:
     )
 
 
-def _unfinished(layout: RunLayout) -> list[str]:
-    """Stages that failed, were stopped (incomplete) or saved an artifact carrying a failure:
-    exit code 1 of ``run`` and ``status``."""
-    return [f"{s.stage_id} ({s.status})" for s in layout.read_state()
-            if s.status in ("failed", "incomplete") or (s.status == "done" and s.n_failed > 0)]
+def exit_code(layout: RunLayout) -> tuple[int, list[str]]:
+    """(code, the stages that set it) of ``run`` and ``status``: 2 when a stage failed; 1 when
+    a stage is unfinished (stopped, an item raised, a job failed for its environment), which a
+    rerun resumes; else 0. Chemical failures and negatives are in the report's coverage only."""
+    states = layout.read_state()
+    failed = [s for s in states if s.status == "failed"]
+    unfinished = [s for s in states if s.unfinished()]
+    code, stages = (2, failed) if failed else (1, unfinished) if unfinished else (0, [])
+    return code, [f"{s.stage_id} ({s.status})" for s in stages]
 
 
 def _stop(signum: int, _frame: object) -> None:
@@ -141,8 +145,8 @@ def run(
 ) -> None:
     """Run a pipeline for a system on a site (resumes a run directory).
 
-    Exit code 1 when a stage failed or was stopped (SIGINT / SIGTERM / SIGHUP: incomplete, and
-    a rerun resumes it) or a saved artifact carries a failure."""
+    Exit code 2 when a stage failed; 1 when a stage was stopped (SIGINT / SIGTERM / SIGHUP:
+    incomplete), an item raised or a job failed for its environment: a rerun resumes it."""
     kinds = _failure_kinds(retry_failed)
     paths = [config_path(k, v) for k, v in (("pipelines", pipeline), ("systems", system),
                                             ("sites", site))]
@@ -171,26 +175,30 @@ def run(
         console.print(f"[yellow]stopped[/yellow]; rerun to resume {escape(str(target))}",
                       soft_wrap=True)
         raise typer.Exit(1) from None
-    unfinished = _unfinished(RunLayout(target))
-    if unfinished:
-        console.print(f"[yellow]unfinished[/yellow] {escape(', '.join(unfinished))}:"
+    except Exception:  # the running stage is left failed
+        console.print_exception()
+        raise typer.Exit(2) from None
+    code, stages = exit_code(RunLayout(target))
+    if code:
+        console.print(f"[yellow]unfinished[/yellow] {escape(', '.join(stages))}:"
                       f" {escape(str(target))}", soft_wrap=True)
-        raise typer.Exit(1)
+        raise typer.Exit(code)
     console.print(f"[green]done[/green] {escape(str(target))}", soft_wrap=True)
 
 
 @app.command()
 def status(run_dir: Path) -> None:
     """Stages in execution order, job failures by FailureKind and the JobStore reuse rate; exit
-    code 1 as ``run``'s."""
+    code as ``run``'s."""
     layout = _layout(run_dir)
     states = layout.read_state()
-    table = Table("stage", "pipeline", "status", "ok", "failed", "job hits", "job misses")
+    table = Table("stage", "pipeline", "status", "ok", "failed", "errors", "job hits",
+                  "job misses")
     failures: Counter[str] = Counter()
     for s in states:
         jobs = s.jobs
         table.add_row(s.stage_id, s.pipeline_id, s.status, str(s.n_ok), str(s.n_failed),
-                      str(jobs.hits), str(jobs.misses))
+                      str(s.n_errors), str(jobs.hits), str(jobs.misses))
         failures.update(jobs.failures_by_kind)
     console.print(table)
     counts = ", ".join(f"{kind}={n}" for kind, n in sorted(failures.items()))
@@ -198,8 +206,9 @@ def status(run_dir: Path) -> None:
     hits = sum(s.jobs.hits for s in states)
     total = hits + sum(s.jobs.misses for s in states)
     console.print(f"job reuse: {hits}/{total}" + (f" ({hits / total:.0%})" if total else ""))
-    if _unfinished(layout):
-        raise typer.Exit(1)
+    code, _ = exit_code(layout)
+    if code:
+        raise typer.Exit(code)
 
 
 @app.command()

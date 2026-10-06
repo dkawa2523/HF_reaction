@@ -132,6 +132,33 @@ def test_a_composition_whose_state_crest_lost_keeps_its_seeds(tmp_path, fake_run
     assert [s for _, s in nh] == ["conformer"] + ["placement"] * 6  # CREST's member, the seeds
 
 
+def test_a_search_that_raises_fails_its_item_alone(tmp_path, fake_runtime, monkeypatch):
+    """X7-2: StageRuntime.contain holds the exception of one CREST search: that item is failed
+    (error) and keeps its input as the declared state; the others stand and one error counts."""
+    monkeypatch.delenv("HFAUTO_STRICT")
+    system = SystemConfig(system_id="t", species=_species(tmp_path, ("hono", "hf")))
+    arts = StructuresStage().run(Manifest(run_id="r", stage_id="s", created_at=""),
+                                 StructuresConfig(), fake_runtime(system, {}, stage_id="s"))
+    calls = []
+    crest = _crest(lambda: rt, calls, 0)
+    scripted = crest._script
+
+    def search(mol, method, settings):
+        if len(mol.xyz.symbols) == 4:  # HONO (HF is small and rigid: no search)
+            raise ValueError("unreadable ensemble")
+        return scripted(mol, method, settings)
+
+    crest._script = search
+    rt = fake_runtime(system, {(Capability.CONFORMERS, "crest"): crest}, methods=GFN2,
+                      stage_id="c")
+    out = ConformersStage().run(Manifest(run_id="r", stage_id="s", created_at="", artifacts=arts),
+                                ConformersConfig(engine="crest", method="gfn2"), rt)
+    failed = [(a.artifact_id, a.failure.kind) for a in out if a.failure]
+    assert failed == [("conformers_hono", FailureKind.ERROR)] and rt.errors == ["hono"]
+    kept = sorted(a.payload.species_id for a in out if a.payload)
+    assert kept == ["hf_c00", "hono_c00"]  # the inputs
+
+
 def test_a_composition_takes_the_declared_or_the_only_coupled_multiplicity(tmp_path, fake_runtime):
     oh = write_xyz(XYZ(["O", "H"], np.array([[0, 0, 0], [0, 0, .97]])), tmp_path / "oh.xyz")
     o2 = write_xyz(XYZ(["O", "O"], np.array([[0, 0, 0], [0, 0, 1.21]])), tmp_path / "o2.xyz")

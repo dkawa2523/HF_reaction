@@ -1,5 +1,6 @@
 """Electronic state of the input: supported elements, electron-count parity of the declared
-multiplicity, and the multiplicity of a composition from its components."""
+multiplicity, an isolated atom's ground-term levels, and the multiplicity of a composition from
+its components."""
 
 from __future__ import annotations
 
@@ -7,10 +8,43 @@ from collections.abc import Iterable
 
 from hfauto.chemistry.elements import ELEMENTS
 
+Levels = tuple[tuple[int, float], ...]  # (degeneracy, energy in cm⁻¹) of a ground term's levels
+
+# The neutral atoms whose ground term is split by spin-orbit coupling, from the NIST Atomic
+# Spectra Database (rounded to 0.1 cm⁻¹): (Z, charge) -> (2S + 1, levels, g = 2J + 1).
+_ATOM_TERMS: dict[tuple[int, int], tuple[int, Levels]] = {
+    (5, 0): (2, ((2, 0.0), (4, 15.3))),  # B 2P
+    (6, 0): (3, ((1, 0.0), (3, 16.4), (5, 43.4))),  # C 3P
+    (8, 0): (3, ((5, 0.0), (3, 158.3), (1, 227.0))),  # O 3P
+    (9, 0): (2, ((4, 0.0), (2, 404.1))),  # F 2P
+    (13, 0): (2, ((2, 0.0), (4, 112.1))),  # Al 2P
+    (14, 0): (3, ((1, 0.0), (3, 77.1), (5, 223.2))),  # Si 3P
+    (16, 0): (3, ((5, 0.0), (3, 396.1), (1, 573.6))),  # S 3P
+    (17, 0): (2, ((4, 0.0), (2, 882.4))),  # Cl 2P
+    (35, 0): (2, ((4, 0.0), (2, 3685.2))),  # Br 2P
+    (53, 0): (2, ((4, 0.0), (2, 7603.2))),  # I 2P
+}
+
+
+def atom_levels(symbol: str, charge: int, multiplicity: int) -> Levels | None:
+    """The ground-term levels of an isolated atom in the table, None for another one; a
+    declared multiplicity other than the term's raises ValueError (the table never describes
+    another state, e.g. O(1D))."""
+
+    found = _ATOM_TERMS.get((ELEMENTS[symbol].z, charge))
+    if found is None:
+        return None
+    term, levels = found
+    if multiplicity != term:
+        raise ValueError(f"{symbol} (charge {charge}): multiplicity {multiplicity} is not that "
+                         f"of its ground term ({term})")
+    return levels
+
 
 def check_electronic_state(symbols: Iterable[str], charge: int, multiplicity: int) -> None:
-    """Raise ValueError for an element outside the table (``unsupported_element``) or a
-    declared multiplicity (>= 1, ``SpeciesInput``) the electron count cannot have."""
+    """Raise ValueError for an element outside the table (``unsupported_element``), a declared
+    multiplicity (>= 1, ``SpeciesInput``) the electron count cannot have, or an atom declared
+    in another multiplicity than its ground term's (``atom_levels``)."""
 
     names = list(symbols)
     unsupported = sorted({name for name in names if name not in ELEMENTS})
@@ -23,6 +57,8 @@ def check_electronic_state(symbols: Iterable[str], charge: int, multiplicity: in
             "Electron-count parity is incompatible with multiplicity: "
             f"electrons={electron_count}, multiplicity={multiplicity}"
         )
+    if len(names) == 1:
+        atom_levels(names[0], charge, multiplicity)
 
 
 def coupled_multiplicities(component_multiplicities: Iterable[int]) -> tuple[int, ...]:

@@ -1,6 +1,10 @@
-"""Thermochemistry (design §8.2 thermo): GoodVibes in this process, the modes it gets at the
-point group's structure (chemistry.symmetry), the optical isomer term, standard states, and the
-points a reaction reads with the ranking quantity over them.
+"""Thermochemistry (design §8.2 thermo): GoodVibes in this process for the nuclear terms, the
+electronic term from the levels of the ground term, the optical isomer term, standard states, and
+the points a reaction reads with the ranking quantity over them.
+
+The modes are those of the structure itself; the point group (chemistry.symmetry) gives sigma,
+m, linearity and the moments of inertia of its symmetrised structure. GoodVibes sees a singlet:
+the electronic term is ``electronic`` alone.
 
 Energies are in Hartree unless a name ends in ``_kcal``; free energies of single species are
 gas-phase 1 atm values (GoodVibes' default reference) and are moved to other standard states
@@ -23,11 +27,12 @@ from typing import NamedTuple
 import numpy as np
 
 from hfauto.chemistry import topology
+from hfauto.chemistry.electronic_state import Levels
 from hfauto.chemistry.elements import atomic_number, mass
 from hfauto.chemistry.symmetry import Symmetry
 from hfauto.chemistry.vibrations import projected_frequencies, rotational_constants_ghz
 from hfauto.chemistry.xyz import XYZ, hill_formula
-from hfauto.core.constants import HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
+from hfauto.core.constants import CM1_TO_HARTREE, HARTREE_TO_KCAL_MOL, R_KCAL_MOL_K
 from hfauto.core.evidence import Evidence
 from hfauto.core.hashing import fingerprint_dict
 from hfauto.core.manifest import Artifact
@@ -58,32 +63,34 @@ def thermo_frequencies(freqs_cm1: Sequence[float], *, saddle: bool) -> tuple[flo
     return tuple(sorted(abs(nu) for nu in modes))
 
 
-def thermal_modes(symbols: Sequence[str], sym: Symmetry, hessian: np.ndarray, *, saddle: bool
-                  ) -> tuple[float, ...]:
-    """thermo_frequencies of the freq Hessian projected at the symmetrized structure with the
-    point group's external count: 3N - 5 modes if linear, else 3N - 6 (an atom: none)."""
-    freqs, _, _ = projected_frequencies(hessian, symbols, sym.coords, linear=sym.linear)
+def thermal_modes(symbols: Sequence[str], coords: np.ndarray, hessian: np.ndarray, *,
+                  linear: bool, saddle: bool) -> tuple[float, ...]:
+    """thermo_frequencies of the freq Hessian projected at the structure itself with the point
+    group's external count: 3N - 5 modes if ``linear``, else 3N - 6 (an atom: none)."""
+    freqs, _, _ = projected_frequencies(hessian, symbols, coords, linear=linear)
     return thermo_frequencies(freqs.tolist(), saddle=saddle)
 
 
 class Thermal(NamedTuple):
-    """Thermal terms of one species above its electronic energy (Hartree)."""
+    """Nuclear thermal terms of one species above its electronic energy (Hartree)."""
 
     G: float  # H - T S, S with the quasi-RRHO vibrational entropy of the settings
-    H: float
+    H: float  # with the quasi-harmonic vibrational energy at the same cutoff
     zpe: float
 
 
 def species_thermo(symbols: Sequence[str], sym: Symmetry, modes_cm1: Sequence[float], *,
-                   multiplicity: int, settings: ThermoSettings, T: float) -> Thermal:
-    """GoodVibes (``compute_thermo``) in this process for an ideal gas at 1 atm: QH=False (H is
-    RRHO), the vibrational entropy of ``settings.qs`` with ``settings.cutoff_cm1``, vib_scale
-    on the modes and the ZPE, sigma and linearity of the point group and S_el = R ln(2S+1).
+                   settings: ThermoSettings, T: float) -> Thermal:
+    """GoodVibes (``compute_thermo``) in this process for an ideal gas at 1 atm and multiplicity
+    1: the vibrational entropy of ``settings.qs`` with ``settings.cutoff_cm1``, QH=True (Head-
+    Gordon's damped vibrational energy) with that cutoff, vib_scale on the modes and the ZPE,
+    sigma, linearity and the moments of inertia of the point group. With qs = grimme the
+    vibrational H and S damp towards the free rotor at one cutoff; truhlar's S stays RRQHO.
 
-    The modes are ``thermal_modes``; the rotational temperatures come from the symmetrized
-    structure. calc_bbe reads ``zero_point_corr`` only as a gate (None: nothing computed) and as
-    the monatomic test (== 0.0), and computes nothing from an empty rotemp, so an atom gets 0.0
-    and a dummy [0.0]. ``file`` stays "" (no such path), so calc_bbe never parses a file.
+    The modes are ``thermal_modes``. calc_bbe reads ``zero_point_corr`` only as a gate (None:
+    nothing computed) and as the monatomic test (== 0.0), and computes nothing from an empty
+    rotemp, so an atom gets 0.0 and a dummy [0.0]. ``file`` stays "" (no such path), so
+    calc_bbe never parses a file.
     """
     from goodvibes.api import compute_thermo
     from goodvibes.io import QCData
@@ -92,19 +99,38 @@ def species_thermo(symbols: Sequence[str], sym: Symmetry, modes_cm1: Sequence[fl
     atom = len(symbols) == 1
     constants = () if atom else rotational_constants_ghz(symbols, sym.coords, sym.linear)
     qcdata = QCData(
-        scf_energy=0.0, multiplicity=multiplicity, atom_types=symbols,
+        scf_energy=0.0, multiplicity=1, atom_types=symbols,
         atom_nums=[atomic_number(s) for s in symbols], cartesians=sym.coords.tolist(),
         frequency_wn=list(modes_cm1), linear_mol=sym.linear,
         molecular_mass=sum(mass(s) for s in symbols),
         rotemp=[b * _K_PER_GHZ for b in constants if b > 0.0] or [0.0],
         zero_point_corr=0.0 if atom else 1.0, symmno=sym.sigma,
     )
-    r = compute_thermo(qcdata=qcdata, QS=settings.qs, s_freq_cutoff=settings.cutoff_cm1,
-                       temperature=T, freq_scale_factor=settings.vib_scale,
-                       zpe_scale_factor=settings.vib_scale, symm=False)
-    if r.qh_gibbs_free_energy is None or r.enthalpy is None or r.zpe is None:
+    r = compute_thermo(qcdata=qcdata, QS=settings.qs, QH=True, s_freq_cutoff=settings.cutoff_cm1,
+                       h_freq_cutoff=settings.cutoff_cm1, temperature=T,
+                       freq_scale_factor=settings.vib_scale, zpe_scale_factor=settings.vib_scale,
+                       symm=False)
+    if r.qh_gibbs_free_energy is None or r.qh_enthalpy is None or r.zpe is None:
         raise ValueError("GoodVibes computed no thermal terms")
-    return Thermal(G=r.qh_gibbs_free_energy, H=r.enthalpy, zpe=r.zpe)
+    return Thermal(G=r.qh_gibbs_free_energy, H=r.qh_enthalpy, zpe=r.zpe)
+
+
+def electronic(levels: Levels, T: float) -> float:
+    """G_el = -RT ln q_el (Hartree) of the levels (degeneracy, cm⁻¹) of a ground term, q_el =
+    Σ g exp(-(E - E_0)/kT) above the lowest level E_0; a spin multiplet alone, ((2S + 1, 0),),
+    gives -RT ln(2S + 1)."""
+    if not (math.isfinite(T) and T > 0.0):
+        raise ValueError("temperature must be finite and positive")
+    kT = R_KCAL_MOL_K * T / HARTREE_TO_KCAL_MOL
+    low = min(E for _, E in levels)
+    return -kT * math.log(sum(g * math.exp(-(E - low) * CM1_TO_HARTREE / kT) for g, E in levels))
+
+
+def spin_orbit(levels: Levels) -> float:
+    """E_SO = E_0 - Σ g E / Σ g (Hartree): the lowest level against the term's mean, which a
+    non-relativistic energy describes."""
+    mean = sum(g * E for g, E in levels) / sum(g for g, _ in levels)
+    return (min(E for _, E in levels) - mean) * CM1_TO_HARTREE
 
 
 def declared_monomers(species: Iterable[SpeciesRecord],

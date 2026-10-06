@@ -1,14 +1,15 @@
-"""chemistry.thermo: textbook values, the fixed rule for negative modes, and the points a
-reaction reads (one chain with a common zero)."""
+"""chemistry.thermo: textbook values, the electronic term from NIST levels, the fixed rule for
+negative modes, and the points a reaction reads (one chain with a common zero)."""
 
 import importlib.metadata
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from hfauto.chemistry import thermo as th
-from hfauto.chemistry.symmetry import Symmetry
+from hfauto.chemistry.electronic_state import atom_levels, check_electronic_state
 from hfauto.chemistry.topology import state_label
 from hfauto.chemistry.vibrations import external_basis
 from hfauto.chemistry.xyz import XYZ
@@ -16,7 +17,7 @@ from hfauto.core import records as R
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL as H2K
 from hfauto.core.constants import R_KCAL_MOL_K
 from hfauto.core.evidence import FileRef, Geometry
-from hfauto.core.system import CompositionInput
+from hfauto.core.system import CompositionInput, SpeciesInput, load_system
 
 RT = R_KCAL_MOL_K * 298.15
 OH = XYZ(["O", "H"], np.array([[0.0, 0, 0], [0, 0, 0.97]]))
@@ -171,19 +172,55 @@ def test_positive_or_empty_modes_pass_unchanged():
 
 
 def test_thermal_modes_follow_the_point_group_not_the_rank():
-    """S18: H...H2 0.006 Å off the axis has rank 6 (3 modes, 2.27 kcal/mol in G); as C∞v at its
-    symmetrized structure it has 3N - 5 = 4 modes, a saddle 3."""
+    """S18: H...H2 0.006 Å off the axis has rank 6 (3 modes, 2.27 kcal/mol in G); as C∞v it has
+    3N - 5 = 4 modes at its own structure, a saddle 3."""
     x = np.array([[0.0, 0.0, -1.8], [0.0, 0.006, 0.0], [0.0, 0.0, 0.74]])
-    line = x * [0.0, 0.0, 1.0]
     h = 0.3 * np.eye(9)
     assert external_basis(["H"] * 3, x).shape[1] == 6
-    linear, bent = (Symmetry(g, 1, lin, 1, c) for g, lin, c in (("Cinfv", True, line),
-                                                                  ("C1", False, x)))
-    assert len(th.thermal_modes(["H"] * 3, linear, h, saddle=False)) == 4
-    assert len(th.thermal_modes(["H"] * 3, linear, h, saddle=True)) == 3
-    assert len(th.thermal_modes(["H"] * 3, bent, h, saddle=False)) == 3
-    assert th.thermal_modes(["H"], Symmetry("Kh", 1, False, 1, np.zeros((1, 3))),
-                            np.zeros((3, 3)), saddle=False) == ()
+    assert len(th.thermal_modes(["H"] * 3, x, h, linear=True, saddle=False)) == 4
+    assert len(th.thermal_modes(["H"] * 3, x, h, linear=True, saddle=True)) == 3
+    assert len(th.thermal_modes(["H"] * 3, x, h, linear=False, saddle=False)) == 3
+    assert th.thermal_modes(["H"], np.zeros((1, 3)), np.zeros((3, 3)), linear=False,
+                            saddle=False) == ()
+
+
+def _q_el(levels, T=298.15):  # exp(-G_el / RT)
+    return math.exp(-th.electronic(levels, T) * H2K / (R_KCAL_MOL_K * T))
+
+
+def test_electronic_levels_against_nist_hand_values():
+    """O(3P) q_el(298) 5 + 3 e^(-158.3 hc/kT) + e^(-227.0 hc/kT) = 6.73; Cl(2P) E_SO
+    -2/6 x 882.4 cm-1 = -0.84 kcal/mol; OH(2Pi) as oh_ch4.yaml declares it: q_el 3.02, E_SO
+    -0.20 kcal/mol (the spin multiplet alone gave 2 and 0)."""
+    oxygen, chlorine = atom_levels("O", 0, 3), atom_levels("Cl", 0, 2)
+    assert _q_el(oxygen) == pytest.approx(6.73, abs=0.01)
+    assert th.spin_orbit(oxygen) * H2K == pytest.approx(-0.223, abs=1e-3)
+    assert th.spin_orbit(chlorine) * H2K == pytest.approx(-0.841, abs=1e-3)
+    assert _q_el(chlorine) == pytest.approx(4.0 + 2.0 * math.exp(-882.4 / 207.22), abs=1e-3)
+    system = load_system(Path(__file__).parents[3] / "configs" / "systems" / "oh_ch4.yaml")
+    oh = next(s.electronic_levels for s in system.species if s.id == "oh")
+    assert _q_el(oh) == pytest.approx(3.02, abs=0.01)
+    assert th.spin_orbit(oh) * H2K == pytest.approx(-0.199, abs=1e-3)
+
+
+def test_a_spin_multiplet_alone_is_the_old_electronic_entropy():
+    assert th.electronic(((2, 0.0),), 298.15) == pytest.approx(-RT * math.log(2) / H2K, rel=1e-12)
+    assert th.electronic(((1, 0.0),), 298.15) == 0.0 and th.spin_orbit(((3, 0.0),)) == 0.0
+
+
+def test_declared_levels_hold_whole_spin_multiplets():
+    levels = ((2, 0.0), (2, 139.21))
+    assert SpeciesInput(id="oh", smiles="[OH]", multiplicity=2,
+                        electronic_levels=levels).electronic_levels == levels
+    with pytest.raises(ValueError, match="multiple of the multiplicity"):
+        SpeciesInput(id="oh", smiles="[OH]", multiplicity=2, electronic_levels=((3, 0.0),))
+
+
+def test_the_atom_table_holds_only_for_its_ground_term():
+    assert atom_levels("Cl", -1, 1) is None and atom_levels("N", 0, 4) is None  # not split
+    with pytest.raises(ValueError, match="ground term"):
+        check_electronic_state(["O"], 0, 1)  # O(1D) is not the table's term
+    check_electronic_state(["O"], 0, 3)
 
 
 def test_pymsym_is_the_pinned_version():  # R14: another libmsym build may find another sigma

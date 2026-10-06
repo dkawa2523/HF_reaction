@@ -4,14 +4,21 @@ the points of thermo.reaction_points.
 
 Subjects: every dft minimum (monomers included) and SaddleClaim freq calc, at the main
 settings and the qs x cutoff variants and at every configured temperature. Each subject's
-point group (chemistry.symmetry, from the freq geometry and Hessian) gives sigma, linearity,
-the structure the modes (chemistry.thermo.thermal_modes: a TS drops its reaction coordinate)
-and moments are evaluated at, and m: with m = 2 G gains -RT ln 2, as the mirror image is the
-same basin or saddle, counted once. Species values are 1 atm; reactions get one record per
-standard state. G is the energy layer plus the thermal terms of the freq: with energy_method
-the one sp at that method whose parents name the subject (thermo.single_points; without one
-G = None, energy_layer_missing), else the freq itself. A subject is spin_contaminated unless its
-energy passes gates.energy_spin_ok (the method panel's definition too).
+point group (chemistry.symmetry, from the freq geometry and Hessian; open shell: multiplicity
+above 1) gives sigma, linearity, the moments of inertia and m: with m = 2 G gains -RT ln 2, as
+the mirror image is the same basin or saddle, counted once. The modes are those of the freq
+structure (chemistry.thermo.thermal_modes: a TS drops its reaction coordinate). Species values
+are 1 atm; reactions get one record per standard state. E is the energy layer: with
+energy_method the one sp at that method whose parents name the subject (thermo.single_points;
+without one G = None, energy_layer_missing), else the freq itself. A subject is
+spin_contaminated unless its energy passes gates.energy_spin_ok (the method panel's definition
+too).
+
+The electronic term (thermo.electronic, thermo.spin_orbit) comes from the levels of the ground
+term: a minimum of a declared species' state with electronic_levels (a linear radical with
+Λ > 0) takes them, an isolated atom its NIST term (electronic_state.atom_levels), anything else
+the spin multiplet alone. E_SO joins E (dE, G and the submerged test); in a complex or a TS
+the spin-orbit splitting counts as quenched. G = E + nuclear terms + G_el (+ -RT ln 2).
 
 A state is a composition and a topology.state_label. Its G (_state_G) is the lowest G of its
 spin-clean minima on one freq and energy LOT (fast conformer equilibria make one state); it fails
@@ -24,7 +31,7 @@ barrierless outcome has no dG_eff: its row gives dG_rxn. dG_act, dG_rxn and dE r
 points (thermo.participants), dG_assoc and dG_act_vs_separated to R_sep. The blockers of a
 ReactionThermo are the only source of thermo_unavailable (the row's value, dG_eff or else
 dG_rxn, is missing), mixed_level_of_theory (the own points differ in LOT, charge and
-multiplicity aside) and spin_contaminated (an own point is).
+multiplicity aside), spin_contaminated and not_stationary (an own point is).
 """
 
 from __future__ import annotations
@@ -37,6 +44,7 @@ import numpy as np
 
 from hfauto.chemistry import symmetry
 from hfauto.chemistry import thermo as th
+from hfauto.chemistry.electronic_state import Levels, atom_levels
 from hfauto.chemistry.gates import energy_spin_ok, same_pes
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Evidence, Level
@@ -78,6 +86,12 @@ class _Subject:
     layer_missing: bool  # energy_method set but no such sp
     sym: symmetry.Symmetry  # of the freq geometry
     modes: tuple[float, ...]  # th.thermal_modes
+    levels: Levels  # of the electronic term
+
+    @property
+    def E(self) -> float:
+        """The energy layer with the spin-orbit lowering of the ground level."""
+        return self.energy.energy_hartree + th.spin_orbit(self.levels)
 
 
 def _variants(settings: ThermoSettings) -> list[ThermoSettings]:
@@ -92,21 +106,28 @@ def _subjects(inputs: Manifest, method: MethodSpec | None, rt: StageRuntime
         subject: sp for (subject, _), sp in
         th.single_points(inputs.of(ArtifactType.CALCULATION)).items()
         if not level_mismatches(method, sp[1].level, version_pin=sp[1].level.version)}
-    monomers = th.declared_monomers(inputs.records(ArtifactType.SPECIES, SpeciesRecord),
-                                    rt.system.compositions)
+    species = inputs.records(ArtifactType.SPECIES, SpeciesRecord)
+    monomers = th.declared_monomers(species, rt.system.compositions)
+    declared = {s.id: s.electronic_levels for s in rt.system.species if s.electronic_levels}
+    levels_of = {(s.composition_id, s.state_label): declared[s.species_id]
+                 for s in species if s.source == "input" and s.species_id in declared}
 
     def make(sid: str, calc: str, state: th.State | None, notes: tuple[str, ...]) -> _Subject:
         freq = inputs.evidence(calc)
         assert freq.hessian is not None  # Evidence guarantee (3) of a freq
         xyz, hessian = rt.load_xyz(freq.final), np.load(rt.resolve(freq.hessian))
-        sym = symmetry.analyze(xyz.symbols, xyz.coords, hessian)
+        charge, mult = freq.level.charge, freq.level.multiplicity
+        sym = symmetry.analyze(xyz.symbols, xyz.coords, hessian, open_shell=mult > 1)
         sp_calc, sp = layer.get(sid, (None, freq))
+        levels = None if state is None else levels_of.get(state) or (
+            atom_levels(xyz.symbols[0], charge, mult) if len(xyz.symbols) == 1 else None)
         return _Subject(sid, calc, freq, sp_calc, sp, state, notes,
-                        () if state is None else th.separated_states(
-                            xyz, freq.level.charge, monomers),
+                        () if state is None else th.separated_states(xyz, charge, monomers),
                         contaminated=not energy_spin_ok(sp, freq, rt.policy),
                         layer_missing=method is not None and sp_calc is None, sym=sym,
-                        modes=th.thermal_modes(xyz.symbols, sym, hessian, saddle=state is None))
+                        modes=th.thermal_modes(xyz.symbols, xyz.coords, hessian,
+                                               linear=sym.linear, saddle=state is None),
+                        levels=levels or ((mult, 0.0),))
 
     out = {m.minimum_id: make(m.minimum_id, m.freq_calc, (m.composition_id, m.state_label),
                               m.notes)
@@ -119,18 +140,18 @@ def _subjects(inputs: Manifest, method: MethodSpec | None, rt: StageRuntime
 
 
 def _species(sub: _Subject, settings: ThermoSettings, T: float) -> SpeciesThermo:
-    """G = energy layer + thermal terms of the freq (- RT ln 2 if m = 2)."""
+    """G = E + nuclear thermal terms of the freq + G_el (- RT ln 2 if m = 2)."""
     row = SpeciesThermo(
         subject=sub.id, freq_calc=sub.freq_calc, energy_calc=sub.energy_calc, T_K=T,
         G_hartree=None, H_hartree=None, zpe_hartree=None, settings_sha=th.settings_sha(settings),
-        notes=sub.notes)
+        point_group=sub.sym.point_group, sigma=sub.sym.sigma, m=sub.sym.m, notes=sub.notes)
     if sub.layer_missing:  # G stays None
         return row.model_copy(update={"notes": (*sub.notes, "energy_layer_missing")})
-    c = th.species_thermo(sub.freq.final.symbols, sub.sym, sub.modes,
-                          multiplicity=sub.freq.level.multiplicity, settings=settings, T=T)
-    E, mirror = sub.energy.energy_hartree, th.chiral_G(T) if sub.sym.m == 2 else 0.0
+    c = th.species_thermo(sub.freq.final.symbols, sub.sym, sub.modes, settings=settings, T=T)
+    mirror = th.chiral_G(T) if sub.sym.m == 2 else 0.0
     return row.model_copy(update={
-        "G_hartree": E + c.G + mirror, "H_hartree": E + c.H, "zpe_hartree": c.zpe})
+        "G_hartree": sub.E + c.G + th.electronic(sub.levels, T) + mirror,
+        "H_hartree": sub.E + c.H, "zpe_hartree": c.zpe})
 
 
 def _members(state: th.State, ref: _Subject, subjects: dict[str, _Subject]) -> list[_Subject]:
@@ -196,8 +217,7 @@ def _diff(a: float | None, b: float | None) -> float | None:
 
 def _E(subjects: dict[str, _Subject], ids: Sequence[str]) -> float | None:
     """The energy layer summed over ``ids`` in kcal/mol; None without one (no mixed-LOT dE)."""
-    E = _sum(None if (s := subjects.get(i)) is None or s.layer_missing
-             else s.energy.energy_hartree for i in ids)
+    E = _sum(None if (s := subjects.get(i)) is None or s.layer_missing else s.E for i in ids)
     return None if E is None else E * HARTREE_TO_KCAL_MOL
 
 
@@ -205,7 +225,7 @@ def _submerged(sides: th.Sides, subjects: dict[str, _Subject], table: Table) -> 
     """Forward or reverse dE0 = dE + dZPE <= 0 on the energy layer: the saddle is no
     bottleneck and its TST barrier has no meaning."""
     def e0(ids: Sequence[str]) -> float | None:
-        return _sum(subjects[n].energy.energy_hartree + st.zpe_hartree
+        return _sum(subjects[n].E + st.zpe_hartree
                     if (st := table.get(n)) is not None and st.zpe_hartree is not None else None
                     for n in ids)
 
@@ -215,12 +235,14 @@ def _submerged(sides: th.Sides, subjects: dict[str, _Subject], table: Table) -> 
 
 def _blockers(subs: Sequence[_Subject], value: float | None) -> tuple[str, ...]:
     """thermo_unavailable: the row's value is missing; mixed_level_of_theory: the own points
-    differ in LOT (charge and multiplicity aside); spin_contaminated: one of them is."""
+    differ in LOT (charge and multiplicity aside); spin_contaminated or not_stationary: one of
+    them is (the driver's note when the trust-region certification failed after its relax)."""
     hits = {"thermo_unavailable": value is None,
             "mixed_level_of_theory": not (same_pes(*[s.freq.level for s in subs], state=False)
                                           and same_pes(*[s.energy.level for s in subs],
                                                        state=False)),
-            "spin_contaminated": any(s.contaminated for s in subs)}
+            "spin_contaminated": any(s.contaminated for s in subs),
+            "not_stationary": any("not_stationary" in s.notes for s in subs)}
     return tuple(name for name, hit in hits.items() if hit)
 
 

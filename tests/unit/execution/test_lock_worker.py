@@ -33,6 +33,10 @@ def test_site_lock_refuses_second_run_and_takes_over_dead_holders(tmp_path):
         with SiteLock(scratch, tmp_path / "run_c"):
             holder = json.loads(lock.read_text())
             assert holder["pid"] == os.getpid() and holder["run_dir"].endswith("run_c")
+    # U9-I14: a holder on another host is alive, whatever its pid is here
+    lock.write_text(json.dumps({"pid": dead_pid, "host": "another-node", "run_dir": "old"}))
+    with pytest.raises(RuntimeError, match="another-node"), SiteLock(scratch, tmp_path / "d"):
+        pass
 
 
 def test_worker_echo_runs_in_the_job_directory(tmp_path):
@@ -55,3 +59,18 @@ def test_thread_map_keeps_input_order():
 
     assert thread_map(slow_identity, list(range(5)), workers=4) == list(range(5))
     assert thread_map(slow_identity, [3], workers=1) == [3]
+
+
+def test_thread_map_cancels_the_items_not_started_when_one_raises():
+    started = []
+
+    def item(i):
+        started.append(i)
+        if i == 0:
+            raise ValueError("item 0")
+        time.sleep(0.2)
+        return i
+
+    with pytest.raises(ValueError, match="item 0"):
+        thread_map(item, list(range(8)), workers=2)
+    assert len(started) < 8

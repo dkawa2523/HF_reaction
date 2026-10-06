@@ -1,4 +1,4 @@
-"""Geometry primitives of chemistry (Kabsch rotation, rotation about an axis, dihedral angle,
+"""Geometry primitives of chemistry (Kabsch rotation, dihedral angle,
 bonded neighbours) and the value and gradient of a declared reaction coordinate."""
 
 from __future__ import annotations
@@ -18,15 +18,6 @@ def kabsch(mobile: np.ndarray, fixed: np.ndarray) -> np.ndarray:
     u, _, vt = np.linalg.svd(mobile.T @ fixed)
     handedness = 1.0 if np.linalg.det(u @ vt) >= 0 else -1.0
     return u @ np.diag([1.0, 1.0, handedness]) @ vt
-
-
-def rotation_about(axis: np.ndarray, degrees: float) -> np.ndarray:
-    """Rodrigues rotation matrix about the unit ``axis`` (x @ R.T rotates the rows of x)."""
-
-    x, y, z = axis
-    k = np.array([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
-    t = np.radians(degrees)
-    return np.eye(3) + np.sin(t) * k + (1.0 - np.cos(t)) * (k @ k)
 
 
 def neighbours(bonded: Collection[tuple[int, int]]) -> dict[int, set[int]]:

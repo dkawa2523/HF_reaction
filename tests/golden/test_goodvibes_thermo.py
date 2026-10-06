@@ -1,6 +1,7 @@
 """species_thermo (GoodVibes 4.3.0 in this process; Linux production extra) against the G06
-CSVs of the old CLI path, GoodVibes' own output parser and textbook values. The point group is
-chemistry.symmetry's on the excerpt's own Hessian where it has one; else it is given."""
+CSVs of the CLI (`-q --qs grimme`: quasi-harmonic H and S), GoodVibes' own output parser and
+textbook values. The point group is chemistry.symmetry's on the excerpt's own Hessian where it
+has one; else it is given."""
 
 import csv
 import math
@@ -38,9 +39,9 @@ def _given(xyz: XYZ, group: str = "C1", sigma: int = 1, linear: bool = False) ->
     return Symmetry(group, sigma, linear, 1, xyz.coords)
 
 
-def _thermo(xyz, modes, sym=None, *, saddle=False, multiplicity=1, settings=MAIN) -> th.Thermal:
+def _thermo(xyz, modes, sym=None, *, saddle=False, settings=MAIN) -> th.Thermal:
     return th.species_thermo(xyz.symbols, sym or _given(xyz), th.thermo_frequencies(
-        modes, saddle=saddle), multiplicity=multiplicity, settings=settings, T=T)
+        modes, saddle=saddle), settings=settings, T=T)
 
 
 def _csv(golden, name: str) -> dict[str, str]:
@@ -53,7 +54,7 @@ def test_g06_linear_minima_and_ts_match_the_cli(golden, name, out, saddle):
     """The TS (G07) is Cs on its own Hessian; HCN and HNC come without one and are C∞v, as
     NWChem reports (symmetry # 1)."""
     row = {k: float(v) for k, v in _csv(golden, f"G06/{name}").items()
-           if k in ("scf_energy", "zpe", "enthalpy", "entropy", "qh_entropy")}
+           if k in ("scf_energy", "zpe", "qh_enthalpy", "entropy", "qh_gibbs_free_energy")}
     xyz, modes = _freq(golden, f"nwchem/{out}")
     sym = _given(xyz, "Cinfv", 1, linear=True)
     if saddle:
@@ -63,10 +64,10 @@ def test_g06_linear_minima_and_ts_match_the_cli(golden, name, out, saddle):
     grimme = _thermo(xyz, modes, sym, saddle=saddle, settings=G06)
     truhlar = _thermo(xyz, modes, sym, saddle=saddle,
                       settings=G06.model_copy(update={"qs": "truhlar"}))
-    H = row["enthalpy"] - row["scf_energy"]
+    H = row["qh_enthalpy"] - row["scf_energy"]
     assert (grimme.zpe, grimme.H) == pytest.approx((row["zpe"], H), abs=1e-10)
-    # G06 ran with QH=True, so its qh_gibbs_free_energy holds a quasi-harmonic H: compare H - T S
-    assert grimme.G == pytest.approx(H - T * row["qh_entropy"], abs=ROTATION_TOL)
+    assert grimme.G == pytest.approx(row["qh_gibbs_free_energy"] - row["scf_energy"],
+                                     abs=ROTATION_TOL)
     assert truhlar.G == pytest.approx(H - T * row["entropy"], abs=ROTATION_TOL)  # modes > 100
 
 
@@ -79,14 +80,17 @@ def test_g02_came_from_both_frequency_blocks_of_the_ts(golden):
     assert float(_csv(golden, "G02/ts")["zpe"]) == pytest.approx(sum(zpe), abs=1e-10)
 
 
-def test_doublet_and_linear_oh(golden):  # G25: OH radical, one stiff mode, C∞v
+def test_doublet_and_linear_oh(golden):
+    """G25: OH radical, one stiff mode, C∞v (an open shell: the noise criterion holds for a
+    diatomic). GoodVibes sees a singlet; the electronic term is thermo.electronic's."""
     xyz, modes = _freq(golden, "nwchem/G25/oh_freq.out")
-    sym = analyze(xyz.symbols, xyz.coords, read_hess(golden.path("nwchem/G25/oh_freq.hess"), 2))
+    hessian = read_hess(golden.path("nwchem/G25/oh_freq.hess"), 2)
+    sym = analyze(xyz.symbols, xyz.coords, hessian, open_shell=True)
     assert (sym.point_group, sym.sigma, sym.linear, sym.m) == ("Cinfv", 1, True, 1)
-    singlet, doublet = (_thermo(xyz, modes, sym, multiplicity=m) for m in (1, 2))
-    assert doublet.G - singlet.G == pytest.approx(-RT * math.log(2), rel=1e-6)  # S_el = R ln 2
-    assert doublet.H == singlet.H
-    assert singlet.H - singlet.zpe == pytest.approx(3.5 * RT, rel=1e-6)  # trans + linear rot + pV
+    oh = _thermo(xyz, modes, sym)
+    # trans + linear rot + pV; QH leaves (100/3700)^4 of the stretch's ZPE out: 5e-9 Eh
+    assert oh.H - oh.zpe == pytest.approx(3.5 * RT, abs=1e-8)
+    assert th.electronic(((2, 0.0),), T) == pytest.approx(-RT * math.log(2), rel=1e-6)
 
 
 def test_argon_standard_entropy():
@@ -109,7 +113,8 @@ def test_cutoff_and_truhlar_variants_match_goodvibes_parsing_the_output(golden):
     real = [nu for nu in modes if nu > 0.0]  # GoodVibes leaves out imaginary modes
 
     def cli(s: ThermoSettings) -> float:
-        return compute_thermo(path, QS=s.qs, s_freq_cutoff=s.cutoff_cm1, freq_scale_factor=1.0,
+        return compute_thermo(path, QS=s.qs, QH=True, s_freq_cutoff=s.cutoff_cm1,
+                              h_freq_cutoff=s.cutoff_cm1, freq_scale_factor=1.0,
                               zpe_scale_factor=1.0, symm=True).qh_gibbs_free_energy
 
     for qs, cutoff in (("grimme", 50.0), ("grimme", 150.0), ("truhlar", 50.0), ("truhlar", 150.0)):

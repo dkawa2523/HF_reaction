@@ -1,15 +1,18 @@
 """Reaction hypotheses: pairs of minima that become reaction cases (design §8.2).
 
 Priority: declared reactions, discovery products (low-level TS first), mode-follow TS candidates.
-Declared reactions, torsions and inversions included, are always kept so that decide() classifies
-them. A hypothesis stands for its case key (``pair_key``): a pair that differs in chemical state
-by its two states, else by its two minima. An undeclared pair whose key a hypothesis already has
-makes none; every hypothesis of a key holds each distinct low-level TS of that key (its own
-first, then in priority order), the seeds its case tries in turn, and the first verified DFT
-saddle. An undeclared pair joins two DFT minima of one level inside the window, or one basin,
-and changes bonds between its ends: a conformer change, torsion or enantiomerization is studied
-only when declared (Curtin-Hammett), so one basin gives a degenerate rearrangement that exchanges
-bonded partners. Bonds and degeneracy are judged on the basins' optimized structures in the
+Declared reactions, torsions and inversions included, are always kept. A hypothesis stands for
+its case key (``pair_key``): a pair that differs in chemical state by its two states, else by its
+two minima. An undeclared pair whose key a hypothesis already has makes none; every hypothesis of
+a key holds each distinct low-level TS of that key (its own first, then in priority order), the
+seeds its case tries in turn, and the first verified DFT saddle. An undeclared pair joins two
+DFT minima of one level, or one basin, and changes bonds between its ends: a conformer change,
+torsion or enantiomerization is studied only when declared (Curtin-Hammett), so one basin gives
+a degenerate rearrangement that exchanges bonded partners. A hypothesis that a static check
+decides is closed here, a record without a job (``_closed``): an end without a DFT minimum
+(BLOCKED), both ends in one basin when the case is neither degenerate nor an association
+(SAME_BASIN), or the product more than the window above the reactant asymptote (``uphill``:
+OUT_OF_WINDOW). Bonds and degeneracy are judged on the basins' optimized structures in the
 endpoints' atom order and handedness (``identity.member_coords``), never on input coordinates.
 A discovery's ends are its own ``source_species`` and ``product_species`` (an edge's two
 species, labelled along the structures it followed), so a basin representative's arbitrary
@@ -51,6 +54,7 @@ from hfauto.core.evidence import Geometry, Level
 from hfauto.core.hashing import sha256_text
 from hfauto.core.ids import reaction_id
 from hfauto.core.records import (
+    CaseOutcome,
     CoordinateTerm,
     DiscoveryRecord,
     MinimumRecord,
@@ -186,7 +190,7 @@ def _declared(pool: _Pool, reaction: ReactionInput) -> ReactionRecord:
     ma, mb = pool.basin(reaction.reactant), pool.basin(reaction.product)
     coordinate = tuple(reaction.coordinate)
     if sa is None or sb is None or ma is None or mb is None:
-        # An endpoint without a minimum is kept so that decide() blocks it (row 1).
+        # An endpoint without a minimum is kept, closed BLOCKED (``_closed``).
         minima = (ma.minimum_id if ma else "", mb.minimum_id if mb else "")
         return ReactionRecord(reaction_id=reaction.id, source="declared", minima=minima,
                               reactants=_stoich(sa), products=_stoich(sb), coordinate=coordinate,
@@ -214,13 +218,10 @@ def _candidates(pool: _Pool, discoveries: Iterable[DiscoveryRecord]) -> Iterator
 
 def _auto(pool: _Pool, c: _Candidate, ma: MinimumRecord, mb: MinimumRecord
           ) -> ReactionRecord | None:
-    """An undeclared hypothesis: DFT minima of one level and composition inside the window whose
-    ends, the discovery's own, differ in bonds (design §8.2); in one basin, a degenerate
-    rearrangement."""
+    """An undeclared hypothesis: DFT minima of one level and composition whose ends, the
+    discovery's own, differ in bonds (design §8.2); in one basin, a degenerate rearrangement."""
     same_level = ma.tier == mb.tier == "dft" and ma.level_key == mb.level_key
     if not same_level or ma.composition_id != mb.composition_id or c.ends is None:
-        return None
-    if (mb.energy_hartree - ma.energy_hartree) * HARTREE_TO_KCAL_MOL > pool.window_kcal:
         return None
     sa, sb = c.ends
     rid = reaction_id(c.source, sha256_text(f"{ma.minimum_id}|{mb.minimum_id}")[:10])
@@ -228,6 +229,27 @@ def _auto(pool: _Pool, c: _Candidate, ma: MinimumRecord, mb: MinimumRecord
                      (pool.coords(ma, sa), pool.coords(mb, sb)), low_level_ts=c.low_level_ts,
                      ts_calc=c.ts_calc)
     return None if record.torsional else record
+
+
+def uphill(minima: Mapping[str, MinimumRecord], case: ReactionRecord) -> float:
+    """ΔE (kcal/mol) from the reactant asymptote to the product: from the separated monomers'
+    energy sum for an association, else from the reactant minimum."""
+    reactant = sum(minima[m].energy_hartree for m in case.monomers or case.minima[:1])
+    return (minima[case.minima[1]].energy_hartree - reactant) * HARTREE_TO_KCAL_MOL
+
+
+def _closed(pool: _Pool, case: ReactionRecord) -> ReactionRecord:
+    """The hypothesis, or its closing record when a static check decides it (module doc)."""
+    a, b = (pool.minima.get(m) for m in case.minima)
+    if a is None or b is None or a.tier != "dft" or b.tier != "dft":
+        outcome, reason = CaseOutcome.BLOCKED, "endpoint_without_dft_minimum"
+    elif a.basin_id == b.basin_id and not case.degenerate and not case.monomers:
+        outcome, reason = CaseOutcome.SAME_BASIN, "same_basin"
+    elif uphill(pool.minima, case) > pool.window_kcal:
+        outcome, reason = CaseOutcome.OUT_OF_WINDOW, "out_of_window"
+    else:
+        return case
+    return case.model_copy(update={"outcome": outcome, "reasons": (reason,)})
 
 
 def _pool(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[SpeciesRecord],
@@ -265,16 +287,17 @@ def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[S
            monomers: Monomers | None = None,
            levels: Mapping[str, Level] | None = None) -> list[ReactionRecord]:
     """One ReactionRecord per hypothesis: each declared reaction, and the first discovery
-    candidate of a case key (``pair_key``) no hypothesis has. Every hypothesis of a key then
-    takes the TSs of all candidates of that key in priority order (``_lend``), also of one that
-    is no hypothesis itself (an inversion's saddle). ``minima`` pairs every minimum (any tier)
-    with its optimized structure; ``monomers`` (thermo.declared_monomers) and ``levels`` (DFT
-    minimum id -> its opt Level) find an association's separated monomers."""
+    candidate of a case key (``pair_key``) no hypothesis has, open or closed (``_closed``). Every
+    open hypothesis of a key then takes the TSs of all candidates of that key in priority order
+    (``_lend``), also of one that is no hypothesis itself (an inversion's saddle). ``minima``
+    pairs every minimum (any tier) with its optimized structure; ``monomers``
+    (thermo.declared_monomers) and ``levels`` (DFT minimum id -> its opt Level) find an
+    association's separated monomers."""
     pool = _pool(minima, species, load_xyz, window_kcal, monomers, levels)
-    records = [_declared(pool, r) for r in declared]
+    records = [_closed(pool, _declared(pool, r)) for r in declared]
     index: dict[CaseKey, list[int]] = {}
     for i, r in enumerate(records):
-        if "" not in r.minima:  # an endpoint without a minimum is blocked (row 1)
+        if r.outcome is not CaseOutcome.BLOCKED:
             a, b = (pool.minima[m] for m in r.minima)
             index.setdefault(pair_key(a, b), []).append(i)
     candidates = list(_candidates(pool, discoveries))
@@ -285,9 +308,10 @@ def select(minima: Iterable[tuple[MinimumRecord, Geometry]], species: Iterable[S
         record = _auto(pool, c, ma, mb)
         if record is not None:
             index[key] = [len(records)]
-            records.append(record)
+            records.append(_closed(pool, record))
     for c in candidates:
         if c.start is not None and c.end is not None:
             for i in index.get(pair_key(c.start, c.end), []):
-                records[i] = _lend(pool, records[i], c)
+                if records[i].outcome is None:
+                    records[i] = _lend(pool, records[i], c)
     return records

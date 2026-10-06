@@ -26,7 +26,7 @@ from hfauto.chemistry.geometry import declared_coordinate_gradient, most_changed
 from hfauto.chemistry.identity import carry, mapped_rmsd
 from hfauto.chemistry.interpolation import align_mapped
 from hfauto.chemistry.modes import off_saddle
-from hfauto.chemistry.profile import Point, Profile, Sample
+from hfauto.chemistry.profile import Point, Profile
 from hfauto.chemistry.xyz import (
     XYZ,
     Molecule,
@@ -44,13 +44,15 @@ from hfauto.core.records import (
     SaddleClaim,
     SpeciesRecord,
 )
-from hfauto.drivers.minimum import calc_id, newton_push
-from hfauto.drivers.reaction_case.state import CaseRules, CaseState, Decision, Seed
+from hfauto.drivers.minimum import calc_id, not_stationary
+from hfauto.drivers.reaction_case.state import CaseRules, CaseState, Seed
 
 if TYPE_CHECKING:
     from hfauto.drivers.reaction_case.driver import CaseRuntime
 
-MAX_DEPTH = 2  # continuations per fresh seed: a push whose search stalls still restarts
+# A profile's energy function at new nodes, naming the calculation of each (profile.Sample's
+# Point and its calc id; None when its SP failed)
+Sampler = Callable[[list[tuple[int, np.ndarray]]], list[tuple[Point, str] | None]]
 
 
 @dataclass
@@ -58,9 +60,10 @@ class Work:
     """Evidence behind the CaseState and the artifacts the case adds."""
 
     path: Profile | None = None  # the latest DFT profile (CaseState.screen), FIND_PATH's start
-    sample: Sample | None = None  # its energy function at new nodes; None: Ctx.points
+    points: tuple[str, ...] = ()  # the calc id of each of its nodes ("": none of its own)
+    sample: Sampler | None = None  # its energy function at new nodes; None: Ctx.points
     saddle: Evidence | None = None
-    depth: int = 0  # the saddle's continuation depth (Seed.depth of the search that found it)
+    depth: int = 0  # Seed.depth of the search that found the saddle (1: continued)
     connection: ConnectionClaim | None = None
     intermediate: tuple[MinimumRecord, SpeciesRecord] | None = None  # basin, structure reached
     split_ts: tuple[int, str] | None = None  # (split child, saddle calc) it validates
@@ -119,9 +122,9 @@ class Ctx:
                 found[i] = ev
         return found
 
-    def points(self, new: list[tuple[int, np.ndarray]]) -> list[Point | None]:
-        """The energy function (profile.Sample) of SCREEN's and a string's profile: ``sps``."""
-        return [None if ev is None else (ev.energy_hartree, ev.s2)
+    def points(self, new: list[tuple[int, np.ndarray]]) -> list[tuple[Point, str] | None]:
+        """The energy function (``Sampler``) of SCREEN's and a string's profile: ``sps``."""
+        return [None if ev is None else ((ev.energy_hartree, ev.s2), calc_id(ev))
                 for ev in self.sps([x for _, x in new])]
 
     def _guesses(self, x: np.ndarray) -> list[tuple[Evidence | None, np.ndarray]]:
@@ -208,10 +211,11 @@ def xtb_freq(ctx: Ctx, coords: np.ndarray) -> Evidence | None:
 
 
 def _seed_hessian(ctx: Ctx, seed: Seed, x: np.ndarray) -> tuple[str, Evidence | Failure]:
-    """The seed's own TS freq, else the xTB freq at the seed whenever there is one (the model
-    keeps only its curvatures off the direction), else the DFT freq."""
+    """The seed's own DFT freq (a TS seed's verified one, a continuation's), else the xTB freq at
+    the seed whenever there is one (the model keeps only its curvatures off the direction), else
+    the DFT freq."""
     if seed.hessian is not None:
-        return "ts_freq", seed.hessian
+        return "seed_freq", seed.hessian
     if (xtb := xtb_freq(ctx, x)) is not None:
         return "xtb", xtb
     return "dft", ctx.rt.qm.frequencies(ctx.mol(x), ctx.rt.method)
@@ -219,7 +223,7 @@ def _seed_hessian(ctx: Ctx, seed: Seed, x: np.ndarray) -> tuple[str, Evidence | 
 
 def _search(ctx: Ctx, seed: Seed) -> Evidence | Failure:
     """saddle.refine from ``seed`` with only its reaction direction negative in its initial
-    Hessian; a push starts its SCF from its TS freq."""
+    Hessian; a seed with its own freq starts its SCF from it."""
     rt, x = ctx.rt, ctx.coords(seed.geometry)
     kind, direction = ctx.direction(x, seed.mode)
     source, hessian = _seed_hessian(ctx, seed, x)
@@ -234,87 +238,73 @@ def _search(ctx: Ctx, seed: Seed) -> Evidence | Failure:
     return result
 
 
-def _restart(ctx: Ctx, seed: Seed, stalled: Failure) -> Seed | None:
-    """A search stalled at maxiter goes on from its last frame with a fresh Hessian, one
-    continuation deeper (up to MAX_DEPTH), unless that frame lies more than a resolution above
-    the latest DFT profile's maximum: a continuous path bounds the saddle from above, so the
-    search has climbed past the barrier it was to find. A stalled search stored without its
-    energy is not bounded."""
+def continuation(ctx: Ctx, x: np.ndarray, freq: Evidence, name: str, *, push: bool) -> Seed:
+    """The one continuation of a search (design §7.3), once from a fresh seed (depth 1): the
+    DFT ``freq`` at ``x`` is its Hessian and SCF guess, shaped along the imaginary mode of
+    largest χ (the TS gate's measure on the case's bond change, else on its reaction direction;
+    with none, the reaction direction). It starts at ``x``, whose gradient leads the search;
+    ``push`` (a stationary higher-order saddle, whose gradient vanishes): pushed once off its
+    other modes below -saddle_cm1 (modes.off_saddle)."""
+    modes, r = freq.imaginary_modes, None
+    if modes:
+        (formed, broken), (_, along) = ctx.change(), ctx.direction(x)
+        r = int(np.argmax([reaction_mode_chi(ctx.symbols, m, x, formed | broken, along) or 0.0
+                           for m in modes]))
+    start = x + off_saddle(freq, ctx.symbols, below_cm1=ctx.rules.gates.saddle_cm1,
+                           keep=r) if push else x
+    return Seed(ctx.geometry(name, start), "continuation", None if r is None else modes[r], freq,
+                depth=1)
+
+
+def _stalled(ctx: Ctx, seed: Seed, stalled: Failure, name: str) -> Seed | None:
+    """A fresh seed's search stopped at maxiter continues from its last frame (``continuation``
+    from a DFT freq there), unless that frame lies more than a resolution above the latest DFT
+    profile's maximum: a continuous path bounds the saddle from above, so the search has
+    climbed past the barrier it was to find. A stalled search stored without its energy is not
+    bounded."""
     path, energy = ctx.work.path, stalled.energy_hartree
-    if stalled.final is None or seed.depth >= MAX_DEPTH:
+    if stalled.final is None or seed.depth:
         return None
     if energy is not None and path is not None and energy > max(path.energies) + ctx.resolution:
         ctx.note(f"saddle:above_path_bound:{path.source}")
         return None
-    return replace(seed, geometry=stalled.final, mode=None, hessian=None, depth=seed.depth + 1)
+    x = ctx.coords(stalled.final)
+    freq = ctx.rt.qm.frequencies(ctx.mol(x), ctx.rt.method)
+    if isinstance(freq, Failure):
+        ctx.note(f"continuation_freq:{freq.kind.value}")
+        return None
+    return continuation(ctx, x, freq, name, push=False)
 
 
-def refine_saddle(ctx: Ctx, state: CaseState, decision: Decision) -> CaseState:
-    """The front seed → a saddle search, restarted once within the attempt when it stalls
-    (``_restart``). Every seed counts one attempt (per case: a split child starts from 0). A
-    new search drops the claim and connection verdict of an earlier TS whose sides joined one
-    basin or state (row 7)."""
+def refine_saddle(ctx: Ctx, state: CaseState) -> CaseState:
+    """The front seed → a saddle search, continued within the attempt when it stalls
+    (``_stalled``). Every seed is one attempt (per case: a split child starts from 0); a new
+    search drops the claim and connection of an earlier TS."""
     seed = state.seeds[0]
-    state = replace(state, seeds=state.seeds[1:], saddle_attempts=state.saddle_attempts + 1,
-                    last_saddle="failed", claim=None, connection=None)
+    state = replace(state, seeds=state.seeds[1:], attempts=state.attempts + 1,
+                    saddle_pending=False, claim=None, connection=None)
     result = _search(ctx, seed)
-    if isinstance(result, Failure) and (restart := _restart(ctx, seed, result)) is not None:
-        seed, result = restart, _search(ctx, restart)
+    if isinstance(result, Failure) and (
+            cont := _stalled(ctx, seed, result, f"continuation{state.attempts}")) is not None:
+        seed, result = cont, _search(ctx, cont)
     if isinstance(result, Failure):
         return state
     ctx.work.saddle, ctx.work.depth = result, seed.depth
-    return replace(state, last_saddle="converged")
-
-
-def _newton_start(ctx: Ctx, saddle: Evidence, freq: Evidence, x: np.ndarray) -> np.ndarray | None:
-    """The signed Newton step (minimum.newton_push) from a saddle that is not stationary by a
-    minimum's criterion, when a freq there has at most one mode below -saddle_cm1: its second
-    imaginary mode came from the missing stationarity (OH + CH4: ν2 −54.8i and −77.1i
-    turned real one step away), noted higher_order:not_stationary. None otherwise: a saddle
-    with no gradient, a stationary one, or a second mode that persists at the step."""
-    rt = ctx.rt
-    if saddle.gradient is None or freq.hessian is None:
-        return None
-    newton = newton_push(np.load(rt.resolve(freq.hessian)), saddle.gradient, ctx.mol(x).xyz,
-                         signed=True)
-    if newton is None:
-        return None
-    start = np.reshape(x, (-1, 3)) + newton
-    stepped = rt.qm.frequencies(ctx.mol(start), rt.method, scf_guess=saddle)
-    saddle_cm1 = ctx.rules.gates.saddle_cm1
-    if isinstance(stepped, Failure) or sum(
-            f < -saddle_cm1 for f in stepped.frequencies_cm1 or ()) >= 2:
-        return None
-    ctx.note("higher_order:not_stationary")
-    return start
-
-
-def _retry(ctx: Ctx, saddle: Evidence, freq: Evidence, x: np.ndarray, name: str) -> Seed:
-    """The seed after a higher-order verdict, one continuation deeper than the saddle: its
-    verified freq is the seed's Hessian and its reaction mode (the imaginary mode of largest χ,
-    the TS gate's measure, on the case's bond change, else on its reaction direction) the
-    seed's mode. It starts at the saddle's Newton step when the second imaginary mode is an
-    artefact of a non-stationary point (_newton_start), else at the saddle pushed once off its
-    other modes below -saddle_cm1 (modes.off_saddle)."""
-    (formed, broken), (_, along), modes = ctx.change(), ctx.direction(x), freq.imaginary_modes
-    r = int(np.argmax([reaction_mode_chi(ctx.symbols, m, x, formed | broken, along) or 0.0
-                       for m in modes]))
-    start = _newton_start(ctx, saddle, freq, x)
-    if start is None:
-        start = x + off_saddle(freq, ctx.symbols, below_cm1=ctx.rules.gates.saddle_cm1, keep=r)
-    return Seed(ctx.geometry(name, start), "higher_order_retry", modes[r], freq,
-                depth=ctx.work.depth + 1)
+    return replace(state, saddle_pending=True)
 
 
 def validate_ts(ctx: Ctx, state: CaseState) -> CaseState:
     """Separate DFT freq on the saddle → is_first_order_saddle, reaction_mode_character (on the
-    case's bond change, else the declared coordinate) and spin_ok: the claim of an accepted
-    TS, its freq kept. A rejected saddle, one without an imaginary mode included, stays a
-    counted attempt and gets no QRC; a higher-order one is retried (_retry) while its depth
-    allows. A stationary point with -saddle_cm1 < ν < -noise_cm1 is accepted as a TS: χ and QRC
-    decide whether it is a TS of this case."""
+    case's bond change, else the declared coordinate) and the certification
+    (minimum.not_stationary) → the claim of an accepted TS, its freq kept. A higher-order saddle,
+    or a first-order one that fails only the certification, is continued once from a fresh seed
+    (``continuation``, the next seed); a continued one that still fails the certification is
+    accepted, noted not_stationary (thermo blocks it). Any other rejection, one without an
+    imaginary mode included, is a failure token without QRC. A stationary point with
+    -saddle_cm1 < ν < -noise_cm1 is a TS like any other: χ and QRC decide whether it is this
+    case's."""
     rt, saddle, gates = ctx.rt, ctx.work.saddle, ctx.rules.gates
-    state = replace(state, last_saddle="failed")
+    state = replace(state, saddle_pending=False)
     if saddle is None:
         return state
     x = ctx.coords(saddle.final)
@@ -328,14 +318,20 @@ def validate_ts(ctx: Ctx, state: CaseState) -> CaseState:
         mode = reaction_mode_character(ctx.symbols, freq.imaginary_modes[0], x, formed | broken,
                                        declared_coordinate_gradient(terms, x) if terms else None)
         gate = replace(gate, ok=mode.ok, reasons=mode.reasons)
-    if gate:
-        freq_calc, notes = calc_id(ctx.keep(freq)), (*gate.notes, *spin_ok(freq, gates).reasons)
+    step = not_stationary(freq, saddle.gradient, x, rt.resolve)
+    fresh = not ctx.work.depth
+    if gate and (step is None or not fresh):
+        freq_calc = calc_id(ctx.keep(freq))
+        notes = (*gate.notes, *spin_ok(freq, gates).reasons,
+                 *(() if step is None else ("not_stationary",)))
         claim = SaddleClaim(saddle_calc=calc_id(ctx.keep(saddle)), freq_calc=freq_calc,
                             imag_cm1=min(freq.frequencies_cm1 or (0.0,)),
                             energy_hartree=freq.energy_hartree, notes=notes)
-        return replace(state, last_saddle=None, claim=claim)
-    ctx.note(f"ts_rejected:{','.join(gate.reasons)}")
-    if "higher_order" in gate.reasons and ctx.work.depth < MAX_DEPTH:
-        seed = _retry(ctx, saddle, freq, x, f"retry{state.saddle_attempts}")
+        return replace(state, claim=claim)
+    ctx.note(f"ts_rejected:{','.join(gate.reasons or ('not_stationary',))}")
+    higher = "higher_order" in gate.reasons
+    if fresh and (higher or gate):
+        seed = continuation(ctx, x, freq, f"continuation{state.attempts}",
+                            push=higher and step is None)
         return replace(state, seeds=(seed, *state.seeds))
     return state

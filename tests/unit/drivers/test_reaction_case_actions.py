@@ -18,7 +18,7 @@ from hfauto.core import records as R
 from hfauto.core.constants import HARTREE_TO_KCAL_MOL
 from hfauto.core.evidence import Failure, FailureKind
 from hfauto.core.method import MethodSpec
-from hfauto.drivers.minimum import Registry, relax_to_minimum
+from hfauto.drivers.minimum import Registry, calc_id, relax_to_minimum
 from hfauto.drivers.reaction_case import paths
 from hfauto.drivers.reaction_case.driver import HANDLERS, CaseRuntime, open_case
 from hfauto.drivers.reaction_case.paths import SCREEN_IMAGES, STRING_BEADS
@@ -52,7 +52,7 @@ class FailingSaddle(fakes.FakeSaddle):  # a failure without a last frame
 
 
 class NoOpt(fakes.FakeQM):  # every optimization fails at maxiter
-    def optimize(self, mol, method, *, init_hessian=None):
+    def optimize(self, mol, method, **kw):
         return Failure(kind=FailureKind.GEOMETRY_MAXITER, reason="scripted")
 
 
@@ -116,16 +116,16 @@ def case_ctx(root: Path, pes, *, script=(), saddle=None, screen_pes=None, neb=()
                             endpoints=("reactant", "product"), degenerate=ids[0] == ids[1],
                             source="declared")
     ctx = open_case(case, rt, CaseRules(screen=False), root, lambda _: None)
-    return ctx, CaseState(minima=tuple(registry.minima[m][0] for m in ids))
+    return ctx, CaseState()
 
 
-def act(ctx, state, action, reason="test"):
-    return HANDLERS[action](ctx, state, Decision(action, reason))
+def act(ctx, state, action):
+    return HANDLERS[action](ctx, state)
 
 
 def test_one_barrierless_string_closes_the_case(tmp_path) -> None:
     ctx, state = case_ctx(tmp_path, fakes.flat_uphill())
-    state = act(ctx, state, Action.FIND_PATH, "dft_path")
+    state = act(ctx, state, Action.FIND_PATH)
     assert (state.screen.verdict, state.screen.source, state.path_runs) == (
         "barrierless", "string", 1)
     assert ctx.rt.path.calls == ["find_path:pes"] and not state.seeds
@@ -138,12 +138,12 @@ def test_one_chunk_per_call_and_the_next_one_continues_the_last_path(tmp_path) -
     its seed fails, the next chunk starts from its path while attempts are left."""
     ctx, state = case_ctx(tmp_path, fakes.double_well(), saddle=FailingSaddle(tmp_path, None))
     ctx.rt = replace(ctx.rt, path=DriftingPath(tmp_path, ctx.rt.qm.pes, ["single"] * 2))
-    state = act(ctx, state, Action.FIND_PATH, "dft_path")
+    state = act(ctx, state, Action.FIND_PATH)
     first = ctx.work.path.frames
     assert ctx.rt.path.calls == ["find_path:single"] and state.seeds[0].source == "path_hei"
     state = act(ctx, state, Action.REFINE_SADDLE)  # its peak fails
     assert decide(ctx.case, state, ctx.rules) == Decision(Action.FIND_PATH, "dft_path")
-    state = act(ctx, state, Action.FIND_PATH, "dft_path")
+    state = act(ctx, state, Action.FIND_PATH)
     assert state.path_runs == 2 and len(ctx.rt.path.calls) == 2
     seam = ctx.frames(ctx.rt.path.initial[1])  # the 1st chunk's path, true minima at its ends
     assert all(np.allclose(x, y, atol=1e-4) for x, y in zip(seam, first, strict=True))
@@ -194,7 +194,7 @@ def test_failed_shortcut_seeds_go_on_to_the_screen_path_once(tmp_path) -> None:
     assert {"note": "low_level_ts_rejected"} in logged
     for attempts in (1, 2):
         state = act(ctx, state, Action.REFINE_SADDLE)
-        assert state.saddle_attempts == attempts
+        assert state.attempts == attempts
     assert decide(ctx.case, state, ctx.rules) == Decision(Action.SCREEN, "screen")
     state = act(ctx, state, Action.SCREEN)
     assert state.neb_done and ctx.rt.screen_path.calls == ["find_path:pes"]
@@ -246,6 +246,9 @@ def test_screen_takes_dft_energies_inside_the_neb_between_the_dft_minima(tmp_pat
     assert ctx.rt.qm.calls.count("energy") == energy + SCREEN_IMAGES - 2
     assert ctx.rt.qm.calls.count("frequencies") == freq and ctx.rt.map == [SCREEN_IMAGES - 2]
     assert state.screen.verdict == "single" and [s.source for s in state.seeds] == [seed]
+    sps = [calc_id(ev) for ev in ctx.work.calcs.values() if ev.task == "sp"]
+    ends = tuple(r.opt_calc for r in ctx.end_records())  # X5: the calculation of each node
+    assert state.screen.points == ctx.work.points == (ends[0], *sps, ends[1])
     frames = ctx.work.path.frames  # SP energies in frame order
     assert ctx.work.path.energies[1:-1] == tuple(ctx.rt.qm.pes.energy(f) for f in frames[1:-1])
     assert np.allclose(frames[0], ctx.ends[0]) and mapped_rmsd(frames[-1], ctx.ends[1]) < 1e-6
@@ -274,14 +277,18 @@ def test_a_barrierless_profile_is_densified_beside_its_highest_node(tmp_path, bu
     k = 1 + int(np.argmax(inner))
     mids = [0.5 * (frames[i] + frames[i + 1]) for i in (k - 1, k)]
     ctx.rt = replace(ctx.rt, qm=Bumped(tmp_path, ctx.rt.qm.pes, mids[1], bump))
-    e = ctx.energies
-    v = paths.judged(ctx, Profile(frames, (e[0], *inner, e[1]), "string"), ctx.points)
+    e, ids = ctx.energies, ("a", *"12345", "b")
+    v = paths.judged(ctx, Profile(frames, (e[0], *inner, e[1]), "string"), ids, ctx.points)
     assert (v.verdict, v.source) == (verdict, "string") and ctx.rt.qm.calls == ["energy"] * 2
     assert v.reasons == (("midpoint_single_point",) if bump is None else ()) and ctx.rt.map[-1] == 2
     path = ctx.work.path
     assert len(path.frames) == 7 + 2 * (bump is not None)
     if bump is not None:
         assert np.allclose(path.frames[k], mids[0]) and np.allclose(path.frames[k + 2], mids[1])
+        new = [calc_id(ev) for ev in list(ctx.work.calcs.values())[-2:]]
+        assert v.points == (*ids[:k], new[0], ids[k], new[1], *ids[k + 1:])  # midpoints between
+    else:
+        assert v.points == ids
 
 
 def test_screen_finds_the_intermediate_of_a_two_step_path(tmp_path) -> None:
@@ -290,7 +297,7 @@ def test_screen_finds_the_intermediate_of_a_two_step_path(tmp_path) -> None:
     assert state.screen.verdict == "intermediate" and not state.seeds
     decision = decide(ctx.case, state, ctx.rules)
     assert decision == Decision(Action.VALIDATE_INTERMEDIATE, "path_intermediate")
-    state = HANDLERS[decision.action](ctx, state, decision)
+    state = HANDLERS[decision.action](ctx, state)
     record, _ = ctx.work.intermediate
     assert state.intermediate == "distinct" and record.minimum_id not in ctx.case.minima
     assert decide(ctx.case, state, ctx.rules).reason == "intermediate_distinct"
@@ -309,15 +316,17 @@ def test_a_well_that_is_an_endpoint_leaves_its_peak_once(tmp_path, kcal, verdict
     a, b = ctx.ends
     frames = [a + t * (b - a) for t in np.linspace(0.0, 1.0, len(kcal))]
     ctx.work.path, asked = Profile(frames, tuple(e * K for e in kcal), "string"), []
-    ctx.work.sample = lambda new: asked.extend(i for i, _ in new) or [(8.0 * K, None),
-                                                                      (9.5 * K, None)]
+    ctx.work.sample = lambda new: asked.extend(i for i, _ in new) or [((8.0 * K, None), "m1"),
+                                                                      ((9.5 * K, None), "m2")]
     ctx.log = (logged := []).append
     state = record_profile(state, R.BarrierVerdict(verdict="intermediate", source="string"))
-    state = act(ctx, state, Action.VALIDATE_INTERMEDIATE, "path_intermediate")
+    state = act(ctx, state, Action.VALIDATE_INTERMEDIATE)
     assert state.intermediate == "same_as_endpoint" and state.screen.verdict == verdict
     assert [s.source for s in state.seeds] == seeds
     assert asked == ([4, 5] if verdict == "barrierless" else [])
     assert {"note": f"int0_1:end0:{'barrierless' if seeds == [] else 'single'}"} in logged
+    if verdict == "barrierless":  # the part from the well on, its new nodes named
+        assert state.screen.points == ("", "", "", "m1", "", "m2", "")
     if seeds:  # node 5, refined by the parabola a quarter step toward the product
         x = ctx.coords(state.seeds[0].geometry)
         assert np.allclose(x, frames[5] + 0.25 * (frames[6] - frames[5]), atol=1e-4)
@@ -334,7 +343,7 @@ def test_a_failed_well_relaxation_is_no_result_and_seeds_the_peak(tmp_path) -> N
     frames = [a + t * (b - a) for t in np.linspace(0.0, 1.0, 7)]
     ctx.work.path = Profile(frames, tuple(e * K for e in (0, 2, 0.5, 3, 6, 9, 10)), "string")
     state = record_profile(state, R.BarrierVerdict(verdict="intermediate", source="string"))
-    state = act(ctx, state, Action.VALIDATE_INTERMEDIATE, "path_intermediate")
+    state = act(ctx, state, Action.VALIDATE_INTERMEDIATE)
     assert (state.intermediate, state.screen.verdict) == ("relax_failed", "intermediate")
     assert [s.source for s in state.seeds] == ["path_hei"] and {"note": "int:relax_failed"} in logged
     assert decide(ctx.case, state, ctx.rules) == Decision(Action.REFINE_SADDLE, "seed:path_hei")

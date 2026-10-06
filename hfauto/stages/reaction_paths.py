@@ -7,13 +7,15 @@ with its own ``policy`` budget, and see its calculations (a TS it validated for 
 child is not driven when a case of its case key (hypotheses.pair_key), run or queued, concludes:
 it takes that conclusion, ``same_as:<reaction_id>``; a case that ends UNRESOLVED gives none, and
 the child is driven. Nor is a child deeper than ``max_split_depth``: UNRESOLVED ``split_depth``.
-Neither has a job or a log.
+Neither has a job or a log. A case that raises (StageRuntime.contain) leaves only a failed
+reaction artifact ``error:<type>``: what it registered is taken back from the shared registry,
+so no later case joins a basin that is not emitted.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import ClassVar, cast
 
 from hfauto.backends.protocols import Capability, PathEngine, QMEngine, SaddleRefiner
@@ -112,14 +114,31 @@ class _Book:
         a, b = (self.rt.registry.minima.get(m) for m in case.minima)
         return None if a is None or b is None else pair_key(a[0], b[0])
 
+    def drive(self, case: ReactionRecord, rt: StageRuntime, rules: CaseRules
+              ) -> CaseResult | None:
+        """drive_case, contained; a case that raised is recorded failed and what it registered
+        is taken back (None)."""
+        registered, species = self.rt.registry.minima, dict(self.rt.species)
+        result = rt.contain(case.reaction_id, lambda: drive_case(case, self.rt, rules))
+        if isinstance(result, CaseResult):
+            return result
+        self.rt = replace(self.rt, registry=Registry(registered.values(), self.rt.load_xyz),
+                          species=species)
+        self.artifacts[case.reaction_id] = Artifact(
+            artifact_id=case.reaction_id, type=ArtifactType.REACTION, status="failed",
+            failure=result, parents=tuple(m for m in case.minima if m))
+        return None
+
     def queue(self, cases: Sequence[ReactionRecord]) -> None:
         """Cases to drive: each takes its key unless an earlier one has it."""
         for case in cases:
             if (key := self.key(case)) is not None:
                 self.first.setdefault(key, case.reaction_id)
 
-    def emit(self, result: CaseResult, depth: int) -> list[Item]:
+    def emit(self, result: CaseResult | None, depth: int) -> list[Item]:
         """A driven case's artifacts; the split children of ``result`` to drive now."""
+        if result is None:
+            return []
         self.done[result.reaction.reaction_id] = result.reaction
         self.artifacts.update((a.artifact_id, a) for a in result.artifacts)
         self.rt.calcs.update(_calcs(result.artifacts))
@@ -184,6 +203,6 @@ class ReactionPathsStage:
         stack: list[Item] = [(case, 0) for case in reversed(cases)]
         while stack:
             case, depth = stack.pop()
-            stack += reversed(book.emit(drive_case(case, case_rt, rules), depth))
+            stack += reversed(book.emit(book.drive(case, rt, rules), depth))
             stack = stack or list(reversed(book.waited()))
         return list(book.artifacts.values())

@@ -12,7 +12,7 @@ from scipy.spatial.distance import pdist
 from hfauto.backends.protocols import Capability
 from hfauto.chemistry.gates import Policy
 from hfauto.chemistry.topology import state_label
-from hfauto.chemistry.xyz import composition_key
+from hfauto.chemistry.xyz import XYZ, Molecule, composition_key
 from hfauto.core.constants import BOHR_TO_ANGSTROM
 from hfauto.core.evidence import Evidence, Failure, FailureKind
 from hfauto.core.manifest import Artifact, Manifest
@@ -20,6 +20,7 @@ from hfauto.core.method import MethodSpec
 from hfauto.core.records import ArtifactType as T
 from hfauto.core.records import DiscoveryRecord, MinimumRecord, SpeciesRecord
 from hfauto.core.system import SystemConfig
+from hfauto.drivers.minimum import Registry, relax_to_minimum
 from hfauto.stages.minima import MinimaConfig, MinimaStage, _image_groups, _Job
 
 METHODS = {"gfn2": MethodSpec(id="gfn2", kind="xtb", gfn=2),
@@ -58,10 +59,10 @@ class StalledQM(fakes.FakeQM):
 
 
 class StuckQM(fakes.FakeQM):
-    def optimize(self, mol, method, *, init_hessian=None):
+    def optimize(self, mol, method, **kw):
         if not self.calls:  # the first input converges to the barrier top (a saddle endpoint)
             mol = self.pes.molecule("ts")
-        return super().optimize(mol, method, init_hessian=init_hessian)
+        return super().optimize(mol, method, **kw)
 
 
 def species_at(root, sid, symbols, x):
@@ -77,11 +78,12 @@ def species(root, pes, sid, point):
 
 
 def stage(fake_runtime, tmp_run, pes, low=fakes.FakeQM, system=None, high=fakes.FakeQM,
-          policy=None):
+          policy=None, cores=4):
     xtb, dft = low(tmp_run, pes), high(tmp_run, pes)  # run(id, view, **cfg) -> view + output
     rt = fake_runtime(system or SystemConfig(system_id="t", species=[]),
                       {(Capability.QM, "xtb"): xtb, (Capability.QM, "nwchem"): dft}, METHODS)
     rt = replace(rt, policy=policy) if policy else rt
+    rt = replace(rt, site=rt.site.model_copy(update={"cores": cores}))
 
     def run(stage_id, artifacts, **config):
         bound = rt.bind(stage_id, tmp_run / stage_id)
@@ -103,12 +105,12 @@ def test_one_basin_gets_one_freq_job_per_tier_and_dft_starts_from_screen(fake_ru
     screen = run("screen", inputs, **SCREEN)
     (low,) = screen.records(T.MINIMUM, MinimumRecord)
     assert low.tier == "screen" and low.members == ("a", "b")
-    assert xtb.calls == ["optimize", "frequencies", "optimize"]  # b is known: no second freq
+    assert xtb.calls == ["optimize", "optimize", "frequencies"]  # b is known: no second freq
     tasks = [ev.task for ev in screen.records(T.CALCULATION, Evidence)]
     assert (tasks.count("opt"), tasks.count("freq")) == (2, 1)
     both = run("dft", screen.artifacts, **DFT, select={"include": "all"})
     (high,) = [m for m in both.records(T.MINIMUM, MinimumRecord) if m.tier == "dft"]
-    assert high.members == ("a", "b") and dft.calls == ["optimize", "frequencies", "optimize"]
+    assert high.members == ("a", "b") and dft.calls == ["optimize", "optimize", "frequencies"]
     dft.calls.clear()
     window = run("dft_window", screen.artifacts, **DFT)
     (high,) = [m for m in window.records(T.MINIMUM, MinimumRecord) if m.tier == "dft"]
@@ -188,7 +190,7 @@ def test_enantiomers_fall_into_one_chiral_basin(fake_runtime, tmp_run):
                  **SCREEN)
     (low,) = screen.records(T.MINIMUM, MinimumRecord)
     assert low.members == ("r", "s")
-    assert xtb.calls == ["optimize", "frequencies", "optimize"]  # s is known: no freq job
+    assert xtb.calls == ["optimize", "optimize", "frequencies"]  # s is known: no freq job
 
 
 def diagnostics(tmp_run, stage_id):
@@ -201,7 +203,8 @@ def test_mirror_sides_of_a_symmetric_saddle_give_one_basin_and_no_job(fake_runti
     out = run("screen", [species(tmp_run, pes, "t", "ts")], **SCREEN)
     (basin,) = out.records(T.MINIMUM, MinimumRecord)
     assert basin.members == ("t_mf1", "t_mf2", "t") and basin.notes == ("endpoint_was_saddle",)
-    assert len(xtb.calls) == 6 and xtb.calls.count("frequencies") == 3  # the driver's jobs only
+    assert xtb.calls == ["optimize", "frequencies", "optimize+init_hessian",
+                         "optimize+init_hessian", "frequencies"]  # the mirror side shares a freq
     (found,) = out.records(T.DISCOVERY, DiscoveryRecord)
     assert (found.source_species, found.product_species) == ("t_mf1", "t_mf2")
 
@@ -214,10 +217,10 @@ def test_an_exact_image_joins_a_minimum_with_no_job_and_settles_after_a_saddle(f
     (basin,) = run("screen", inputs, **SCREEN).records(T.MINIMUM, MinimumRecord)
     assert basin.members == ("a", "b") and xtb.calls == ["optimize", "frequencies"]
     assert diagnostics(tmp_run, "screen")["b"] == ["image_of:a"]
-    run, soft, _ = stage(fake_runtime, tmp_run, pes, low=SoftQM)  # a pushed soft point: b settles
-    run("soft", inputs, **SCREEN)
-    assert diagnostics(tmp_run, "soft")["a"] == ["minimum", "opt", "freq:soft", "soft:persisted"]
-    assert diagnostics(tmp_run, "soft")["b"][0] == "known" and soft.calls[-1] == "optimize"
+    run = stage(fake_runtime, tmp_run, pes, low=SoftQM)[0]  # a certified soft point
+    run("soft", inputs, **SCREEN)  # is stationary and not pushed: its image joins with no job
+    assert diagnostics(tmp_run, "soft")["a"] == ["minimum", "opt:reused", "freq:soft"]
+    assert diagnostics(tmp_run, "soft")["b"] == ["image_of:a"]
 
     well = fakes.double_well()  # p's first opt stops on the saddle; q is p rotated by 180°
     run, stuck, _ = stage(fake_runtime, tmp_run, well, low=StuckQM)
@@ -228,7 +231,7 @@ def test_an_exact_image_joins_a_minimum_with_no_job_and_settles_after_a_saddle(f
     out = run("saddle", [p, q], **SCREEN)
     (joined,) = [m for m in out.records(T.MINIMUM, MinimumRecord) if "p" in m.members]
     assert joined.notes == ("endpoint_was_saddle",) and "q" in joined.members
-    assert diagnostics(tmp_run, "saddle")["q"][:2] == ["known", "opt"]  # its own opt
+    assert diagnostics(tmp_run, "saddle")["q"][:2] == ["known", "opt:reused"]  # its own opt
     assert stuck.calls[-1] == "optimize"
 
 
@@ -293,17 +296,19 @@ def test_a_crowded_state_is_reranked_by_single_points_at_its_screen_structures(f
     assert starts == {screen.evidence(m.opt_calc).final.fingerprint for m in basins}
     (high,) = [m for m in out.records(T.MINIMUM, MinimumRecord) if m.tier == "dft"]
     assert high.members == ("w2", "w3")
-    assert dft.calls == ["energy", "energy", "optimize", "frequencies", "optimize"]
+    assert dft.calls == ["energy", "energy", "optimize", "optimize", "frequencies"]
 
 
-def test_a_minimum_short_of_stationary_is_pushed_with_the_runtimes_hessian(fake_runtime,
-                                                                            tmp_run):
-    """G5-P1 through the stage: the runtime opens the freq Hessian, so a DFT opt stopped short
-    of the minimum, with no imaginary mode, is soft and pushed by its Newton step."""
+def test_a_minimum_short_of_stationary_relaxes_once_from_its_trust_region_step(fake_runtime,
+                                                                                tmp_run):
+    """X1-2 through the stage: the runtime opens the freq Hessian, so a DFT opt stopped short
+    of the minimum, with no imaginary mode, fails the trust-region certification and relaxes
+    once from x + s into the certified minimum."""
     pes = fakes.harmonic()
     run = stage(fake_runtime, tmp_run, pes, high=StalledQM)[0]
     out = run("dft", [species(tmp_run, pes, "a", "start")], **DFT, select={"include": "all"})
-    assert diagnostics(tmp_run, "dft")["a"] == ["minimum", "opt", "freq:soft", "soft:resolved"]
+    assert diagnostics(tmp_run, "dft")["a"] == ["minimum", "opt:reused", "freq:none",
+                                                "tr_relax", "freq:none"]
     (record,) = out.records(T.MINIMUM, MinimumRecord)
     assert record.notes == () and record.energy_hartree == pytest.approx(0.0, abs=1e-8)
 
@@ -374,8 +379,35 @@ def test_a_relaxation_seed_is_asked_at_dft_once_from_its_own_geometry(fake_runti
             assert minima["seed_copy"].state_label == seed.payload.state_label
             start = out.evidence(minima["seed_copy"].opt_calc).start
             assert start.fingerprint == seed.payload.geometry.fingerprint
-            assert dft.calls[2:] == ["optimize+init_hessian", "frequencies"] * 2
+            assert dft.calls[2:] == ["optimize+init_hessian"] * 2 + ["frequencies"] * 2
         else:  # the seed copy joins the collapse basin with no freq job
             assert minima["seed"].members == ("seed", "seed_copy")
-            assert dft.calls[2:] == ["optimize+init_hessian", "frequencies",
-                                     "optimize+init_hessian"]
+            assert dft.calls[2:] == ["optimize+init_hessian"] * 2 + ["frequencies"]
+
+
+@pytest.mark.parametrize("pes,points", [
+    (fakes.harmonic(), ("start", "minimum", "start", "minimum", "start")),
+    (fakes.double_well(), ("reactant", "product", "reactant", "product", "reactant")),
+    (fakes.triple_well(), ("intermediate", "reactant", "product", "intermediate", "product")),
+])
+def test_parallel_minima_give_the_registry_of_one_by_one(fake_runtime, tmp_run, pes, points):
+    """U9-P2(a): the opts at once and the freqs of new basins at once give the basins, members
+    and representatives of relaxing and registering one job after the other."""
+    rng = np.random.default_rng(7)
+    starts = {f"s{i}": pes.points[p] + rng.normal(scale=0.02, size=(3, 3))
+              for i, p in enumerate(points)}
+    inputs = [species_at(tmp_run, sid, pes.symbols, x) for sid, x in starts.items()]
+    load, qm = fakes.xyz_loader(tmp_run), fakes.FakeQM(tmp_run, pes)
+    serial = Registry([], load)
+    for art in inputs:
+        mol = Molecule(XYZ(list(pes.symbols), starts[art.artifact_id]), 0, 1)
+        out = relax_to_minimum(mol, METHODS["gfn2"], qm, known=serial, load_xyz=load,
+                               resolve=lambda ref: tmp_run / ref.path)
+        serial.add(out, art.payload, tier="screen")
+    expected = {i: (m.species_id, m.members) for i, (m, _) in serial.minima.items()}
+    for cores in (4, 1):
+        run, xtb, _ = stage(fake_runtime, tmp_run, pes, cores=cores)
+        out = run(f"screen{cores}", inputs, **SCREEN)
+        assert {m.minimum_id: (m.species_id, m.members)
+                for m in out.records(T.MINIMUM, MinimumRecord)} == expected
+        assert xtb.calls.count("frequencies") == len(expected)  # a known basin runs none

@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import math
 import shutil
+import struct
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -28,9 +29,9 @@ from pydantic import BaseModel
 
 from hfauto.backends.nwchem import input as nw_in
 from hfauto.backends.nwchem import output as nw_out
-from hfauto.backends.protocols import Requirements
+from hfauto.backends.protocols import HessianModel, Requirements
 from hfauto.chemistry.elements import atomic_number
-from hfauto.chemistry.gates import Policy, qrc_drop, same_spin_state
+from hfauto.chemistry.gates import qrc_drop, same_spin_state
 from hfauto.chemistry.vibrations import projected_frequencies, shape_hessian
 from hfauto.chemistry.xyz import (
     XYZ,
@@ -58,13 +59,11 @@ from hfauto.execution.process import STDOUT_NAME, Command, CommandResult, resolv
 NAME = "job"  # NWChem file prefix: job.nw, job.movecs, job.hess, job.drv.hess
 FRAME_TOL_A = 1.0e-4
 HESSIAN_NEAR_A = 0.5  # largest per-atom distance from a start to its init Hessian's structure
-_SADDLE_CM1 = Policy().saddle_cm1  # a saddle direction, as the gates count them
 _TASK: dict[str, Literal["sp", "opt", "freq", "saddle"]] = {
     "energy": "sp", "optimize": "opt", "frequencies": "freq", "saddle": "saddle"}
 _DRIVER_JOBS = frozenset({"optimize", "saddle"})
-# Failures a driver job continues from its latest frame, besides an opt's autoz failure; a
-# saddle at maxiter is not continued (its updated Hessian stalls it): it returns its last frame
-# for a restart with a fresh Hessian.
+# Failures a driver job continues from its latest frame, besides an opt's autoz failure; a saddle
+# at maxiter returns its last frame instead (its updated Hessian stalls it; the driver goes on).
 _CONTINUED = {"optimize": frozenset({FailureKind.TIMEOUT, FailureKind.GEOMETRY_MAXITER}),
               "saddle": frozenset({FailureKind.TIMEOUT})}
 # double hybrids: a DFT task of NWChem silently leaves out their PT2 part
@@ -138,17 +137,29 @@ def _final_gradient(text: str, final: XYZ) -> tuple[float, ...] | None:
     return None if shift > FRAME_TOL_A else tuple(map(float, block[1].ravel()))
 
 
+def _readable(path: Path) -> bool:
+    """A Fortran unformatted file (job.movecs, job.drv.hess) whose record markers span it
+    exactly: a job killed while writing it leaves it truncated, and NWChem fails on it."""
+    data, pos = path.read_bytes() if path.is_file() else b"", 0
+    while pos + 8 <= len(data):  # each record: its length, its bytes, its length again
+        size = struct.unpack_from("<i", data, pos)[0]
+        if size < 0 or data[pos + 4 + size:pos + 8 + size] != data[pos:pos + 4]:
+            return False
+        pos += size + 8
+    return pos == len(data) > 0
+
+
 def _resumed(task: Task, workdir: Path, latest: Path, *, autoz: bool) -> Task:
     """The next attempt of a driver job from its ``latest`` frame without an initial Hessian,
     with its converged vectors and (not after autoz: it is in internal coordinates) its driver
-    Hessian; Cartesian after autoz."""
+    Hessian when they are readable (``_readable``); Cartesian after autoz."""
     movecs, hessian = (workdir / f"{NAME}{suffix}" for suffix in (".movecs", ".drv.hess"))
     mol, method = task.inputs["mol"], task.inputs["method"]
     return replace(task, inputs={
         **task.inputs, "mol": Molecule(read_xyz(latest), mol.charge, mol.multiplicity),
         "hessian": None, "cartesian": autoz or bool(task.inputs.get("cartesian")),
-        "vectors": (movecs, method.basis) if movecs.is_file() else None,
-        "drv_hessian": hessian if hessian.is_file() and not autoz else None})
+        "vectors": (movecs, method.basis) if _readable(movecs) else None,
+        "drv_hessian": hessian if not autoz and _readable(hessian) else None})
 
 
 def _read(path: Path) -> str:
@@ -418,15 +429,13 @@ class NWChemEngine(_NWChem):
 
     def optimize(self, mol: Molecule, method: MethodSpec, *,
                  init_hessian: Evidence | None = None,
+                 hessian_model: HessianModel = "positive",
                  fixed_bond: tuple[int, int, float] | None = None,
                  scf_guess: Evidence | None = None) -> Evidence | Failure:
-        """``init_hessian`` may come from a nearby structure (a QRC or mode-follow side from its
-        saddle, a low-level freq at a start). It is written as its positive-definite model
-        (vibrations.shape_hessian; why in input.render_optimize) unless it is a higher-order
-        saddle's (two or more modes below -saddle_cm1), written as it is: from there the side
-        must stay free to leave its other saddle directions (DME C2v seed: 29 steps as it is,
-        unconverged after 207 as the model). ``fixed_bond`` enters the job key only when
-        given."""
+        """``init_hessian`` (a nearby freq) is written as the caller's ``hessian_model``: positive
+        (vibrations.shape_hessian, why in input.render_optimize; named in the job key) or as it
+        is (a higher-order saddle's side, free to leave its other saddle directions: DME C2v, 29
+        steps as it is, 207 unconverged as the model). ``fixed_bond`` keys only when given."""
         hessian = None if init_hessian is None else self._hessian_file(init_hessian, mol)
         if isinstance(hessian, Failure):
             return hessian
@@ -434,8 +443,8 @@ class NWChemEngine(_NWChem):
         if isinstance(fixed, Failure):
             return fixed
         sha = init_hessian and init_hessian.hessian and init_hessian.hessian.sha256
-        model = {} if init_hessian is None or sum(f < -_SADDLE_CM1 for f in (
-            init_hessian.frequencies_cm1 or ())) >= 2 else {"hessian_model": "positive"}
+        positive = init_hessian is not None and hessian_model == "positive"
+        model = {"hessian_model": "positive"} if positive else {}
         return self._qm("optimize", mol, method, scf_guess=scf_guess,
                         payload={"hessian": sha, **model, **fixed},
                         hessian=hessian, **model, **fixed)

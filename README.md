@@ -1,94 +1,83 @@
 # hfauto
 
-気相の分子と非共有結合錯体について、反応の発見から熱化学と順位付けまでを自動で行うワークフロー。外部プログラム(NWChem、xTB、CREST、SCINE ReaDuct、pysisyphus)の結果は型付きの証拠(`Evidence`)として受け取り、合否は `hfauto/chemistry/gates.py` のゲート関数だけが決める。熱化学は GoodVibes を同じプロセスで呼ぶ。結果は stage ごとの manifest に残り、同じ run ディレクトリで再実行すると済んだジョブは再利用される。
+気相の分子・分子の組合せについて、反応候補の探索、量子化学による経路検証、熱化学の比較を行う研究用ワークフロー。計算結果・未解決の理由・来歴を保存し、停止後に同じ run ディレクトリから再開できる。
 
-## 対象範囲
+目的は、未知の反応候補を広く発見すること、検証済み候補を条件付きで比較すること、初期系から主要生成物・優勢経路を評価すること、および第三者が理解・運用・拡張できるシンプルな基盤を保つことである。現在は個別反応の探索・検証と熱化学比較までを実装している。初期系全体の主要生成物・収率・時間依存の予測は今後の開発対象で、現在の順位から直接判断しない。
 
-| 軸 | 対象 | 対象外 |
-|---|---|---|
-| 元素 | Z=1〜57、72〜86。Z>36 は def2 系の基底だけで、def2-ECP を元素ごとに自動で書く。計算できる範囲で、遷移金属は未検証 | Ce〜Lu、Z>86、Z>36 に def2 以外の基底(入口で拒否) |
-| 電荷 | 任意の整数(陰イオンは SVPD の拡散関数で扱う) | 気相の多価陰イオンは基底に依存しうる |
-| スピン | 閉殻一重項(RKS)と高スピン(UKS、⟨S²⟩ を検査)。低スピン結合の組成(CH3·O2 の二重項など)も UKS で受け付け、その会合は分離した単量体からの緩和スキャンで判定する。化学種の多重度は必ず宣言する(省略すると system の読み込みで拒否。SMILES のラジカル電子数も xyz も多重度を決めない)。組成は宣言値か、スピン結合で 1 つに決まるときだけその値 | 開殻一重項(ラジカル対の一重項は `low_spin_singlet_unsupported` で止める。1 分子のビラジカルは RKS で計算され、不安定性を検出しない)、MECP・スピン交差(`spin_crossing_reaction_unsupported`)、2 本以上の結合が同時にできる会合、会合の速度定数(VRC-TST)、スピン軌道補正(原子で Cl 0.84、Br 3.5、I 7.3 kcal/mol がそのまま誤差になる) |
-| 反応型 | 異性化、H・プロトン移動(リレーを含む)、SN2 型置換、H 引き抜き、付加・会合、開殻・電荷系の結合切断、縮退転位、宣言したねじれ。単原子も通常の経路を通る | 溶液相、速度論(マスター方程式、トンネル補正) |
-| 系のサイズ | 4 コア・def2-SVPD で約 35 原子まで(解析 freq が N·nbf^2.8 に比例し、15 原子で約 11 分、40 原子で約 6 h) | freq の途中継続(ないので timeout 4 h で全損する。大きな系は ranks を増やす) |
+## 最初に読む文書
 
-状態は組成と結合グラフ(r < r_cov,i + r_cov,j + 0.4 Å)の状態ラベルで区別する。化学の規則と精度の目安は [docs/design.md](docs/design.md) §7、範囲外(多参照、トンネル、溶媒、ビット単位の再現性など)と既知の制限は同 §10。
+| 文書 | 内容 |
+|---|---|
+| [docs/roadmap.md](docs/roadmap.md) | 現在の実装・統合・検証状況と、次に行う作業 |
+| [docs/improvement-plan.md](docs/improvement-plan.md) | 目的・責務・削除方針・段階別の受入条件を定めた改良計画 |
+| [docs/design.md](docs/design.md) | 現行実装の構造と化学的な判断 |
+| [docs/environment.md](docs/environment.md) | インストール、実行資源、開発時の検証手順 |
+| [docs/validation.md](docs/validation.md) | コードの版と評価段階を明記した実計算の記録 |
+| [docs/reviews/README.md](docs/reviews/README.md) | 過去のレビュー・結果報告の位置付け |
+
+## 現在の対象範囲
+
+気相の小〜中規模の主族系が中心。入力には構造、電荷、多重度を指定する。多重度をSMILESやXYZから自動決定しない。高スピン系と一部の低スピン結合錯体はUKSで扱うが、同じ多重度の別の空間電子状態を完全に識別する機能はない。
+
+| 項目 | 現在の扱い |
+|---|---|
+| 元素 | Z=1〜57、72〜86。Z>36はdef2系の基底とECP。遷移金属の精度は未検証 |
+| 反応 | 異性化、H・プロトン移動、置換、H引き抜き、付加・会合、結合切断、縮退転位。自動列挙の被覆は探索ルールと予算に依存 |
+| 規模 | 現行4コア環境では約35原子までが実用上の目安。構造・電子状態により費用は大きく変わる |
+| 対象外 | 溶液相、スピン交差、開殻一重項の一般的な取扱い、多参照法、捕獲速度・圧力依存・時間依存の反応網予測 |
+
+状態ラベルは結合グラフと立体を用いる。配座、同じ両端を結ぶ別経路、電子状態に関する残る制限は [design.md](docs/design.md) §10にある。単離原子の電子準位・スピン軌道補正の一部は実装済みで、分子・錯体・TS全般の補正ではない。
 
 ## 処理の流れ
-
-8 種の stage を pipeline YAML でつなぐ。`minima` は xTB(screen)と DFT(dft)の 2 回使い、`sp` は既定の pipeline のエネルギー層(M06-2X)と `method_panel` の追記で使う。
 
 ```text
 structures → conformers → minima(screen) → explore → minima(dft) → reaction-paths → sp → thermo → report
 ```
 
-| stage | 役割 |
+| stage | 責務 |
 |---|---|
-| `structures` | system の化学種(xyz / SMILES)を読み、元素・電荷・多重度と宣言反応の原子順序を検査する |
-| `conformers` | 単量体の CREST 配座探索と、組成(錯体)の配置 seed と `--nci` 探索 |
-| `minima` | opt → 別ジョブの freq → 虚振動に沿った mode-follow → 極小の登録。反応する組成だけを DFT にかけ、厳密な像と既知の basin はジョブなしで登録する。DFT の入口で低レベルの辺を DFT//xTB の高さで 1 回だけ選ぶ |
-| `explore` | 結合グラフの編集(形成 1〜2、切断 0〜2、生成物に Lewis 構造)を状態ごとに列挙し、ReaDuct の NT2 で状態の間の辺を探す。届いた状態から世代を重ね、試行は件数の予算 1 つ(`max_trials` 3000)。screen で失われた状態は TS のない辺になる |
-| `reaction-paths` | 反応仮説ごとに、経路の分類 → 鞍点 → TS の振動数検証 → QRC による接続。検証済みの鞍点(mode-follow、分割した親)は探し直さず検証から始める |
-| `sp` | 順位に使う点だけの一点計算(エネルギー層と手法パネル) |
-| `thermo` | qRRHO(GoodVibes 4.3.0)、キラリティ、会合量、順位の量 δG_eff |
-| `report` | ranking.csv、coverage.csv、method_panel.csv、report.html |
+| `structures` | 構造と宣言した化学状態を読む |
+| `conformers` | 単量体の配座と錯体の開始配置を生成する |
+| `minima` | 最適化・振動計算で極小を検証し、登録する。DFT入口の候補選択も行う |
+| `explore` | 結合変更を列挙し、低レベルの反応候補を多世代で探索する |
+| `reaction-paths` | 仮説からTSを探索し、振動・両側の接続・電子状態を検証する |
+| `sp` | 比較に使う計算点の電子エネルギーを求める |
+| `thermo` | 熱補正と反応量を計算する |
+| `report` | 順位、被覆、未解決の理由をCSV・HTMLで表示する |
 
-| pipeline | stage の並び | 用途 |
-|---|---|---|
-| `discover` | structures → conformers → screen → explore → dft → paths → sp → thermo → report | 単量体と組成から反応を探す |
-| `known_endpoints` | structures → dft → paths → sp → thermo → report | 宣言した反応の端点から経路と熱化学を求める |
-| `method_panel` | panel_sp → panel_report | 既存の run に `--run-dir` で追記し、PBE0/def2-TZVPD と ωB97X-D3/def2-TZVPD の ΔE を並べて示す(順位は run のエネルギー層のまま) |
+`known_endpoints`は宣言した端点から、`discover`は生成物を指定せず開始する。`method_panel`は既存runに別手法のエネルギー比較を追記する。既定の停留点・振動はPBE0-D3BJ/def2-SVPD、エネルギー層はM06-2X-D3(0)/def2-TZVPD、低レベルはGFN2-xTB。
+
+## 実行と再開
+
+本番環境はWSL2 Ubuntu / Python 3.12。[インストールと版数](docs/environment.md)を確認し、リポジトリ直下で実行する。本番runはWSLのext4上に置く。
+
+```bash
+hfauto run known_endpoints --system hcn --site wsl_local --run-dir /home/user/hfauto_runs/hcn
+hfauto status /home/user/hfauto_runs/hcn
+hfauto report /home/user/hfauto_runs/hcn
+```
+
+同じ`run`コマンドが停止後の再開になる。設定・記録形式・計算鍵を変えたときの再利用範囲は [design.md](docs/design.md) §8を確認する。
+
+| コマンド | 用途 |
+|---|---|
+| `hfauto run PIPELINE --system SYSTEM --site SITE --run-dir DIR` | 実行・再開。`--from` / `--to`で処理区間を指定する |
+| `hfauto status DIR` | 完了状態、項目の失敗、再利用状況を確認する |
+| `hfauto report DIR` | CSV・HTMLを生成する |
+| `hfauto case DIR REACTION_ID` | 個別の反応判断ログを見る |
+| `hfauto doctor --site SITE` | site全体を点検する。通常のrunは使用するエンジンだけを点検する |
+
+設定はYAMLのパスか`configs/<kind>/`の名前で指定する。`--dry-run`は実行計画の確認、`--retry-failed KINDS`は保存済みの特定の失敗を再試行する指定である。
+
+終了コードは、**0：全stage終了、1：再実行する仕事あり、2：stageまたは設定の失敗**。0でも化学的な未解決や棄却はあり得る。opt・saddleは最後の構造から継続できるが、freq・spの中断はやり直しになる。
 
 ## 結果の読み方
 
-- 順位の量は δG_eff(kcal/mol)。反応は共通のゼロを持つ点の鎖 [分離した単量体?, R, TS, P, 分離した単量体?] で、δG_eff = max_k(G_k − それより前の最も低い井戸の G)。単分子の素過程では max(G_TS, G_R, G_P) − G_R で、G_R・G_P は反応物・生成物と同じ状態の DFT 極小の最小 G。分離した点は、端の断片が system で宣言した組成の単量体と一致するときだけ持ち、ゼロ(錯体か分離)は ranking.csv の `reference` に出る。ZPE で沈む障壁(注記 `submerged_barrier`)は TS を外した鎖の値。障壁なし(`barrierless_at_resolution`)は序数の順位に入れず、report.html の「Barrierless steps」(捕獲律速)に ΔG_rxn を出す。qRRHO の扱いによる感度の幅が重なる反応は同順位。
-- 既定の順位は M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD の G の序数として読む(ranking.csv の `energy_level` は `m06-2x-d3zero/def2-tzvpd`)。CCSD(T)/def2-TZVPD との差は障壁で平均 0.8、最大 1.8 kcal/mol(5 反応)、ΔE_rxn では平均 1.2、最大 2.3 で停留点レベルより良くない。1 kcal/mol 未満の差は序数を保証しない。鞍点の有無と PES の形は PBE0 で決まる。層の SP がない反応は `energy_layer_missing` で順位から外れ、PBE0 で代用しない。遷移金属・溶媒・多参照性の強い系は未検証。詳しくは [docs/design.md](docs/design.md) §7.3・§7.4。
-- 順位を付けない反応も outcome と blockers 付きで ranking.csv に載る。多段反応(`multi_step`)の親は順位を持たず、分割した子反応(`<id>_split<n>`)がそれぞれ並ぶ。判断の経過は `hfauto case` で見る。駆動しなかった子(同じ問いの結論を写した `same_as:<id>` と、分割の深さの上限の `split_depth`)は log を持たないので、`hfauto case` は `no case log` で終わる。
+- `ranking.csv`の順位は、そのrunの理論・温度・標準状態における個別反応の`δG_eff`による。現在は出発状態の異なる反応も同じ表に並ぶため、初期系からの主要生成物や収率の順位として使わない。
+- `δG_eff`は反応の点の鎖の最大の上りで、素反応の速度定数に一律変換する量ではない。分離・錯体の基準は`reference`列にある。定義と不確かさは [design.md](docs/design.md) §7にある。
+- 障壁なしの反応は捕獲律速として別表に出る。高精度の一点計算が欠けた反応や認証に落ちた点には順位を付けず、理由を表示する。
+- `coverage.csv`は探索・失敗・未試行を示す。計算を終了したこと、期待値との回帰一致、外部参照に対する精度は別々に確認する。
 
-## インストール
+## 開発を再開する
 
-本番は WSL2 の Ubuntu(Python 3.12)に NWChem 7.2.3、xTB 6.7.1、CREST 3.0.2 を入れて動かす。手順と版数は [docs/environment.md](docs/environment.md) にある。
-
-## CLI
-
-| コマンド | 役割 |
-|---|---|
-| `hfauto doctor [--site SITE]` | site の全エンジン(実行ファイル、版数の pin、worker のモジュール、scratch)を検査する。問題があれば終了コード 1 |
-| `hfauto run PIPELINE --system SYSTEM --site SITE [--run-dir DIR] [--from ID] [--to ID] [--dry-run] [--retry-failed KINDS]` | パイプラインを実行する。同じ run ディレクトリでは続きから再開する |
-| `hfauto status RUN_DIR` | stage の状態、FailureKind 別の失敗数、ジョブの再利用率。終了コードは `run` と同じ規則(1 = failed・incomplete の stage か failed の artifact) |
-| `hfauto report RUN_DIR` | run 全体の report.html を書く |
-| `hfauto case RUN_DIR REACTION_ID` | 反応ケースの判断ログ(log.jsonl)を表示する |
-
-- PIPELINE・SYSTEM・SITE には YAML のパスか、カレントディレクトリの `configs/<kind>/` の下の名前を指定する。method は pipeline ファイルの隣の `methods/<id>.yaml`、なければ `configs/methods/<id>.yaml` を読む。
-- `run` の終了コード: 0 は成功、1 は failed の artifact か失敗した stage がある、または SIGINT・SIGTERM・SIGHUP で止めた(外部プログラムを止め、実行中の stage を incomplete にする。同じコマンドを流し直せば JobStore から続ける)、2 は設定か preflight の問題。failed の artifact は後続の stage を止めず report も出るので、結果は終了コードではなく `hfauto status` と report で判断する。
-- `--from ID` はその stage 以降を取り直し、`--retry-failed KINDS`(例 `incomplete_output,nonzero_exit`)は JobStore に記録された該当の種類の失敗を再実行する。timeout は記録しないので、取り直せば常に再実行される。
-
-## クイックスタート(HCN → HNC)
-
-```bash
-hfauto run known_endpoints --system hcn --site wsl_local --run-dir $HOME/hfauto_runs/hcn
-hfauto status $HOME/hfauto_runs/hcn
-hfauto report $HOME/hfauto_runs/hcn
-```
-
-リポジトリの直下で実行する。`--run-dir` を省くと `runs/<system_id>_<pipeline_id>` になるので、本番の run は ext4 上を明示する。4 vCPU の WSL で約 1 分 10 秒かかる(QM 242 core 秒。うち M06-2X の層の SP 3 点が 35 core 秒)。記録の型が変わる前の run dir は途中から再開できない(design.md §8)。
-
-## 基準値
-
-WSL(4 vCPU / 11 GB)、M06-2X-D3(0)/def2-TZVPD // PBE0-D3BJ/def2-SVPD、298.15 K・1 atm。全体と所要時間は [docs/validation.md](docs/validation.md) にある。
-
-| 系(system) | pipeline | outcome | δG_eff(kcal/mol) |
-|---|---|---|---|
-| HCN → HNC(`hcn`) | known_endpoints | elementary_step | 41.57 |
-| HONO trans → cis(`hono`) | known_endpoints | elementary_step | 9.88(TS がキラルで m = 2) |
-| NH3 の反転(`nh3_inversion`) | known_endpoints | degenerate_rearrangement | 4.38 |
-| 水(`water_same_basin`) | known_endpoints | same_basin | — |
-| TMA·(HF)₂(`tma_hf2`) | discover | same_basin(プロトン移動の TS はない) | — |
-
-## 文書
-
-- [docs/design.md](docs/design.md): 設計(層と import 契約、処理区分の責務、Evidence とゲート、判断表、化学プロトコル、順位の量、実行基盤、設定、範囲外)
-- [docs/environment.md](docs/environment.md): 版数、インストール、WSL の資源、テストと品質ゲート
-- [docs/validation.md](docs/validation.md): WSL の実計算による全体の再検証(VAL9)、期待値とその変更の理由、到達表
-- [docs/roadmap.md](docs/roadmap.md): round 10 の改良の計画(提案と wave、計画の変更の記録、見送り)。検証の case と道具は `validation/`(cases.yaml、check.py、replay.py、BH76 の参照)
-- [docs/reviews/](docs/reviews/): 設計の根拠になったレビューと改良の結果報告(最新は [2026-10-02_round9_result.md](docs/reviews/2026-10-02_round9_result.md)、その根拠の分析は [2026-09-30_remaining_issues_analysis.md](docs/reviews/2026-09-30_remaining_issues_analysis.md))
+[現在状況](docs/roadmap.md)から未完了項目を確認し、[改良計画](docs/improvement-plan.md)の依存順で進める。実装・運用・計画・過去の証拠を別々の文書で管理し、進捗の正本はroadmap、今後の設計の正本はimprovement-planに置く。[AGENTS.md](AGENTS.md)に責務と変更時の方針、[environment.md](docs/environment.md) §4に検証コマンドがある。

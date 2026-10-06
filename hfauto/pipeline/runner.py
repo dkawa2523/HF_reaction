@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -12,7 +13,7 @@ from typing import TYPE_CHECKING, Literal, TypeVar
 
 from hfauto.chemistry.gates import Policy
 from hfauto.chemistry.xyz import XYZ, read_xyz
-from hfauto.core.evidence import FileRef, Geometry
+from hfauto.core.evidence import Failure, FailureKind, FileRef, Geometry
 from hfauto.core.hashing import sha256_file
 from hfauto.core.manifest import Artifact, Manifest, save_manifest
 from hfauto.core.method import MethodSpec
@@ -33,7 +34,8 @@ _log = logging.getLogger(__name__)
 
 @dataclass
 class Runtime:
-    """``StageRuntime`` implementation; engines are cached per (capability, name) per run."""
+    """``StageRuntime`` implementation; engines are cached per (capability, name) per run.
+    ``errors`` holds the items of the bound stage that raised (``contain``)."""
 
     run_id: str
     run_dir: Path
@@ -46,10 +48,11 @@ class Runtime:
     stage_id: str = ""
     stage_dir: Path = Path()
     engines: dict[tuple[Capability, str], Engine] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
 
     def bind(self, stage_id: str, stage_dir: Path) -> Runtime:
         """The same runtime (shared engine cache and JobRunner) for one stage."""
-        return replace(self, stage_id=stage_id, stage_dir=stage_dir)
+        return replace(self, stage_id=stage_id, stage_dir=stage_dir, errors=[])
 
     def engine(self, capability: Capability, name: str) -> Engine:
         key = (capability, name)
@@ -83,6 +86,21 @@ class Runtime:
         from hfauto.execution.jobs import thread_map
 
         return thread_map(fn, items, workers=self.site.cores)
+
+    def contain(self, item_id: str, fn: Callable[[], ResultT]) -> ResultT | Failure:
+        """``fn()``. The one place where an exception of an item is contained: it is logged with
+        its traceback, counted in ``errors`` (exit code 1, and the stage runs again on resume)
+        and returned as Failure(error, 'error:<type>: <first line>'). HFAUTO_STRICT=1 (the
+        tests) re-raises; a stop (KeyboardInterrupt, SystemExit) is never contained."""
+        try:
+            return fn()
+        except Exception as exc:
+            if os.environ.get("HFAUTO_STRICT") == "1":
+                raise
+            _log.exception("stage %r: item %r raised", self.stage_id, item_id)
+            self.errors.append(item_id)
+            first = (str(exc).splitlines() or [""])[0][:200]
+            return Failure(kind=FailureKind.ERROR, reason=f"error:{type(exc).__name__}: {first}")
 
 
 def build_runtime(
@@ -139,12 +157,14 @@ def execute_stage(
     """The only way a stage runs: validate, check consumes, run, check produces, save, record.
 
     A stage missing a consumed type is done with no artifacts (the log says why), so the
-    later stages, report included, still run. An external stop (KeyboardInterrupt: Ctrl-C, or
-    SIGTERM / SIGHUP through the CLI) leaves the stage ``incomplete``, which a resume runs
-    again from the JobStore; any other exception leaves it ``failed``."""
+    later stages, report included, still run. An item that raised (Runtime.contain) is counted
+    in ``n_errors``. An external stop (KeyboardInterrupt: Ctrl-C, or SIGTERM / SIGHUP through
+    the CLI) leaves the stage ``incomplete``, which a resume runs again from the JobStore; any
+    other exception leaves it ``failed``."""
     pipeline_id = resolved.pipeline.pipeline_id
     layout.begin(entry.id, pipeline_id)
     before = runtime.jobs.stats()
+    bound = runtime.bind(entry.id, layout.stage_dir(entry.id))
     try:
         stage_cls = catalog.get(entry.stage)
         spec = stage_cls.spec
@@ -153,9 +173,8 @@ def execute_stage(
         problem = _missing_input(inputs, spec.consumes)
         artifacts: list[Artifact] = []
         if problem is None:
-            stage_dir = layout.stage_dir(entry.id)
-            stage_dir.mkdir(parents=True, exist_ok=True)
-            artifacts = stage_cls().run(inputs, config, runtime.bind(entry.id, stage_dir))
+            bound.stage_dir.mkdir(parents=True, exist_ok=True)
+            artifacts = stage_cls().run(inputs, config, bound)
         else:
             _log.warning("stage %r (%s) has %s", entry.id, spec.name, problem)
         unexpected = sorted({a.type.value for a in artifacts} - {t.value for t in spec.produces})
@@ -178,6 +197,7 @@ def execute_stage(
         config_sha=config_sha(entry, resolved),
         n_ok=sum(a.status == "success" for a in artifacts),
         n_failed=sum(a.status == "failed" for a in artifacts),
+        n_errors=len(bound.errors),
         jobs=runtime.jobs.stats().since(before),
     )
     return manifest
@@ -205,11 +225,13 @@ def _select(entries: list[StageEntry], start: str | None, stop: str | None) -> l
 def _fresh(
     entry: StageEntry, resolved: ResolvedConfig, layout: RunLayout, retry_failed: Collection[str]
 ) -> bool:
-    """Done with unchanged inputs and config, and no job failure of a kind to retry."""
+    """Done and not unfinished, with unchanged inputs and config, and no job failure of a kind
+    to retry."""
     state = layout.state(entry.id)
     return (
         state is not None
         and state.status == "done"
+        and not state.unfinished()
         and not set(state.jobs.failures_by_kind) & set(retry_failed)
         and state.input_sha == layout.input_sha(entry.id)
         and state.config_sha == config_sha(entry, resolved)
@@ -251,8 +273,8 @@ def run_pipeline(
     """Run the selected stages while holding the SiteLock; ``dry_run`` only returns the plan.
 
     ``start`` (--from) marks that stage and everything executed after it stale; done stages
-    whose input_sha and config_sha are unchanged (and whose jobs had no failure of a
-    ``retry_failed`` kind) are skipped (resume).
+    whose input_sha and config_sha are unchanged (and which are not unfinished and whose jobs
+    had no failure of a ``retry_failed`` kind) are skipped (resume).
     """
     layout = RunLayout(run_dir)
     if dry_run:

@@ -12,6 +12,7 @@ from hfauto.core.manifest import Artifact, load_manifest
 from hfauto.core.method import EngineSite
 from hfauto.core.records import ArtifactType, ReportRecord
 from hfauto.core.system import SpeciesInput, SystemConfig
+from hfauto.execution.jobs import JobStats
 from hfauto.pipeline.config import PipelineConfig, ResolvedConfig, SiteConfig
 from hfauto.pipeline.layout import RunLayout
 from hfauto.pipeline.runner import build_runtime, run_pipeline
@@ -45,6 +46,24 @@ class Bad(Emit):
     spec = StageSpec("bad", Ids, consumes=(), produces=(ArtifactType.SPECIES,))
 
 
+class Contain(Emit):  # item "x" raises: contained to that item (a failed artifact)
+    spec = StageSpec("contain", Ids, consumes=(), produces=(REPORT,))
+
+    def run(self, inputs, config, rt):
+        CALLS.append(rt.stage_id)
+
+        def item(i):
+            if i == "x":
+                raise KeyError("Te")
+            return ReportRecord(rows=(), tables={})
+
+        got = {i: rt.contain(i, lambda i=i: item(i)) for i in config.ids}
+        return [Artifact(artifact_id=f"{rt.stage_id}.{i}", type=REPORT, status="failed", failure=r)
+                if isinstance(r, Failure) else
+                Artifact(artifact_id=f"{rt.stage_id}.{i}", type=REPORT, payload=r)
+                for i, r in got.items()]
+
+
 class Fail(Emit):  # leaves only failed artifacts
     spec = StageSpec("fail", Ids, consumes=(), produces=(REPORT,))
 
@@ -57,7 +76,8 @@ class Fail(Emit):  # leaves only failed artifacts
 @pytest.fixture(autouse=True)
 def dummy_stages(monkeypatch):  # the runner finds these stage names through catalog.get
     CALLS.clear()
-    stages, get = {"emit": Emit, "collect": Collect, "bad": Bad, "fail": Fail}, catalog.get
+    stages = {"emit": Emit, "collect": Collect, "bad": Bad, "fail": Fail, "contain": Contain}
+    get = catalog.get
     monkeypatch.setattr(catalog, "get", lambda name: stages.get(name) or get(name))
 
 
@@ -97,6 +117,34 @@ def test_consumes_and_produces_are_checked(tmp_path):
     with pytest.raises(ValueError, match="produced"):
         run_pipeline(resolved(tmp_path, "p", {"id": "b", "stage": "bad"}), tmp_path / "r2")
     assert RunLayout(tmp_path / "r2").state("b").status == "failed"
+
+
+def test_an_item_that_raises_is_contained_counted_and_run_again(tmp_path, monkeypatch, caplog):
+    """X7-2: the item, not the stage, fails (error:<type>); the stage is done with n_errors 1,
+    which a rerun runs again. HFAUTO_STRICT=1 re-raises: the stage fails."""
+    contain, run = {"id": "k", "stage": "contain", "ids": ["a", "x"]}, tmp_path / "r"
+    with pytest.raises(KeyError):
+        run_pipeline(resolved(tmp_path, "p", contain), run)
+    assert RunLayout(run).state("k").status == "failed"
+    monkeypatch.delenv("HFAUTO_STRICT")
+    layout = run_pipeline(resolved(tmp_path, "p", contain), run)
+    state = layout.state("k")
+    assert (state.status, state.n_ok, state.n_failed, state.n_errors) == ("done", 1, 1, 1)
+    failure = load_manifest(layout.manifest_path("k")).get("k.x").failure
+    assert failure == Failure(kind=FailureKind.ERROR, reason="error:KeyError: 'Te'")
+    assert "item 'x' raised" in caplog.text and state.unfinished()
+    run_pipeline(resolved(tmp_path, "p", contain), run)  # not fresh: runs again
+    assert CALLS == ["k", "k", "k"]
+
+
+def test_a_stage_whose_job_failed_for_its_environment_runs_again(tmp_path):
+    """X7-3: a missing executable is not stored, and its stage is not fresh: after a site fix
+    a rerun runs it, with no --retry-failed."""
+    run, main = tmp_path / "run", resolved(tmp_path, "main", E)
+    layout = run_pipeline(main, run)
+    assert [p.action for p in run_pipeline(main, run, dry_run=True)] == ["skip"]
+    layout.update("e", jobs=JobStats(failures_by_kind={"executable_missing": 1}))
+    assert [p.action for p in run_pipeline(main, run, dry_run=True)] == ["run"]
 
 
 def test_missing_input_logs_up_to_three_upstream_failures(tmp_path, caplog):

@@ -311,8 +311,9 @@ class ExploreStage:
         engine = cast(DiscoveryEngine, rt.engine(Capability.DISCOVERY, cfg.engine))
         method = rt.method(cfg.method)
 
-        def attempt(unit: _Unit) -> DiscoveryResult | Failure:
-            return engine.explore(unit.start, unit.trial, method, cfg.settings)
+        def attempt(unit: _Unit) -> DiscoveryResult | Failure:  # a raising trial fails alone
+            return rt.contain(unit.trial.trial_id,
+                              lambda: engine.explore(unit.start, unit.trial, method, cfg.settings))
 
         net.expand(lambda units: rt.thread_map(attempt, units), cfg.max_trials)
         return net.artifacts()
