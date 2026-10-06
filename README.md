@@ -30,6 +30,10 @@
 
 ## 処理の流れ
 
+[計算済み例題の図と3Dビューア](examples/visualization/README.md)では、NH₃反転、NH₃・HF、TMA・(HF)₂、BH₃＋NH₃、OH＋CH₄の保存結果から、探索、エネルギー、分子構造、反応判断を追える。
+
+[手法と計算済み例題のレポート](docs/reports/hfauto-method-results/report.md)は、背景・目的・各処理の責務と入出力・ライブラリ・結果を、8図と対応する説明でまとめている。
+
 ```text
 structures → conformers → minima(screen) → explore → minima(dft) → reaction-paths → sp → thermo → report
 ```

@@ -1,0 +1,174 @@
+{
+  "checked_on": "2026-10-06",
+  "scope": "文献と公式文書は手法・図の設計・読み方の根拠である。図のエネルギー、構造、候補数、判定は保存済みのhfauto runから取得し、文献の数値や別反応の結果を混ぜない。",
+  "references": [
+    {
+      "id": "nt2",
+      "title": "Chemoton 2.0: Autonomous Exploration of Chemical Reaction Networks",
+      "authors": "J. P. Unsleber, S. A. Grimmel, M. Reiher",
+      "year": 2022,
+      "citation": "Unsleber, Grimmel and Reiher, J. Chem. Theory Comput. 18, 5393–5409 (2022).",
+      "doi": "10.1021/acs.jctc.2c00193",
+      "url": "https://pubs.acs.org/doi/10.1021/acs.jctc.2c00193",
+      "role": "NT2による結合形成・切断の試行とTS候補生成",
+      "documentation_url": "https://scine.ethz.ch/static/download/manuals/v6.1.0/readuct_manual.pdf",
+      "notes": [
+        "§3.2.2のNT2は原子対に形成・切断を促す人工的な力を与える探索である。候補生成の軌跡を、認証済みの最低エネルギー経路・IRC・熱力学的自由エネルギー経路と同一視しない。",
+        "論文の探索後処理にはIRCが含まれる。hfautoの後処理はQRCによる両側の最適化と端点照合なので、論文の手順をそのまま実装したと書かない。",
+        "Chemotonの反応網全体の機能や論文の被覆率をhfautoの実証結果として流用しない。今回の図はhfautoが直接使うReaDuctのNT2候補探索と独自の認証処理を示す。"
+      ],
+      "version_note": "本コードはscine-readuct 6.1.0を固定している。2022年の手法論文の発表年と6.1.0のソフトウェア版を分けて記録する。"
+    },
+    {
+      "id": "pbe0",
+      "title": "Toward reliable density functional methods without adjustable parameters: The PBE0 model",
+      "authors": "C. Adamo, V. Barone",
+      "year": 1999,
+      "citation": "Adamo and Barone, J. Chem. Phys. 110, 6158–6170 (1999).",
+      "doi": "10.1063/1.478522",
+      "url": "https://doi.org/10.1063/1.478522",
+      "role": "PBE0停留点・振動計算の汎関数の出典",
+      "notes": [
+        "停留点の最適化・振動と、高い基底で行う一点エネルギーを図注で区別する。各runの実際のmethod・basis・dispersion・program・versionを記載する。",
+        "汎関数の原論文を引用したことだけでは、今回の反応の障壁や電子状態の精度を外部検証したことにならない。",
+        "原論文はPBE0の出典であり、PBE0-D3BJ/def2-SVPDという本コードの複合計算条件全体の出典ではない。"
+      ],
+      "version_note": "原論文のDOIと書誌は出版社の引用情報でも照合した。今回の検索環境ではAIPの原論文本文を取得できなかったため、論文から個別反応の精度・数値を引いていない。"
+    },
+    {
+      "id": "m06",
+      "title": "The M06 suite of density functionals …",
+      "authors": "Y. Zhao, D. G. Truhlar",
+      "year": 2008,
+      "citation": "Zhao and Truhlar, Theor. Chem. Acc. 120, 215–241 (2008).",
+      "doi": "10.1007/s00214-007-0310-x",
+      "url": "https://link.springer.com/article/10.1007/s00214-007-0310-x",
+      "role": "M06-2Xの一点エネルギー層の出典",
+      "notes": [
+        "M06-2Xは主族の熱化学・速度論・非共有結合相互作用などで検討された汎関数だが、その適用論文を本コードの全反応への精度保証として扱わない。",
+        "保存された一点計算がある点だけにその層の値を描く。足りない点に停留点層やxTBの値を混ぜて一つの曲線にしない。",
+        "図注は例としてM06-2X-D3(0)/def2-TZVPDのE + PBE0-D3BJ/def2-SVPDの熱補正という層の構成を明示し、runに別条件があれば実際の条件を優先する。"
+      ],
+      "version_note": "原論文は2007年7月12日オンライン公開、巻120の書誌年は2008年。DOI10.1007/s00214-007-0401-8は訂正記事であり原論文のDOIではない。"
+    },
+    {
+      "id": "goodvibes",
+      "title": "GoodVibes: automated thermochemistry for heterogeneous computational chemistry data",
+      "authors": "G. Luchini, J. V. Alegre-Requena, I. Funes-Ardoiz, R. S. Paton",
+      "year": 2020,
+      "citation": "Luchini et al., F1000Research 9, 291 (2020).",
+      "doi": "10.12688/f1000research.22758.1",
+      "url": "https://f1000research.com/articles/9-291/v1",
+      "role": "温度・標準状態・低振動数補正を明記した自由エネルギー図",
+      "documentation_url": "https://goodvibespy.readthedocs.io/en/stable/source/goodvibes.html",
+      "source_url": "https://github.com/patonlab/GoodVibes",
+      "notes": [
+        "Gは電子エネルギーEと熱補正を組み合わせた理想気体のモデル値である。電子エネルギーE、E+ZPE、H、Gは違う量なので縦軸と凡例を分ける。",
+        "hfautoはGoodVibes 4.3.0のcompute_thermoを呼び、設定したqs・cutoff_cm1・vib_scale、QH=True、点群由来の回転対称数などを使う。電子準位と光学異性体の寄与はhfautoで別途扱う。",
+        "図注には温度、標準状態、低振動数の扱い、スケール係数をrunの記録から転記する。1 atmの分離分子と錯体で分子数が変わると標準状態の寄与も変わる。",
+        "原論文のuse caseの化学構造・G値・選択性を今回の例題へ持ち込まない。"
+      ],
+      "version_note": "2020年の論文は当時のソフトウェアを説明する。本コードの版は4.3.0であり、2026年10月6日に読めるstable/master文書の4.4.0とは区別する。",
+      "related_papers": [
+        {
+          "title": "Supramolecular Binding Thermodynamics by Dispersion-Corrected Density Functional Theory",
+          "citation": "S. Grimme, Chem. Eur. J. 18, 9955–9964 (2012).",
+          "doi": "10.1002/chem.201200497",
+          "url": "https://chemistry-europe.onlinelibrary.wiley.com/doi/10.1002/chem.201200497",
+          "role": "低振動数のエントロピーを自由回転子へ補間するqRRHOの出典。原論文の溶液中ホスト・ゲストの数値は今回の気相計算には使わない。"
+        },
+        {
+          "title": "Free rotor correction to the RRHO model for adsorption enthalpies",
+          "citation": "Y.-P. Li, J. Gomes, S. M. Sharada, A. T. Bell, M. Head-Gordon, J. Phys. Chem. C 119, 1840–1850 (2015).",
+          "doi": "10.1021/jp509921r",
+          "url": "https://pubs.acs.org/doi/10.1021/jp509921r",
+          "role": "GoodVibesが引用する低振動数のエンタルピー補正の出典。題名は補正部分の短縮表記。"
+        }
+      ]
+    },
+    {
+      "id": "irc",
+      "title": "QRC: a rapid method for connecting transition structures to reactants in the computational analysis of organic reactivity",
+      "authors": "J. M. Goodman, M. A. Silva",
+      "year": 2003,
+      "citation": "Goodman and Silva, Tetrahedron Lett. 44, 8233–8236 (2003).",
+      "doi": "10.1016/j.tetlet.2003.09.074",
+      "url": "https://www.sciencedirect.com/science/article/abs/pii/S0040403903021798",
+      "role": "QRC端点接続とIRC経路追跡を区別するための出典",
+      "documentation_url": "https://www-jmg.ch.cam.ac.uk/software/QRC/",
+      "notes": [
+        "IDはIRCとの区別のためircだが、今回の主な接続手順の出典はQRC論文である。図の実処理名は『QRCによる両側の最適化』とする。",
+        "hfautoは認証したTSを虚モードの±方向へ変位させ、同じPESで各側を最適化し、下にある極小に割り付ける。これは離散端点の接続の証拠で、質量加重の最急降下経路を連続積分したIRCを保存した意味ではない。",
+        "QRCの最適化反復を表示するなら横軸は最適化ステップ、縦軸はその計算のEと書く。左右をTSで接ぐ図にも連続反応座標・時間・ダイナミクスという意味を持たせない。",
+        "一次鞍点、反応モード性、下り先の構造同一性・結合変化を別の証拠として示す。虚振動が一本あることだけで目的の反応を認証したとしない。"
+      ],
+      "related_papers": [
+        {
+          "title": "Formulation of the reaction coordinate",
+          "citation": "K. Fukui, J. Phys. Chem. 74, 4161–4163 (1970).",
+          "doi": "10.1021/j100717a029",
+          "url": "https://pubs.acs.org/doi/10.1021/j100717a029",
+          "role": "IRCの概念の原論文。1970年の巻号年を用い、ACSウェブ上の電子化日2002年を発表年にしない。"
+        }
+      ]
+    },
+    {
+      "id": "3dmol",
+      "title": "3Dmol.js: molecular visualization with WebGL",
+      "authors": "N. Rego, D. Koes",
+      "year": 2015,
+      "citation": "Rego and Koes, Bioinformatics 31, 1322–1324 (2015).",
+      "doi": "10.1093/bioinformatics/btu829",
+      "url": "https://academic.oup.com/bioinformatics/article/31/8/1322/213186",
+      "role": "保存済みXYZ構造の操作可能な3D表示",
+      "documentation_url": "https://3dmol.csb.pitt.edu/doc/GLViewer.html",
+      "license": "BSD-3-Clause",
+      "license_url": "https://github.com/3dmol/3Dmol.js/blob/master/LICENSE",
+      "notes": [
+        "addModelで保存済みXYZを読み、球棒表示、原子ラベル、反応に関係する距離、必要なら虚モード矢印を示す。最適化構造を都合よく描き直さない。",
+        "距離から推定した球棒の結合は表示上の補助である。TSや水素結合で表示された棒を、コードが認証した共有結合や化学的生成物の判定根拠として扱わない。",
+        "図は原子番号を維持し、反応前・TS・反応後の対応を追えるようにする。同種Hを強調するときの色は原子ラベルの識別用で、同位体を計算した意味ではない。",
+        "JavaScriptを同梱する場合は配布した版のLICENSEと著作権表示を保存する。"
+      ],
+      "version_note": "論文は2014年12月12日オンライン公開、巻号は2015年。2026年10月6日に公式master/package.jsonで2.5.5を観測したが、使用版は実際にvendorした固定版とハッシュを記録する。"
+    },
+    {
+      "id": "matplotlib",
+      "title": "Matplotlib: A 2D Graphics Environment",
+      "authors": "J. D. Hunter",
+      "year": 2007,
+      "citation": "Hunter, Comput. Sci. Eng. 9, 90–95 (2007).",
+      "doi": "10.1109/MCSE.2007.55",
+      "url": "https://doi.org/10.1109/MCSE.2007.55",
+      "role": "再生成できるPNG・SVGの科学図",
+      "documentation_url": "https://matplotlib.org/stable/users/project/citing.html",
+      "notes": [
+        "エネルギーは正確な点を水平線またはマーカーで示し、接続は細い破線にする。未計算の間を滑らかな実測経路のように補間しない。",
+        "SVGを保存して文字と線を拡大可能にし、PNGを閲覧用に併記する。縦軸の量、単位、零点、条件、出典run、計算層を図注に置く。",
+        "不確かさの記録がない値に見かけの誤差棒を作らない。未認証・未実施・失敗は空欄や注記・別パネルで示し、0に置き換えない。"
+      ],
+      "version_note": "2007年の原論文の年と図生成で使用したMatplotlibのインストール版は別に記録する。"
+    }
+  ],
+  "figure_guidance": {
+    "recommended_panels": [
+      "A: 入力から候補探索・DFT認証・熱化学までの流れ。保存された候補/判断件数を段階別に示す。",
+      "B: 各反応を独立した零点で描く離散停留点のΔEとΔGの図。分離系・錯体・TS・生成物を明示する。",
+      "C: 反応前・TS・反応後の3D球棒図。原子ラベル、移動するH、主要距離、保存構造の出所を添える。",
+      "D: 一次鞍点、反応モード、両側の下り、端点同一性、熱化学の比較可否を並べた判定図。"
+    ],
+    "common_caption": "本図は保存済み計算に基づく。エネルギー図の横軸は離散構造の並びであり、時間・距離・連続した自由エネルギー反応座標ではない。破線は構造間の関係を示す。各系の零点と比較条件は独立している。",
+    "energy_caption": "ΔEは指定した計算層の電子エネルギー差、ΔGはrunの温度・標準状態・熱補正における自由エネルギー差。δG_effは本コードが点の鎖から求める最大の上りで、局所的な素反応のΔG‡、速度定数、生成物比とは区別する。",
+    "trajectory_caption": "保存されたNT2・経路最適化・QRCの軌跡は、それぞれの算法の反復である。横軸を計算ステップまたは明示した構造距離とし、算法と電子エネルギー層を分けて描く。実時間の反応動画や連続自由エネルギー計算の結果ではない。",
+    "structure_caption": "保存XYZに基づく球棒表示。色は元素または原子ラベルを示す。表示上の結合は距離に基づく補助であり、TSの結合次数を測定した値ではない。",
+    "barrierless_caption": "障壁なしは、調べた経路とその分解能の範囲で上りが認められなかったという判定である。捕獲速度や収率を計算した結果ではなく、未探索の配向・経路の障壁不在まで保証しない。",
+    "decision_caption": "認証された反応、同じ極小への合流、未解決、障壁なしを区別する。実行終了・回帰期待一致・科学的認証は別の指標である。"
+  },
+  "case_interpretation": {
+    "nh3_inversion": "結合グラフとbasinが同じでも、ラベル付き幾何の反転と両側接続が示せる。二つの山がある生成物として数えず、縮退した反転の例として描く。",
+    "nh3_hf": "ラベル付きHの交換を強調できるが、同位体標識、NH4Fへの正味変換、TMA・HFの認証の代用として示さない。実際の保存端点とoutcomeを優先する。",
+    "tma_hf2": "異なる入力名が同じ極小へ最適化された事例。反応前後の別生成物と架空のTSを描かず、入力候補→共通極小の合流図と構造比較を示す。",
+    "bh3_nh3": "調べた会合経路の分解能内の障壁なし判定。エネルギー上の会合と自由エネルギーの標準状態寄与を区別し、自由エネルギー障壁が必ず0と決め付けない。",
+    "oh_ch4": "H引き抜きの結合形成・切断と開殻計算の例。保存runの電荷・多重度・電子状態検証を記載し、本文献群にはこの個別反応の参照数値を含めない。"
+  }
+}

@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="482.4pt" height="446.4pt" viewBox="0 0 482.4 446.4" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-10-06T12:43:11.240650</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.0, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 446.4
+L 482.4 446.4
+L 482.4 0
+L 0 0
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="table_1">
+    <g id="patch_2">
+     <path d="M 21.708 119.04
+L 137.09808 119.04
+L 137.09808 66.96
+L 21.708 66.96
+z
+" style="fill: #17334c; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_1">
+     <text style="font-weight: 700; font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #ffffff" x="28.631405" y="96.401367" transform="rotate(-0 28.631405 96.401367)">計算例</text>
+    </g>
+    <g id="patch_3">
+     <path d="M 137.09808 119.04
+L 305.74512 119.04
+L 305.74512 66.96
+L 137.09808 66.96
+z
+" style="fill: #17334c; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_2">
+     <text style="font-weight: 700; font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #ffffff" x="147.216902" y="96.401367" transform="rotate(-0 147.216902 96.401367)">説明できる処理</text>
+    </g>
+    <g id="patch_4">
+     <path d="M 305.74512 119.04
+L 465.516 119.04
+L 465.516 66.96
+L 305.74512 66.96
+z
+" style="fill: #17334c; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_3">
+     <text style="font-weight: 700; font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #ffffff" x="315.331373" y="96.401367" transform="rotate(-0 315.331373 96.401367)">観測した判断</text>
+    </g>
+    <g id="patch_5">
+     <path d="M 21.708 171.12
+L 137.09808 171.12
+L 137.09808 119.04
+L 21.708 119.04
+z
+" style="fill: #f1f6f9; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_4">
+     <text style="font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #17334c" x="28.631405" y="148.481367" transform="rotate(-0 28.631405 148.481367)">01 NH₃ の反転</text>
+    </g>
+    <g id="patch_6">
+     <path d="M 137.09808 171.12
+L 305.74512 171.12
+L 305.74512 119.04
+L 137.09808 119.04
+z
+" style="fill: #f1f6f9; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_5">
+     <text style="font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #17334c" x="147.216902" y="148.481367" transform="rotate(-0 147.216902 148.481367)">鞍点から両側の極小へ接続を確認</text>
+    </g>
+    <g id="patch_7">
+     <path d="M 305.74512 171.12
+L 465.516 171.12
+L 465.516 119.04
+L 305.74512 119.04
+z
+" style="fill: #f1f6f9; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_6">
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(315.331373 141.634512)">同じ化学状態を結ぶ TS を認証</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(315.331373 155.134512)">δG_eff 4.38 kcal mol⁻¹</text>
+    </g>
+    <g id="patch_8">
+     <path d="M 21.708 223.2
+L 137.09808 223.2
+L 137.09808 171.12
+L 21.708 171.12
+z
+" style="fill: #ffffff; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_7">
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(28.631405 193.811367)">02 NH₃・HF の水素交</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(28.631405 207.311367)">換</text>
+    </g>
+    <g id="patch_9">
+     <path d="M 137.09808 223.2
+L 305.74512 223.2
+L 305.74512 171.12
+L 137.09808 171.12
+z
+" style="fill: #ffffff; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_8">
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(147.216902 193.811367)">未知候補の探索から DFT 認証・</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(147.216902 207.311367)">熱化学比較へ</text>
+    </g>
+    <g id="patch_10">
+     <path d="M 305.74512 223.2
+L 465.516 223.2
+L 465.516 171.12
+L 305.74512 171.12
+z
+" style="fill: #ffffff; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_9">
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(315.331373 193.714512)">同じ化学状態を結ぶ TS を認証</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(315.331373 207.214512)">δG_eff 36.65 kcal mol⁻¹</text>
+    </g>
+    <g id="patch_11">
+     <path d="M 21.708 275.28
+L 137.09808 275.28
+L 137.09808 223.2
+L 21.708 223.2
+z
+" style="fill: #f1f6f9; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_10">
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(28.631405 245.524512)">03 TMA・(HF)₂ の端点</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(28.631405 259.758223)">判定</text>
+    </g>
+    <g id="patch_12">
+     <path d="M 137.09808 275.28
+L 305.74512 275.28
+L 305.74512 223.2
+L 137.09808 223.2
+z
+" style="fill: #f1f6f9; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_11">
+     <text style="font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #17334c" x="147.216902" y="252.641367" transform="rotate(-0 147.216902 252.641367)">別の入力候補が同じ極小へ戻る</text>
+    </g>
+    <g id="patch_13">
+     <path d="M 305.74512 275.28
+L 465.516 275.28
+L 465.516 223.2
+L 305.74512 223.2
+z
+" style="fill: #f1f6f9; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_12">
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(315.331373 245.891367)">同じ極小へ合流</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(315.331373 259.391367)">TS 障壁の順位なし</text>
+    </g>
+    <g id="patch_14">
+     <path d="M 21.708 327.36
+L 137.09808 327.36
+L 137.09808 275.28
+L 21.708 275.28
+z
+" style="fill: #ffffff; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_13">
+     <text style="font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #17334c" x="28.631405" y="304.721367" transform="rotate(-0 28.631405 304.721367)">04 BH₃ ＋ NH₃ の会合</text>
+    </g>
+    <g id="patch_15">
+     <path d="M 137.09808 327.36
+L 305.74512 327.36
+L 305.74512 275.28
+L 137.09808 275.28
+z
+" style="fill: #ffffff; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_14">
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(147.216902 297.971367)">保存された電子エネルギー走査で</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(147.216902 311.471367)">経路を読む</text>
+    </g>
+    <g id="patch_16">
+     <path d="M 305.74512 327.36
+L 465.516 327.36
+L 465.516 275.28
+L 305.74512 275.28
+z
+" style="fill: #ffffff; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_15">
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(315.331373 297.971367)">走査の分解能内で障壁なし</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(315.331373 311.471367)">TS 障壁の順位なし</text>
+    </g>
+    <g id="patch_17">
+     <path d="M 21.708 379.44
+L 137.09808 379.44
+L 137.09808 327.36
+L 21.708 327.36
+z
+" style="fill: #f1f6f9; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_16">
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(28.631405 350.051367)">05 OH ＋ CH₄ の水素</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(28.631405 363.551367)">引き抜き</text>
+    </g>
+    <g id="patch_18">
+     <path d="M 137.09808 379.44
+L 305.74512 379.44
+L 305.74512 327.36
+L 137.09808 327.36
+z
+" style="fill: #f1f6f9; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_17">
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(147.216902 350.051367)">開殻反応の停留点・接続・比較基</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(147.216902 363.551367)">準を確認</text>
+    </g>
+    <g id="patch_19">
+     <path d="M 305.74512 379.44
+L 465.516 379.44
+L 465.516 327.36
+L 305.74512 327.36
+z
+" style="fill: #f1f6f9; stroke: #dde5eb; stroke-linejoin: miter"/>
+    </g>
+    <g id="text_18">
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(315.331373 343.204512)">異なる化学状態を結ぶ TS を認</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(315.331373 356.704512)">証</text>
+     <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(315.331373 370.204512)">δG_eff 10.55 kcal mol⁻¹</text>
+    </g>
+   </g>
+  </g>
+  <g id="text_19">
+   <text style="font-weight: 700; font-size: 13px; font-family: 'Meiryo'; text-anchor: start; fill: #17334c" x="26.532" y="22.573086" transform="rotate(-0 26.532 22.573086)">5 つの例題で読む、現在の hfauto</text>
+  </g>
+  <g id="text_20">
+   <text style="font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #617588" x="26.532" y="37.944" transform="rotate(-0 26.532 37.944)">探索・認証・比較の異なる観測を並べる。</text>
+  </g>
+  <g id="text_21">
+   <text style="font-size: 9px; font-family: 'Meiryo'; fill: #617588" transform="translate(26.532 413.873016)">例題間の δG_eff の大小から、初期系の主要生成物・収率を決めない。</text>
+   <text style="font-size: 9px; font-family: 'Meiryo'; fill: #617588" transform="translate(26.532 427.927078)">数値・座標・条件・判定ログは同じ原データに保存。</text>
+  </g>
+ </g>
+</svg>

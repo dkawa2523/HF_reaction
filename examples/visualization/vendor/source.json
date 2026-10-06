@@ -1,0 +1,11 @@
+{
+  "name": "3Dmol.js",
+  "version": "2.5.5",
+  "license": "BSD-3-Clause",
+  "source": "https://registry.npmjs.org/3dmol/2.5.5",
+  "tarball": "https://registry.npmjs.org/3dmol/-/3dmol-2.5.5.tgz",
+  "package_integrity": "sha512-kqNHouGqq3YfW58174tdERvm0XYTmP0tavQKOqIw1ouc2OJ7epkXEFrtEkVXV0clBZT2Ze2xHRC/qxX0u0qCdw==",
+  "sha256": "f7cc78921ae72e7623e89cdd111434f58c2efddd2ffda1cd212644b406fb8016",
+  "retrieved_date": "2026-10-06",
+  "documentation": "https://3dmol.org/doc/"
+}

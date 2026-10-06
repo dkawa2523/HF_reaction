@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>hfauto | 反応探索を証拠から読む</title>
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="eyebrow">HFAUTO / SAVED COMPUTATIONAL EXAMPLES</div>
+    <h1>反応探索を、<br><span>証拠から読む。</span></h1>
+    <p>分子の配置から探索し、停留点と両側の接続を検証して、同じ条件で比較する。<br>5つの計算済み例題で、現在のコードの判断を追います。</p>
+    <div class="hero-meta"><span>気相</span><span>298.15 K / 1 atm</span><span>保存済み量子化学結果</span><span>オフライン閲覧</span></div>
+  </header>
+  <main>
+    <section class="intro" aria-label="資料の範囲">
+      <p><strong>この資料で確認できること</strong> 候補の発見、TSの認証、極小への合流、障壁なしの経路、条件付きのエネルギー比較。W3〜W5の保存結果を使い、新しい量子化学計算は行っていません。</p>
+      <p class="muted">主要生成物比や速度定数の予測は、この資料の実証範囲に含めません。停留点の自由エネルギー図と、電子エネルギーの計算経路は分けて表示します。</p>
+      <details><summary>全体の判断チャート・例題の位置付け・探索件数を見る</summary>
+        <figure class="scientific-figure"><img src="figures/reaction_decision_chart.svg" alt="現在の処理による反応認証の判断チャート" loading="lazy"><figcaption>極小、TS、接続、比較を順に判断する。<a href="figures/reaction_decision_chart.svg" download>SVG</a> · <a href="figures/reaction_decision_chart.png" download>PNG</a></figcaption></figure>
+        <figure class="scientific-figure"><img src="figures/examples_overview.svg" alt="5例で説明できる処理の一覧" loading="lazy"><figcaption>各例題で示せる処理と限界。<a href="figures/examples_overview.svg" download>SVG</a> · <a href="figures/examples_overview.png" download>PNG</a></figcaption></figure>
+        <figure class="scientific-figure"><img src="figures/exploration_coverage.svg" alt="登録された探索クエリの実施・未試行・結果の内訳" loading="lazy"><figcaption>探索run全体の件数。S10はNH₃・HFとTMA・HFのpilot全体を集計。<a href="figures/exploration_coverage.svg" download>SVG</a> · <a href="figures/exploration_coverage.png" download>PNG</a></figcaption></figure>
+      </details>
+    </section>
+    <nav id="example-nav" class="example-nav" aria-label="例題を選ぶ"></nav>
+    <section class="example-head">
+      <div><div id="case-kicker" class="eyebrow"></div><h2 id="case-title"></h2><p id="case-purpose"></p></div>
+      <div id="case-outcome" class="outcome"></div>
+    </section>
+    <section id="metrics" class="metrics" aria-label="計算結果"></section>
+    <section class="section-block">
+      <div class="section-title"><div><span class="section-number">01</span><h3>構造を比較する</h3></div><div class="tools"><label><input id="atom-labels" type="checkbox"> 原子番号</label><button id="sync-view" type="button">角度を揃える</button><button id="reset-view" type="button">表示を戻す</button></div></div>
+      <p class="section-note">ドラッグで回転、ホイールで拡大。2つの原子を順にクリックすると、その保存構造の距離を表示します。原子番号は各構造のXYZの順番です。</p>
+      <div id="molecules" class="molecule-grid"></div>
+      <div class="atom-legend"><span><i style="background:#f4f5f7"></i>H</span><span><i style="background:#424b58"></i>C</span><span><i style="background:#3564cb"></i>N</span><span><i style="background:#d04a4a"></i>O</span><span><i style="background:#51a568"></i>F</span><span><i style="background:#d89575"></i>B</span><span class="muted">結合線は構造閲覧用の距離判定。反応の認証とは別です。</span></div>
+      <p id="structure-note" class="small-note"></p>
+    </section>
+    <section class="section-block">
+      <div class="section-title"><div><span class="section-number">02</span><h3>経路とエネルギーを読む</h3></div><div id="figure-downloads" class="tools"></div></div>
+      <p class="section-note">横軸が離散状態の図では、接続線は順序の案内です。時間、距離、連続したIRCを表していません。図ごとにゼロの定義・エネルギー量・計算手法を確認してください。</p>
+      <figure class="scientific-figure"><img id="case-figure" alt="例題のエネルギー、構造、判断根拠の科学図"><figcaption id="figure-caption"></figcaption></figure>
+      <details><summary>数値と比較基準を見る</summary><div id="energy-details"></div></details>
+    </section>
+    <section class="section-block">
+      <div class="section-title"><div><span class="section-number">03</span><h3>何を根拠に判断したか</h3></div></div>
+      <div id="decision-flow" class="decision-flow"></div>
+      <div class="decision-grid"><div><h4>保存された観測と認証</h4><div id="decision-facts"></div></div><div><h4>この結果から分かる範囲</h4><p id="conclusion"></p><p id="limits" class="muted"></p></div></div>
+      <details><summary>実行された判断ログを見る</summary><div id="decision-log"></div></details>
+      <details id="coverage-section"><summary>探索件数と未解決を見る</summary><div id="coverage"></div></details>
+    </section>
+    <section class="section-block" id="profile-section" hidden>
+      <div class="section-title"><div><span class="section-number">04</span><h3>実際に計算した経路上の構造</h3></div></div>
+      <p class="section-note">保存された節点だけを切り替えます。節点間の構造補間は行いません。候補探索の人工力を使うNT2の走査は、断熱的な最低エネルギー経路と区別します。</p>
+      <label class="profile-select">計算経路 <select id="profile-select"></select></label>
+      <div class="profile-layout"><div id="profile-view" class="profile-view"></div><div><p id="profile-method"></p><label>保存節点 <input type="range" id="profile-step" min="0" max="0" value="0"></label><p id="profile-point"></p><p id="profile-distance" class="small-note">原子を2つクリックすると距離を表示します。</p><div id="profile-table"></div></div></div>
+    </section>
+    <section class="section-block">
+      <div class="section-title"><div><span class="section-number">05</span><h3>出典・再現性</h3></div></div>
+      <details><summary>この例題の計算元・ファイル照合情報を見る</summary><div id="provenance"></div></details>
+      <div class="reference-intro">文献は探索・認証・熱化学・表示の方法を説明するために参照しています。図の数値と構造は本リポジトリの保存計算に由来します。</div>
+      <ol id="references" class="references"></ol>
+      <p id="library-note" class="small-note"></p>
+      <p class="small-note"><a href="README.md">読み方と再生成手順</a> · <a href="data/data.json" download>図の元データ JSON</a> · <a href="references.json" download>参考文献 JSON</a></p>
+    </section>
+  </main>
+  <footer>hfauto • 原子対応、比較基準、未解決を残して判断する。</footer>
+  <script id="example-payload" type="application/json">__EXAMPLE_PAYLOAD__</script>
+  <script src="vendor/3Dmol-min.js"></script>
+  <script src="viewer.js"></script>
+</body>
+</html>

@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="482.4pt" height="446.4pt" viewBox="0 0 482.4 446.4" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-10-06T12:43:12.258792</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.0, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 446.4
+L 482.4 446.4
+L 482.4 0
+L 0 0
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 31.978296 200.737152
+L 146.690604 200.737152
+Q 158.207904 200.737152 158.207904 191.920752
+L 158.207904 91.766448
+Q 158.207904 82.950048 146.690604 82.950048
+L 31.978296 82.950048
+Q 20.460996 82.950048 20.460996 91.766448
+L 20.460996 191.920752
+Q 20.460996 200.737152 31.978296 200.737152
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #f2f6f9; stroke: #2a7590; stroke-width: 1.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 186.310116 200.737152
+L 301.022424 200.737152
+Q 312.539724 200.737152 312.539724 191.920752
+L 312.539724 91.766448
+Q 312.539724 82.950048 301.022424 82.950048
+L 186.310116 82.950048
+Q 174.792816 82.950048 174.792816 91.766448
+L 174.792816 191.920752
+Q 174.792816 200.737152 186.310116 200.737152
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #f2f6f9; stroke: #c37126; stroke-width: 1.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 340.641936 200.737152
+L 455.354244 200.737152
+Q 466.871544 200.737152 466.871544 191.920752
+L 466.871544 91.766448
+Q 466.871544 82.950048 455.354244 82.950048
+L 340.641936 82.950048
+Q 329.124636 82.950048 329.124636 91.766448
+L 329.124636 191.920752
+Q 329.124636 200.737152 340.641936 200.737152
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #f2f6f9; stroke: #75549a; stroke-width: 1.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 31.978296 359.432352
+L 146.690604 359.432352
+Q 158.207904 359.432352 158.207904 350.615952
+L 158.207904 250.461648
+Q 158.207904 241.645248 146.690604 241.645248
+L 31.978296 241.645248
+Q 20.460996 241.645248 20.460996 250.461648
+L 20.460996 350.615952
+Q 20.460996 359.432352 31.978296 359.432352
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #f2f6f9; stroke: #617588; stroke-width: 1.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 186.310116 359.432352
+L 301.022424 359.432352
+Q 312.539724 359.432352 312.539724 350.615952
+L 312.539724 250.461648
+Q 312.539724 241.645248 301.022424 241.645248
+L 186.310116 241.645248
+Q 174.792816 241.645248 174.792816 250.461648
+L 174.792816 350.615952
+Q 174.792816 359.432352 186.310116 359.432352
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #f2f6f9; stroke: #287664; stroke-width: 1.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 340.641936 359.432352
+L 455.354244 359.432352
+Q 466.871544 359.432352 466.871544 350.615952
+L 466.871544 250.461648
+Q 466.871544 241.645248 455.354244 241.645248
+L 340.641936 241.645248
+Q 329.124636 241.645248 329.124636 250.461648
+L 329.124636 350.615952
+Q 329.124636 359.432352 340.641936 359.432352
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #f2f6f9; stroke: #a36727; stroke-width: 1.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 156.062526 140.08032
+Q 164.888027 140.08032 172.036478 140.08032
+" clip-path="url(#pa99c3d41a6)" style="fill: none; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 166.036478 137.08032
+L 172.036478 140.08032
+L 166.036478 143.08032
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #617588; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 310.394346 140.08032
+Q 319.219847 140.08032 326.368298 140.08032
+" clip-path="url(#pa99c3d41a6)" style="fill: none; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 320.368298 137.08032
+L 326.368298 140.08032
+L 320.368298 143.08032
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #617588; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 399.14982 202.033611
+Q 399.14982 217.664606 399.14982 231.61855
+" clip-path="url(#pa99c3d41a6)" style="fill: none; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 402.14982 225.61855
+L 399.14982 231.61855
+L 396.14982 225.61855
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #617588; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 397.152183 235.29744
+Q 243.669283 235.29744 91.863433 235.29744
+" clip-path="url(#pa99c3d41a6)" style="fill: none; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 97.863433 238.29744
+L 91.863433 235.29744
+L 97.863433 232.29744
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #617588; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="patch_12">
+    <path d="M 88.18272 237.29835
+Q 88.18272 238.82536 88.18272 238.67532
+" clip-path="url(#pa99c3d41a6)" style="fill: none; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 91.18272 232.67532
+L 88.18272 238.67532
+L 85.18272 232.67532
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #617588; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="patch_13">
+    <path d="M 244.818 237.29835
+Q 244.818 238.82536 244.818 238.67532
+" clip-path="url(#pa99c3d41a6)" style="fill: none; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 247.818 232.67532
+L 244.818 238.67532
+L 241.818 232.67532
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #617588; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="patch_14">
+    <path d="M 399.14982 237.29835
+Q 399.14982 238.82536 399.14982 238.67532
+" clip-path="url(#pa99c3d41a6)" style="fill: none; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 402.14982 232.67532
+L 399.14982 238.67532
+L 396.14982 232.67532
+z
+" clip-path="url(#pa99c3d41a6)" style="fill: #617588; stroke: #617588; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #2a7590" x="37.5066" y="107.426247" transform="rotate(-0 37.5066 107.426247)">1 候補</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(37.5066 133.556192)">discover: 結合変更</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(37.5066 147.94002)">known_endpoints:</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(37.5066 164.164629)">両端を宣言</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(37.5066 179.559551)">候補だけで証明しない</text>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #c37126" x="191.83842" y="107.426247" transform="rotate(-0 191.83842 107.426247)">2 停留性</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(191.83842 133.534395)">極小と TS の振動</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(191.83842 148.923692)">残る勾配を確認</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(191.83842 164.147051)">計算手法と</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(191.83842 179.471661)">電子状態を確認</text>
+   </g>
+   <g id="text_5">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #75549a" x="346.17024" y="107.426247" transform="rotate(-0 346.17024 107.426247)">3 経路の観測</text>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(346.17024 133.004942)">TS: 虚モード / QRC</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(346.17024 148.866739)">会合: 拘束走査</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(346.17024 164.127364)">端点: 極小の照合</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(346.17024 179.460411)">原子対応を保持</text>
+   </g>
+   <g id="text_7">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #617588" x="37.5066" y="266.121447" transform="rotate(-0 37.5066 266.121447)">同じ極小</text>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(37.5066 291.33522)">TMA・(HF)₂</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(37.5066 307.650533)">宣言端点が合流</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(37.5066 322.828892)">→ 新しい TS 障壁</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(37.5066 338.112017)">を描かない</text>
+   </g>
+   <g id="text_9">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #287664" x="191.83842" y="266.121447" transform="rotate(-0 191.83842 266.121447)">TS を認証</text>
+   </g>
+   <g id="text_10">
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(191.83842 291.853423)">NH₃ 反転 / NH₃・HF</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(191.83842 307.403736)">OH＋CH₄</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(191.83842 322.884439)">停留性と接続を確認</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(191.83842 338.218892)">→ 同じ条件の G</text>
+   </g>
+   <g id="text_11">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #a36727" x="346.17024" y="266.121447" transform="rotate(-0 346.17024 266.121447)">TS を採用しない</text>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(346.17024 292.059439)">BH₃＋NH₃</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(346.17024 307.575298)">走査の分解能内で</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(346.17024 322.828892)">障壁なし</text>
+    <text style="font-size: 9px; font-family: 'Meiryo'; fill: #17334c" transform="translate(346.17024 338.142954)">→ 捕獲律速を別扱い</text>
+   </g>
+   <g id="text_13">
+    <text style="font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #17334c" x="25.9893" y="390.46608" transform="rotate(-0 25.9893 390.46608)">理論・温度・標準状態・分離/錯体の基準をそろえる。</text>
+   </g>
+  </g>
+  <g id="text_14">
+   <text style="font-weight: 700; font-size: 13px; font-family: 'Meiryo'; text-anchor: start; fill: #17334c" x="26.532" y="22.573086" transform="rotate(-0 26.532 22.573086)">反応候補から、何を根拠に判断するか</text>
+  </g>
+  <g id="text_15">
+   <text style="font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #617588" x="26.532" y="36.6048" transform="rotate(-0 26.532 36.6048)">候補・停留点・接続・比較基準を分けて確認する。</text>
+  </g>
+  <g id="text_16">
+   <text style="font-size: 9px; font-family: 'Meiryo'; text-anchor: start; fill: #617588" x="26.532" y="428.544" transform="rotate(-0 26.532 428.544)">計算終了・科学的認証・生成物比の予測は、それぞれ異なる判断。</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="pa99c3d41a6">
+   <rect x="14.472" y="62.496" width="460.692" height="352.656"/>
+  </clipPath>
+ </defs>
+</svg>

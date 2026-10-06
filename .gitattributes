@@ -1,0 +1,2 @@
+examples/visualization/data/xyz/**/*.xyz text eol=lf
+examples/visualization/vendor/3Dmol-min.js text eol=lf
